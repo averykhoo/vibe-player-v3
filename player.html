@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Combined Pitch Audio Player</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Hidden audio element for playback with pitch preservation -->
+  <audio id="player" style="display:none;"></audio>
+
+  <div id="controls">
+    <!-- File upload -->
+    <input type="file" id="audioFile" accept="audio/*,video/*">
+    <span id="fileInfo"></span>
+    <br>
+    <!-- Speed and Gain controls on the next line -->
+    <label>
+      Playback Speed:
+      <input type="range" id="playbackSpeed" min="0.25" max="2" step="0.01" value="1">
+      <span id="speedValue">1.00x</span>
+    </label>
+    <label>
+      Gain:
+      <input type="range" id="gainControl" min="1" max="5" step="0.01" value="1">
+      <span id="gainValue">1.00x</span>
+    </label>
+  </div>
+
+  <div id="visualizations">
+    <div class="visualization">
+      <h3>Waveform</h3>
+      <canvas id="waveformCanvas"></canvas>
+    </div>
+    <div class="visualization">
+      <h3>Spectrogram</h3>
+      <canvas id="spectrogramCanvas"></canvas>
+      <div id="spectrogramSpinner" class="spinner">Generating spectrogram…</div>
+    </div>
+    <div id="progressBar">
+      <div id="progressIndicator"></div>
+    </div>
+  </div>
+
+  <!-- Playback controls at the bottom -->
+  <div id="playbackControls">
+    <button id="jumpBack">« Back</button>
+    <button id="playPause">Play</button>
+    <button id="jumpForward">Forward »</button>
+    <label>
+      Jump Time (sec):
+      <input type="number" id="jumpTime" value="5" min="1" step="1">
+    </label>
+  </div>
+
+  <!-- Time display at the bottom -->
+  <div id="timeDisplay">0:00 / 0:00</div>
+
+  <div id="keybinds">
+    <h3>Keybindings</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Space</td>
+          <td>Toggle Play/Pause</td>
+        </tr>
+        <tr>
+          <td>Left Arrow</td>
+          <td>Seek backward (configured jump time)</td>
+        </tr>
+        <tr>
+          <td>Right Arrow</td>
+          <td>Seek forward (configured jump time)</td>
+        </tr>
+        <tr>
+          <td>Click on Waveform/Spectrogram</td>
+          <td>Jump immediately to that position</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="player.js"></script>
+</body>
+</html>

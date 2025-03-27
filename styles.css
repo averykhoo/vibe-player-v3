@@ -1,0 +1,72 @@
+body {
+  font-family: sans-serif;
+  margin: 20px;
+}
+
+#controls {
+  margin-bottom: 20px;
+}
+
+.visualization {
+  margin-bottom: 20px;
+}
+
+.visualization h3 {
+  margin: 0 0 5px 0;
+  font-size: 16px;
+}
+
+canvas {
+  /* Remove or comment out the next line if you want absolutely no border: */
+  border: 1px solid #ccc;
+  display: block;
+  width: 100%;
+  height: 100px; /* adjust as you like */
+}
+
+#progressBar {
+  position: relative;
+  height: 10px;
+  background: #eee;
+  margin-top: 10px;
+}
+
+#progressIndicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: red;
+}
+
+.spinner {
+  display: none;
+  text-align: center;
+  font-size: 14px;
+  color: #333;
+  margin-top: 5px;
+}
+
+#timeDisplay {
+  margin: 10px 0;
+  font-weight: bold;
+}
+
+#keybinds {
+  margin-top: 20px;
+}
+
+#keybinds table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#keybinds th, #keybinds td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
+}
+
+#keybinds th {
+  background: #f0f0f0;
+}
