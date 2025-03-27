@@ -1,6 +1,6 @@
 // --- START OF FILE player.js ---
 
-// Wrap everything in an IIFE to avoid polluting the global scope.
+// Wrap everything in an IIFE to create a private scope.
 const AudioPlayer = (function() {
   'use strict';
 
@@ -18,41 +18,34 @@ const AudioPlayer = (function() {
   // --- Web Audio API State ---
   let audioCtx = null;
   let gainNode = null;
-  let mediaSource = null; // Source node for the <audio> element
+  let mediaSource = null;
 
   // --- Playback State & Data ---
-  let decodedBuffer = null; // Stores the full audio buffer for visualization
-  let isPlaying = false; // Simple flag, mirrors audioEl.paused roughly
+  let decodedBuffer = null;
+  let isPlaying = false;
 
   // --- Visualization Constants ---
-  const WAVEFORM_HEIGHT_SCALE = 0.8; // Proportion of canvas height used for waveform
-  const SPECTROGRAM_FFT_SIZE = 1024; // Must be power of 2 (affects frequency resolution)
-  const SPECTROGRAM_MAX_FREQ = 16000; // Maximum frequency (Hz) to display
+  const WAVEFORM_HEIGHT_SCALE = 0.8;
+  const SPECTROGRAM_FFT_SIZE = 1024;
+  const SPECTROGRAM_MAX_FREQ = 16000;
 
-  // Cached offscreen spectrogram image to avoid re-computation on resize
+  // Cached offscreen spectrogram to avoid recomputation on resize.
   let cachedSpectrogramCanvas = null;
 
   // =============================================
   // == INITIALIZATION & SETUP ==
   // =============================================
 
-  /**
-   * Initializes the audio player: grabs DOM elements, sets up event listeners,
-   * initializes the AudioContext, and sets canvas sizes.
-   */
   function init() {
     console.log("AudioPlayer initializing...");
     assignDOMElements();
     setupEventListeners();
-    setupAudioContext(); // Create AudioContext and GainNode early
-    resizeCanvases();    // Set initial canvas sizes
+    setupAudioContext();
+    resizeCanvases();
     window.addEventListener('resize', resizeCanvases);
     console.log("AudioPlayer initialized.");
   }
 
-  /**
-   * Gets references to all necessary DOM elements.
-   */
   function assignDOMElements() {
     fileInput = document.getElementById('audioFile');
     fileInfo = document.getElementById('fileInfo');
@@ -75,9 +68,6 @@ const AudioPlayer = (function() {
     audioEl = document.getElementById('player');
   }
 
-  /**
-   * Sets up event listeners for UI controls, file input, audio element, and keyboard shortcuts.
-   */
   function setupEventListeners() {
     fileInput.addEventListener('change', handleFileLoad);
     playPauseButton.addEventListener('click', togglePlayPause);
@@ -86,12 +76,11 @@ const AudioPlayer = (function() {
     playbackSpeedControl.addEventListener('input', handleSpeedChange);
     gainControl.addEventListener('input', handleGainChange);
 
-    // Enable seeking via clicks on the canvases
+    // Enable seeking by clicking on either canvas.
     [waveformCanvas, spectrogramCanvas].forEach(canvas => {
       canvas.addEventListener('click', handleCanvasClick);
     });
 
-    // Audio element event listeners
     audioEl.addEventListener('play', () => { isPlaying = true; playPauseButton.textContent = 'Pause'; });
     audioEl.addEventListener('pause', () => { isPlaying = false; playPauseButton.textContent = 'Play'; });
     audioEl.addEventListener('ended', () => { isPlaying = false; playPauseButton.textContent = 'Play'; });
@@ -99,19 +88,14 @@ const AudioPlayer = (function() {
     audioEl.addEventListener('loadedmetadata', updateUI);
     audioEl.addEventListener('durationchange', updateUI);
 
-    // Keyboard shortcuts
     document.addEventListener('keydown', handleKeyDown);
   }
 
-  /**
-   * Initializes the AudioContext and GainNode (if not already initialized).
-   */
   function setupAudioContext() {
     if (!audioCtx) {
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         gainNode = audioCtx.createGain();
-        // Use the current gainControl value (range 1 to 5)
         gainNode.gain.value = parseFloat(gainControl.value);
         gainNode.connect(audioCtx.destination);
         console.log("AudioContext and GainNode created.");
@@ -122,9 +106,6 @@ const AudioPlayer = (function() {
     }
   }
 
-  /**
-   * Connects the audio element to the Web Audio graph (audio element -> GainNode -> destination).
-   */
   function connectAudioElementSource() {
     if (!audioCtx || !audioEl.src || mediaSource) return;
     try {
@@ -141,10 +122,6 @@ const AudioPlayer = (function() {
   // == FILE LOADING & PROCESSING ==
   // =============================================
 
-  /**
-   * Handles the file input change event: loads the file, decodes audio data,
-   * and triggers visualization computation and drawing.
-   */
   async function handleFileLoad(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -153,18 +130,15 @@ const AudioPlayer = (function() {
     fileInfo.textContent = `File: ${file.name}`;
     decodedBuffer = null;
     resetUI();
-    cachedSpectrogramCanvas = null; // Clear any previous spectrogram cache
+    cachedSpectrogramCanvas = null;
 
-    // Set up the <audio> element for playback
     const objectURL = URL.createObjectURL(file);
     audioEl.src = objectURL;
     audioEl.load();
     connectAudioElementSource();
 
-    // Remove focus from file input (prevents spacebar re-trigger)
     if (fileInput) fileInput.blur();
 
-    // Show spinner and clear canvases
     spectrogramSpinner.style.display = 'inline';
     waveformCanvas.getContext('2d').clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
     spectrogramCanvas.getContext('2d').clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
@@ -236,8 +210,7 @@ const AudioPlayer = (function() {
   }
 
   /**
-   * Handles gain (volume) changes.
-   * Note: This controls playback volume within the browser only and cannot affect OS volume.
+   * Updates gain based on slider; note this only affects browser playback.
    */
   function handleGainChange() {
     const val = parseFloat(gainControl.value);
@@ -314,7 +287,6 @@ const AudioPlayer = (function() {
     jumpBackButton.disabled = false;
     jumpForwardButton.disabled = false;
     playbackSpeedControl.disabled = false;
-    // Gain control remains enabled always.
   }
 
   function disableControls() {
@@ -329,16 +301,16 @@ const AudioPlayer = (function() {
   // =============================================
 
   /**
-   * Orchestrates computing and drawing both waveform and spectrogram.
-   * Waveform is computed and rendered synchronously.
-   * Spectrogram drawing is performed asynchronously in chunks and cached.
+   * Computes and draws both the waveform and spectrogram.
+   * The waveform is computed and drawn synchronously;
+   * the spectrogram is drawn asynchronously and cached.
    */
   function computeAndDrawVisuals() {
     if (!decodedBuffer) return;
     console.log("Computing visualizations...");
     console.time("Visualization Computation");
 
-    // Ensure canvases are properly sized
+    // Ensure canvases are sized correctly.
     resizeCanvases(false);
 
     const waveformWidth = waveformCanvas.width;
@@ -359,7 +331,6 @@ const AudioPlayer = (function() {
 
     if (spectrogramData && spectrogramData.length > 0) {
       console.time("Spectrogram draw (async)");
-      // Show spinner during async drawing
       spectrogramSpinner.style.display = 'inline';
       drawSpectrogramAsync(spectrogramData, spectrogramCanvas, decodedBuffer.sampleRate)
         .then(() => {
@@ -417,7 +388,7 @@ const AudioPlayer = (function() {
   }
 
   /**
-   * Draws waveform data onto the provided canvas.
+   * Draws the computed waveform onto a canvas.
    */
   function drawWaveform(waveformData, canvas) {
     const ctx = canvas.getContext('2d');
@@ -450,8 +421,8 @@ const AudioPlayer = (function() {
   }
 
   /**
-   * Computes spectrogram data using the provided FFT.
-   * Returns an array of Float32Array (one per time slice).
+   * Computes spectrogram data using FFT.
+   * Returns an array of Float32Array, one per time slice.
    */
   function computeSpectrogram(buffer, fftSize, targetSlices) {
     if (typeof FFT === 'undefined') {
@@ -506,28 +477,30 @@ const AudioPlayer = (function() {
   }
 
   /**
-   * Asynchronously draws the spectrogram on an offscreen canvas in chunks.
-   * Once complete, caches the offscreen canvas for fast redraws (e.g., on resize).
+   * Asynchronously draws the spectrogram onto an offscreen canvas.
+   * This implementation pre-creates a single ImageData for the entire canvas and
+   * updates it column by column, then caches the result for fast redraws.
    */
   function drawSpectrogramAsync(spectrogramData, canvas, sampleRate) {
     return new Promise(resolve => {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Create an offscreen canvas to draw the spectrogram once.
+      // Offscreen canvas for drawing the spectrogram.
       const offscreen = document.createElement('canvas');
       offscreen.width = canvas.width;
       offscreen.height = canvas.height;
       const offCtx = offscreen.getContext('2d');
 
       const numSlices = spectrogramData.length;
-      const sliceWidth = canvas.width / numSlices;
-      const height = canvas.height;
+      // We'll assume one pixel per time slice horizontally.
+      const width = offscreen.width;
+      const height = offscreen.height;
       const numBins = spectrogramData[0].length;
       const nyquist = sampleRate / 2;
       const maxBinIndex = Math.min(numBins - 1, Math.floor((SPECTROGRAM_MAX_FREQ / nyquist) * numBins));
 
-      // Compute global dB range for normalization.
+      // Compute the global dB range for normalization.
       const dbThreshold = -60;
       let maxDb = -100;
       for (let i = 0; i < numSlices; i++) {
@@ -541,7 +514,11 @@ const AudioPlayer = (function() {
       const minDb = dbThreshold;
       const dbRange = Math.max(1, maxDb - minDb);
 
-      // Viridis colormap function (as used in the original code).
+      // Pre-create a single ImageData for the offscreen canvas.
+      const fullImageData = offCtx.createImageData(width, height);
+      const data = fullImageData.data;
+
+      // Viridis colormap function returns [r, g, b].
       function viridisColor(t) {
         const colors = [
           { t: 0.0, r: 68, g: 1, b: 84 }, { t: 0.1, r: 72, g: 40, b: 120 },
@@ -566,19 +543,18 @@ const AudioPlayer = (function() {
         const r = Math.round(c1.r + ratio * (c2.r - c1.r));
         const g = Math.round(c1.g + ratio * (c2.g - c1.g));
         const b = Math.round(c1.b + ratio * (c2.b - c1.b));
-        return `rgb(${r},${g},${b})`;
+        return [r, g, b];
       }
 
       let currentSlice = 0;
-      const chunkSize = 20; // Number of slices to process per animation frame
+      const chunkSize = 20; // Process 20 slices per animation frame.
 
       function drawChunk() {
         const startSlice = currentSlice;
         for (; currentSlice < startSlice + chunkSize && currentSlice < numSlices; currentSlice++) {
-          const x = currentSlice * sliceWidth;
+          // Map the current slice to an x-coordinate.
+          const x = currentSlice; // One pixel per slice horizontally.
           const magnitudes = spectrogramData[currentSlice];
-          const sliceImageData = offCtx.createImageData(1, height);
-          const sliceData = sliceImageData.data;
           for (let y = 0; y < height; y++) {
             const freqRatio = (height - 1 - y) / (height - 1);
             const logFreqRatio = Math.pow(freqRatio, 2.5);
@@ -587,28 +563,24 @@ const AudioPlayer = (function() {
             const db = 20 * Math.log10(magnitude + 1e-9);
             const clampedDb = Math.max(minDb, db);
             const normValue = (clampedDb - minDb) / dbRange;
-            const color = viridisColor(normValue);
-            const rgb = color.match(/\d+/g);
-            if (rgb && rgb.length === 3) {
-              const offset = y * 4;
-              sliceData[offset] = parseInt(rgb[0], 10);
-              sliceData[offset + 1] = parseInt(rgb[1], 10);
-              sliceData[offset + 2] = parseInt(rgb[2], 10);
-              sliceData[offset + 3] = 255;
-            }
+            const [r, g, b] = viridisColor(normValue);
+            const index = (y * width + x) * 4;
+            data[index] = r;
+            data[index + 1] = g;
+            data[index + 2] = b;
+            data[index + 3] = 255;
           }
-          offCtx.putImageData(sliceImageData, Math.round(x), 0);
-
-          // Update the progress indicator on the spectrogram canvas
-          if (spectrogramProgressIndicator) {
-            const canvasWidth = canvas.clientWidth;
-            spectrogramProgressIndicator.style.left = (currentSlice / numSlices * canvasWidth) + "px";
-          }
+        }
+        // Update the offscreen canvas.
+        offCtx.putImageData(fullImageData, 0, 0);
+        // Update progress indicator.
+        if (spectrogramProgressIndicator) {
+          const canvasWidth = canvas.clientWidth;
+          spectrogramProgressIndicator.style.left = (currentSlice / numSlices * canvasWidth) + "px";
         }
         if (currentSlice < numSlices) {
           requestAnimationFrame(drawChunk);
         } else {
-          // When done, cache the offscreen canvas and draw it to the main canvas
           cachedSpectrogramCanvas = offscreen;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
@@ -625,8 +597,9 @@ const AudioPlayer = (function() {
   // =============================================
 
   /**
-   * Adjusts the internal canvas sizes to match their displayed size.
-   * On resizing, if the spectrogram is cached, scales the cached image instead of recomputing.
+   * Adjusts canvas sizes to match their displayed size.
+   * On resize, the spectrogram is redrawn from its cached image,
+   * and the waveform is recomputed (since it's fast).
    */
   function resizeCanvases(redraw = true) {
     let resized = false;
@@ -642,14 +615,18 @@ const AudioPlayer = (function() {
         resized = true;
       }
     });
-    // If the spectrogram was already computed, simply scale the cached image.
-    if (cachedSpectrogramCanvas && spectrogramCanvas) {
-      const specCtx = spectrogramCanvas.getContext('2d');
-      specCtx.clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
-      specCtx.drawImage(cachedSpectrogramCanvas, 0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
-    } else if (decodedBuffer && resized && redraw) {
-      // Otherwise, recompute and redraw visuals if needed.
-      computeAndDrawVisuals();
+    if (decodedBuffer && resized && redraw) {
+      // Always redraw waveform on resize.
+      const waveformData = computeWaveformData(decodedBuffer, waveformCanvas.width);
+      drawWaveform(waveformData, waveformCanvas);
+      // For spectrogram, if we have a cached version, scale it.
+      if (cachedSpectrogramCanvas && spectrogramCanvas) {
+        const specCtx = spectrogramCanvas.getContext('2d');
+        specCtx.clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
+        specCtx.drawImage(cachedSpectrogramCanvas, 0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
+      } else {
+        computeAndDrawVisuals();
+      }
     } else if (resized) {
       updateUI();
     }
@@ -685,7 +662,7 @@ const AudioPlayer = (function() {
   };
 })();
 
-// Global execution: initialize the player when the DOM is ready.
+// Initialize the player once the DOM is ready.
 document.addEventListener('DOMContentLoaded', AudioPlayer.init);
 
 // --- END OF FILE player.js ---
