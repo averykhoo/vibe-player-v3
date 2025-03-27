@@ -1,163 +1,60 @@
 // --- START OF FILE player.js ---
-
-// Wrap everything in an IIFE (Immediately Invoked Function Expression)
-// to avoid polluting the global scope and create a private scope.
 const AudioPlayer = (function() {
     'use strict';
 
-
-
-// === VAD Wrapper + Speech Detection ===
-// fvad.js wrapper
-// WebAssembly-based VAD (fvad.wasm must be present)
-const FvadWrapper = (function() {
-  let fvadModule = null;
-  let vadPtr = null;
-
-  async function init(wasmPath = 'fvad.wasm') {
-    fvadModule = await fvad({ locateFile: () => wasmPath });
-    vadPtr = fvadModule._fvad_new();
-    fvadModule._fvad_set_sample_rate(vadPtr, 16000);
-    fvadModule._fvad_set_mode(vadPtr, 3); // Aggressiveness: 0–3
-  }
-
-  function destroy() {
-    if (fvadModule && vadPtr) {
-      fvadModule._fvad_free(vadPtr);
-      vadPtr = null;
-    }
-  }
-
-  function isSpeech(int16Frame) {
-    if (!fvadModule || !vadPtr) return 0;
-    const numBytes = int16Frame.length * int16Frame.BYTES_PER_ELEMENT;
-    const ptr = fvadModule._malloc(numBytes);
-    fvadModule.HEAP16.set(int16Frame, ptr >> 1);
-    const result = fvadModule._fvad_process(vadPtr, ptr, int16Frame.length);
-    fvadModule._free(ptr);
-    return result;
-  }
-
-  return {
-    init,
-    destroy,
-    isSpeech
-  };
-})();
-
-
-/**
- * Converts an AudioBuffer to 16kHz mono Int16 PCM.
- */
-function convertAudioBufferToPCM16k(audioBuffer) {
-    const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
-    const src = offlineCtx.createBufferSource();
-    src.buffer = audioBuffer;
-    src.connect(offlineCtx.destination);
-    src.start();
-    return offlineCtx.startRendering().then(rendered => {
-        const float32 = rendered.getChannelData(0);
-        const int16 = new Int16Array(float32.length);
-        for (let i = 0; i < float32.length; i++) {
-            let s = Math.max(-1, Math.min(1, float32[i]));
-            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        return int16;
-    });
-}
-
-/**
- * Runs VAD over PCM data and returns regions with {start, end} in seconds.
- */
-async function detectSpeechRegions(audioBuffer) {
-    await FvadWrapper.init();
-    const pcm = await convertAudioBufferToPCM16k(audioBuffer);
-    const sampleRate = 16000;
-    const frameSize = 320;
-    const frameDuration = frameSize / sampleRate;
-    const regions = [];
-    let currentSpeech = null;
-
-    for (let i = 0; i < pcm.length; i += frameSize) {
-        const frame = pcm.subarray(i, i + frameSize);
-        if (frame.length < frameSize) break;
-        const speech = FvadWrapper.isSpeech(frame) === 1;
-        const time = i / sampleRate;
-
-        if (speech) {
-            if (!currentSpeech) {
-                currentSpeech = { start: time };
+    /**
+     * Converts an AudioBuffer to 16kHz mono Int16 PCM.
+     */
+    function convertAudioBufferToPCM16k(audioBuffer) {
+        const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+        const src = offlineCtx.createBufferSource();
+        src.buffer = audioBuffer;
+        src.connect(offlineCtx.destination);
+        src.start();
+        return offlineCtx.startRendering().then(rendered => {
+            const float32 = rendered.getChannelData(0);
+            const int16 = new Int16Array(float32.length);
+            for (let i = 0; i < float32.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32[i]));
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
-        } else {
-            if (currentSpeech) {
-                currentSpeech.end = time;
-                regions.push(currentSpeech);
-                currentSpeech = null;
-            }
-        }
+            return int16;
+        });
     }
 
-    if (currentSpeech) {
-        currentSpeech.end = pcm.length / sampleRate;
-        regions.push(currentSpeech);
-    }
-
-    return regions;
-}
-
-
-// =============================================
+    // =============================================
     // == MODULE SCOPE VARIABLES & CONFIGURATION ==
     // =============================================
-
-    // --- DOM Element References ---
     let fileInput, fileInfo, playPauseButton, jumpBackButton, jumpForwardButton,
         jumpTimeInput, playbackSpeedControl, speedValueDisplay, gainControl,
         gainValueDisplay, timeDisplay, waveformCanvas, spectrogramCanvas,
         spectrogramSpinner, waveformProgressBar, waveformProgressIndicator,
         spectrogramProgressBar, spectrogramProgressIndicator, audioEl;
 
-    // --- Web Audio API State ---
     let audioCtx = null;
     let gainNode = null;
-    let mediaSource = null; // Source node for the <audio> element
-
-    // --- Playback State & Data ---
-    let decodedBuffer = null; // Stores the full audio buffer for visualization
-    let isPlaying = false; // Simple flag, mirrors audioEl.paused roughly
-
-    // --- Visualization Constants ---
-    const WAVEFORM_HEIGHT_SCALE = 0.8; // How much of canvas height to use for waveform drawing
-    const SPECTROGRAM_FFT_SIZE = 1024; // Power of 2 for FFT. Affects frequency resolution.
-    const SPECTROGRAM_MAX_FREQ = 16000; // Maximum frequency (Hz) to display
-    // Fixed resolution for spectrogram computation – we always compute 2048 slices
-    // regardless of the current canvas width. This offscreen image is then scaled.
+    let mediaSource = null;
+    let decodedBuffer = null;
+    let isPlaying = false;
+    const WAVEFORM_HEIGHT_SCALE = 0.8;
+    const SPECTROGRAM_FFT_SIZE = 1024;
+    const SPECTROGRAM_MAX_FREQ = 16000;
     const SPEC_FIXED_WIDTH = 2048;
-
-    // Cached offscreen spectrogram image for fast redraws on resize.
     let cachedSpectrogramCanvas = null;
 
     // =============================================
     // == INITIALIZATION & SETUP ==
     // =============================================
-
-    /**
-     * Initializes the audio player, gets DOM elements, sets up event listeners.
-     * Should be called once the DOM is ready.
-     */
     async function init() {
         console.log("AudioPlayer initializing...");
         assignDOMElements();
         setupEventListeners();
-        setupAudioContext(); // Setup context and gain node early
+        setupAudioContext();
         resizeCanvases(); // Initial canvas size calculation
         window.addEventListener('resize', resizeCanvases); // Handle window resize
         console.log("AudioPlayer initialized.");
     }
 
-    /**
-     * Gets references to all necessary DOM elements.
-     */
     function assignDOMElements() {
         fileInput = document.getElementById('audioFile');
         fileInfo = document.getElementById('fileInfo');
@@ -180,9 +77,6 @@ async function detectSpeechRegions(audioBuffer) {
         audioEl = document.getElementById('player');
     }
 
-    /**
-     * Sets up all event listeners for UI controls and the audio element.
-     */
     function setupEventListeners() {
         fileInput.addEventListener('change', handleFileLoad);
         playPauseButton.addEventListener('click', togglePlayPause);
@@ -191,33 +85,26 @@ async function detectSpeechRegions(audioBuffer) {
         playbackSpeedControl.addEventListener('input', handleSpeedChange);
         gainControl.addEventListener('input', handleGainChange);
 
-        // Attach click listeners to canvases for seeking
         [waveformCanvas, spectrogramCanvas].forEach(canvas => {
              canvas.addEventListener('click', handleCanvasClick);
         });
 
-        // Audio element event listeners
         audioEl.addEventListener('play', () => { isPlaying = true; playPauseButton.textContent = 'Pause'; });
         audioEl.addEventListener('pause', () => { isPlaying = false; playPauseButton.textContent = 'Play'; });
         audioEl.addEventListener('ended', () => { isPlaying = false; playPauseButton.textContent = 'Play'; });
         audioEl.addEventListener('timeupdate', updateUI);
         audioEl.addEventListener('loadedmetadata', updateUI);
         audioEl.addEventListener('durationchange', updateUI);
-
-        // Keyboard shortcuts
         document.addEventListener('keydown', handleKeyDown);
     }
 
-    /**
-     * Initializes the AudioContext and GainNode if they don't exist.
-     */
     function setupAudioContext() {
         if (!audioCtx) {
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 gainNode = audioCtx.createGain();
-                gainNode.gain.value = parseFloat(gainControl.value); // Set initial gain
-                gainNode.connect(audioCtx.destination); // Connect gain to output
+                gainNode.gain.value = parseFloat(gainControl.value);
+                gainNode.connect(audioCtx.destination);
                 console.log("AudioContext and GainNode created.");
             } catch (e) {
                 console.error("Web Audio API is not supported by this browser.", e);
@@ -226,59 +113,41 @@ async function detectSpeechRegions(audioBuffer) {
         }
     }
 
-    /**
-     * Connects the audio element to the Web Audio graph (Source -> Gain -> Destination).
-     * Should be called after the audio element has a valid src.
-     */
     function connectAudioElementSource() {
          if (!audioCtx || !audioEl.src || mediaSource) {
-             // Don't reconnect if already connected, no source, or context missing
              return;
          }
          try {
-             // Resume context if suspended (often needed after user interaction)
              if (audioCtx.state === 'suspended') {
                  audioCtx.resume();
              }
              mediaSource = audioCtx.createMediaElementSource(audioEl);
-             mediaSource.connect(gainNode); // Connect source to gain
+             mediaSource.connect(gainNode);
              console.log("Audio element connected to Web Audio graph.");
          } catch (e) {
               console.error("Error connecting audio element source:", e);
          }
     }
 
-    // =============================================
-    // == FILE LOADING & PROCESSING ==
-    // =============================================
-
-    /**
-     * Handles the file input change event. Loads the file, sets up the audio element,
-     * decodes audio for visualization, and triggers visualization rendering.
-     */
     async function handleFileLoad(e) {
         const file = e.target.files[0];
         if (!file) return;
 
         console.log("File selected:", file.name);
         fileInfo.textContent = `File: ${file.name}`;
-        decodedBuffer = null; // Reset previous buffer
-        resetUI(); // Reset controls and display
-        cachedSpectrogramCanvas = null; // Clear cached spectrogram
+        decodedBuffer = null;
+        resetUI();
+        cachedSpectrogramCanvas = null;
 
-        // 1. Set up the <audio> element for playback
         const objectURL = URL.createObjectURL(file);
         audioEl.src = objectURL;
-        audioEl.load(); // Important to load the new source
+        audioEl.load();
 
-        // Connect to gain node after setting src
         connectAudioElementSource();
 
-        // Remove focus from file input (prevents spacebar re-trigger)
-        if(fileInput) fileInput.blur();
+        if (fileInput) fileInput.blur();
 
-        // 2. Decode the same file data for visualizations
-        spectrogramSpinner.style.display = 'inline'; // Show spinner
+        spectrogramSpinner.style.display = 'inline';
         waveformCanvas.getContext('2d').clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
         spectrogramCanvas.getContext('2d').clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
 
@@ -292,30 +161,22 @@ async function detectSpeechRegions(audioBuffer) {
             console.log(`Audio decoded: ${decodedBuffer.duration.toFixed(2)}s, ${decodedBuffer.sampleRate}Hz`);
 
             enableControls();
-            computeAndDrawVisuals(); // Compute and draw waveform and spectrogram
-
+            computeAndDrawVisuals();
         } catch (err) {
             console.error('Error processing audio file:', err);
             fileInfo.textContent = `Error processing file: ${err.message || err}`;
             alert(`Could not process audio file: ${err.message || err}`);
             disableControls();
         } finally {
-            spectrogramSpinner.style.display = 'none'; // Hide spinner
+            spectrogramSpinner.style.display = 'none';
         }
     }
 
-    // =============================================
-    // == PLAYBACK CONTROLS ==
-    // =============================================
-
     function togglePlayPause() {
-        if (!audioEl.src || audioEl.readyState < 1) return; // Ensure src and metadata loaded
-
-        // Resume AudioContext if suspended
+        if (!audioEl.src || audioEl.readyState < 1) return;
         if (audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
-
         if (audioEl.paused) {
             audioEl.play().catch(e => console.error("Error playing audio:", e));
         } else {
@@ -349,25 +210,21 @@ async function detectSpeechRegions(audioBuffer) {
         const val = parseFloat(playbackSpeedControl.value);
         speedValueDisplay.textContent = val.toFixed(2) + "x";
         audioEl.playbackRate = val;
-        // Ensure pitch is preserved
         audioEl.preservesPitch = true;
-        audioEl.mozPreservesPitch = true; // Firefox legacy
+        audioEl.mozPreservesPitch = true;
     }
 
     function handleGainChange() {
         const val = parseFloat(gainControl.value);
         gainValueDisplay.textContent = val.toFixed(2) + "x";
         if (gainNode && audioCtx) {
-            // Smooth gain change using setValueAtTime
             gainNode.gain.setValueAtTime(val, audioCtx.currentTime);
         }
     }
 
     function handleKeyDown(e) {
-        // Avoid interfering with text inputs
         if (e.target.tagName === 'INPUT' && e.target.type !== 'range' && e.target.type !== 'number') return;
         if (!audioEl.src || isNaN(audioEl.duration)) return;
-
         let handled = false;
         switch (e.code) {
             case 'Space':
@@ -385,9 +242,8 @@ async function detectSpeechRegions(audioBuffer) {
                  handled = true;
                 break;
         }
-
         if (handled) {
-            e.preventDefault(); // Prevent default scrolling/space behavior
+            e.preventDefault();
         }
     }
 
@@ -395,13 +251,6 @@ async function detectSpeechRegions(audioBuffer) {
         return parseFloat(jumpTimeInput.value) || 5;
     }
 
-    // =============================================
-    // == UI UPDATE & STATE MANAGEMENT ==
-    // =============================================
-
-    /**
-     * Updates the time display and progress indicators based on audio element state.
-     */
     function updateUI() {
         if (!audioEl.src || isNaN(audioEl.duration) || audioEl.duration === 0) {
             timeDisplay.textContent = "0:00 / 0:00";
@@ -409,12 +258,10 @@ async function detectSpeechRegions(audioBuffer) {
             if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
             return;
         }
-
         const currentTime = audioEl.currentTime;
         const duration = audioEl.duration;
         const fraction = duration > 0 ? currentTime / duration : 0;
         timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
-
         if (waveformProgressIndicator && waveformCanvas) {
             const waveformCanvasWidth = waveformCanvas.clientWidth;
             waveformProgressIndicator.style.left = (fraction * waveformCanvasWidth) + "px";
@@ -425,72 +272,42 @@ async function detectSpeechRegions(audioBuffer) {
         }
     }
 
-    /**
-     * Resets UI elements to their initial state (before file load).
-     */
-     function resetUI() {
+    function resetUI() {
          playPauseButton.textContent = 'Play';
          timeDisplay.textContent = "0:00 / 0:00";
          if (waveformProgressIndicator) waveformProgressIndicator.style.left = "0px";
          if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
-         disableControls(); // Disable playback controls until file is loaded and decoded
-     }
+         disableControls();
+    }
 
-     /** Enable playback controls */
-     function enableControls() {
+    function enableControls() {
           playPauseButton.disabled = false;
           jumpBackButton.disabled = false;
           jumpForwardButton.disabled = false;
           playbackSpeedControl.disabled = false;
-          // Gain control remains enabled at all times.
-     }
-     /** Disable playback controls (except volume) */
-      function disableControls() {
+    }
+    function disableControls() {
           playPauseButton.disabled = true;
           jumpBackButton.disabled = true;
           jumpForwardButton.disabled = true;
           playbackSpeedControl.disabled = true;
-     }
+    }
 
-    // =============================================
-    // == VISUALIZATION COMPUTATION & DRAWING ==
-    // =============================================
-    // Note: The visualization functions could be moved to a separate module.
-    // They include detailed comments to help readers understand the algorithms.
-
-    /**
-     * Orchestrates computing and drawing both the waveform and spectrogram.
-     * The waveform is computed and drawn synchronously (fast enough),
-     * and the spectrogram is computed at a fixed resolution (SPEC_FIXED_WIDTH)
-     * and drawn asynchronously into an offscreen canvas which is then scaled.
-     */
     async function computeAndDrawVisuals() {
         if (!decodedBuffer) return;
         console.log("Computing visualizations...");
         console.time("Visualization Computation");
-
-        // Ensure canvases have correct dimensions before drawing.
-        // Pass false to avoid triggering a recursive redraw.
         resizeCanvases(false);
-
         const waveformWidth = waveformCanvas.width;
-        // For spectrogram computation, use our fixed resolution.
-        const spectrogramWidth = SPEC_FIXED_WIDTH;
-
-        // --- Waveform ---
         console.time("Waveform compute");
         const waveformData = computeWaveformData(decodedBuffer, waveformWidth);
         console.timeEnd("Waveform compute");
         console.time("Waveform draw");
-        const speechRegions = await detectSpeechRegions(decodedBuffer);
-        drawWaveform(waveformData, waveformCanvas, speechRegions);
+        drawWaveform(waveformData, waveformCanvas);
         console.timeEnd("Waveform draw");
-
-        // --- Spectrogram ---
         console.time("Spectrogram compute");
-        const spectrogramData = computeSpectrogram(decodedBuffer, SPECTROGRAM_FFT_SIZE, spectrogramWidth);
+        const spectrogramData = computeSpectrogram(decodedBuffer, SPECTROGRAM_FFT_SIZE, SPEC_FIXED_WIDTH);
         console.timeEnd("Spectrogram compute");
-
         if (spectrogramData && spectrogramData.length > 0) {
             console.time("Spectrogram draw (async)");
             drawSpectrogramAsync(spectrogramData, spectrogramCanvas, decodedBuffer.sampleRate)
@@ -506,21 +323,14 @@ async function detectSpeechRegions(audioBuffer) {
              specCtx.textAlign = 'center';
              specCtx.fillText("Could not compute spectrogram", spectrogramCanvas.width / 2, spectrogramCanvas.height / 2);
         }
-
         console.timeEnd("Visualization Computation");
         updateUI();
     }
 
-    /**
-     * Computes data points for the waveform.
-     * Returns an array of objects with {min, max} for each horizontal pixel.
-     */
     function computeWaveformData(buffer, targetWidth) {
         if (!buffer || targetWidth <= 0) return [];
-
         const channelCount = buffer.numberOfChannels;
         const bufferLength = buffer.length;
-        // Merge channels by averaging. For mono, use getChannelData(0) directly.
         const sourceData = channelCount > 1 ? new Float32Array(bufferLength) : buffer.getChannelData(0);
         if (channelCount > 1) {
             for (let ch = 0; ch < channelCount; ch++) {
@@ -553,10 +363,7 @@ async function detectSpeechRegions(audioBuffer) {
         return waveform;
     }
 
-    /**
-     * Draws the computed waveform data onto the provided canvas.
-     */
-    function drawWaveform(waveformData, canvas, speechRegions = []) {
+    function drawWaveform(waveformData, canvas) {
         const ctx = canvas.getContext('2d');
         const { width, height } = canvas;
         ctx.clearRect(0, 0, width, height);
@@ -582,35 +389,11 @@ async function detectSpeechRegions(audioBuffer) {
             ctx.lineTo(x, y);
         }
         ctx.closePath();
-
-        const pixelsPerSample = canvas.width / waveformData.length;
-        for (let i = 0; i < waveformData.length; i++) {
-            const x = i * pixelsPerSample;
-            const time = i / waveformData.length * audioEl.duration;
-            const inSpeech = speechRegions.some(r => time >= r.start && time <= r.end);
-            ctx.fillStyle = inSpeech ? 'orange' : '#3455db';
-            const min = waveformData[i].min, max = waveformData[i].max;
-            const y1 = halfHeight - max * scale;
-            const y2 = halfHeight - min * scale;
-            ctx.fillRect(x, y1, 1, y2 - y1);
-        }
-        return;
-
+        ctx.fillStyle = '#3455db';
         ctx.fill();
     }
 
-    /**
-     * Computes spectrogram data using the provided FFT implementation.
-     * This version automatically down-samples or up-samples in time to ensure
-     * the final spectrogram has exactly SPEC_FIXED_WIDTH slices, even for very short files.
-     *
-     * @param {AudioBuffer} buffer The decoded audio buffer.
-     * @param {number} fftSize Power-of-two FFT window size.
-     * @param {number} _targetSlices (Ignored in this version—always use SPEC_FIXED_WIDTH.)
-     * @returns {Array<Float32Array>|null} Array of magnitude arrays, one per final slice.
-     */
     function computeSpectrogram(buffer, fftSize, _targetSlices) {
-        // Check for FFT library
         if (typeof FFT === 'undefined') {
             console.error("FFT constructor not found! Make sure fft.js is loaded before player.js.");
             return null;
@@ -623,30 +406,18 @@ async function detectSpeechRegions(audioBuffer) {
             console.error(`Invalid FFT size: ${fftSize}. Must be a power of two > 1.`);
             return null;
         }
-
-        // We'll always aim for SPEC_FIXED_WIDTH slices in the final spectrogram
-        // but the raw number of frames from the audio might be larger or smaller.
         const targetSlices = SPEC_FIXED_WIDTH;
-
-        // Basic parameters
         const channelData = buffer.getChannelData(0);
         const totalSamples = channelData.length;
-        // 75% overlap by default (hopSize = fftSize/4).
         const hopSize = Math.max(1, Math.floor(fftSize / 4));
-
-        // The total number of frames we can compute if we just step hopSize each time.
         const rawSliceCount = totalSamples < fftSize
             ? 0
             : Math.floor((totalSamples - fftSize) / hopSize) + 1;
-
         if (rawSliceCount <= 0) {
             console.warn("Not enough audio samples for the chosen FFT size and hop size.");
             return [];
         }
-
         console.log(`Spectrogram: fftSize=${fftSize}, rawSliceCount=${rawSliceCount}, hopSize=${hopSize}`);
-
-        // --- 1) Compute the "raw" spectrogram frames from the audio ---
         const fftInstance = new FFT(fftSize);
         const complexBuffer = fftInstance.createComplexArray();
         const windowFunc = hannWindow(fftSize);
@@ -654,8 +425,6 @@ async function detectSpeechRegions(audioBuffer) {
             console.error('Failed to generate Hann window!');
             return null;
         }
-
-        // We'll store all raw frames in rawSpec. Each element is a Float32Array of size (fftSize/2).
         const rawSpec = [];
         for (let i = 0; i < rawSliceCount; i++) {
             const start = i * hopSize;
@@ -665,7 +434,6 @@ async function detectSpeechRegions(audioBuffer) {
                 fftInput[j] = sample * windowFunc[j];
             }
             fftInstance.realTransform(complexBuffer, fftInput);
-
             const magnitudes = new Float32Array(fftSize / 2);
             for (let k = 0; k < fftSize / 2; k++) {
                 const re = complexBuffer[k * 2];
@@ -675,71 +443,53 @@ async function detectSpeechRegions(audioBuffer) {
             }
             rawSpec.push(magnitudes);
         }
-
-        // --- 2) Resample rawSpec to exactly targetSlices frames ---
-        // If rawSpec.length > targetSlices, we'll down-sample.
-        // If rawSpec.length < targetSlices, we'll up-sample by repeating or interpolating frames.
         const finalSpec = new Array(targetSlices);
         const rawCount = rawSpec.length;
-
         if (rawCount === targetSlices) {
-            // Perfect match: no resampling needed
             for (let i = 0; i < rawCount; i++) {
                 finalSpec[i] = rawSpec[i];
             }
         } else {
-            // We'll do a simple nearest-neighbor approach:
-            // Map each finalSpec index to an index in rawSpec via a ratio
-            // ratio = i / (targetSlices - 1) * (rawCount - 1)
-            // Then pick nearest integer.
             for (let i = 0; i < targetSlices; i++) {
-                // Normalized position in [0,1]
                 const t = (targetSlices > 1)
                     ? (i / (targetSlices - 1))
                     : 0;
-                // Corresponding raw index
                 const rawPos = t * (rawCount - 1);
                 const nearest = Math.round(rawPos);
-
-                // Copy the magnitude array so we don't hold references
-                // to the same Float32Array in multiple places.
                 finalSpec[i] = new Float32Array(rawSpec[nearest]);
             }
         }
-
         return finalSpec;
     }
 
-    /**
-     * Asynchronously draws the spectrogram data (exactly SPEC_FIXED_WIDTH frames)
-     * onto an offscreen canvas, then scales it to the main canvas. If the file is very short,
-     * this upsampling approach ensures we fill the entire 2048-pixel width
-     * without thin stripes.
-     */
+    function hannWindow(length) {
+        if (length <= 0) return [];
+        let windowArr = new Array(length);
+        if (length === 1) return [1];
+        const denom = length - 1;
+        for (let i = 0; i < length; i++) {
+            windowArr[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / denom));
+        }
+        return windowArr;
+    }
+
     function drawSpectrogramAsync(spectrogramData, canvas, sampleRate) {
         return new Promise(resolve => {
             const displayCtx = canvas.getContext('2d');
             displayCtx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Create or update an offscreen canvas with fixed width
             const offscreen = document.createElement('canvas');
             offscreen.width = SPEC_FIXED_WIDTH;
             offscreen.height = canvas.height;
             const offCtx = offscreen.getContext('2d');
-
-            const computedSlices = spectrogramData.length; // should match SPEC_FIXED_WIDTH
+            const computedSlices = spectrogramData.length;
             const sliceWidth = offscreen.width / computedSlices;
             const height = offscreen.height;
             const numBins = spectrogramData[0].length;
             const nyquist = sampleRate / 2;
-
-            // Determine max bin index
             const maxBinIndex = Math.min(
                 numBins - 1,
                 Math.floor((SPECTROGRAM_MAX_FREQ / nyquist) * numBins)
             );
-
-            // Find global dB range
             const dbThreshold = -60;
             let maxDb = -100;
             for (let i = 0; i < computedSlices; i++) {
@@ -753,12 +503,8 @@ async function detectSpeechRegions(audioBuffer) {
             const minDb = dbThreshold;
             const dbRange = Math.max(1, maxDb - minDb);
             console.log(`Spectrogram dB range: ${minDb.toFixed(1)} dB to ${maxDb.toFixed(1)} dB`);
-
-            // Pre-create an ImageData buffer for the entire offscreen
             const fullImageData = offCtx.createImageData(offscreen.width, height);
             const data = fullImageData.data;
-
-            // Simple Viridis function (or you can import from the rest of the code)
             function viridisColor(t) {
                 const colors = [
                     { t: 0.0, r: 68, g: 1, b: 84 }, { t: 0.1, r: 72, g: 40, b: 120 },
@@ -785,10 +531,8 @@ async function detectSpeechRegions(audioBuffer) {
                 const b = Math.round(c1.b + ratio * (c2.b - c1.b));
                 return [r, g, b];
             }
-
             let currentSlice = 0;
             const chunkSize = 32;
-
             function drawChunk() {
                 const startSlice = currentSlice;
                 for (; currentSlice < startSlice + chunkSize && currentSlice < computedSlices; currentSlice++) {
@@ -803,7 +547,6 @@ async function detectSpeechRegions(audioBuffer) {
                         const clampedDb = Math.max(minDb, db);
                         const normValue = (clampedDb - minDb) / dbRange;
                         const [r, g, b] = viridisColor(normValue);
-
                         const idx = (Math.floor(x) + y * offscreen.width) * 4;
                         data[idx] = r;
                         data[idx + 1] = g;
@@ -812,22 +555,16 @@ async function detectSpeechRegions(audioBuffer) {
                     }
                 }
                 offCtx.putImageData(fullImageData, 0, 0);
-
-                // Update the progress bar on the displayed canvas
                 if (spectrogramProgressIndicator) {
                     const canvasWidth = canvas.clientWidth;
                     spectrogramProgressIndicator.style.left = (currentSlice / computedSlices * canvasWidth) + "px";
                 }
-
                 if (currentSlice < computedSlices) {
                     requestAnimationFrame(drawChunk);
                 } else {
-                    // Cache the offscreen canvas so we can scale it on resize
                     cachedSpectrogramCanvas = offscreen;
-                    // Draw the offscreen spectrogram scaled to the main canvas
                     displayCtx.clearRect(0, 0, canvas.width, canvas.height);
                     displayCtx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
-
                     if (spectrogramSpinner) spectrogramSpinner.style.display = 'none';
                     resolve();
                 }
@@ -836,15 +573,6 @@ async function detectSpeechRegions(audioBuffer) {
         });
     }
 
-    // =============================================
-    // == CANVAS & WINDOW MANAGEMENT ==
-    // =============================================
-
-    /**
-     * Adjusts the canvas internal buffer sizes to match the CSS display sizes.
-     * On resize, the waveform is recomputed (fast) and the cached spectrogram is scaled.
-     * @param {boolean} [redraw=true] - Whether to trigger a redraw if data exists.
-     */
     async function resizeCanvases(redraw = true) {
         let resized = false;
         [waveformCanvas, spectrogramCanvas].forEach(canvas => {
@@ -860,11 +588,8 @@ async function detectSpeechRegions(audioBuffer) {
             }
         });
         if (decodedBuffer && resized && redraw) {
-            // Redraw waveform (fast) on resize.
             const waveformData = computeWaveformData(decodedBuffer, waveformCanvas.width);
-            const speechRegions = await detectSpeechRegions(decodedBuffer);
-        drawWaveform(waveformData, waveformCanvas, speechRegions);
-            // For spectrogram, if we have a cached offscreen version, scale it.
+            drawWaveform(waveformData, waveformCanvas);
             if (cachedSpectrogramCanvas && spectrogramCanvas) {
                 const specCtx = spectrogramCanvas.getContext('2d');
                 specCtx.clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
@@ -877,12 +602,6 @@ async function detectSpeechRegions(audioBuffer) {
         }
     }
 
-    // =============================================
-    // == UTILITY FUNCTIONS ==
-    // =============================================
-    // Additional utility functions and comments to help readers understand the code.
-
-    /** Formats seconds into MM:SS format. */
     function formatTime(sec) {
         if (isNaN(sec) || sec < 0) sec = 0;
         const minutes = Math.floor(sec / 60);
@@ -890,65 +609,15 @@ async function detectSpeechRegions(audioBuffer) {
         return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
     }
 
-    /** Generates a Hann window array of the given length. */
-    function hannWindow(length) {
-        if (length <= 0) return [];
-        let windowArr = new Array(length);
-        if (length === 1) return [1];
-        const denom = length - 1;
-        for (let i = 0; i < length; i++) {
-            windowArr[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / denom));
-        }
-        return windowArr;
-    }
-
-    /**
-     * Viridis color map implementation.
-     * Converts a normalized value (0 to 1) to an 'rgb(r,g,b)' string.
-     */
-    function viridisColor(t) {
-        const colors = [
-            { t: 0.0, r: 68, g: 1, b: 84 }, { t: 0.1, r: 72, g: 40, b: 120 },
-            { t: 0.2, r: 62, g: 74, b: 137 }, { t: 0.3, r: 49, g: 104, b: 142 },
-            { t: 0.4, r: 38, g: 130, b: 142 }, { t: 0.5, r: 31, g: 155, b: 137 },
-            { t: 0.6, r: 53, g: 178, b: 126 }, { t: 0.7, r: 109, g: 199, b: 104 },
-            { t: 0.8, r: 170, g: 217, b: 70 }, { t: 0.9, r: 235, g: 231, b: 35 },
-            { t: 1.0, r: 253, g: 231, b: 37 }
-        ];
-        t = Math.max(0, Math.min(1, t));
-        let c1 = colors[0];
-        let c2 = colors[colors.length - 1];
-        for (let i = 0; i < colors.length - 1; i++) {
-            if (t >= colors[i].t && t <= colors[i+1].t) {
-                c1 = colors[i];
-                c2 = colors[i+1];
-                break;
-            }
-        }
-        const range = c2.t - c1.t;
-        const ratio = (range === 0) ? 0 : (t - c1.t) / range;
-        const r = Math.round(c1.r + ratio * (c2.r - c1.r));
-        const g = Math.round(c1.g + ratio * (c2.g - c1.g));
-        const b = Math.round(c1.b + ratio * (c2.b - c1.b));
-        return `rgb(${r},${g},${b})`;
-    }
-
-    // --- Removed embedded FFT code here (provided by fft.js) ---
-
-    // =============================================
-    // == PUBLIC INTERFACE ==
-    // =============================================
-    // Expose only the init function to the outside world.
     return {
         init: init
     };
+})();
 
-})(); // End of IIFE
-
-// =============================================
-// == GLOBAL EXECUTION ==
-// =============================================
-// Wait for the DOM to be fully loaded before initializing the player.
-document.addEventListener('DOMContentLoaded', () => { AudioPlayer.init().catch(console.error); });
-
+document.addEventListener('DOMContentLoaded', () => {
+    AudioPlayer.init().catch(console.error);
+    if (typeof SpeechVAD !== 'undefined') {
+        SpeechVAD.init().catch(console.error);
+    }
+});
 // --- END OF FILE player.js ---
