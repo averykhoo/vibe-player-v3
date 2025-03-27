@@ -486,15 +486,19 @@ const AudioPlayer = (function() {
 
     /**
      * Computes spectrogram data using the provided FFT implementation.
-     * To speed up processing, this function computes fewer windows (slices)
-     * by sampling only a subset of available FFT frames. It returns an array of
-     * Float32Array (one per slice) representing magnitude values.
+     * This version automatically down-samples or up-samples in time to ensure
+     * the final spectrogram has exactly SPEC_FIXED_WIDTH slices, even for very short files.
+     *
+     * @param {AudioBuffer} buffer The decoded audio buffer.
+     * @param {number} fftSize Power-of-two FFT window size.
+     * @param {number} _targetSlices (Ignored in this version—always use SPEC_FIXED_WIDTH.)
+     * @returns {Array<Float32Array>|null} Array of magnitude arrays, one per final slice.
      */
-    function computeSpectrogram(buffer, fftSize, targetSlices) {
-         // Ensure the global FFT constructor exists.
+    function computeSpectrogram(buffer, fftSize, _targetSlices) {
+        // Check for FFT library
         if (typeof FFT === 'undefined') {
-             console.error("FFT constructor not found! Make sure fft.js is loaded before player.js.");
-             return null;
+            console.error("FFT constructor not found! Make sure fft.js is loaded before player.js.");
+            return null;
         }
         if (!buffer) {
             console.error("Cannot compute spectrogram without an AudioBuffer.");
@@ -504,44 +508,49 @@ const AudioPlayer = (function() {
             console.error(`Invalid FFT size: ${fftSize}. Must be a power of two > 1.`);
             return null;
         }
-        // Override targetSlices with our fixed width constant.
-        targetSlices = SPEC_FIXED_WIDTH;
 
+        // We'll always aim for SPEC_FIXED_WIDTH slices in the final spectrogram
+        // but the raw number of frames from the audio might be larger or smaller.
+        const targetSlices = SPEC_FIXED_WIDTH;
+
+        // Basic parameters
         const channelData = buffer.getChannelData(0);
         const totalSamples = channelData.length;
-
-        // Calculate hopSize with 75% overlap (fftSize/4)
+        // 75% overlap by default (hopSize = fftSize/4).
         const hopSize = Math.max(1, Math.floor(fftSize / 4));
 
-        // Calculate the number of available FFT frames.
-        const actualSlices = totalSamples < fftSize ? 0 : Math.floor((totalSamples - fftSize) / hopSize) + 1;
-        if (actualSlices <= 0) {
+        // The total number of frames we can compute if we just step hopSize each time.
+        const rawSliceCount = totalSamples < fftSize
+            ? 0
+            : Math.floor((totalSamples - fftSize) / hopSize) + 1;
+
+        if (rawSliceCount <= 0) {
             console.warn("Not enough audio samples for the chosen FFT size and hop size.");
             return [];
         }
-        console.log(`Spectrogram: fftSize=${fftSize}, fixed targetSlices=${targetSlices}, hopSize=${hopSize}, actualSlices=${actualSlices}`);
 
-        // To reduce computation, sample only a subset of FFT frames if there are too many.
-        let desiredSlices = targetSlices;
-        let stepFactor = actualSlices > desiredSlices ? Math.floor(actualSlices / desiredSlices) : 1;
+        console.log(`Spectrogram: fftSize=${fftSize}, rawSliceCount=${rawSliceCount}, hopSize=${hopSize}`);
 
+        // --- 1) Compute the "raw" spectrogram frames from the audio ---
         const fftInstance = new FFT(fftSize);
         const complexBuffer = fftInstance.createComplexArray();
         const windowFunc = hannWindow(fftSize);
         if (!windowFunc || windowFunc.length !== fftSize) {
-             console.error('Failed to generate Hann window!');
-             return null;
+            console.error('Failed to generate Hann window!');
+            return null;
         }
-        const spec = [];
-        // Compute one FFT window every 'stepFactor' frames.
-        for (let i = 0; i < actualSlices; i += stepFactor) {
+
+        // We'll store all raw frames in rawSpec. Each element is a Float32Array of size (fftSize/2).
+        const rawSpec = [];
+        for (let i = 0; i < rawSliceCount; i++) {
             const start = i * hopSize;
             const fftInput = new Array(fftSize);
-            for(let j = 0; j < fftSize; j++) {
+            for (let j = 0; j < fftSize; j++) {
                 const sample = (start + j < totalSamples) ? channelData[start + j] : 0;
                 fftInput[j] = sample * windowFunc[j];
             }
             fftInstance.realTransform(complexBuffer, fftInput);
+
             const magnitudes = new Float32Array(fftSize / 2);
             for (let k = 0; k < fftSize / 2; k++) {
                 const re = complexBuffer[k * 2];
@@ -549,38 +558,73 @@ const AudioPlayer = (function() {
                 const magSq = (re * re + im * im);
                 magnitudes[k] = Math.sqrt(magSq > 0 ? magSq : 0);
             }
-            spec.push(magnitudes);
+            rawSpec.push(magnitudes);
         }
-        return spec;
+
+        // --- 2) Resample rawSpec to exactly targetSlices frames ---
+        // If rawSpec.length > targetSlices, we'll down-sample.
+        // If rawSpec.length < targetSlices, we'll up-sample by repeating or interpolating frames.
+        const finalSpec = new Array(targetSlices);
+        const rawCount = rawSpec.length;
+
+        if (rawCount === targetSlices) {
+            // Perfect match: no resampling needed
+            for (let i = 0; i < rawCount; i++) {
+                finalSpec[i] = rawSpec[i];
+            }
+        } else {
+            // We'll do a simple nearest-neighbor approach:
+            // Map each finalSpec index to an index in rawSpec via a ratio
+            // ratio = i / (targetSlices - 1) * (rawCount - 1)
+            // Then pick nearest integer.
+            for (let i = 0; i < targetSlices; i++) {
+                // Normalized position in [0,1]
+                const t = (targetSlices > 1)
+                    ? (i / (targetSlices - 1))
+                    : 0;
+                // Corresponding raw index
+                const rawPos = t * (rawCount - 1);
+                const nearest = Math.round(rawPos);
+
+                // Copy the magnitude array so we don't hold references
+                // to the same Float32Array in multiple places.
+                finalSpec[i] = new Float32Array(rawSpec[nearest]);
+            }
+        }
+
+        return finalSpec;
     }
 
     /**
-     * Asynchronously draws the computed spectrogram data onto an offscreen canvas
-     * at a fixed resolution (SPEC_FIXED_WIDTH). Once fully rendered, the offscreen canvas
-     * is cached and then scaled to the main spectrogram canvas.
-     * The drawing is done in batches to keep the UI responsive.
+     * Asynchronously draws the spectrogram data (exactly SPEC_FIXED_WIDTH frames)
+     * onto an offscreen canvas, then scales it to the main canvas. If the file is very short,
+     * this upsampling approach ensures we fill the entire 2048-pixel width
+     * without thin stripes.
      */
     function drawSpectrogramAsync(spectrogramData, canvas, sampleRate) {
         return new Promise(resolve => {
             const displayCtx = canvas.getContext('2d');
             displayCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Create an offscreen canvas with fixed width SPEC_FIXED_WIDTH and same height as display.
+            // Create or update an offscreen canvas with fixed width
             const offscreen = document.createElement('canvas');
             offscreen.width = SPEC_FIXED_WIDTH;
             offscreen.height = canvas.height;
             const offCtx = offscreen.getContext('2d');
 
-            const computedSlices = spectrogramData.length;
-            // Calculate the width of each slice in the offscreen image.
+            const computedSlices = spectrogramData.length; // should match SPEC_FIXED_WIDTH
             const sliceWidth = offscreen.width / computedSlices;
             const height = offscreen.height;
             const numBins = spectrogramData[0].length;
             const nyquist = sampleRate / 2;
-            // Determine max bin index based on SPECTROGRAM_MAX_FREQ.
-            const maxBinIndex = Math.min(numBins - 1, Math.floor((SPECTROGRAM_MAX_FREQ / nyquist) * numBins));
 
-            // Compute global dB range for normalization.
+            // Determine max bin index
+            const maxBinIndex = Math.min(
+                numBins - 1,
+                Math.floor((SPECTROGRAM_MAX_FREQ / nyquist) * numBins)
+            );
+
+            // Find global dB range
             const dbThreshold = -60;
             let maxDb = -100;
             for (let i = 0; i < computedSlices; i++) {
@@ -593,13 +637,13 @@ const AudioPlayer = (function() {
             }
             const minDb = dbThreshold;
             const dbRange = Math.max(1, maxDb - minDb);
-            console.log(`Spectrogram dB range: ${minDb.toFixed(1)} dB to ${maxDb.toFixed(1)} dB (Range: ${dbRange.toFixed(1)} dB)`);
+            console.log(`Spectrogram dB range: ${minDb.toFixed(1)} dB to ${maxDb.toFixed(1)} dB`);
 
-            // Pre-create an ImageData object for the entire offscreen canvas.
+            // Pre-create an ImageData buffer for the entire offscreen
             const fullImageData = offCtx.createImageData(offscreen.width, height);
             const data = fullImageData.data;
 
-            // Viridis colormap function returns an 'rgb(r,g,b)' string.
+            // Simple Viridis function (or you can import from the rest of the code)
             function viridisColor(t) {
                 const colors = [
                     { t: 0.0, r: 68, g: 1, b: 84 }, { t: 0.1, r: 72, g: 40, b: 120 },
@@ -624,22 +668,18 @@ const AudioPlayer = (function() {
                 const r = Math.round(c1.r + ratio * (c2.r - c1.r));
                 const g = Math.round(c1.g + ratio * (c2.g - c1.g));
                 const b = Math.round(c1.b + ratio * (c2.b - c1.b));
-                return `rgb(${r},${g},${b})`;
+                return [r, g, b];
             }
 
             let currentSlice = 0;
-            // Process multiple slices per animation frame for speed.
             const chunkSize = 32;
 
             function drawChunk() {
                 const startSlice = currentSlice;
                 for (; currentSlice < startSlice + chunkSize && currentSlice < computedSlices; currentSlice++) {
-                    // Map each slice to an x-coordinate in the offscreen canvas.
                     const x = currentSlice * sliceWidth;
                     const magnitudes = spectrogramData[currentSlice];
-                    // For each vertical pixel, compute color based on the corresponding frequency bin.
                     for (let y = 0; y < height; y++) {
-                        // Use logarithmic mapping for frequency.
                         const freqRatio = (height - 1 - y) / (height - 1);
                         const logFreqRatio = Math.pow(freqRatio, 2.5);
                         const binIndex = Math.min(maxBinIndex, Math.floor(logFreqRatio * maxBinIndex));
@@ -647,33 +687,32 @@ const AudioPlayer = (function() {
                         const db = 20 * Math.log10(magnitude + 1e-9);
                         const clampedDb = Math.max(minDb, db);
                         const normValue = (clampedDb - minDb) / dbRange;
-                        const color = viridisColor(normValue);
-                        const rgb = color.match(/\d+/g);
-                        if (rgb && rgb.length === 3) {
-                            // Determine the pixel index in the full ImageData.
-                            // Fill the entire vertical column for this slice.
-                            const index = (Math.floor(x) + y * offscreen.width) * 4;
-                            data[index] = parseInt(rgb[0], 10);
-                            data[index + 1] = parseInt(rgb[1], 10);
-                            data[index + 2] = parseInt(rgb[2], 10);
-                            data[index + 3] = 255;
-                        }
+                        const [r, g, b] = viridisColor(normValue);
+
+                        const idx = (Math.floor(x) + y * offscreen.width) * 4;
+                        data[idx] = r;
+                        data[idx + 1] = g;
+                        data[idx + 2] = b;
+                        data[idx + 3] = 255;
                     }
                 }
-                // Update the offscreen canvas with current ImageData.
                 offCtx.putImageData(fullImageData, 0, 0);
-                // Update progress indicator on the main spectrogram canvas.
+
+                // Update the progress bar on the displayed canvas
                 if (spectrogramProgressIndicator) {
                     const canvasWidth = canvas.clientWidth;
                     spectrogramProgressIndicator.style.left = (currentSlice / computedSlices * canvasWidth) + "px";
                 }
+
                 if (currentSlice < computedSlices) {
                     requestAnimationFrame(drawChunk);
                 } else {
-                    // When done, cache the offscreen canvas and draw it scaled to the display canvas.
+                    // Cache the offscreen canvas so we can scale it on resize
                     cachedSpectrogramCanvas = offscreen;
+                    // Draw the offscreen spectrogram scaled to the main canvas
                     displayCtx.clearRect(0, 0, canvas.width, canvas.height);
                     displayCtx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
+
                     if (spectrogramSpinner) spectrogramSpinner.style.display = 'none';
                     resolve();
                 }
