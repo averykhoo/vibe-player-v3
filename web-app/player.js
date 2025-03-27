@@ -5,7 +5,108 @@
 const AudioPlayer = (function() {
     'use strict';
 
-    // =============================================
+
+
+// === VAD Wrapper + Speech Detection ===
+// fvad-wrapper.js (inlined into player.js)
+// WebAssembly-based VAD (fvad.wasm must be present)
+const FvadWrapper = (function() {
+  let fvadModule = null;
+  let vadPtr = null;
+
+  async function init(wasmPath = 'fvad.wasm') {
+    fvadModule = await fvad({ locateFile: () => wasmPath });
+    vadPtr = fvadModule._fvad_new();
+    fvadModule._fvad_set_sample_rate(vadPtr, 16000);
+    fvadModule._fvad_set_mode(vadPtr, 2); // Aggressiveness: 0–3
+  }
+
+  function destroy() {
+    if (fvadModule && vadPtr) {
+      fvadModule._fvad_free(vadPtr);
+      vadPtr = null;
+    }
+  }
+
+  function isSpeech(int16Frame) {
+    if (!fvadModule || !vadPtr) return 0;
+    const numBytes = int16Frame.length * int16Frame.BYTES_PER_ELEMENT;
+    const ptr = fvadModule._malloc(numBytes);
+    fvadModule.HEAP16.set(int16Frame, ptr >> 1);
+    const result = fvadModule._fvad_process(vadPtr, ptr, int16Frame.length);
+    fvadModule._free(ptr);
+    return result;
+  }
+
+  return {
+    init,
+    destroy,
+    isSpeech
+  };
+})();
+
+
+/**
+ * Converts an AudioBuffer to 16kHz mono Int16 PCM.
+ */
+function convertAudioBufferToPCM16k(audioBuffer) {
+    const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+    const src = offlineCtx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(offlineCtx.destination);
+    src.start();
+    return offlineCtx.startRendering().then(rendered => {
+        const float32 = rendered.getChannelData(0);
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+            let s = Math.max(-1, Math.min(1, float32[i]));
+            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return int16;
+    });
+}
+
+/**
+ * Runs VAD over PCM data and returns regions with {start, end} in seconds.
+ */
+async function detectSpeechRegions(audioBuffer) {
+    await FvadWrapper.init();
+    const pcm = await convertAudioBufferToPCM16k(audioBuffer);
+    const sampleRate = 16000;
+    const frameSize = 480;
+    const frameDuration = frameSize / sampleRate;
+    const regions = [];
+    let currentSpeech = null;
+
+    for (let i = 0; i < pcm.length; i += frameSize) {
+        const frame = pcm.subarray(i, i + frameSize);
+        if (frame.length < frameSize) break;
+        const speech = FvadWrapper.isSpeech(frame) === 1;
+        const time = i / sampleRate;
+
+        if (speech) {
+            if (!currentSpeech) {
+                currentSpeech = { start: time };
+            }
+        } else {
+            if (currentSpeech) {
+                currentSpeech.end = time;
+                regions.push(currentSpeech);
+                currentSpeech = null;
+            }
+        }
+    }
+
+    if (currentSpeech) {
+        currentSpeech.end = pcm.length / sampleRate;
+        regions.push(currentSpeech);
+    }
+
+    return regions;
+}
+
+
+// =============================================
     // == MODULE SCOPE VARIABLES & CONFIGURATION ==
     // =============================================
 
@@ -44,7 +145,7 @@ const AudioPlayer = (function() {
      * Initializes the audio player, gets DOM elements, sets up event listeners.
      * Should be called once the DOM is ready.
      */
-    function init() {
+    async function init() {
         console.log("AudioPlayer initializing...");
         assignDOMElements();
         setupEventListeners();
@@ -363,7 +464,7 @@ const AudioPlayer = (function() {
      * and the spectrogram is computed at a fixed resolution (SPEC_FIXED_WIDTH)
      * and drawn asynchronously into an offscreen canvas which is then scaled.
      */
-    function computeAndDrawVisuals() {
+    async function computeAndDrawVisuals() {
         if (!decodedBuffer) return;
         console.log("Computing visualizations...");
         console.time("Visualization Computation");
@@ -381,7 +482,8 @@ const AudioPlayer = (function() {
         const waveformData = computeWaveformData(decodedBuffer, waveformWidth);
         console.timeEnd("Waveform compute");
         console.time("Waveform draw");
-        drawWaveform(waveformData, waveformCanvas);
+        const speechRegions = await detectSpeechRegions(decodedBuffer);
+        drawWaveform(waveformData, waveformCanvas, speechRegions);
         console.timeEnd("Waveform draw");
 
         // --- Spectrogram ---
@@ -454,7 +556,7 @@ const AudioPlayer = (function() {
     /**
      * Draws the computed waveform data onto the provided canvas.
      */
-    function drawWaveform(waveformData, canvas) {
+    function drawWaveform(waveformData, canvas, speechRegions = []) {
         const ctx = canvas.getContext('2d');
         const { width, height } = canvas;
         ctx.clearRect(0, 0, width, height);
@@ -480,7 +582,20 @@ const AudioPlayer = (function() {
             ctx.lineTo(x, y);
         }
         ctx.closePath();
-        ctx.fillStyle = '#3455db';
+
+        const pixelsPerSample = canvas.width / waveformData.length;
+        for (let i = 0; i < waveformData.length; i++) {
+            const x = i * pixelsPerSample;
+            const time = i / waveformData.length * audioEl.duration;
+            const inSpeech = speechRegions.some(r => time >= r.start && time <= r.end);
+            ctx.fillStyle = inSpeech ? 'orange' : '#3455db';
+            const min = waveformData[i].min, max = waveformData[i].max;
+            const y1 = halfHeight - max * scale;
+            const y2 = halfHeight - min * scale;
+            ctx.fillRect(x, y1, 1, y2 - y1);
+        }
+        return;
+
         ctx.fill();
     }
 
@@ -730,7 +845,7 @@ const AudioPlayer = (function() {
      * On resize, the waveform is recomputed (fast) and the cached spectrogram is scaled.
      * @param {boolean} [redraw=true] - Whether to trigger a redraw if data exists.
      */
-    function resizeCanvases(redraw = true) {
+    async function resizeCanvases(redraw = true) {
         let resized = false;
         [waveformCanvas, spectrogramCanvas].forEach(canvas => {
             if (!canvas) return;
@@ -747,7 +862,8 @@ const AudioPlayer = (function() {
         if (decodedBuffer && resized && redraw) {
             // Redraw waveform (fast) on resize.
             const waveformData = computeWaveformData(decodedBuffer, waveformCanvas.width);
-            drawWaveform(waveformData, waveformCanvas);
+            const speechRegions = await detectSpeechRegions(decodedBuffer);
+        drawWaveform(waveformData, waveformCanvas, speechRegions);
             // For spectrogram, if we have a cached offscreen version, scale it.
             if (cachedSpectrogramCanvas && spectrogramCanvas) {
                 const specCtx = spectrogramCanvas.getContext('2d');
@@ -833,6 +949,6 @@ const AudioPlayer = (function() {
 // == GLOBAL EXECUTION ==
 // =============================================
 // Wait for the DOM to be fully loaded before initializing the player.
-document.addEventListener('DOMContentLoaded', AudioPlayer.init);
+document.addEventListener('DOMContentLoaded', () => { AudioPlayer.init().catch(console.error); });
 
 // --- END OF FILE player.js ---
