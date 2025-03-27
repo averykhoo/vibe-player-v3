@@ -8,7 +8,7 @@ const AudioPlayer = (function() {
 
 
 // === VAD Wrapper + Speech Detection ===
-// fvad-wrapper.js (inlined into player.js)
+// fvad.js wrapper
 // WebAssembly-based VAD (fvad.wasm must be present)
 const FvadWrapper = (function() {
   let fvadModule = null;
@@ -18,7 +18,7 @@ const FvadWrapper = (function() {
     fvadModule = await fvad({ locateFile: () => wasmPath });
     vadPtr = fvadModule._fvad_new();
     fvadModule._fvad_set_sample_rate(vadPtr, 16000);
-    fvadModule._fvad_set_mode(vadPtr, 2); // Aggressiveness: 0–3
+    fvadModule._fvad_set_mode(vadPtr, 3); // Aggressiveness: 0–3
   }
 
   function destroy() {
@@ -73,7 +73,7 @@ async function detectSpeechRegions(audioBuffer) {
     await FvadWrapper.init();
     const pcm = await convertAudioBufferToPCM16k(audioBuffer);
     const sampleRate = 16000;
-    const frameSize = 480;
+    const frameSize = 320;
     const frameDuration = frameSize / sampleRate;
     const regions = [];
     let currentSpeech = null;
