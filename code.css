@@ -1,0 +1,136 @@
+body {
+  font-family: sans-serif;
+  margin: 20px;
+  background-color: #f4f4f4; /* Slightly different background */
+  color: #333;
+}
+
+h1, h2, h3 {
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+  margin-top: 1.5em;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 1.5em;
+}
+
+/* Sections for better grouping */
+section {
+  background-color: #fff;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#controls button, #controls input[type=number] {
+  margin: 0 5px;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+#controls .control-group {
+    margin: 10px 0;
+    display: flex;
+    align-items: center;
+}
+#controls label {
+    margin-right: 10px;
+    min-width: 50px; /* Align labels */
+}
+#controls input[type=range] {
+    flex-grow: 1;
+    margin: 0 10px;
+}
+
+.visualization {
+  margin-bottom: 20px;
+  position: relative; /* Needed for absolute positioning of progress bar */
+}
+
+.visualization h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  display: flex; /* Align spinner */
+  justify-content: space-between; /* Align spinner */
+  align-items: center; /* Align spinner */
+}
+
+canvas {
+  background-color: #fff; /* White background for canvas */
+  border: 1px solid #ccc;
+  display: block;
+  width: 100%;
+  height: 120px; /* Default height, adjust as needed */
+  cursor: crosshair; /* Indicate click-to-seek */
+}
+
+#spectrogramCanvas {
+  height: 200px; /* Taller spectrogram */
+}
+
+
+/* --- Progress Bar Overlay --- */
+#progressBar {
+  position: absolute; /* Position over the waveform canvas */
+  bottom: 15px; /* Adjust positioning relative to bottom padding of section */
+  left: 15px; /* Adjust positioning relative to left padding of section */
+  right: 15px;/* Adjust positioning relative to right padding of section */
+  height: 120px; /* Match waveform canvas height */
+  pointer-events: none; /* Allow clicks to pass through to canvas */
+  border: 1px solid transparent; /* Match canvas border width for alignment */
+  box-sizing: border-box;
+}
+
+#progressIndicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0; /* Starts at left */
+  width: 2px;
+  background: rgba(255, 0, 0, 0.7); /* Semi-transparent red */
+  pointer-events: none; /* Allow clicks to pass through */
+}
+/* --- End Progress Bar --- */
+
+
+.spinner {
+  display: none; /* Hidden by default */
+  font-size: 14px;
+  color: #555;
+  font-weight: normal;
+}
+
+#timeDisplay {
+  margin: 15px 0 5px 0;
+  font-weight: bold;
+  font-size: 14px;
+  text-align: center;
+}
+
+#keybinds {
+  margin-top: 20px;
+}
+
+#keybinds table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#keybinds th, #keybinds td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
+}
+
+#keybinds th {
+  background: #f0f0f0;
+}

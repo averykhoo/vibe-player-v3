@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Audio Player</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <h1>Web Audio Player</h1>
+
+    <section id="file-loader">
+        <h2>Load Audio File</h2>
+        <input type="file" id="audioFile" accept="audio/*">
+        <p id="fileInfo">No file selected.</p>
+    </section>
+
+    <section id="controls">
+        <h2>Controls</h2>
+        <div>
+            <button id="playPause" disabled>Play</button>
+            <button id="jumpBack" disabled>&#9664;&#9664; Back</button> <!-- Rewind symbol -->
+            <input type="number" id="jumpTime" value="5" min="1" step="1" style="width: 40px;">s
+            <button id="jumpForward" disabled>Forward &#9654;&#9654;</button> <!-- Fast forward symbol -->
+        </div>
+        <div class="control-group">
+            <label for="playbackSpeed">Speed:</label>
+            <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
+            <span id="speedValue">1.00x</span>
+        </div>
+        <div class="control-group">
+            <label for="gainControl">Volume:</label>
+            <input type="range" id="gainControl" min="0" max="2" value="1.0" step="0.01">
+            <span id="gainValue">1.00x</span>
+        </div>
+        <div id="timeDisplay">0:00 / 0:00</div>
+    </section>
+
+    <section class="visualization">
+        <h3>Waveform</h3>
+        <canvas id="waveformCanvas"></canvas>
+        <!-- Progress indicator will be overlaid on canvases -->
+        <div id="progressBar">
+             <div id="progressIndicator"></div>
+        </div>
+    </section>
+
+    <section class="visualization">
+        <h3>Spectrogram <span id="spectrogramSpinner" class="spinner">(Computing...)</span></h3>
+        <canvas id="spectrogramCanvas"></canvas>
+    </section>
+
+    <section id="keybinds">
+      <h2>Keyboard Shortcuts</h2>
+      <table>
+        <thead>
+          <tr><th>Key</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Space</td><td>Play / Pause</td></tr>
+          <tr><td>Left Arrow</td><td>Jump Back (by specified seconds)</td></tr>
+          <tr><td>Right Arrow</td><td>Jump Forward (by specified seconds)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Hidden Audio Element for Playback -->
+    <audio id="player" style="display: none;" preload="auto"></audio>
+
+    <!-- Include FFT library first if kept separate -->
+    <!-- <script src="fft.js"></script> -->
+    <script src="player.js" defer></script> <!-- Defer execution until HTML is parsed -->
+
+</body>
+</html>
