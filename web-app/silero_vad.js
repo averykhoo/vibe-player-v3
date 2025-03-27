@@ -3,110 +3,165 @@
 
   /**
    * Analyzes a 16kHz mono Float32Array for speech regions using Silero VAD.
-   * @param {Float32Array} pcmData - The 16kHz mono audio data.
-   * @param {number} sampleRate - Should be 16000.
+   * Runs the ONNX model frame by frame and returns both the initial speech regions
+   * (calculated using provided or default thresholds) and the raw probability
+   * output for each frame, allowing for later recalculation with different thresholds.
+   *
+   * @param {Float32Array} pcmData - The 16kHz mono audio data. Must be Float32Array.
+   * @param {number} sampleRate - The sample rate of pcmData. Must be 16000.
    * @param {object} [options] - Optional VAD parameters.
-   * @param {number} [options.frameSamples=1536] - Samples per VAD frame.
-   * @param {number} [options.positiveSpeechThreshold=0.5] - Probability threshold to start speech.
-   * @param {number} [options.negativeSpeechThreshold=0.35] - Probability threshold to end speech (below this).
-   * @param {number} [options.redemptionFrames=15] - How many non-speech frames to wait before ending region.
-   * @param {string} [options.modelPath="./model/silero_vad.onnx"] - Path to the ONNX model.
-   * @returns {Promise<Array<{start: number, end: number}>>} - Array of speech regions in seconds.
+   * @param {number} [options.frameSamples=1536] - Samples per VAD frame (e.g., 1536 for ~96ms). Silero VAD examples often use smaller sizes like 480 (~30ms). Adjust based on model expectations if known.
+   * @param {number} [options.positiveSpeechThreshold=0.5] - Probability threshold to start or continue speech.
+   * @param {number} [options.negativeSpeechThreshold=0.35] - Probability threshold to consider stopping speech (must be below this). Default is positiveThreshold - 0.15.
+   * @param {number} [options.redemptionFrames=7] - How many consecutive frames below negativeSpeechThreshold are needed to definitively end a speech segment.
+   * @param {string} [options.modelPath="./model/silero_vad.onnx"] - Path to the ONNX model file.
+   * @returns {Promise<object>} - A promise resolving to an object containing:
+   *     - regions: Array<{start: number, end: number}> - Initial speech regions calculated using the thresholds.
+   *     - probabilities: Float32Array - Raw probability output for each processed frame.
+   *     - frameSamples: number - The frame size used.
+   *     - sampleRate: number - The sample rate used (16000).
+   *     - initialPositiveThreshold: number - The positive threshold used for the initial calculation.
+   *     - initialNegativeThreshold: number - The negative threshold used for the initial calculation.
+   *     - redemptionFrames: number - The redemption frames value used.
+   * @throws {Error} - If the Silero VAD model cannot be loaded or run.
    */
-  async function analyzeAudio(pcmData, sampleRate, options = {}) {
+  async function analyzeAudioAndGetProbs(pcmData, sampleRate, options = {}) {
+    // --- Validate Input ---
     if (sampleRate !== 16000) {
-      console.warn(`Silero VAD expects 16000 Hz audio, but received ${sampleRate} Hz. Results may be inaccurate if data wasn't resampled.`);
-      // Proceed anyway, but the model's internal sample rate tensor is fixed at 16k
+      // This is a critical requirement for the pre-trained Silero model.
+      console.error(`Silero VAD requires 16000 Hz audio, but received ${sampleRate} Hz. Analysis aborted. Ensure audio is resampled correctly.`);
+      throw new Error("Silero VAD requires 16000 Hz audio.");
+    }
+    if (!(pcmData instanceof Float32Array)) {
+        console.warn("VAD input data is not a Float32Array. Attempting conversion, but performance may be affected.");
+        try {
+            pcmData = new Float32Array(pcmData);
+        } catch(e) {
+            console.error("Failed to convert VAD input data to Float32Array.", e);
+            throw new Error("VAD input data must be a Float32Array or convertible.");
+        }
     }
     if (!pcmData || pcmData.length === 0) {
-        console.log("VAD: No audio data to analyze.");
-        return [];
+        console.log("VAD: No audio data provided to analyze.");
+        return { // Return empty results structure
+             regions: [], probabilities: new Float32Array(), frameSamples: options.frameSamples || 1536, sampleRate: sampleRate,
+             initialPositiveThreshold: options.positiveSpeechThreshold || 0.5, initialNegativeThreshold: options.negativeSpeechThreshold || 0.35, redemptionFrames: options.redemptionFrames || 7
+        };
     }
 
-    // --- Default VAD Parameters ---
-    const frameSamples = options.frameSamples || 1536; // ~30ms chunks often used (e.g., 480), 1536 is ~96ms
+    // --- VAD Parameters ---
+    // Determine frame size. Common Silero examples use 30ms (480 samples), 60ms (960), 90ms (1440).
+    // The original SpeechDetector used 1536 (~96ms). Let's keep that as default unless overridden.
+    const frameSamples = options.frameSamples || 1536;
     const positiveThreshold = options.positiveSpeechThreshold !== undefined ? options.positiveSpeechThreshold : 0.5;
-    const negativeThreshold = options.negativeSpeechThreshold !== undefined ? options.negativeSpeechThreshold : (positiveThreshold - 0.15); // Default like original speech_detector
-    const redemptionFrames = options.redemptionFrames || 7; // Adjusted redemption frames (can be tuned)
+    // Default negative threshold relative to positive, or use provided value.
+    const negativeThreshold = options.negativeSpeechThreshold !== undefined ? options.negativeSpeechThreshold : (positiveThreshold - 0.15);
+    const redemptionFrames = options.redemptionFrames !== undefined ? options.redemptionFrames : 7; // Can be tuned (e.g., 5-15)
     const modelPath = options.modelPath || "./model/silero_vad.onnx";
-    // minSpeechFrames is implicitly handled by redemption logic now
     // --- End Parameters ---
 
+
+    // --- Load Silero Model ---
     let sileroInstance;
     try {
-        // Create Silero instance directly
-        sileroInstance = await window.Silero.create(sampleRate, modelPath); // Pass sampleRate (should be 16000)
+        // Create Silero instance (loads ONNX model, sets up session).
+        sileroInstance = await global.Silero.create(sampleRate, modelPath); // Pass sampleRate (must be 16000)
     } catch (e) {
         console.error("Failed to create Silero VAD instance:", e);
-        throw new Error("Could not load the Silero VAD model. Ensure model file exists and onnxruntime is loaded.");
+        // Provide a more helpful error message to the user.
+        throw new Error("Could not load the Silero VAD model. Ensure the model file exists at the specified path and onnxruntime-web is loaded correctly (including WASM files).");
     }
+    // --- End Load Model ---
 
-    const speechRegions = [];
-    let inSpeech = false;
-    let regionStart = 0;
-    let regionEnd = 0; // Tracks the end of the *last potential* speech frame
-    let redemptionCounter = 0;
+
+    // --- Process Audio Frames ---
+    const allProbabilities = []; // Array to store raw probability for each frame.
+    const initialRegions = [];   // Array to store speech regions calculated with initial thresholds.
+    let inSpeech = false;        // State variable: currently detecting speech?
+    let regionStart = 0.0;       // Start time of the current potential speech segment.
+    let redemptionCounter = 0;   // Counter for consecutive non-speech frames below negative threshold.
 
     console.log(`VAD analyzing ${pcmData.length} samples with frame size ${frameSamples}...`);
 
-    // Process audio in non-overlapping frames
+    // Iterate through the audio data in non-overlapping frames.
+    // The loop condition ensures we don't try to slice beyond the buffer length.
     for (let i = 0; i <= pcmData.length - frameSamples; i += frameSamples) {
+      // Extract the current frame.
       const frame = pcmData.slice(i, i + frameSamples);
-      // Silero model expects Float32Array
+
+      // Run the Silero VAD model on the frame.
       const probability = await sileroInstance.process(frame);
-      const currentTime = (i + frameSamples) / sampleRate; // Time at the *end* of the current frame
+      allProbabilities.push(probability); // Store the raw probability.
 
+      // Calculate the time corresponding to the *start* and *end* of the current frame.
+      const frameStartTime = i / sampleRate;
+      const frameEndTime = (i + frameSamples) / sampleRate;
+
+      // --- Apply VAD Logic (for initial region calculation) ---
       if (probability >= positiveThreshold) {
-        if (!inSpeech) {
-          inSpeech = true;
-          regionStart = i / sampleRate; // Start time is beginning of this frame
-          // console.log(`Speech Start @ ${regionStart.toFixed(2)}s (prob: ${probability.toFixed(2)})`);
-        }
-        regionEnd = currentTime; // Keep updating potential end time
-        redemptionCounter = 0; // Reset redemption on positive frame
-      } else if (inSpeech) {
-         // Frame is not positive, but we were in speech
-        if (probability < negativeThreshold) {
-          redemptionCounter++;
-          // console.log(`Redemption counter: ${redemptionCounter}/${redemptionFrames} @ ${currentTime.toFixed(2)}s (prob: ${probability.toFixed(2)})`);
-          if (redemptionCounter >= redemptionFrames) {
-            // End of speech detected after redemption period
-            // The actual end was 'redemptionFrames' ago.
-            const actualEnd = (i + frameSamples - (redemptionFrames * frameSamples)) / sampleRate;
-            // Ensure end is not before start (can happen with very short segments + high redemption)
-            const finalEnd = Math.max(regionStart, actualEnd);
-
-            // console.log(`Speech End @ ${finalEnd.toFixed(2)}s`);
-            speechRegions.push({ start: regionStart, end: finalEnd });
-            inSpeech = false;
-            redemptionCounter = 0;
-          } else {
-              // Still in redemption period, keep track of potential end time IF it gets redeemed
-               // regionEnd = currentTime; // DON'T update regionEnd here, it marks the last *positive* frame implicitly
+          // Frame is considered speech.
+          if (!inSpeech) {
+              // Start of a new speech segment.
+              inSpeech = true;
+              regionStart = frameStartTime; // Record start time.
           }
-        } else {
-          // Probability is between negative and positive threshold - extend the speech region
-          regionEnd = currentTime;
-          redemptionCounter = 0; // Reset redemption if we are in the ambiguous zone
-          // console.log(`Speech Extended @ ${currentTime.toFixed(2)}s (prob: ${probability.toFixed(2)})`);
-        }
+          // Reset redemption counter if we detect speech.
+          redemptionCounter = 0;
+      } else if (inSpeech) {
+          // Frame is not considered speech, but we were previously in a speech segment.
+          if (probability < negativeThreshold) {
+              // Probability is below the negative threshold, increment redemption counter.
+              redemptionCounter++;
+              if (redemptionCounter >= redemptionFrames) {
+                  // Redemption threshold met, finalize the speech segment.
+                  // End time calculation: The speech effectively ended 'redemptionFrames' ago.
+                  // The frame that triggered the end is index `i - redemptionFrames + 1`. End time is the START of that frame.
+                  const triggerFrameIndex = i - redemptionFrames + 1;
+                  const actualEnd = (triggerFrameIndex * frameSamples) / sampleRate;
+                  // Ensure end time isn't before start time.
+                  const finalEnd = Math.max(regionStart, actualEnd);
+
+                  initialRegions.push({ start: regionStart, end: finalEnd });
+                  inSpeech = false; // No longer in speech.
+                  redemptionCounter = 0; // Reset counter.
+              }
+          } else {
+              // Probability is between negative and positive thresholds.
+              // Treat as continuation of speech (reset redemption counter).
+              redemptionCounter = 0;
+          }
       }
       // If not inSpeech and probability < positiveThreshold, do nothing.
+      // --- End VAD Logic ---
     }
 
-    // Finalize region if still in speech at the end of the audio
+    // If still 'inSpeech' after the loop (speech continued to the end of the audio),
+    // finalize the last segment.
     if (inSpeech) {
-      console.log(`Finalizing speech region at end of audio (End @ ${regionEnd.toFixed(2)}s)`);
-      speechRegions.push({ start: regionStart, end: regionEnd });
+        const finalEnd = (allProbabilities.length * frameSamples) / sampleRate; // End is end of last processed frame
+        initialRegions.push({ start: regionStart, end: finalEnd });
     }
+    // --- End Process Audio Frames ---
 
-    console.log(`Silero detected ${speechRegions.length} speech regions:`, speechRegions.map(r => `[${r.start.toFixed(2)}-${r.end.toFixed(2)}]`).join(' '));
-    return speechRegions;
+    console.log(`Silero initially detected ${initialRegions.length} speech regions.`);
+
+    // --- Return Results ---
+    // Package the initial regions, raw probabilities, and parameters used.
+    return {
+        regions: initialRegions,
+        probabilities: new Float32Array(allProbabilities), // Use TypedArray
+        frameSamples: frameSamples,
+        sampleRate: sampleRate,
+        initialPositiveThreshold: positiveThreshold,
+        initialNegativeThreshold: negativeThreshold,
+        redemptionFrames: redemptionFrames
+    };
   }
 
-  // Expose the simplified function
+  // Expose the analysis function to the global scope (window).
   global.SileroVAD = {
-    analyzeAudio: analyzeAudio // Rename the exposed function for clarity
+    // Keep the original name or change if you prefer, e.g., analyzeAudioAndGetProbs
+    analyzeAudio: analyzeAudioAndGetProbs
   };
 
 })(window);
