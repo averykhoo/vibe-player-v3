@@ -46,27 +46,29 @@
     <div id="timeDisplay">0:00 / 0:00</div>
 </section>
 
-<!-- VAD Tuning Section -->
-<section id="vad-tuning">
-    <h2>VAD Tuning (Silero)</h2>
-    <div class="control-group">
-        <label for="vadThreshold" title="Probability above which a frame is considered speech.">Positive:</label>
-        <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
-        <span id="vadThresholdValue">N/A</span>
-    </div>
-    <div class="control-group">
-        <label for="vadNegativeThreshold"
-               title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>
-        <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
-        <span id="vadNegativeThresholdValue">N/A</span>
-    </div>
-    <!-- Optional: Add slider for redemption frames here later if needed -->
-    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>
-</section>
+<!-- Combined VAD Section -->
+<section id="vad-section">
+  <h2>Voice Activity Detection</h2>
 
-<section id="speech-info">
-    <h2>Detected Speech Regions</h2>
-    <pre id="speechRegionsDisplay">None</pre> <!-- Use <pre> for better formatting of multi-line regions -->
+  <!-- VAD Tuning Controls -->
+  <div class="control-group">
+      <label for="vadThreshold" title="Probability above which a frame is considered speech.">Positive Threshold:</label>
+      <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
+      <span id="vadThresholdValue">N/A</span>
+  </div>
+  <div class="control-group">
+      <label for="vadNegativeThreshold" title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative Threshold:</label>
+      <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
+      <span id="vadNegativeThresholdValue">N/A</span>
+  </div>
+  <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>
+
+  <!-- Detected Speech Regions (Clickable List) -->
+  <h3 class="vad-regions-heading">Detected Speech Regions</h3>
+  <div id="speechRegionsDisplay" class="speech-regions-list">
+      <p>None</p> <!-- Placeholder -->
+  </div>
+
 </section>
 
 <section class="visualization">

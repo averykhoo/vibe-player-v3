@@ -164,6 +164,11 @@ const AudioPlayer = (function () {
             vadNegativeThresholdSlider.addEventListener('input', handleThresholdChange); // Use same handler
         }
 
+        // --- Add Click Listener for Speech Regions (Event Delegation) ---
+        if (speechRegionsDisplay) {
+            speechRegionsDisplay.addEventListener('click', handleRegionClick);
+        }
+
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
             if (currentObjectURL) {
@@ -363,6 +368,86 @@ const AudioPlayer = (function () {
     }
 
     /**
+     * Helper function to update the list of detected speech regions in the UI.
+     * Creates clickable elements for each region.
+     */
+    function updateSpeechRegionsDisplay() {
+        if (!speechRegionsDisplay) return;
+
+        // Clear previous content
+        speechRegionsDisplay.innerHTML = '';
+
+        if (speechRegions && speechRegions.length > 0) {
+            speechRegions.forEach(region => {
+                // Create a clickable element (e.g., a paragraph or span)
+                const regionElement = document.createElement('span'); // Using span for inline-block feel if needed, or p
+                regionElement.classList.add('speech-region-link'); // Add class for styling and targeting
+                regionElement.textContent = `Start: ${region.start.toFixed(2)}s, End: ${region.end.toFixed(2)}s`;
+
+                // Store the start time in a data attribute for easy retrieval on click
+                regionElement.dataset.startTime = region.start;
+
+                // Add ARIA attributes for accessibility (optional but good)
+                regionElement.setAttribute('role', 'button');
+                regionElement.setAttribute('tabindex', '0'); // Make it focusable
+
+                speechRegionsDisplay.appendChild(regionElement);
+            });
+            // Add keyboard support for accessibility (Enter/Space to activate)
+            speechRegionsDisplay.addEventListener('keydown', handleRegionKeydown);
+
+        } else {
+            // Display placeholder message if no regions are detected
+            const placeholder = document.createElement('p');
+            placeholder.textContent = "No speech detected (at current thresholds).";
+            speechRegionsDisplay.appendChild(placeholder);
+            // Remove keydown listener if no regions
+            speechRegionsDisplay.removeEventListener('keydown', handleRegionKeydown);
+        }
+    }
+
+    /**
+     * Handles clicks within the speech regions list container.
+     * Uses event delegation to seek when a region link is clicked.
+     * @param {MouseEvent} e - The click event.
+     */
+    function handleRegionClick(e) {
+        // Check if the clicked element itself has the target class
+        const targetElement = e.target;
+        if (targetElement.classList.contains('speech-region-link')) {
+            const startTime = parseFloat(targetElement.dataset.startTime);
+            if (!isNaN(startTime)) {
+                console.log(`Region clicked, seeking to: ${startTime.toFixed(2)}s`);
+                seek(startTime);
+            } else {
+                console.warn("Could not parse start time from clicked region:", targetElement.dataset.startTime);
+            }
+        }
+        // No 'else' needed, clicks on the container itself or placeholder text do nothing
+    }
+
+    /**
+     * Handles keydown events (Enter/Space) on focused region links for accessibility.
+     * @param {KeyboardEvent} e - The keydown event.
+     */
+    function handleRegionKeydown(e) {
+        if (e.code === 'Enter' || e.code === 'Space') {
+            const targetElement = e.target;
+            if (targetElement.classList.contains('speech-region-link')) {
+                e.preventDefault(); // Prevent default space/enter behavior (e.g., scrolling)
+                const startTime = parseFloat(targetElement.dataset.startTime);
+                if (!isNaN(startTime)) {
+                    console.log(`Region activated via keyboard, seeking to: ${startTime.toFixed(2)}s`);
+                    seek(startTime);
+                } else {
+                    console.warn("Could not parse start time from keydown region:", targetElement.dataset.startTime);
+                }
+            }
+        }
+    }
+
+
+    /**
      * Toggles playback state (Play/Pause) of the audio element.
      * Resumes AudioContext if suspended.
      */
@@ -534,6 +619,15 @@ const AudioPlayer = (function () {
         if (waveformProgressIndicator) waveformProgressIndicator.style.left = "0px";
         if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
         if (speechRegionsDisplay) speechRegionsDisplay.textContent = "None";
+        if (speechRegionsDisplay) {
+            // Clear content and add placeholder
+            speechRegionsDisplay.innerHTML = '';
+            const placeholder = document.createElement('p');
+            placeholder.textContent = "None";
+            speechRegionsDisplay.appendChild(placeholder);
+            // Remove keydown listener
+            speechRegionsDisplay.removeEventListener('keydown', handleRegionKeydown);
+        }
         // Reset VAD display values
         if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = "N/A";
         if (vadNegativeThresholdValueDisplay) vadNegativeThresholdValueDisplay.textContent = "N/A";
