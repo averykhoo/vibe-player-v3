@@ -3,22 +3,29 @@ const AudioPlayer = (function() {
   'use strict';
 
   /**
-   * Converts an AudioBuffer to 16kHz mono Int16 PCM.
+   * Converts an AudioBuffer to 16kHz mono Float32Array PCM.
+   * Required format for the Silero VAD model.
    */
-  function convertAudioBufferToPCM16k(audioBuffer) {
-    const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+  function convertAudioBufferTo16kHzMonoFloat32(audioBuffer) {
+    // --- VAD requires 16kHz mono ---
+    const targetSampleRate = 16000;
+    // Use OfflineAudioContext for high-quality resampling
+    const offlineCtx = new OfflineAudioContext(
+      1, // Mono
+      audioBuffer.duration * targetSampleRate, // Target length
+      targetSampleRate // Target sample rate
+    );
     const src = offlineCtx.createBufferSource();
     src.buffer = audioBuffer;
     src.connect(offlineCtx.destination);
     src.start();
+    console.log(`Resampling audio from ${audioBuffer.sampleRate}Hz to ${targetSampleRate}Hz mono.`);
     return offlineCtx.startRendering().then(rendered => {
-      const float32 = rendered.getChannelData(0);
-      const int16 = new Int16Array(float32.length);
-      for (let i = 0; i < float32.length; i++) {
-        let s = Math.max(-1, Math.min(1, float32[i]));
-        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      return int16;
+      // Return the Float32Array data
+      return rendered.getChannelData(0);
+    }).catch(err => {
+      console.error("Error during audio resampling:", err);
+      throw err; // Re-throw the error
     });
   }
 
@@ -35,14 +42,15 @@ const AudioPlayer = (function() {
   let audioCtx = null;
   let gainNode = null;
   let mediaSource = null;
-  let decodedBuffer = null;
+  let decodedBuffer = null; // Store the original decoded buffer
+  let currentObjectURL = null; // Store the current Object URL for revocation
   let isPlaying = false;
   const WAVEFORM_HEIGHT_SCALE = 0.8;
   const SPECTROGRAM_FFT_SIZE = 1024;
-  const SPECTROGRAM_MAX_FREQ = 16000;
+  const SPECTROGRAM_MAX_FREQ = 8000; // Adjust max freq for 16kHz VAD context if needed, or keep original
   const SPEC_FIXED_WIDTH = 2048;
   let cachedSpectrogramCanvas = null;
-  let speechRegions = []; // Array to store detected speech regions
+  let speechRegions = []; // Array to store detected speech regions {start: seconds, end: seconds}
 
   // =============================================
   // == INITIALIZATION & SETUP ==
@@ -133,39 +141,84 @@ const AudioPlayer = (function() {
     if (!file) return;
     console.log("File selected:", file.name);
     fileInfo.textContent = `File: ${file.name}`;
-    decodedBuffer = null;
+    decodedBuffer = null; // Reset decoded buffer
+    speechRegions = []; // Reset speech regions
     resetUI();
-    cachedSpectrogramCanvas = null;
-    const objectURL = URL.createObjectURL(file);
-    audioEl.src = objectURL;
-    audioEl.load();
-    connectAudioElementSource();
-    if (fileInput) fileInput.blur();
+    cachedSpectrogramCanvas = null; // Clear cached spectrogram
+
+    // --- Manage Object URL ---
+    if (currentObjectURL) {
+      URL.revokeObjectURL(currentObjectURL);
+      console.log("Revoked previous Object URL:", currentObjectURL);
+      currentObjectURL = null;
+    }
+    currentObjectURL = URL.createObjectURL(file);
+    // --- End Manage Object URL ---
+
+    audioEl.src = currentObjectURL; // Use the new URL
+    audioEl.load(); // Important: load the new source
+    connectAudioElementSource(); // Reconnect if necessary (might disconnect on src change)
+    if (fileInput) fileInput.blur(); // Unfocus file input
+
+    // Show spinner and clear visuals
     spectrogramSpinner.style.display = 'inline';
     waveformCanvas.getContext('2d').clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
     spectrogramCanvas.getContext('2d').clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
+    if (speechRegionsDisplay) speechRegionsDisplay.textContent = "Analyzing...";
+
 
     try {
       const arrayBuffer = await file.arrayBuffer();
       console.log("Decoding audio data...");
       if (!audioCtx) setupAudioContext();
       if (!audioCtx) throw new Error("AudioContext could not be initialized.");
+
+      // Decode the original audio file
       decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      console.log(`Audio decoded: ${decodedBuffer.duration.toFixed(2)}s, ${decodedBuffer.sampleRate}Hz`);
-      enableControls();
-      // Use SileroVAD instead of the old SpeechVAD
-      speechRegions = await SileroVAD.analyzeAudioBuffer(decodedBuffer);
+      console.log(`Audio decoded: ${decodedBuffer.duration.toFixed(2)}s, ${decodedBuffer.sampleRate}Hz, ${decodedBuffer.numberOfChannels} channels`);
+
+      enableControls(); // Enable playback controls early
+
+      // --- Perform VAD Analysis on Resampled Audio ---
+      console.log("Preparing audio for VAD (resampling to 16kHz mono)...");
+      console.time("VAD Resampling");
+      const pcm16kMono = await convertAudioBufferTo16kHzMonoFloat32(decodedBuffer);
+      console.timeEnd("VAD Resampling");
+
+      console.log("Running Silero VAD analysis...");
+      console.time("VAD Analysis");
+      // Pass the Float32Array directly to the updated analyzeAudio function
+      speechRegions = await SileroVAD.analyzeAudio(pcm16kMono, 16000); // Use 16000 Hz sample rate
+      console.timeEnd("VAD Analysis");
+      // --- End VAD Analysis ---
+
       if (speechRegionsDisplay) {
-        speechRegionsDisplay.textContent = JSON.stringify(speechRegions, null, 2);
+          if (speechRegions.length > 0) {
+              speechRegionsDisplay.textContent = speechRegions
+                .map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`)
+                .join('\n');
+          } else {
+              speechRegionsDisplay.textContent = "No speech detected.";
+          }
       }
+
+      // Compute and draw visuals using the ORIGINAL decodedBuffer
       computeAndDrawVisuals();
+
     } catch (err) {
       console.error('Error processing audio file:', err);
-      fileInfo.textContent = `Error processing file: ${err.message || err}`;
+      const errorMsg = `Error processing file: ${err.message || err}`;
+      fileInfo.textContent = errorMsg;
+      if (speechRegionsDisplay) speechRegionsDisplay.textContent = "Error during analysis.";
       alert(`Could not process audio file: ${err.message || err}`);
       disableControls();
+      // Revoke URL on error too
+      if (currentObjectURL) {
+        URL.revokeObjectURL(currentObjectURL);
+        currentObjectURL = null;
+      }
     } finally {
-      spectrogramSpinner.style.display = 'none';
+      spectrogramSpinner.style.display = 'none'; // Hide spinner regardless of outcome
     }
   }
 
@@ -245,31 +298,56 @@ const AudioPlayer = (function() {
   }
 
   function updateUI() {
-    if (!audioEl.src || isNaN(audioEl.duration) || audioEl.duration === 0) {
-      timeDisplay.textContent = "0:00 / 0:00";
-      if (waveformProgressIndicator) waveformProgressIndicator.style.left = "0px";
-      if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
-      return;
-    }
-    const currentTime = audioEl.currentTime;
-    const duration = audioEl.duration;
-    const fraction = duration > 0 ? currentTime / duration : 0;
-    timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
-    if (waveformProgressIndicator && waveformCanvas) {
-      const waveformCanvasWidth = waveformCanvas.clientWidth;
-      waveformProgressIndicator.style.left = (fraction * waveformCanvasWidth) + "px";
-    }
-    if (spectrogramProgressIndicator && spectrogramCanvas) {
-      const spectrogramCanvasWidth = spectrogramCanvas.clientWidth;
-      spectrogramProgressIndicator.style.left = (fraction * spectrogramCanvasWidth) + "px";
-    }
+      if (!audioEl.src || isNaN(audioEl.duration) || audioEl.duration === 0) {
+          timeDisplay.textContent = "0:00 / 0:00";
+          if (waveformProgressIndicator) waveformProgressIndicator.style.left = "0px";
+          if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
+          return;
+      }
+      const currentTime = audioEl.currentTime;
+      const duration = audioEl.duration;
+
+      // Guard against potential division by zero or NaN duration early on
+      if (isNaN(duration) || duration <= 0) {
+          timeDisplay.textContent = `${formatTime(currentTime)} / 0:00`;
+          if (waveformProgressIndicator) waveformProgressIndicator.style.left = "0px";
+          if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
+          return;
+      }
+
+      const fraction = currentTime / duration;
+      timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+
+      // Update waveform progress indicator
+      if (waveformProgressIndicator && waveformCanvas) {
+          const waveformCanvasWidth = waveformCanvas.clientWidth;
+          // Ensure width is positive before calculating position
+          if (waveformCanvasWidth > 0) {
+              waveformProgressIndicator.style.left = (fraction * waveformCanvasWidth) + "px";
+          } else {
+              waveformProgressIndicator.style.left = "0px";
+          }
+      }
+
+      // Update spectrogram progress indicator
+      if (spectrogramProgressIndicator && spectrogramCanvas) {
+          const spectrogramCanvasWidth = spectrogramCanvas.clientWidth;
+           // Ensure width is positive before calculating position
+          if (spectrogramCanvasWidth > 0) {
+              spectrogramProgressIndicator.style.left = (fraction * spectrogramCanvasWidth) + "px";
+          } else {
+              spectrogramProgressIndicator.style.left = "0px";
+          }
+      }
   }
+
 
   function resetUI() {
     playPauseButton.textContent = 'Play';
     timeDisplay.textContent = "0:00 / 0:00";
     if (waveformProgressIndicator) waveformProgressIndicator.style.left = "0px";
     if (spectrogramProgressIndicator) spectrogramProgressIndicator.style.left = "0px";
+    if (speechRegionsDisplay) speechRegionsDisplay.textContent = "None"; // Reset VAD display
     disableControls();
   }
 
@@ -288,26 +366,35 @@ const AudioPlayer = (function() {
   }
 
   async function computeAndDrawVisuals() {
+    // Use the ORIGINAL decodedBuffer for visuals (waveform/spectrogram)
     if (!decodedBuffer) return;
     console.log("Computing visualizations...");
     console.time("Visualization Computation");
-    resizeCanvases(false);
+    resizeCanvases(false); // Resize first
+
     const waveformWidth = waveformCanvas.width;
     console.time("Waveform compute");
+    // Compute waveform from original buffer
     const waveformData = computeWaveformData(decodedBuffer, waveformCanvas.width);
     console.timeEnd("Waveform compute");
+
     console.time("Waveform draw");
-    drawWaveform(waveformData, waveformCanvas, speechRegions);
+    // Draw waveform, passing the detected speechRegions
+    drawWaveform(waveformData, waveformCanvas, speechRegions, decodedBuffer.duration);
     console.timeEnd("Waveform draw");
+
     console.time("Spectrogram compute");
+    // Compute spectrogram from original buffer
     const spectrogramData = computeSpectrogram(decodedBuffer, SPECTROGRAM_FFT_SIZE, SPEC_FIXED_WIDTH);
     console.timeEnd("Spectrogram compute");
+
     if (spectrogramData && spectrogramData.length > 0) {
       console.time("Spectrogram draw (async)");
+      // Draw spectrogram, using original sample rate for frequency axis calculation
       drawSpectrogramAsync(spectrogramData, spectrogramCanvas, decodedBuffer.sampleRate)
         .then(() => {
           console.timeEnd("Spectrogram draw (async)");
-          updateUI();
+          updateUI(); // Update progress indicators after drawing potentially finishes
         });
     } else {
       console.warn("Spectrogram computation yielded no data or failed.");
@@ -317,8 +404,9 @@ const AudioPlayer = (function() {
       specCtx.textAlign = 'center';
       specCtx.fillText("Could not compute spectrogram", spectrogramCanvas.width / 2, spectrogramCanvas.height / 2);
     }
+
     console.timeEnd("Visualization Computation");
-    updateUI();
+    updateUI(); // Initial UI update
   }
 
   function computeWaveformData(buffer, targetWidth) {
@@ -357,31 +445,88 @@ const AudioPlayer = (function() {
     return waveform;
   }
 
-  function drawWaveform(waveformData, canvas, speechRegions) {
+  // Update drawWaveform to accept duration for accurate region mapping
+  function drawWaveform(waveformData, canvas, speechRegions, audioDuration) {
     const ctx = canvas.getContext('2d');
     const { width, height } = canvas;
     ctx.clearRect(0, 0, width, height);
-    if (!waveformData || waveformData.length === 0) {
+    if (!waveformData || waveformData.length === 0 || !audioDuration) {
       ctx.fillStyle = '#888';
       ctx.textAlign = 'center';
       ctx.fillText("No waveform data", width / 2, height / 2);
       return;
     }
+
     const dataLen = waveformData.length;
     const halfHeight = height / 2;
     const scale = halfHeight * WAVEFORM_HEIGHT_SCALE;
-    const pixelsPerSample = width / dataLen;
+    const pixelsPerSecond = width / audioDuration; // Use duration for time mapping
+
+    // Pre-calculate speech region pixels for efficiency
+    const speechPixelRegions = speechRegions
+        ? speechRegions.map(r => ({
+            startPx: r.start * pixelsPerSecond,
+            endPx: r.end * pixelsPerSecond
+          }))
+        : [];
+
+    // Draw non-speech parts first
+    ctx.fillStyle = '#3455db'; // Default color
+    ctx.beginPath();
     for (let i = 0; i < dataLen; i++) {
-      const x = i * pixelsPerSample;
-      const time = (i / dataLen) * audioEl.duration;
-      const inSpeech = speechRegions && speechRegions.some(r => time >= r.start && time <= r.end);
-      ctx.fillStyle = inSpeech ? 'orange' : '#3455db';
-      const min = waveformData[i].min, max = waveformData[i].max;
+      const x = i * (width / dataLen); // Position based on index
+      const pixelWidth = (width / dataLen);
+      const min = waveformData[i].min;
+      const max = waveformData[i].max;
       const y1 = halfHeight - max * scale;
       const y2 = halfHeight - min * scale;
-      ctx.fillRect(x, y1, pixelsPerSample, y2 - y1);
+      // Check if this segment falls outside *any* speech region
+      const currentPixelEnd = x + pixelWidth;
+      let isOutsideSpeech = true;
+      for (const region of speechPixelRegions) {
+          // Check for overlap
+          if (x < region.endPx && currentPixelEnd > region.startPx) {
+              isOutsideSpeech = false;
+              break;
+          }
+      }
+      if (isOutsideSpeech) {
+         ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1)); // Use Math.max for tiny segments
+      }
     }
+    ctx.fill();
+
+
+    // Draw speech parts on top (or redraw specific segments)
+    ctx.fillStyle = 'orange'; // Speech color
+    ctx.beginPath();
+     for (let i = 0; i < dataLen; i++) {
+      const x = i * (width / dataLen); // Position based on index
+      const pixelWidth = (width / dataLen);
+      const min = waveformData[i].min;
+      const max = waveformData[i].max;
+      const y1 = halfHeight - max * scale;
+      const y2 = halfHeight - min * scale;
+
+      // Check if this segment falls inside *any* speech region
+      const currentPixelEnd = x + pixelWidth;
+      let isInsideSpeech = false;
+      for (const region of speechPixelRegions) {
+         // Check for overlap
+         if (x < region.endPx && currentPixelEnd > region.startPx) {
+              isInsideSpeech = true;
+              break;
+          }
+      }
+      if (isInsideSpeech) {
+         ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
+      }
+    }
+    ctx.fill();
+
   }
+
+
 
   function computeSpectrogram(buffer, fftSize, _targetSlices) {
     if (typeof FFT === 'undefined') {
@@ -598,6 +743,18 @@ const AudioPlayer = (function() {
     const seconds = Math.floor(sec % 60);
     return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
   }
+
+  // Add cleanup on page unload (optional but good practice)
+  window.addEventListener('beforeunload', () => {
+      if (currentObjectURL) {
+          URL.revokeObjectURL(currentObjectURL);
+          console.log("Revoked Object URL on page unload:", currentObjectURL);
+      }
+      if (audioCtx && audioCtx.state !== 'closed') {
+          audioCtx.close().catch(e => console.warn("Error closing AudioContext:", e));
+      }
+  });
+
 
   return {
     init: init
