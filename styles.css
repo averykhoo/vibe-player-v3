@@ -1,195 +1,150 @@
-/* General body styling */
 body {
-  font-family: sans-serif; /* Use a common sans-serif font */
-  margin: 20px; /* Add some space around the content */
-  background-color: #f4f4f4; /* Light grey background */
-  color: #333; /* Dark grey text color */
-  line-height: 1.6; /* Improve readability */
-}
-
-/* Styling for headings */
-h1, h2, h3 {
-  border-bottom: 1px solid #ccc; /* Underline for separation */
-  padding-bottom: 5px; /* Space below the underline */
-  margin-top: 1.5em; /* Space above headings */
-  color: #1a1a1a; /* Slightly darker heading color */
-}
-
-/* Center the main title */
-h1 {
-    text-align: center;
-    margin-bottom: 1.5em; /* More space below the main title */
-}
-
-/* Style for the main content sections */
-section {
-  background-color: #fff; /* White background for sections */
-  padding: 15px 20px; /* Padding inside sections */
-  margin-bottom: 20px; /* Space between sections */
-  border-radius: 5px; /* Slightly rounded corners */
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Subtle shadow for depth */
-}
-
-/* --- Controls Styling --- */
-
-/* Spacing and alignment for buttons and number input in the main controls div */
-#controls #playbackButtons button,
-#controls #playbackButtons input[type=number] {
-  margin: 0 5px 5px 0; /* Spacing around elements */
-  padding: 8px 12px; /* Padding inside buttons/inputs */
-  border: 1px solid #ccc; /* Standard border */
-  border-radius: 4px; /* Rounded corners */
-  cursor: pointer; /* Indicate interactivity */
-  vertical-align: middle; /* Align elements nicely on the same line */
-  background-color: #e9e9e9; /* Light button background */
-  transition: background-color 0.15s ease; /* Smooth hover effect */
-}
-#controls #playbackButtons input[type=number] {
-    background-color: #fff; /* White background for number input */
-}
-
-/* Hover effect for buttons */
-#controls #playbackButtons button:not(:disabled):hover {
-    background-color: #dcdcdc;
-}
-
-/* Active state for buttons */
-#controls #playbackButtons button:not(:disabled):active {
-    background-color: #ccc;
-}
-
-
-/* Style for disabled buttons */
-#controls button:disabled {
-  cursor: not-allowed; /* Indicate non-interactive state */
-  opacity: 0.6; /* Make them look faded */
-}
-
-/* Styling for control groups (like speed and volume sliders) */
-#controls .control-group {
-    margin: 15px 0; /* Vertical spacing for groups */
-    display: flex; /* Use flexbox for alignment */
-    align-items: center; /* Vertically center items in the group */
-}
-
-/* Styling for labels within control groups */
-#controls label {
-    margin-right: 10px; /* Space between label and control */
-    min-width: 50px; /* Ensure labels have some minimum width for alignment */
-    font-size: 0.9em; /* Slightly smaller label text */
-}
-
-/* Styling for range sliders (speed, volume) */
-#controls input[type=range] {
-    flex-grow: 1; /* Allow sliders to take up available space */
-    margin: 0 10px; /* Space around the slider */
-    cursor: pointer;
-}
-
-/* Styling for value displays next to sliders */
-#controls .control-group span {
-    font-size: 0.9em;
-    min-width: 45px; /* Align the 'x' values */
-    text-align: right;
-}
-
-
-/* --- Visualization Styling --- */
-
-/* Container for visualization canvases */
-.visualization {
-  margin-bottom: 20px;
-  position: relative; /* Crucial for positioning the progress bar overlay */
-}
-
-/* Heading within visualization sections */
-.visualization h3 {
-  margin: 0 0 10px 0; /* Spacing below heading */
-  font-size: 1em; /* Standard heading size */
-  display: flex; /* Align spinner next to text */
-  justify-content: space-between; /* Push spinner to the right */
-  align-items: center; /* Vertically align spinner */
-  color: #444; /* Slightly lighter heading color */
-}
-
-/* General styling for canvas elements */
-canvas {
-  background-color: #fdfdfd; /* Very light background for canvases */
-  border: 1px solid #ccc; /* Border around canvas */
-  display: block; /* Prevent extra space below canvas */
-  width: 100%; /* Make canvas fill container width */
-  height: 120px; /* Default height for waveform */
-  cursor: crosshair; /* Indicate that clicking does something (seeking) */
-  /* The actual drawing resolution is set via JS using devicePixelRatio */
-}
-
-/* Specific height for the spectrogram canvas */
-#spectrogramCanvas {
-  height: 200px;
-}
-
-/* --- Progress Bar Overlay --- */
-
-/* Container div for the progress indicator */
-/* It overlays the visualization section */
-#progressBar {
-  position: absolute; /* Position relative to the '.visualization' section */
-  top: 0; /* Align to the top of the visualization section */
-  left: 0; /* Align to the left */
-  width: 100%; /* Match the width of the section */
-  height: 100%; /* Match the height (covers both canvases if stacked) */
-  pointer-events: none; /* VERY IMPORTANT: Allows clicks to pass through to the canvas underneath */
-  box-sizing: border-box; /* Include border in width/height calculation */
-  /* border: 1px dashed red; */ /* Uncomment for debugging alignment */
-}
-
-/* The actual red line indicating playback progress */
-#progressIndicator {
-  position: absolute; /* Position relative to the #progressBar container */
-  top: 0; /* Span full height */
-  bottom: 0;
-  left: 0%; /* Starts at the beginning, JS updates this percentage/pixel value */
-  width: 2px; /* Thickness of the indicator line */
-  background: rgba(255, 0, 0, 0.7); /* Semi-transparent red color */
-  pointer-events: none; /* Also needs to let clicks pass through */
-  z-index: 10; /* Ensure it's above the canvases */
-}
-
-
-/* --- Utility Spinner/Status Styling --- */
-
-/* Spinner/Status text (used for spectrogram computation and HQ processing) */
-.spinner, #processingStatus {
-  /* display: none; // Visibility is controlled by JavaScript */
-  font-size: 0.9em; /* Match label size */
-  color: #007bff; /* Blue color for processing status */
-  font-weight: normal; /* Normal weight */
-  margin-left: 5px; /* Space from preceding element */
-}
-
-/* --- Time Display --- */
-#timeDisplay {
-  margin: 15px 0 5px 0; /* Spacing around time display */
-  font-weight: bold; /* Make time stand out */
-  font-size: 1em; /* Slightly larger time font */
-  text-align: center; /* Center the time display */
+  font-family: sans-serif;
+  margin: 20px;
+  background-color: #f4f4f4; /* Slightly different background */
   color: #333;
 }
 
-/* --- Keybinds Table Styling --- */
+h1, h2, h3 {
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+  margin-top: 1.5em;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 1.5em;
+}
+
+/* Sections for better grouping */
+section {
+  background-color: #fff;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#controls button, #controls input[type=number] {
+  margin: 0 5px;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+#controls .control-group {
+    margin: 10px 0;
+    display: flex;
+    align-items: center;
+}
+#controls label {
+    margin-right: 10px;
+    min-width: 50px; /* Align labels */
+}
+#controls input[type=range] {
+    flex-grow: 1;
+    margin: 0 10px;
+}
+
+.visualization {
+  margin-bottom: 20px;
+  /* No position relative needed here anymore */
+}
+
+/* Container to establish positioning context for canvas and progress bar */
+.canvas-container {
+  position: relative;
+}
+
+
+.visualization h3 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  display: flex; /* Align spinner */
+  justify-content: space-between; /* Align spinner */
+  align-items: center; /* Align spinner */
+}
+
+canvas {
+  background-color: #fff; /* White background for canvas */
+  border: 1px solid #ccc;
+  display: block; /* Important for correct width/height behavior */
+  width: 100%;   /* Make canvas responsive */
+  height: 120px; /* Default height */
+  cursor: crosshair; /* Indicate click-to-seek */
+  box-sizing: border-box; /* Include border in width/height */
+}
+
+#spectrogramCanvas {
+  height: 200px; /* Taller spectrogram */
+}
+
+
+/* --- Progress Bar Overlay --- */
+.progress-bar {
+  position: absolute; /* Position over the canvas */
+  top: 0;             /* Align with top of canvas */
+  left: 0;            /* Align with left of canvas */
+  width: 100%;        /* Match canvas width */
+  pointer-events: none; /* Allow clicks to pass through to canvas */
+  box-sizing: border-box;
+  /* border: 1px dashed blue; */ /* Optional: for debugging alignment */
+}
+
+/* Specific heights for each progress bar container to match its canvas */
+#waveformProgressBar {
+  height: 120px; /* Match waveform canvas height */
+}
+#spectrogramProgressBar {
+  height: 200px; /* Match spectrogram canvas height */
+}
+
+.progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0; /* Starts at left */
+  width: 2px;
+  background: rgba(255, 0, 0, 0.7); /* Semi-transparent red */
+  pointer-events: none; /* Allow clicks to pass through */
+}
+/* --- End Progress Bar --- */
+
+
+.spinner {
+  display: none; /* Hidden by default */
+  font-size: 14px;
+  color: #555;
+  font-weight: normal;
+}
+
+#timeDisplay {
+  margin: 15px 0 5px 0;
+  font-weight: bold;
+  font-size: 14px;
+  text-align: center;
+}
+
 #keybinds {
   margin-top: 20px;
 }
+
 #keybinds table {
-  width: 100%; /* Full width table */
-  border-collapse: collapse; /* Merge borders */
+  width: 100%;
+  border-collapse: collapse;
 }
+
 #keybinds th, #keybinds td {
-  border: 1px solid #ccc; /* Border for cells */
-  padding: 8px 10px; /* Padding inside cells */
-  text-align: left; /* Align text left */
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
 }
+
 #keybinds th {
-  background: #f0f0f0; /* Light grey background for table header */
-  font-weight: bold;
+  background: #f0f0f0;
 }
