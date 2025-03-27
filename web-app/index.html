@@ -5,9 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Audio Player</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- TensorFlow.js and Speech Commands model -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
+  <!-- Load onnxruntime-web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <!-- Load FFT and your custom scripts -->
+  <script src="fft.js"></script>
+  <script src="silero.js"></script>
+  <script src="speech_detector.js"></script>
+  <script src="silero_vad.js"></script>
+  <script src="player.js" defer></script>
 </head>
 <body>
 
@@ -40,7 +45,6 @@
     <div id="timeDisplay">0:00 / 0:00</div>
   </section>
 
-  <!-- (Optional) Display detected speech regions info -->
   <section id="speech-info">
     <h2>Detected Speech Regions</h2>
     <pre id="speechRegionsDisplay">None</pre>
@@ -82,12 +86,5 @@
 
   <!-- Hidden Audio Element for Playback -->
   <audio id="player" style="display: none;" preload="auto"></audio>
-
-  <!-- Scripts -->
-  <script src="fft.js"></script>
-  <!-- Delete fvad.js from your project -->
-  <script src="speechvad.js"></script>
-  <script src="player.js" defer></script>
-
 </body>
 </html>

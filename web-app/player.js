@@ -89,7 +89,7 @@ const AudioPlayer = (function() {
     gainControl.addEventListener('input', handleGainChange);
 
     [waveformCanvas, spectrogramCanvas].forEach(canvas => {
-         canvas.addEventListener('click', handleCanvasClick);
+      canvas.addEventListener('click', handleCanvasClick);
     });
 
     audioEl.addEventListener('play', () => { isPlaying = true; playPauseButton.textContent = 'Pause'; });
@@ -117,13 +117,9 @@ const AudioPlayer = (function() {
   }
 
   function connectAudioElementSource() {
-    if (!audioCtx || !audioEl.src || mediaSource) {
-      return;
-    }
+    if (!audioCtx || !audioEl.src || mediaSource) return;
     try {
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
       mediaSource = audioCtx.createMediaElementSource(audioEl);
       mediaSource.connect(gainNode);
       console.log("Audio element connected to Web Audio graph.");
@@ -135,21 +131,16 @@ const AudioPlayer = (function() {
   async function handleFileLoad(e) {
     const file = e.target.files[0];
     if (!file) return;
-
     console.log("File selected:", file.name);
     fileInfo.textContent = `File: ${file.name}`;
     decodedBuffer = null;
     resetUI();
     cachedSpectrogramCanvas = null;
-
     const objectURL = URL.createObjectURL(file);
     audioEl.src = objectURL;
     audioEl.load();
-
     connectAudioElementSource();
-
     if (fileInput) fileInput.blur();
-
     spectrogramSpinner.style.display = 'inline';
     waveformCanvas.getContext('2d').clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
     spectrogramCanvas.getContext('2d').clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
@@ -159,19 +150,14 @@ const AudioPlayer = (function() {
       console.log("Decoding audio data...");
       if (!audioCtx) setupAudioContext();
       if (!audioCtx) throw new Error("AudioContext could not be initialized.");
-
       decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       console.log(`Audio decoded: ${decodedBuffer.duration.toFixed(2)}s, ${decodedBuffer.sampleRate}Hz`);
-
       enableControls();
-
-      // Use TF.js VAD (SpeechVAD) to analyze the decoded audio file
-      speechRegions = await SpeechVAD.analyzeAudioBuffer(decodedBuffer);
-      // Also display detected regions (for debugging)
+      // Use SileroVAD instead of the old SpeechVAD
+      speechRegions = await SileroVAD.analyzeAudioBuffer(decodedBuffer);
       if (speechRegionsDisplay) {
         speechRegionsDisplay.textContent = JSON.stringify(speechRegions, null, 2);
       }
-
       computeAndDrawVisuals();
     } catch (err) {
       console.error('Error processing audio file:', err);
@@ -185,9 +171,7 @@ const AudioPlayer = (function() {
 
   function togglePlayPause() {
     if (!audioEl.src || audioEl.readyState < 1) return;
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     if (audioEl.paused) {
       audioEl.play().catch(e => console.error("Error playing audio:", e));
     } else {
@@ -253,9 +237,7 @@ const AudioPlayer = (function() {
         handled = true;
         break;
     }
-    if (handled) {
-      e.preventDefault();
-    }
+    if (handled) e.preventDefault();
   }
 
   function getJumpTime() {
@@ -297,6 +279,7 @@ const AudioPlayer = (function() {
     jumpForwardButton.disabled = false;
     playbackSpeedControl.disabled = false;
   }
+
   function disableControls() {
     playPauseButton.disabled = true;
     jumpBackButton.disabled = true;
@@ -311,10 +294,9 @@ const AudioPlayer = (function() {
     resizeCanvases(false);
     const waveformWidth = waveformCanvas.width;
     console.time("Waveform compute");
-    const waveformData = computeWaveformData(decodedBuffer, waveformWidth);
+    const waveformData = computeWaveformData(decodedBuffer, waveformCanvas.width);
     console.timeEnd("Waveform compute");
     console.time("Waveform draw");
-    // Draw waveform with speechRegions (color speech segments orange)
     drawWaveform(waveformData, waveformCanvas, speechRegions);
     console.timeEnd("Waveform draw");
     console.time("Spectrogram compute");
@@ -339,7 +321,6 @@ const AudioPlayer = (function() {
     updateUI();
   }
 
-  // Modified: compute waveform data as before.
   function computeWaveformData(buffer, targetWidth) {
     if (!buffer || targetWidth <= 0) return [];
     const channelCount = buffer.numberOfChannels;
@@ -376,7 +357,6 @@ const AudioPlayer = (function() {
     return waveform;
   }
 
-  // Modified: draw waveform using speechRegions.
   function drawWaveform(waveformData, canvas, speechRegions) {
     const ctx = canvas.getContext('2d');
     const { width, height } = canvas;
