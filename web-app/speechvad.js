@@ -1,14 +1,20 @@
 // --- START OF FILE speechvad.js ---
+// This module performs voice activity detection (VAD) using the TensorFlow.js Speech Commands model.
+// NOTE: The Speech Commands model is trained to recognize a small set of commands (e.g., "yes", "no", "up", "down").
+//       Any audio not matching these commands is classified as "_background_noise_".
+//       If your audio doesn't contain these specific commands, you'll likely see no detected speech regions.
 const SpeechVAD = (function() {
   'use strict';
 
   let recognizer = null;
   const probabilityThreshold = 0.75;
-  const windowSizeSec = 1.0; // 1-second window
-  const overlapFactor = 0.5; // 50% overlap => step size = 0.5 sec
-  const stepSizeSec = windowSizeSec * (1 - overlapFactor); // 0.5 sec step
-  const targetSampleRate = 16000;
+  // Set window size to exactly 9976 samples (the expected input length for the model).
+  const windowSizeSec = 9976 / 16000;  // ~0.6235 seconds
+  const overlapFactor = 0.5; // 50% overlap between consecutive windows
+  const stepSizeSec = windowSizeSec * (1 - overlapFactor);  // ~0.31175 seconds
+  const targetSampleRate = 16000; // Ensure audio is mono at 16kHz
 
+  // Initialize the Speech Commands recognizer.
   async function init() {
     console.log("Initializing Speech VAD (offline)...");
     recognizer = speechCommands.create('BROWSER_FFT');
@@ -16,9 +22,14 @@ const SpeechVAD = (function() {
     console.log("Speech Commands recognizer loaded.");
   }
 
-  // Convert an AudioBuffer to a Float32Array at 16kHz (mono)
+  // Convert an AudioBuffer to a mono Float32Array at 16kHz.
+  // Similar to resampling in Python, this function creates an OfflineAudioContext to do the conversion.
   async function convertAudioBufferToFloat32(audioBuffer) {
-    const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * targetSampleRate), targetSampleRate);
+    const offlineCtx = new OfflineAudioContext(
+      1,
+      Math.ceil(audioBuffer.duration * targetSampleRate),
+      targetSampleRate
+    );
     const src = offlineCtx.createBufferSource();
     src.buffer = audioBuffer;
     src.connect(offlineCtx.destination);
@@ -27,7 +38,8 @@ const SpeechVAD = (function() {
     return renderedBuffer.getChannelData(0);
   }
 
-  // Analyze an audio buffer and return an array of speech regions [{start, end}, ...] (in seconds).
+  // Analyze an AudioBuffer and return an array of speech regions.
+  // Each region is an object with 'start' and 'end' times (in seconds).
   async function analyzeAudioBuffer(audioBuffer) {
     if (!recognizer) {
       await init();
@@ -35,22 +47,29 @@ const SpeechVAD = (function() {
     console.log("Analyzing audio buffer for speech regions using TF.js VAD...");
     const floatData = await convertAudioBufferToFloat32(audioBuffer);
     const sampleRate = targetSampleRate;
-    const windowSize = Math.floor(windowSizeSec * sampleRate); // e.g. 16000 samples
-    const stepSize = Math.floor(stepSizeSec * sampleRate); // e.g. 8000 samples
+    // Calculate window size in samples; this should equal 9976.
+    const windowSize = Math.floor(windowSizeSec * sampleRate);
+    const stepSize = Math.floor(stepSizeSec * sampleRate);
 
     const regions = [];
     let currentSpeech = null;
+    // Iterate over the audio data in fixed-size windows.
     for (let startSample = 0; startSample + windowSize <= floatData.length; startSample += stepSize) {
       const windowData = floatData.slice(startSample, startSample + windowSize);
-      // recognizer.recognize() accepts a Float32Array as input.
       const result = await recognizer.recognize(windowData, { probabilityThreshold, includeSpectrogram: false });
       const scores = result.scores;
       const maxScore = Math.max(...scores);
       const maxIndex = scores.indexOf(maxScore);
       const words = recognizer.wordLabels();
       const predictedWord = words[maxIndex];
+
+      // Debug: Uncomment the line below to see predictions for each window.
+      console.log(`Window at ${(startSample/sampleRate).toFixed(2)}s: predicted="${predictedWord}", score=${maxScore.toFixed(3)}`);
+
       const timeSec = startSample / sampleRate;
-      // Mark this window as speech if it’s not background noise and meets threshold.
+      // Only consider this window as speech if the predicted word is not background noise.
+      // IMPORTANT: The model only recognizes its limited vocabulary. If your audio doesn't contain these commands,
+      //            it will be classified as '_background_noise_' even if someone is speaking.
       if (predictedWord !== '_background_noise_' && maxScore > probabilityThreshold) {
         if (!currentSpeech) {
           currentSpeech = { start: timeSec };
@@ -67,7 +86,7 @@ const SpeechVAD = (function() {
       currentSpeech.end = floatData.length / sampleRate;
       regions.push(currentSpeech);
     }
-    // Merge overlapping/adjacent regions.
+    // Merge overlapping or adjacent speech regions.
     const mergedRegions = [];
     for (const region of regions) {
       if (mergedRegions.length === 0) {
