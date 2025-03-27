@@ -40,10 +40,10 @@
     <div id="timeDisplay">0:00 / 0:00</div>
   </section>
 
-  <!-- New Speech VAD Status Section -->
-  <section id="speech-vad">
-    <h2>Speech VAD Status</h2>
-    <div id="speechStatus">Initializing...</div>
+  <!-- (Optional) Display detected speech regions info -->
+  <section id="speech-info">
+    <h2>Detected Speech Regions</h2>
+    <pre id="speechRegionsDisplay">None</pre>
   </section>
 
   <section class="visualization">
@@ -85,7 +85,7 @@
 
   <!-- Scripts -->
   <script src="fft.js"></script>
-  <!-- Remove fvad.js – no longer used -->
+  <!-- Delete fvad.js from your project -->
   <script src="speechvad.js"></script>
   <script src="player.js" defer></script>
 
