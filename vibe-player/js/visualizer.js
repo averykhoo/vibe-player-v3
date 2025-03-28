@@ -37,9 +37,9 @@ AudioApp.visualizer = (function(globalFFT) {
     /** @const {number} How much vertical space the waveform uses (0 to 1) */
     const WAVEFORM_HEIGHT_SCALE = 0.8;
     /** @const {number} FFT window size (power of 2) */
-    const SPECTROGRAM_FFT_SIZE = 1024;
+    const SPECTROGRAM_FFT_SIZE = 8192;
     /** @const {number} Max frequency (Hz) to display on spectrogram Y-axis */
-    const SPECTROGRAM_MAX_FREQ = 8000;
+    const SPECTROGRAM_MAX_FREQ = 12000;
     /** @const {number} Fixed internal width for spectrogram calculation/caching. Larger values = more detail but more computation. */
     const SPEC_FIXED_WIDTH = 2048;
 
