@@ -806,7 +806,9 @@ AudioApp.visualizer = (function(globalFFT) {
                  console.warn("Visualizer: Spectrogram cache missing on resize, clearing display.");
                   if(spectrogramCtx && spectrogramCanvas) {
                       spectrogramCtx.clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
-                      spectrogramCtx.fillStyle = '#888'; ctx.textAlign = 'center'; ctx.font = '12px sans-serif';
+                      spectrogramCtx.fillStyle = '#888';
+                      spectrogramCtx.textAlign = 'center';
+                      spectrogramCtx.font = '12px sans-serif';
                       spectrogramCtx.fillText("Resize occurred, no spectrogram cache.", spectrogramCanvas.width / 2, spectrogramCanvas.height / 2);
                   }
                  // Alternatively, trigger a full recompute if essential:
