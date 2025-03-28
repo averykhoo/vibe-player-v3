@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rubberband Real-time Test</title>
+    <link rel="stylesheet" href="realtime_test_style.css">
+</head>
+<body>
+    <h1>Rubberband Real-time Test Harness</h1>
+
+    <div class="controls">
+        <label for="audioFile">Upload Audio (MP3, WAV, etc.):</label>
+        <input type="file" id="audioFile" accept="audio/*">
+    </div>
+
+    <div class="controls" id="playbackControls" style="display: none;">
+        <button id="playPauseButton">Play</button>
+        <span style="margin-left: 20px;">Status: <span id="playbackStatus">Idle</span></span>
+         <br><br>
+        <label for="speedSlider">Target Speed:</label>
+        <input type="range" id="speedSlider" min="0.25" max="2.0" step="0.01" value="1.0">
+        <span id="speedValue">1.00x</span>
+        <br><br>
+        <label for="sourceToggleButton">Processing Source:</label>
+        <button id="sourceToggleButton">Use Original (1.0x)</button>
+        <span class="info">(Simulates reading from original or a pre-processed 0.25x buffer)</span>
+
+    </div>
+
+    <div class="status" id="status">
+        Status: Waiting for file...
+    </div>
+
+    <!-- Load the main script as a module -->
+    <script type="module" src="realtime_test_main.js"></script>
+</body>
+</html>
