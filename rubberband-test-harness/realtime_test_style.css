@@ -24,10 +24,12 @@ label {
     margin-right: 10px;
     font-weight: bold;
     min-width: 120px;
+    vertical-align: middle;
 }
 
-input[type="file"], input[type="range"] {
+input[type="file"], input[type="range"], button {
     vertical-align: middle;
+    margin-bottom: 5px; /* Add spacing */
 }
 
 input[type="range"] {
@@ -60,7 +62,6 @@ button:disabled {
     text-align: right;
     font-family: monospace;
     margin-left: 5px;
-    vertical-align: middle;
 }
 
 .status {

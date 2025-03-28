@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- CSP for SharedArrayBuffer (needed later if you use SAB, good practice) -->
+    <!-- <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin"> -->
+    <!-- <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp"> -->
     <title>Rubberband Real-time Test</title>
     <link rel="stylesheet" href="realtime_test_style.css">
 </head>
@@ -14,6 +17,7 @@
         <input type="file" id="audioFile" accept="audio/*">
     </div>
 
+    <!-- Playback controls initially hidden until worklet is ready -->
     <div class="controls" id="playbackControls" style="display: none;">
         <button id="playPauseButton">Play</button>
         <span style="margin-left: 20px;">Status: <span id="playbackStatus">Idle</span></span>
