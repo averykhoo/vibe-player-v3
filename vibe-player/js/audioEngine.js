@@ -1,24 +1,24 @@
 // --- /vibe-player/js/audioEngine.js ---
 // Manages Web Audio API, the <audio> element, loading, decoding, resampling, and playback controls.
 // Dispatches events related to audio state changes.
+// Attempt 4: Create AudioContext once, create MediaElementSourceNode only ONCE, never disconnect it.
 
 var AudioApp = AudioApp || {}; // Ensure namespace exists
 
-// Design Decision: Use IIFE to encapsulate audio logic.
 AudioApp.audioEngine = (function() {
     'use strict';
 
     // --- Web Audio API & State ---
-    /** @type {AudioContext|null} The main audio context */
+    /** @type {AudioContext|null} The single, persistent audio context */
     let audioCtx = null;
     /** @type {GainNode|null} Node for controlling volume */
     let gainNode = null;
     /**
-     * Connects <audio> to AudioContext. Crucially, only ONE source node can be
-     * created per HTMLMediaElement within a given AudioContext.
+     * MediaElementSourceNode. IMPORTANT: Should be created only ONCE per <audio> element
+     * for the lifetime of the application's AudioContext.
      * @type {MediaElementAudioSourceNode|null}
      */
-    let mediaSource = null;
+    let mediaSource = null; // <<< Will be created once and persist
     /** @type {HTMLAudioElement|null} Reference to the hidden <audio> element */
     let audioEl = null;
     /** @type {string|null} Stores the current Blob URL for the <audio> element source */
@@ -31,7 +31,7 @@ AudioApp.audioEngine = (function() {
     // --- Initialization ---
 
     /**
-     * Initializes the Audio Engine: gets the <audio> element, sets up AudioContext.
+     * Initializes the Audio Engine: gets the <audio> element, creates the persistent AudioContext, sets up listeners.
      * @public
      */
     function init() {
@@ -39,41 +39,53 @@ AudioApp.audioEngine = (function() {
         audioEl = document.getElementById('player');
         if (!audioEl) {
             console.error("AudioEngine: CRITICAL - <audio id='player'> element not found!");
-            // Dispatch an error? For now, just log. The app won't work.
             return;
         }
+        // Create context immediately on init (or on first interaction if preferred)
+        // Ensures context exists before any audio loading attempts.
         setupAudioContext();
         setupAudioElementListeners();
         console.log("AudioEngine: Initialized.");
     }
 
-    // --- Setup ---
+    // --- Setup & Reset ---
 
     /**
-     * Creates the AudioContext and GainNode. Must be called after user interaction likely.
-     * Handles potential browser limitations.
+     * Creates the persistent AudioContext and GainNode if they don't exist or are closed.
      * @private
      */
     function setupAudioContext() {
-        // Design Decision: Create context immediately on init. User interaction will be needed
-        // to resume it if suspended by autoplay policies.
+        // Only create if it doesn't exist or is closed
+        if (audioCtx && audioCtx.state !== 'closed') {
+            console.log("AudioEngine: AudioContext already exists and is open.");
+            return; // Already exists and is valid
+        }
         try {
+            // If context existed but was closed, log it
+            if (audioCtx && audioCtx.state === 'closed') {
+                console.log("AudioEngine: Recreating closed AudioContext.");
+            }
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             gainNode = audioCtx.createGain();
-            // Set initial gain from UI? Or default to 1? Default to 1 for simplicity.
-            gainNode.gain.value = 1.0;
-            gainNode.connect(audioCtx.destination);
-            console.log(`AudioEngine: AudioContext created (state: ${audioCtx.state}).`);
+            gainNode.gain.value = 1.0; // Set default gain
+            gainNode.connect(audioCtx.destination); // Connect gain to output
+            mediaSource = null; // Ensure mediaSource is null when context is (re)created
+            console.log(`AudioEngine: AudioContext created/reset (state: ${audioCtx.state}).`);
+
+            // Attempt to resume immediately if suspended (due to browser autoplay policies)
+            if (audioCtx.state === 'suspended') {
+                // It's often better to resume on user interaction (like play), but trying here might work sometimes.
+                audioCtx.resume().catch(e => console.warn("AudioEngine: Error resuming context immediately after creation", e));
+            }
         } catch (e) {
-            console.error("AudioEngine: Web Audio API is not supported by this browser.", e);
-            // Dispatch an error event for app.js to handle (e.g., disable features)
-            dispatchEngineEvent('audioapp:engineError', { type: 'context', error: new Error("Web Audio API not supported") });
+            console.error("AudioEngine: Failed to create AudioContext.", e);
+            audioCtx = null; gainNode = null; mediaSource = null;
+            dispatchEngineEvent('audioapp:engineError', { type: 'context', error: new Error("Web Audio API not supported or context creation failed") });
         }
     }
 
     /**
      * Sets up event listeners on the HTMLAudioElement.
-     * These listeners dispatch custom events for the app controller.
      * @private
      */
     function setupAudioElementListeners() {
@@ -81,8 +93,14 @@ AudioApp.audioEngine = (function() {
 
         audioEl.addEventListener('play', () => {
             isPlaying = true;
-            // Ensure context is running when playback starts
-            if (audioCtx?.state === 'suspended') {
+            // Ensure context exists and is running when playback starts
+            if (!audioCtx || audioCtx.state === 'closed') {
+                 console.error("AudioEngine: Playback failed - AudioContext not available.");
+                 // Optionally try to recreate context here? Might be too late.
+                 audioEl.pause(); // Stop attempted playback
+                 return;
+            }
+            if (audioCtx.state === 'suspended') {
                  audioCtx.resume().catch(e => console.warn("AudioEngine: Error resuming context on play", e));
             }
             dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: true });
@@ -96,11 +114,11 @@ AudioApp.audioEngine = (function() {
         audioEl.addEventListener('ended', () => {
             isPlaying = false;
             dispatchEngineEvent('audioapp:playbackEnded');
-            dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: false }); // Ensure state is updated
+            dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: false });
         });
 
         audioEl.addEventListener('timeupdate', () => {
-            // Avoid dispatching if duration isn't valid yet
+            // Dispatch time updates frequently for UI feedback
             if (audioEl.duration && !isNaN(audioEl.duration)) {
                 dispatchEngineEvent('audioapp:timeUpdated', { currentTime: audioEl.currentTime, duration: audioEl.duration });
             }
@@ -108,19 +126,18 @@ AudioApp.audioEngine = (function() {
 
         audioEl.addEventListener('loadedmetadata', () => {
             console.log("AudioEngine: Metadata loaded. Duration:", audioEl.duration);
-            // --- FIX incorporated here ---
-            // Attempt connection here AFTER metadata is loaded and src is definitely valid.
-            // The connectAudioElementSource function now robustly checks if already connected.
-            connectAudioElementSource();
-            // --- End FIX ---
-            // Dispatch initial time update
-             if (audioEl.duration && !isNaN(audioEl.duration)) {
+            // --- Ensure connection is established (will create node only if null) ---
+            // This function ensures the single MediaElementSourceNode is created if it hasn't been already.
+            ensureAudioGraphConnected();
+            // --- End ensure connection ---
+            // Dispatch initial time update now that duration is known
+            if (audioEl.duration && !isNaN(audioEl.duration)) {
                 dispatchEngineEvent('audioapp:timeUpdated', { currentTime: audioEl.currentTime, duration: audioEl.duration });
             }
         });
 
         audioEl.addEventListener('durationchange', () => {
-            // Duration might change (e.g., for streams, though not applicable here)
+            // Handle potential changes in duration (less common for static files)
             console.log("AudioEngine: Duration changed to", audioEl.duration);
              if (audioEl.duration && !isNaN(audioEl.duration)) {
                 dispatchEngineEvent('audioapp:timeUpdated', { currentTime: audioEl.currentTime, duration: audioEl.duration });
@@ -128,7 +145,7 @@ AudioApp.audioEngine = (function() {
         });
 
          audioEl.addEventListener('error', (e) => {
-            // Handle errors from the <audio> element itself
+            // Handle media errors reported by the <audio> element itself
             const error = audioEl.error;
             console.error("AudioEngine: HTMLAudioElement error - Code:", error?.code, "Message:", error?.message);
              dispatchEngineEvent('audioapp:playbackError', { error: error || new Error("Unknown playback error") });
@@ -136,42 +153,38 @@ AudioApp.audioEngine = (function() {
     }
 
     /**
-     * Connects the HTMLAudioElement to the Web Audio API graph via a MediaElementAudioSourceNode.
-     * Ensures only one connection is made per AudioContext lifecycle for the element.
+     * Ensures the MediaElementSourceNode exists and is connected to the GainNode.
+     * Creates the source node only if `mediaSource` is currently `null`.
+     * Designed to be called safely multiple times (e.g., on 'loadedmetadata').
      * @private
      */
-    function connectAudioElementSource() {
-        // --- FIX incorporated here ---
-        // Robust Check: Only proceed if context exists, audio element exists, a source is loaded, AND
-        // crucially, if the mediaSource variable is currently null (meaning not connected).
-        if (!audioCtx || !audioEl || !audioEl.src || mediaSource !== null) {
-            if (mediaSource !== null) {
-                // This log can be helpful for debugging but might be noisy.
-                // console.log("AudioEngine: Skipping connect - mediaSource already exists.");
-            }
-            return; // Exit if conditions not met or already connected
+    function ensureAudioGraphConnected() {
+        // --- Robust Check: Only CREATE if mediaSource is null ---
+        // If mediaSource already exists, the graph is set up. Changing audioEl.src
+        // is handled internally by the existing node.
+        if (!audioCtx || audioCtx.state === 'closed' || !audioEl || mediaSource !== null) {
+            return; // Exit if context is invalid or source node already exists
         }
-        // --- End FIX ---
+        // --- End Check ---
+
+        // Ensure context is running before creating source node
+        // (May be redundant if called after user interaction like 'play')
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(e => console.warn("AudioEngine: Error resuming context before connect", e));
+        }
 
         try {
-            // Attempt to resume context if suspended, might be needed before creating source node
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(e => console.warn("AudioEngine: Error resuming context before connect", e));
-            }
-
-            console.log("AudioEngine: Attempting to create MediaElementSourceNode..."); // Log attempt
-            // Create the source node from the <audio> element.
+            console.log("AudioEngine: Creating MediaElementSourceNode (ONCE)...");
+            // --- Create the source node ---
             mediaSource = audioCtx.createMediaElementSource(audioEl);
-
-            // Connect the source to the gain node (which is connected to destination).
+            // --- Connect it permanently to the gain node ---
             mediaSource.connect(gainNode);
             console.log("AudioEngine: Audio element connected to Web Audio graph.");
-
         } catch (e) {
-            // Catch potential errors during creation (like the InvalidStateError if the check somehow failed)
-            console.error("AudioEngine: Error connecting audio element source:", e);
-            mediaSource = null; // Ensure mediaSource is reset if creation failed
-            // Dispatch an error? This helps centralize error handling in app.js
+            // This error should ideally not happen now if the check above is solid,
+            // but catch it just in case the browser state is unexpected.
+            console.error("AudioEngine: Error creating or connecting audio element source node:", e);
+            mediaSource = null; // Reset on failure to allow potential retry? Unlikely to help.
             dispatchEngineEvent('audioapp:engineError', { type: 'connect', error: e });
         }
     }
@@ -179,158 +192,132 @@ AudioApp.audioEngine = (function() {
      // --- Loading, Decoding, Resampling Pipeline ---
 
     /**
-     * Loads a File, sets it as the <audio> source, decodes it using Web Audio API,
-     * then resamples it to 16kHz mono PCM for VAD.
-     * Dispatches events 'audioapp:audioLoaded' and 'audioapp:resamplingComplete' on success,
-     * or error events on failure.
+     * Loads a File, sets <audio> source, decodes, and resamples.
+     * Uses the single persistent AudioContext. Does NOT disconnect/reconnect MediaElementSourceNode.
      * @param {File} file - The audio file selected by the user.
      * @returns {Promise<void>} A promise that resolves when processing is complete or rejects on error.
-     * @throws {Error} If initial setup fails (e.g., no AudioContext).
+     * @throws {Error} If context is unavailable or processing fails.
      * @public
      */
      async function loadAndProcessFile(file) {
-        if (!audioCtx || !audioEl) {
-             // Cannot proceed without context and audio element
-             throw new Error("AudioContext or AudioElement not available.");
+        // Ensure context exists (should have been created in init)
+        if (!audioCtx || audioCtx.state === 'closed') {
+            console.error("AudioEngine: AudioContext not available for loading file.");
+            // Attempt to recreate context? Or rely on user interaction? For now, throw.
+            if(!setupAudioContext()) { // Try creating/resetting context
+                 throw new Error("AudioContext could not be created/reset.");
+            }
         }
 
         // --- 1. Set <audio> Source & Reset ---
-        // Revoke previous Object URL to free memory
         if (currentObjectURL) {
             URL.revokeObjectURL(currentObjectURL);
-            console.log("AudioEngine: Revoked previous Object URL:", currentObjectURL);
+            // console.log("AudioEngine: Revoked previous Object URL:", currentObjectURL); // Less noise
             currentObjectURL = null;
         }
-        // Stop current playback if any
-        if (!audioEl.paused) { audioEl.pause(); }
-        audioEl.removeAttribute('src'); // Clear previous source attribute
+        // Stop playback and reset buffer state
+        if (audioEl && !audioEl.paused) { audioEl.pause(); }
+        currentDecodedBuffer = null;
 
-        // --- FIX incorporated here ---
-        // Explicitly disconnect and nullify the source node BEFORE setting the new src
-        // This helps prevent the InvalidStateError on subsequent loads.
-        if (mediaSource) {
-            try {
-                mediaSource.disconnect();
-                console.log("AudioEngine: Disconnected previous MediaElementSource.");
-            } catch (e) {
-                // Log warning but don't necessarily stop the process
-                console.warn("AudioEngine: Error disconnecting previous source:", e);
-            }
-            mediaSource = null; // Nullify the reference *before* loading new source
+        // --- No Disconnection of mediaSource Needed ---
+
+        // Reset src and load to clear previous state reliably
+        if(audioEl){
+            audioEl.removeAttribute('src');
+            audioEl.load(); // Reset element internal state
         }
-        // --- End FIX ---
 
-        // It might also be beneficial to fully reset the audio element's internal state,
-        // though removeAttribute + load is usually sufficient.
-        // audioEl.load(); // Reset element state after removing src
-
-        // Create a new Object URL for the selected file.
+        // --- Set New Source ---
         currentObjectURL = URL.createObjectURL(file);
-
-        // Set the new source for the <audio> element and explicitly load it.
-        audioEl.src = currentObjectURL;
-        audioEl.load();
-        // The 'loadedmetadata' event listener will handle calling connectAudioElementSource() robustly after this.
+        audioEl.src = currentObjectURL; // Set the new source
+        audioEl.load(); // Tell the element to load the new source.
+        // 'loadedmetadata' event listener will call ensureAudioGraphConnected. If mediaSource
+        // already exists (from first load), ensureAudioGraphConnected will simply return.
 
         // --- 2. Read File & Decode ---
         try {
             const arrayBuffer = await file.arrayBuffer();
             console.log("AudioEngine: Decoding audio data...");
-
             // Ensure context is running before decoding
             if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-            // Decode the ArrayBuffer into an AudioBuffer using the Web Audio API.
             currentDecodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
              console.log(`AudioEngine: Decoded ${currentDecodedBuffer.duration.toFixed(2)}s @ ${currentDecodedBuffer.sampleRate}Hz`);
-            // Notify app that the original buffer is ready
             dispatchEngineEvent('audioapp:audioLoaded', { audioBuffer: currentDecodedBuffer });
 
             // --- 3. Resample for VAD ---
             console.log("AudioEngine: Resampling audio for VAD...");
-            const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(currentDecodedBuffer);
+            const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(currentDecodedBuffer); // Uses separate OfflineAudioContext
             console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz`);
-            // Notify app that resampling is complete
             dispatchEngineEvent('audioapp:resamplingComplete', { pcmData: pcm16k });
 
         } catch (error) {
             console.error("AudioEngine: Error during load/decode/resample pipeline:", error);
-            currentDecodedBuffer = null; // Clear buffer state on error
-            // Determine error type for more specific event dispatch
+            currentDecodedBuffer = null; // Clear buffer on error
+            // Dispatch specific error types
             if (error.message.includes("decodeAudioData") || (error instanceof DOMException && error.name === 'EncodingError')) {
                  dispatchEngineEvent('audioapp:decodingError', { error: error });
             } else if (error.message.includes("resampling")) {
                   dispatchEngineEvent('audioapp:resamplingError', { error: error });
             } else {
+                 // General load error
                  dispatchEngineEvent('audioapp:engineError', { type: 'load', error: error });
             }
-            // Re-throw the error so app.js can also catch it and handle overall state
-            throw error;
+            throw error; // Re-throw for app.js to handle global state/UI
         }
     }
 
 
     /**
-     * Converts an AudioBuffer to 16kHz mono Float32Array PCM using OfflineAudioContext.
-     * Required format for the Silero VAD model.
-     * @param {AudioBuffer} audioBuffer - The original decoded audio buffer.
-     * @returns {Promise<Float32Array>} A promise resolving to the 16kHz mono PCM data.
-     * @throws {Error} If resampling fails or AudioContext is unavailable.
+     * Converts AudioBuffer to 16kHz mono PCM using OfflineAudioContext.
+     * @param {AudioBuffer} audioBuffer
+     * @returns {Promise<Float32Array>}
+     * @throws {Error}
      * @private
      */
     function convertAudioBufferTo16kHzMonoFloat32(audioBuffer) {
+        // This function creates its own temporary context, so it's independent of the main audioCtx state.
         const targetSampleRate = 16000;
-        if (!audioCtx) {
-             // Should ideally not happen if init was successful, but check anyway.
-            return Promise.reject(new Error("AudioContext not available for resampling"));
-        }
-
-        // Use an Offline context to process the audio graph without playing it.
-        // Calculate target length carefully.
         const targetLength = Math.ceil(audioBuffer.duration * targetSampleRate);
-        const offlineCtx = new OfflineAudioContext(
-            1, // Number of channels (Mono)
-            targetLength, // Target buffer length in samples
-            targetSampleRate // Target sample rate
-        );
-
-        // Create a buffer source node for the original audio.
-        const src = offlineCtx.createBufferSource();
-        src.buffer = audioBuffer;
-
-        // Connect the source to the destination (the output of the context).
-        src.connect(offlineCtx.destination);
-
-        // Start the source node (required for offline rendering).
-        src.start();
-
-        console.log(`AudioEngine: Starting offline rendering to resample from ${audioBuffer.sampleRate}Hz to ${targetSampleRate}Hz mono.`);
-
-        // Start rendering the audio graph. This returns a Promise.
-        return offlineCtx.startRendering().then(renderedBuffer => {
-            // Get the raw Float32Array data from the first (and only) channel.
-            return renderedBuffer.getChannelData(0);
-        }).catch(err => {
-            console.error("AudioEngine: Error during audio resampling via OfflineAudioContext:", err);
-            // Add context to the error message for better debugging
-            throw new Error(`Audio resampling failed: ${err.message}`);
-        });
+        try {
+            const offlineCtx = new OfflineAudioContext(1, targetLength, targetSampleRate);
+            const src = offlineCtx.createBufferSource();
+            src.buffer = audioBuffer;
+            src.connect(offlineCtx.destination);
+            src.start();
+            // console.log(`AudioEngine: Starting offline rendering...`); // Less noise
+            return offlineCtx.startRendering().then(renderedBuffer => {
+                return renderedBuffer.getChannelData(0);
+            }).catch(err => {
+                console.error("AudioEngine: Error during audio resampling via OfflineAudioContext:", err);
+                // Throw a more specific error
+                throw new Error(`Audio resampling failed: ${err.message}`);
+            });
+        } catch (offlineCtxError) {
+             // Catch potential errors creating OfflineAudioContext itself
+             console.error("AudioEngine: Error creating OfflineAudioContext for resampling:", offlineCtxError);
+             return Promise.reject(new Error(`Failed to create OfflineContext for resampling: ${offlineCtxError.message}`));
+        }
     }
 
     // --- Playback Control Methods (Public) ---
 
     /**
-     * Toggles the playback state between play and pause.
-     * Resumes AudioContext if suspended.
+     * Toggles the playback state. Ensures AudioContext is ready.
      * @public
      */
     function togglePlayPause() {
         if (!audioEl || !audioEl.src || audioEl.readyState < audioEl.HAVE_METADATA) {
-            console.warn("AudioEngine: Cannot toggle play/pause - audio not ready.");
-            return;
+             console.warn("AudioEngine: Cannot toggle play/pause - audio not ready.");
+             return;
         }
-        // Attempt to resume context if suspended (often needed on first interaction)
-        if (audioCtx?.state === 'suspended') {
+        // Ensure context exists and is running before playing
+        if (!audioCtx || audioCtx.state === 'closed') {
+             console.error("AudioEngine: Play toggle failed - AudioContext not available.");
+             // Try to recreate? May be too late if user interaction context is lost.
+             if(!setupAudioContext()){ return; } // Attempt recreation
+             ensureAudioGraphConnected(); // Ensure connection for the new context
+        } else if (audioCtx.state === 'suspended') {
             audioCtx.resume().catch(e => console.warn("AudioEngine: Error resuming context on toggle", e));
         }
 
@@ -346,7 +333,7 @@ AudioApp.audioEngine = (function() {
 
     /**
      * Jumps the playback position by a specified number of seconds.
-     * @param {number} seconds - The amount to jump (positive for forward, negative for backward).
+     * @param {number} seconds - The amount to jump.
      * @public
      */
     function jumpBy(seconds) {
@@ -359,7 +346,6 @@ AudioApp.audioEngine = (function() {
 
     /**
      * Seeks the playback position to a specific time.
-     * Clamps the time within the valid duration range [0, duration].
      * @param {number} time - The target time in seconds.
      * @public
      */
@@ -368,46 +354,45 @@ AudioApp.audioEngine = (function() {
              console.warn("AudioEngine: Cannot seek - duration unknown.");
             return;
         }
-        // Ensure the target time is within the bounds of the audio duration.
         const newTime = Math.max(0, Math.min(time, audioEl.duration));
-        if (Math.abs(audioEl.currentTime - newTime) > 0.01) { // Avoid seeking to the exact same spot
+        // Only update currentTime if the change is significant enough to avoid redundant seeks
+        if (Math.abs(audioEl.currentTime - newTime) > 0.01) {
             audioEl.currentTime = newTime;
-            console.log(`AudioEngine: Seeked to ${formatTime(newTime)}`);
-            // The 'timeupdate' event will eventually fire and notify the app controller.
+            // console.log(`AudioEngine: Seeked to ${formatTime(newTime)}`); // Less noise
         }
     }
 
     /**
      * Sets the playback speed (rate).
-     * Clamps the value between 0.25 and 2.0.
-     * @param {number} speed - The desired playback speed (e.g., 1.0 for normal).
+     * @param {number} speed - The desired playback speed.
      * @public
      */
     function setSpeed(speed) {
          if (!audioEl) return;
-         const rate = Math.max(0.25, Math.min(parseFloat(speed) || 1.0, 2.0)); // Clamp and ensure number
-         audioEl.playbackRate = rate;
-         // Ensure pitch correction is enabled (most browsers default to true now)
-         audioEl.preservesPitch = true;
-         audioEl.mozPreservesPitch = true; // For older Firefox
-         console.log(`AudioEngine: Playback speed set to ${rate.toFixed(2)}x`);
+         const rate = Math.max(0.25, Math.min(parseFloat(speed) || 1.0, 2.0));
+         if (audioEl.playbackRate !== rate) { // Avoid setting if unchanged
+            audioEl.playbackRate = rate;
+            audioEl.preservesPitch = true;
+            audioEl.mozPreservesPitch = true;
+            console.log(`AudioEngine: Playback speed set to ${rate.toFixed(2)}x`);
+         }
     }
 
     /**
-     * Sets the gain (volume) level.
-     * Clamps the value between 0.0 and 2.0.
+     * Sets the gain (volume) level. Checks if GainNode exists for current context.
      * @param {number} gain - The desired gain multiplier (0.0 to 2.0).
      * @public
      */
     function setGain(gain) {
-        if (!gainNode || !audioCtx) {
-            console.warn("AudioEngine: Cannot set gain - GainNode or AudioContext missing.");
+        // Check for valid context AND gainNode associated with that context
+        if (!gainNode || !audioCtx || audioCtx.state === 'closed') {
+            console.warn("AudioEngine: Cannot set gain - GainNode or valid AudioContext missing.");
             return;
         }
-        const value = Math.max(0.0, Math.min(parseFloat(gain) || 1.0, 2.0)); // Clamp and ensure number
-        // Use setTargetAtTime for a smooth (exponential) transition to the new value.
+        const value = Math.max(0.0, Math.min(parseFloat(gain) || 1.0, 2.0));
+        // Use setTargetAtTime for smooth transitions
         gainNode.gain.setTargetAtTime(value, audioCtx.currentTime, 0.015);
-        console.log(`AudioEngine: Gain set to ${value.toFixed(2)}x`);
+        // console.log(`AudioEngine: Gain set to ${value.toFixed(2)}x`); // Less noise
     }
 
     /**
@@ -425,40 +410,35 @@ AudioApp.audioEngine = (function() {
      // --- Cleanup ---
 
     /**
-     * Cleans up resources: revokes Object URL, closes AudioContext, disconnects source node.
-     * Should be called when the application is closing (e.g., beforeunload).
+     * Cleans up resources: revokes Object URL, closes the persistent AudioContext.
+     * Called on page unload.
      * @public
      */
     function cleanup() {
         console.log("AudioEngine: Cleaning up resources...");
-        // Pause playback
-        if (audioEl && !audioEl.paused) {
-            audioEl.pause();
-        }
-        // Revoke Object URL
+        // Stop playback
+        if (audioEl && !audioEl.paused) { audioEl.pause(); }
+        // Revoke URL
         if (currentObjectURL) {
             URL.revokeObjectURL(currentObjectURL);
             console.log("AudioEngine: Revoked Object URL:", currentObjectURL);
             currentObjectURL = null;
         }
-         // Explicitly disconnect and nullify source node during cleanup
-         if (mediaSource) {
-            try {
-                mediaSource.disconnect();
-                console.log("AudioEngine: Disconnected source node during cleanup.");
-            } catch(e) {/* ignore error during cleanup */}
-            mediaSource = null;
-        }
-        // Close AudioContext
+
+        // Close the persistent AudioContext if it exists and isn't already closed
         if (audioCtx && audioCtx.state !== 'closed') {
             audioCtx.close().then(() => console.log("AudioEngine: AudioContext closed."))
                            .catch(e => console.warn("AudioEngine: Error closing AudioContext:", e));
-            audioCtx = null; // Nullify ref
         }
-        // Reset audio element source
+        // Reset all context-related references
+        audioCtx = null;
+        gainNode = null;
+        mediaSource = null; // Node is invalid once context is closed
+
+        // Reset audio element
         if (audioEl) {
             audioEl.removeAttribute('src');
-            audioEl.load(); // Important to reset internal state
+            audioEl.load();
         }
         currentDecodedBuffer = null; // Clear buffer cache
     }
@@ -467,8 +447,8 @@ AudioApp.audioEngine = (function() {
 
     /**
      * Dispatches a custom event specific to the audio engine.
-     * @param {string} eventName - The name of the event (e.g., 'audioapp:timeUpdated').
-     * @param {object} [detail={}] - Data payload for the event.
+     * @param {string} eventName - The name of the event.
+     * @param {object} [detail={}] - Data payload.
      * @private
      */
     function dispatchEngineEvent(eventName, detail = {}) {
@@ -476,7 +456,7 @@ AudioApp.audioEngine = (function() {
     }
 
     /**
-     * Formats time in seconds to MM:SS string (Utility).
+     * Formats time in seconds to MM:SS string.
      * @param {number} sec - Seconds.
      * @returns {string} Formatted string.
      * @private
@@ -485,13 +465,11 @@ AudioApp.audioEngine = (function() {
         if (isNaN(sec) || sec < 0) sec = 0;
         const minutes = Math.floor(sec / 60);
         const seconds = Math.floor(sec % 60);
-        // Pad seconds with a leading zero if less than 10
         return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
     }
 
 
     // --- Public Interface ---
-    // Expose methods needed by app.js to control audio processing and playback.
     return {
         init: init,
         loadAndProcessFile: loadAndProcessFile,
