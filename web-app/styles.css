@@ -148,3 +148,46 @@ canvas {
 #keybinds th {
   background: #f0f0f0;
 }
+
+
+/* Combined VAD Section Specifics */
+#vad-section .vad-regions-heading {
+  font-size: 1em; /* Make it look like a sub-heading */
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  padding-bottom: 3px;
+  border-bottom: 1px dotted #ccc;
+}
+
+/* Style the container for the speech regions */
+.speech-regions-list {
+  max-height: 150px; /* Limit height and add scroll if many regions */
+  overflow-y: auto;
+  border: 1px solid #eee;
+  padding: 10px;
+  background-color: #fdfdfd;
+  margin-top: 5px;
+}
+
+/* Style each individual region item to look clickable */
+.speech-region-link {
+  display: block; /* Make each region take its own line */
+  margin-bottom: 5px;
+  padding: 2px 4px;
+  color: #0056b3; /* Link-like color */
+  text-decoration: none; /* Remove default underline */
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.2s ease; /* Smooth hover effect */
+}
+
+.speech-region-link:hover {
+  background-color: #e9ecef; /* Light background on hover */
+  text-decoration: underline; /* Underline on hover */
+}
+
+/* Style placeholder text when no regions */
+#speechRegionsDisplay p {
+  color: #6c757d; /* Muted color for placeholder */
+  font-style: italic;
+}
