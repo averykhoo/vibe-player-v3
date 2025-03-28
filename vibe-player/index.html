@@ -1,0 +1,143 @@
+<!-- /vibe-player/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Player</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<h1>Vibe Player</h1>
+
+<!-- === File Loading Section === -->
+<section id="file-loader">
+    <h2>Load Audio File</h2>
+    <input type="file" id="audioFile" accept="audio/*">
+    <p id="fileInfo">No file selected.</p>
+</section>
+
+<!-- === Playback Controls Section === -->
+<section id="controls">
+    <h2>Controls</h2>
+    <div>
+        <button id="playPause" disabled>Play</button>
+        <button id="jumpBack" disabled>◀◀ Back</button>
+        <input type="number" id="jumpTime" value="5" min="1" step="1" title="Seconds to jump">s
+        <button id="jumpForward" disabled>Forward ▶▶</button>
+    </div>
+    <div class="control-group">
+        <label for="playbackSpeed">Speed:</label>
+        <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
+        <span id="speedValue">1.00x</span>
+    </div>
+    <div class="control-group">
+        <label for="gainControl">Volume:</label>
+        <input type="range" id="gainControl" min="0" max="2" value="1.0" step="0.01"> <!-- Allow 0 volume, max 2x -->
+        <span id="gainValue">1.00x</span>
+    </div>
+    <div id="timeDisplay">0:00 / 0:00</div>
+</section>
+
+<!-- === VAD Tuning Section === -->
+<section id="vad-tuning">
+    <h2>VAD Tuning (Silero)</h2>
+    <div class="control-group">
+        <label for="vadThreshold" title="Probability above which a frame is considered speech.">Positive:</label>
+        <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
+        <span id="vadThresholdValue">N/A</span>
+    </div>
+    <div class="control-group">
+        <label for="vadNegativeThreshold"
+               title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>
+        <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
+        <span id="vadNegativeThresholdValue">N/A</span>
+    </div>
+    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>
+</section>
+
+<!-- === Speech Info Section === -->
+<section id="speech-info">
+    <h2>Detected Speech Regions</h2>
+    <pre id="speechRegionsDisplay">None</pre> <!-- Use <pre> for better formatting -->
+</section>
+
+<!-- === Visualizations Section === -->
+<section class="visualization">
+    <h3>Waveform <small>(Speech in Orange)</small></h3>
+    <div class="canvas-container">
+        <canvas id="waveformCanvas"></canvas>
+        <div id="waveformProgressBar" class="progress-bar">
+            <div id="waveformProgressIndicator" class="progress-indicator"></div>
+        </div>
+    </div>
+</section>
+
+<section class="visualization">
+    <h3>Spectrogram <span id="spectrogramSpinner" class="spinner">(Computing...)</span></h3>
+    <div class="canvas-container">
+        <canvas id="spectrogramCanvas"></canvas>
+        <div id="spectrogramProgressBar" class="progress-bar">
+            <div id="spectrogramProgressIndicator" class="progress-indicator"></div>
+        </div>
+    </div>
+</section>
+
+<!-- === Keyboard Shortcuts Section === -->
+<section id="keybinds">
+    <h2>Keyboard Shortcuts</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Key</th>
+            <th>Action</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td>Space</td>
+            <td>Play / Pause</td>
+        </tr>
+        <tr>
+            <td>Left Arrow</td>
+            <td>Jump Back (by specified seconds)</td>
+        </tr>
+        <tr>
+            <td>Right Arrow</td>
+            <td>Jump Forward (by specified seconds)</td>
+        </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- === Hidden Audio Element === -->
+<audio id="player" style="display: none;" preload="auto"></audio>
+
+
+<!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
+<!-- Design Decision: Load external libraries first, then application modules in dependency order, finally initialize. -->
+
+<!-- 1. External Libraries -->
+<script src="lib/ort.min.js"></script> <!-- ONNX Runtime (creates global 'ort') -->
+<script src="lib/fft.js"></script>     <!-- FFT Library (creates global 'FFT') -->
+
+<!-- 2. Application Modules (using IIFE + Global Namespace 'AudioApp') -->
+<script src="js/app.js"></script>            <!-- Creates AudioApp namespace, MUST BE FIRST -->
+<script src="js/uiManager.js"></script>      <!-- Defines AudioApp.uiManager -->
+<script src="js/audioEngine.js"></script>    <!-- Defines AudioApp.audioEngine -->
+<script src="js/sileroWrapper.js"></script>  <!-- Defines AudioApp.sileroWrapper (needs global ort) -->
+<script src="js/sileroProcessor.js"></script><!-- Defines AudioApp.sileroProcessor (needs wrapper) -->
+<script src="js/vadAnalyzer.js"></script>    <!-- Defines AudioApp.vadAnalyzer (needs processor) -->
+<script src="js/visualizer.js"></script>     <!-- Defines AudioApp.visualizer (needs global FFT) -->
+
+<!-- 3. Initialize the App -->
+<script>
+    // Design Decision: Use DOMContentLoaded to ensure HTML is parsed before trying to access elements or init app.
+    document.addEventListener('DOMContentLoaded', () => {
+        AudioApp.init(); // Initialize the application defined in js/app.js
+    });
+</script>
+
+</body>
+</html>
