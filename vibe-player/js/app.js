@@ -23,6 +23,12 @@ AudioApp = (function() {
     let currentVadResults = null;
      /** @type {File|null} The currently loaded audio file object */
     let currentFile = null;
+    /**
+     * Flag to track if the VAD model creation has been attempted and succeeded at least once.
+     * Prevents redundant attempts to load the model.
+     * @type {boolean}
+     */
+    let vadModelReady = false;
 
     // --- Initialization ---
 
@@ -101,6 +107,7 @@ AudioApp = (function() {
         currentAudioBuffer = null;
         currentPcm16k = null;
         currentVadResults = null;
+        // vadModelReady flag persists across file loads unless the page is refreshed.
         AudioApp.uiManager.resetUI();
         AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`);
         AudioApp.visualizer.clearVisuals();
@@ -136,65 +143,98 @@ AudioApp = (function() {
 
     /**
      * Handles the 'audioapp:resamplingComplete' event from audioEngine.
-     * Stores the 16kHz PCM data, triggers VAD analysis, then visualization.
+     * Stores the 16kHz PCM data, ensures VAD model is created (once per page load),
+     * triggers VAD analysis, then visualization.
      * @param {CustomEvent} e - The event object.
      * @param {Float32Array} e.detail.pcmData - The 16kHz mono PCM data.
      * @private
      */
-    async function handleResamplingComplete(e) {
+    async function handleResamplingComplete(e) { // Still async
         currentPcm16k = e.detail.pcmData;
         console.log(`App: Audio resampled (${currentPcm16k.length} samples @ 16kHz)`);
 
-        // --- VAD Analysis Stage ---
-        console.log("App: Starting VAD analysis...");
-        AudioApp.uiManager.setSpeechRegionsText("Analyzing VAD...");
-        try {
-            // Ensure Silero model is loaded (wrapper might handle idempotency)
-            // Resetting state is handled within sileroProcessor.analyzeAudio -> wrapper.reset_state
-            currentVadResults = await AudioApp.vadAnalyzer.analyze(currentPcm16k);
-            console.log(`App: VAD analysis complete. ${currentVadResults.regions.length} initial regions found.`);
-
-            // Update UI with initial VAD results
-            AudioApp.uiManager.updateVadDisplay(
-                currentVadResults.initialPositiveThreshold,
-                currentVadResults.initialNegativeThreshold
-            );
-            AudioApp.uiManager.updateSpeechRegionsText(currentVadResults.regions);
-            AudioApp.uiManager.enableVadControls(true);
-            AudioApp.uiManager.enablePlaybackControls(true); // Enable playback after VAD
-
-            // --- Visualization Stage ---
-            console.log("App: Computing and drawing visualizations...");
-             // Use ORIGINAL buffer and INITIAL regions from VAD result
-            await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, currentVadResults.regions);
-            console.log("App: Visualizations complete.");
-
-            // Design Decision: Force an immediate recalculation/redraw based on slider state
-            // This ensures the initial waveform highlight matches the slider defaults exactly,
-            // using the same logic path as user interaction.
-            handleThresholdChange({ detail: { type: 'positive', value: currentVadResults.initialPositiveThreshold } });
-
-        } catch (error) {
-            console.error("App: VAD Analysis or Visualization failed -", error);
-            AudioApp.uiManager.setSpeechRegionsText(`VAD/Vis Error: ${error.message}`);
-            // Still enable playback if VAD failed but audio is loaded
-            if (currentAudioBuffer) AudioApp.uiManager.enablePlaybackControls(true);
-            AudioApp.uiManager.enableVadControls(false); // Disable VAD sliders on error
-            // Attempt to draw visuals without VAD highlighting if buffer exists
-            if (currentAudioBuffer) {
-                try {
-                    console.log("App: Drawing visuals without VAD highlighting due to error...");
-                    await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, []); // Empty regions
-                } catch (visError) {
-                    console.error("App: Visualization failed after VAD error -", visError);
+        // --- Ensure VAD Model is Created (Once per Page Load) ---
+        let vadCreationSuccess = vadModelReady;
+        if (!vadModelReady) {
+            console.log("App: Attempting to create/load VAD model for the first time...");
+            try {
+                vadCreationSuccess = await AudioApp.sileroWrapper.create(16000);
+                if (vadCreationSuccess) {
+                    vadModelReady = true;
+                    console.log("App: VAD model created successfully.");
+                } else {
+                    console.error("App: Failed to create VAD model via wrapper (returned false).");
+                    AudioApp.uiManager.setFileInfo("Error: Could not load VAD model.");
+                    AudioApp.uiManager.enableVadControls(false);
                 }
+            } catch (creationError) {
+                console.error("App: Error during VAD model creation:", creationError);
+                vadCreationSuccess = false;
+                AudioApp.uiManager.setFileInfo(`Error: Could not load VAD model. ${creationError.message}`);
+                AudioApp.uiManager.enableVadControls(false);
             }
-        } finally {
-            AudioApp.visualizer.showSpinner(false);
-            // Restore filename in info display after processing
-            AudioApp.uiManager.setFileInfo(`File: ${currentFile ? currentFile.name : 'Ready'}`);
+        } else {
+            console.log("App: VAD model already initialized.");
+            // Processor calls wrapper.reset_state() internally now
         }
-    }
+        // --- End VAD Model Creation Check ---
+
+        // --- VAD Analysis Stage ---
+        if (vadCreationSuccess) {
+            console.log("App: Starting VAD analysis...");
+            AudioApp.uiManager.setSpeechRegionsText("Analyzing VAD..."); // Update status
+            try {
+                currentVadResults = await AudioApp.vadAnalyzer.analyze(currentPcm16k); // Line ~197
+                console.log(`App: VAD analysis complete. ${currentVadResults.regions.length} initial regions found.`);
+
+                // Update UI with VAD results
+                AudioApp.uiManager.updateVadDisplay( // Line ~201
+                    currentVadResults.initialPositiveThreshold,
+                    currentVadResults.initialNegativeThreshold
+                );
+                // --- THIS IS THE FIX: Change 'updateSpeechRegionsText' to 'setSpeechRegionsText' ---
+                AudioApp.uiManager.setSpeechRegionsText(currentVadResults.regions); // Line ~204 (CORRECTED)
+                // --- END FIX ---
+                AudioApp.uiManager.enableVadControls(true); // Line ~205
+                AudioApp.uiManager.enablePlaybackControls(true); // Enable playback after successful VAD
+
+                // --- Visualization Stage ---
+                console.log("App: Computing and drawing visualizations...");
+                await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, currentVadResults.regions);
+                console.log("App: Visualizations complete.");
+                handleThresholdChange({ detail: { type: 'positive', value: currentVadResults.initialPositiveThreshold } });
+
+            } catch (analysisError) { // Line ~219 context (catch block entry)
+                // Catch errors specifically from the analysis stage (e.g., inference error)
+                console.error("App: VAD Analysis failed -", analysisError); // <<< This was the error context
+                AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${analysisError.message}`);
+                if (currentAudioBuffer) AudioApp.uiManager.enablePlaybackControls(true);
+                AudioApp.uiManager.enableVadControls(false);
+                if (currentAudioBuffer) {
+                     console.log("App: Drawing visuals without VAD highlighting due to analysis error..."); // Line ~226 context
+                     await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, []); // Empty regions
+                }
+            } finally {
+                 AudioApp.visualizer.showSpinner(false);
+                 AudioApp.uiManager.setFileInfo(`File: ${currentFile ? currentFile.name : 'Ready'}`);
+            }
+        } else {
+            // Handle case where VAD model failed to load/create
+            console.warn("App: Skipping VAD analysis due to model creation failure.");
+            AudioApp.uiManager.setSpeechRegionsText("VAD Model Error");
+            AudioApp.uiManager.enableVadControls(false);
+            if (currentAudioBuffer) AudioApp.uiManager.enablePlaybackControls(true);
+            if (currentAudioBuffer) {
+                console.log("App: Computing/drawing visuals without VAD highlighting...");
+                 AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, [])
+                    .catch(visError => console.error("App: Visualization failed after VAD model error:", visError))
+                    .finally(() => AudioApp.visualizer.showSpinner(false));
+            } else {
+                 AudioApp.visualizer.showSpinner(false);
+            }
+             AudioApp.uiManager.setFileInfo(`File: ${currentFile ? currentFile.name : 'Ready (VAD Error)'}`);
+        }
+    } // --- End of handleResamplingComplete ---
 
     /**
      * Handles various audio error events from audioEngine or processing stages.
@@ -216,6 +256,7 @@ AudioApp = (function() {
         currentPcm16k = null;
         currentVadResults = null;
         currentFile = null;
+        // Don't reset vadModelReady automatically on all errors
     }
 
     /**
@@ -257,7 +298,6 @@ AudioApp = (function() {
      * @private
      */
     function handleSpeedChange(e) {
-        // Delegate directly to the audio engine
         AudioApp.audioEngine.setSpeed(e.detail.speed);
     }
 
@@ -268,7 +308,6 @@ AudioApp = (function() {
      * @private
      */
     function handleGainChange(e) {
-        // Delegate directly to the audio engine
         AudioApp.audioEngine.setGain(e.detail.gain);
     }
 
@@ -288,8 +327,8 @@ AudioApp = (function() {
         // Update VAD Analyzer's internal thresholds and get recalculated regions
         const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value);
 
-        // Update the text display for speech regions
-        AudioApp.uiManager.updateSpeechRegionsText(newRegions);
+        // Update the text display for speech regions using the CORRECT function name
+        AudioApp.uiManager.setSpeechRegionsText(newRegions);
 
         // Redraw *only* the waveform highlighting using the new regions
         AudioApp.visualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
@@ -316,7 +355,6 @@ AudioApp = (function() {
      */
     function handlePlaybackEnded() {
         console.log("App: Playback ended");
-        // UI manager updates button state based on 'playbackStateChanged'
     }
 
     /**
@@ -387,4 +425,4 @@ AudioApp = (function() {
     return {
         init: init
     };
-})();
+})(); // End of AudioApp IIFE

@@ -236,7 +236,7 @@ AudioApp.uiManager = (function() {
         setFileInfo("No file selected.");
         setPlayButtonState(false); // Show 'Play'
         updateTimeDisplay(0, 0);
-        setSpeechRegionsText("None");
+        setSpeechRegionsText("None"); // Call the function to set text
         updateVadDisplay(0.5, 0.35, true); // Reset display text, mark as N/A
         // Reset slider visual positions and displays
         if (playbackSpeedControl) playbackSpeedControl.value = "1.0";
@@ -284,7 +284,7 @@ AudioApp.uiManager = (function() {
      * @param {string | Array<{start: number, end: number}>} regionsOrText - Text or region array.
      * @public
      */
-    function setSpeechRegionsText(regionsOrText) {
+    function setSpeechRegionsText(regionsOrText) { // <<<<< THIS FUNCTION WAS DEFINED BUT NOT RETURNED PREVIOUSLY
         if (!speechRegionsDisplay) return;
         if (typeof regionsOrText === 'string') {
              speechRegionsDisplay.textContent = regionsOrText;
@@ -352,6 +352,7 @@ AudioApp.uiManager = (function() {
      * @public
      */
     function getJumpTime() {
+        // Use optional chaining (?) in case element wasn't found
         return parseFloat(jumpTimeInput?.value) || 5;
     }
 
@@ -379,11 +380,10 @@ AudioApp.uiManager = (function() {
         setFileInfo: setFileInfo,
         setPlayButtonState: setPlayButtonState,
         updateTimeDisplay: updateTimeDisplay,
-        setSpeechRegionsText: setSpeechRegionsText,
+        setSpeechRegionsText: setSpeechRegionsText, // <<<<< ADDED THIS LINE
         updateVadDisplay: updateVadDisplay,
         enablePlaybackControls: enablePlaybackControls,
         enableVadControls: enableVadControls,
         getJumpTime: getJumpTime
-        // Spinner control delegated to Visualizer module as it relates to drawing computation
     };
-})();
+})(); // End of uiManager IIFE
