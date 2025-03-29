@@ -56,30 +56,29 @@ section {
 /* --- Slider Units --- */
 .slider-unit {
     position: relative;
-    margin-bottom: 30px;
-    padding-bottom: 1.5em;
+    margin-bottom: 15px; /* Space between units */
+    padding: 10px 15px 1.5em 15px; /* Top/Horiz/Bottom padding */
+    border: 1px solid #ddd; /* Add a border */
+    border-radius: 8px; /* Rounded corners */
+    background-color: #fdfdfd; /* Slightly off-white background */
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); /* Subtle inner shadow */
 }
 
 .slider-label-value {
-    /* display: flex; */ /* Removed flex */
-    /* justify-content: space-between; */ /* Removed */
-    /* align-items: center; */ /* Removed */
     margin-bottom: 5px;
 }
 
 .slider-label-value label {
-    margin-right: 5px; /* Reduced space after label */
+    margin-right: 5px;
     min-width: auto;
     font-weight: bold;
-    display: inline; /* Ensure label flows inline */
+    display: inline;
 }
 
-.slider-label-value span { /* The static value display */
+.slider-label-value span {
     font-family: monospace;
-    /* min-width: 45px; */ /* Removed min-width */
-    /* text-align: right; */ /* Removed text-align */
-    display: inline; /* Ensure value flows inline */
-    margin-left: 2px; /* Small space after colon */
+    display: inline;
+    margin-left: 2px;
 }
 
 #controls input[type=range] {

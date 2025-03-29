@@ -10,7 +10,7 @@
     * start the response with a tracker of which files have been fixed, which are going to be fixed
     * print the entire thing for me to copy paste
     * if it's a single line block, shoe before and after
-    * if a file si to be deleted, just say so
+    * if a file is to be moved, reverted, or deleted, just say so
     * and also explain what will be fixed in the current file or segment
     * i will manually copy the entire file over and let you know when i'm done
 * write file and function docstrings with types, ideally compatible with pycharm's js support
