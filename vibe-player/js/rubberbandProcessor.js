@@ -50,7 +50,7 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             // const TransientsMixed = RBOptions.TransientsMixed ?? 0x00000100; // Alternative if Crisp is harsh
 
             // *** MODIFIED OPTIONS FOR SPEECH QUALITY ***
-            const options = ProcessRealTime | EngineFiner | PitchHighQuality | PhaseIndependent | TransientsCrisp;
+            const options = ProcessRealTime | PitchHighQuality | PhaseIndependent | TransientsCrisp;
             console.log(`[Worklet] Creating Rubberband instance with options: ${options.toString(16)} (Speech Quality Focus)`);
 
             this.rubberbandStretcher = this.wasmModule._rubberband_new( this.sampleRate, this.numberOfChannels, options, 1.0, 1.0 );
