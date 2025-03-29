@@ -5,12 +5,10 @@
 var AudioApp = AudioApp || {}; // Ensure namespace exists
 
 // Design Decision: Use IIFE to encapsulate UI logic.
-// Takes no arguments as it interacts directly with the DOM based on IDs.
 AudioApp.uiManager = (function() {
     'use strict';
 
     // --- DOM Element References ---
-    // Design Decision: Cache element references on init for performance.
     /** @type {HTMLInputElement|null} */ let fileInput;
     /** @type {HTMLParagraphElement|null} */ let fileInfo;
     /** @type {HTMLButtonElement|null} */ let playPauseButton;
@@ -19,14 +17,18 @@ AudioApp.uiManager = (function() {
     /** @type {HTMLInputElement|null} */ let jumpTimeInput;
     /** @type {HTMLInputElement|null} */ let playbackSpeedControl;
     /** @type {HTMLSpanElement|null} */ let speedValueDisplay;
+    /** @type {HTMLInputElement|null} */ let pitchControl; // New
+    /** @type {HTMLSpanElement|null} */ let pitchValueDisplay; // New
+    /** @type {HTMLInputElement|null} */ let formantControl; // New
+    /** @type {HTMLSpanElement|null} */ let formantValueDisplay; // New
     /** @type {HTMLInputElement|null} */ let gainControl;
     /** @type {HTMLSpanElement|null} */ let gainValueDisplay;
     /** @type {HTMLDivElement|null} */ let timeDisplay;
-    /** @type {HTMLCanvasElement|null} */ let waveformCanvas; // Referenced mainly for context, drawing handled by Visualizer
-    /** @type {HTMLCanvasElement|null} */ let spectrogramCanvas; // Referenced mainly for context
+    /** @type {HTMLCanvasElement|null} */ let waveformCanvas;
+    /** @type {HTMLCanvasElement|null} */ let spectrogramCanvas;
     /** @type {HTMLSpanElement|null} */ let spectrogramSpinner;
-    /** @type {HTMLDivElement|null} */ let waveformProgressIndicator; // Referenced mainly for context
-    /** @type {HTMLDivElement|null} */ let spectrogramProgressIndicator; // Referenced mainly for context
+    /** @type {HTMLDivElement|null} */ let waveformProgressIndicator;
+    /** @type {HTMLDivElement|null} */ let spectrogramProgressIndicator;
     /** @type {HTMLPreElement|null} */ let speechRegionsDisplay;
     /** @type {HTMLInputElement|null} */ let vadThresholdSlider;
     /** @type {HTMLSpanElement|null} */ let vadThresholdValueDisplay;
@@ -62,22 +64,26 @@ AudioApp.uiManager = (function() {
         jumpTimeInput = document.getElementById('jumpTime');
         playbackSpeedControl = document.getElementById('playbackSpeed');
         speedValueDisplay = document.getElementById('speedValue');
+        pitchControl = document.getElementById('pitchControl'); // New
+        pitchValueDisplay = document.getElementById('pitchValue'); // New
+        formantControl = document.getElementById('formantControl'); // New
+        formantValueDisplay = document.getElementById('formantValue'); // New
         gainControl = document.getElementById('gainControl');
         gainValueDisplay = document.getElementById('gainValue');
         timeDisplay = document.getElementById('timeDisplay');
-        waveformCanvas = document.getElementById('waveformCanvas'); // For potential size calculation if needed
-        spectrogramCanvas = document.getElementById('spectrogramCanvas'); // For potential size calculation if needed
+        waveformCanvas = document.getElementById('waveformCanvas');
+        spectrogramCanvas = document.getElementById('spectrogramCanvas');
         spectrogramSpinner = document.getElementById('spectrogramSpinner');
-        waveformProgressIndicator = document.getElementById('waveformProgressIndicator'); // Referenced by Visualizer
-        spectrogramProgressIndicator = document.getElementById('spectrogramProgressIndicator'); // Referenced by Visualizer
+        waveformProgressIndicator = document.getElementById('waveformProgressIndicator');
+        spectrogramProgressIndicator = document.getElementById('spectrogramProgressIndicator');
         speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
         vadThresholdSlider = document.getElementById('vadThreshold');
         vadThresholdValueDisplay = document.getElementById('vadThresholdValue');
         vadNegativeThresholdSlider = document.getElementById('vadNegativeThreshold');
         vadNegativeThresholdValueDisplay = document.getElementById('vadNegativeThresholdValue');
 
-        // Basic check
-        if (!fileInput || !playPauseButton || !waveformCanvas) {
+        // Basic check including new elements
+        if (!fileInput || !playPauseButton || !waveformCanvas || !pitchControl || !formantControl) {
              console.warn("UIManager: Could not find all required UI elements!");
         }
     }
@@ -96,25 +102,29 @@ AudioApp.uiManager = (function() {
             if (file) {
                 dispatchUIEvent('audioapp:fileSelected', { file: file });
             }
-            fileInput.blur(); // Unfocus to allow keyboard shortcuts immediately after selection
+            fileInput.blur();
         });
 
         // Playback Buttons
-        playPauseButton?.addEventListener('click', () => {
-            dispatchUIEvent('audioapp:playPauseClicked');
-        });
-        jumpBackButton?.addEventListener('click', () => {
-            dispatchUIEvent('audioapp:jumpClicked', { seconds: -getJumpTime() });
-        });
-        jumpForwardButton?.addEventListener('click', () => {
-            dispatchUIEvent('audioapp:jumpClicked', { seconds: getJumpTime() });
-        });
+        playPauseButton?.addEventListener('click', () => dispatchUIEvent('audioapp:playPauseClicked'));
+        jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: -getJumpTime() }));
+        jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: getJumpTime() }));
 
         // Sliders
         playbackSpeedControl?.addEventListener('input', () => {
             const speed = parseFloat(playbackSpeedControl.value);
             if (speedValueDisplay) speedValueDisplay.textContent = speed.toFixed(2) + "x";
             dispatchUIEvent('audioapp:speedChanged', { speed: speed });
+        });
+        pitchControl?.addEventListener('input', () => { // New
+            const pitch = parseFloat(pitchControl.value);
+            if (pitchValueDisplay) pitchValueDisplay.textContent = pitch.toFixed(2) + "x";
+            dispatchUIEvent('audioapp:pitchChanged', { pitch: pitch });
+        });
+        formantControl?.addEventListener('input', () => { // New
+            const formant = parseFloat(formantControl.value);
+            if (formantValueDisplay) formantValueDisplay.textContent = formant.toFixed(2) + "x";
+            dispatchUIEvent('audioapp:formantChanged', { formant: formant });
         });
         gainControl?.addEventListener('input', () => {
             const gain = parseFloat(gainControl.value);
@@ -126,8 +136,6 @@ AudioApp.uiManager = (function() {
         vadThresholdSlider?.addEventListener('input', handleVadSliderInput);
         vadNegativeThresholdSlider?.addEventListener('input', handleVadSliderInput);
 
-        // Canvas clicks are handled by Visualizer module which dispatches 'audioapp:seekRequested'
-
         // Global Keyboard Shortcuts
         document.addEventListener('keydown', handleKeyDown);
     }
@@ -136,79 +144,38 @@ AudioApp.uiManager = (function() {
 
     /**
      * Handles keydown events for keyboard shortcuts.
-     * Ignores events if focus is on input fields that accept text.
-     * Dispatches 'audioapp:keyPressed' event.
      * @param {KeyboardEvent} e - The keyboard event.
      * @private
      */
      function handleKeyDown(e) {
-        // Ignore shortcuts if user is typing in text/number input fields
+        // Ignore shortcuts if user is typing in relevant input fields
         const target = e.target;
-        const isTextInput = target.tagName === 'INPUT' && (
-            target.type === 'text' ||
-            target.type === 'number' ||
-            target.type === 'search' ||
-            target.type === 'email' ||
-            target.type === 'password' ||
-            target.type === 'url'
-        );
+        const isTextInput = target.tagName === 'INPUT' && (target.type === 'text' || target.type === 'number' || target.type === 'search' || target.type === 'email' || target.type === 'password' || target.type === 'url');
         const isTextArea = target.tagName === 'TEXTAREA';
+        if (isTextInput || isTextArea) return;
 
-        if (isTextInput || isTextArea) {
-            return; // Don't interfere with typing
-        }
-
-        let handled = false;
-        let eventKey = null;
-
+        let handled = false; let eventKey = null;
         switch (e.code) {
-            case 'Space':
-                // Space often scrolls, prevent if we handle it
-                eventKey = 'Space';
-                handled = true;
-                break;
-            case 'ArrowLeft':
-                eventKey = 'ArrowLeft';
-                handled = true; // Assume jump is always available if controls are enabled
-                break;
-            case 'ArrowRight':
-                eventKey = 'ArrowRight';
-                handled = true;
-                break;
+            case 'Space': eventKey = 'Space'; handled = true; break;
+            case 'ArrowLeft': eventKey = 'ArrowLeft'; handled = true; break;
+            case 'ArrowRight': eventKey = 'ArrowRight'; handled = true; break;
         }
-
-        if (eventKey) {
-             // Let app.js decide if action is valid based on current state (e.g., audio loaded)
-             dispatchUIEvent('audioapp:keyPressed', { key: eventKey });
-        }
-
-        if (handled) {
-            e.preventDefault(); // Prevent default browser action (scrolling, moving cursor in number input)
-        }
+        if (eventKey) dispatchUIEvent('audioapp:keyPressed', { key: eventKey });
+        if (handled) e.preventDefault();
     }
 
     /**
-     * Handles input events from either VAD threshold slider.
-     * Updates the corresponding value display and dispatches 'audioapp:thresholdChanged'.
-     * @param {Event} e - The input event from the slider.
+     * Handles input events from VAD threshold sliders.
+     * @param {Event} e - The input event.
      * @private
      */
     function handleVadSliderInput(e) {
         const slider = /** @type {HTMLInputElement} */ (e.target);
         const value = parseFloat(slider.value);
-        let type = null; // 'positive' or 'negative'
-
-        if (slider === vadThresholdSlider && vadThresholdValueDisplay) {
-            vadThresholdValueDisplay.textContent = value.toFixed(2);
-            type = 'positive';
-        } else if (slider === vadNegativeThresholdSlider && vadNegativeThresholdValueDisplay) {
-            vadNegativeThresholdValueDisplay.textContent = value.toFixed(2);
-            type = 'negative';
-        }
-
-        if (type) {
-             dispatchUIEvent('audioapp:thresholdChanged', { type: type, value: value });
-        }
+        let type = null;
+        if (slider === vadThresholdSlider && vadThresholdValueDisplay) { vadThresholdValueDisplay.textContent = value.toFixed(2); type = 'positive'; }
+        else if (slider === vadNegativeThresholdSlider && vadNegativeThresholdValueDisplay) { vadNegativeThresholdValueDisplay.textContent = value.toFixed(2); type = 'negative'; }
+        if (type) dispatchUIEvent('audioapp:thresholdChanged', { type: type, value: value });
     }
 
 
@@ -216,43 +183,45 @@ AudioApp.uiManager = (function() {
 
     /**
      * Dispatches a custom event on the document.
-     * @param {string} eventName - The name of the custom event (e.g., 'audioapp:playClicked').
-     * @param {object} [detail={}] - Data to pass with the event in `event.detail`.
+     * @param {string} eventName
+     * @param {object} [detail={}]
      * @private
      */
     function dispatchUIEvent(eventName, detail = {}) {
-        // Design Decision: Dispatch events on `document` for global listening by `app.js`.
         document.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
     }
 
-    // --- Public Methods for Updating UI (called by app.js) ---
+    // --- Public Methods for Updating UI ---
 
     /**
-     * Resets all UI elements to their initial state (e.g., on file load or error).
+     * Resets all UI elements to their initial state.
      * @public
      */
     function resetUI() {
         console.log("UIManager: Resetting UI");
         setFileInfo("No file selected.");
-        setPlayButtonState(false); // Show 'Play'
+        setPlayButtonState(false);
         updateTimeDisplay(0, 0);
-        setSpeechRegionsText("None"); // Call the function to set text
-        updateVadDisplay(0.5, 0.35, true); // Reset display text, mark as N/A
-        // Reset slider visual positions and displays
+        setSpeechRegionsText("None");
+        updateVadDisplay(0.5, 0.35, true);
+        // Reset sliders and displays
         if (playbackSpeedControl) playbackSpeedControl.value = "1.0";
         if (speedValueDisplay) speedValueDisplay.textContent = "1.00x";
+        if (pitchControl) pitchControl.value = "1.0"; // New
+        if (pitchValueDisplay) pitchValueDisplay.textContent = "1.00x"; // New
+        if (formantControl) formantControl.value = "1.0"; // New
+        if (formantValueDisplay) formantValueDisplay.textContent = "1.00x"; // New
         if (gainControl) gainControl.value = "1.0";
         if (gainValueDisplay) gainValueDisplay.textContent = "1.00x";
-        if (jumpTimeInput) jumpTimeInput.value = "5"; // Reset jump time input
-        // Disable controls that depend on loaded audio
-        enablePlaybackControls(false);
+        if (jumpTimeInput) jumpTimeInput.value = "5";
+        // Disable controls
+        enablePlaybackControls(false); // This now includes pitch/formant
         enableVadControls(false);
-        // Visualizer module handles clearing canvases and resetting progress bars
     }
 
     /**
      * Sets the text content of the file info display.
-     * @param {string} text - The text to display.
+     * @param {string} text
      * @public
      */
     function setFileInfo(text) {
@@ -261,7 +230,7 @@ AudioApp.uiManager = (function() {
 
     /**
      * Sets the text of the play/pause button.
-     * @param {boolean} isPlaying - True to show 'Pause', false to show 'Play'.
+     * @param {boolean} isPlaying
      * @public
      */
     function setPlayButtonState(isPlaying) {
@@ -269,9 +238,9 @@ AudioApp.uiManager = (function() {
     }
 
     /**
-     * Updates the time display string (e.g., "1:23 / 4:56").
-     * @param {number} currentTime - Current playback time in seconds.
-     * @param {number} duration - Total audio duration in seconds.
+     * Updates the time display string.
+     * @param {number} currentTime
+     * @param {number} duration
      * @public
      */
     function updateTimeDisplay(currentTime, duration) {
@@ -280,39 +249,29 @@ AudioApp.uiManager = (function() {
 
     /**
      * Sets the text content of the speech regions display area.
-     * Can accept a string directly or an array of region objects.
-     * @param {string | Array<{start: number, end: number}>} regionsOrText - Text or region array.
+     * @param {string | Array<{start: number, end: number}>} regionsOrText
      * @public
      */
-    function setSpeechRegionsText(regionsOrText) { // <<<<< THIS FUNCTION WAS DEFINED BUT NOT RETURNED PREVIOUSLY
+    function setSpeechRegionsText(regionsOrText) {
         if (!speechRegionsDisplay) return;
-        if (typeof regionsOrText === 'string') {
-             speechRegionsDisplay.textContent = regionsOrText;
-        } else if (Array.isArray(regionsOrText)) {
-            if (regionsOrText.length > 0) {
-                speechRegionsDisplay.textContent = regionsOrText
-                    .map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`)
-                    .join('\n');
-            } else {
-                speechRegionsDisplay.textContent = "No speech detected (at current threshold).";
-            }
-        } else {
-             speechRegionsDisplay.textContent = "None"; // Default fallback
-        }
+        if (typeof regionsOrText === 'string') { speechRegionsDisplay.textContent = regionsOrText; }
+        else if (Array.isArray(regionsOrText)) {
+            if (regionsOrText.length > 0) { speechRegionsDisplay.textContent = regionsOrText.map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`).join('\n'); }
+            else { speechRegionsDisplay.textContent = "No speech detected (at current threshold)."; }
+        } else { speechRegionsDisplay.textContent = "None"; }
     }
 
     /**
-     * Updates the VAD threshold sliders and their value displays.
-     * @param {number} positive - The positive threshold value.
-     * @param {number} negative - The negative threshold value.
-     * @param {boolean} [isNA=false] - If true, display "N/A" instead of values (used on reset).
+     * Updates the VAD threshold sliders and displays.
+     * @param {number} positive
+     * @param {number} negative
+     * @param {boolean} [isNA=false]
      * @public
      */
     function updateVadDisplay(positive, negative, isNA = false) {
         if (isNA) {
             if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = "N/A";
             if (vadNegativeThresholdValueDisplay) vadNegativeThresholdValueDisplay.textContent = "N/A";
-            // Optionally reset slider positions visually, though disabled state is primary
              if (vadThresholdSlider) vadThresholdSlider.value = "0.5";
              if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.value = "0.35";
         } else {
@@ -324,7 +283,7 @@ AudioApp.uiManager = (function() {
     }
 
     /**
-     * Enables or disables playback-related controls.
+     * Enables or disables playback-related controls (Play/Pause, Jump, Speed, Pitch, Formant).
      * @param {boolean} enable - True to enable, false to disable.
      * @public
      */
@@ -333,7 +292,9 @@ AudioApp.uiManager = (function() {
         if (jumpBackButton) jumpBackButton.disabled = !enable;
         if (jumpForwardButton) jumpForwardButton.disabled = !enable;
         if (playbackSpeedControl) playbackSpeedControl.disabled = !enable;
-        // gainControl is usually always enabled unless explicitly disabled
+        if (pitchControl) pitchControl.disabled = !enable; // New
+        if (formantControl) formantControl.disabled = !enable; // New
+        // gainControl remains enabled
     }
 
     /**
@@ -348,11 +309,10 @@ AudioApp.uiManager = (function() {
 
     /**
      * Gets the current jump time value from the input field.
-     * @returns {number} The jump time in seconds (defaults to 5 if invalid).
+     * @returns {number}
      * @public
      */
     function getJumpTime() {
-        // Use optional chaining (?) in case element wasn't found
         return parseFloat(jumpTimeInput?.value) || 5;
     }
 
@@ -360,30 +320,29 @@ AudioApp.uiManager = (function() {
 
     /**
      * Formats time in seconds to a "MM:SS" string.
-     * @param {number} sec - Time in seconds.
-     * @returns {string} Formatted time string.
+     * @param {number} sec
+     * @returns {string}
      * @private
      */
     function formatTime(sec) {
         if (isNaN(sec) || sec < 0) sec = 0;
         const minutes = Math.floor(sec / 60);
         const seconds = Math.floor(sec % 60);
-        // Pad seconds with a leading zero if less than 10
         return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
     }
 
     // --- Public Interface ---
-    // Expose methods needed by app.js to control the UI.
     return {
         init: init,
         resetUI: resetUI,
         setFileInfo: setFileInfo,
         setPlayButtonState: setPlayButtonState,
         updateTimeDisplay: updateTimeDisplay,
-        setSpeechRegionsText: setSpeechRegionsText, // <<<<< ADDED THIS LINE
+        setSpeechRegionsText: setSpeechRegionsText,
         updateVadDisplay: updateVadDisplay,
         enablePlaybackControls: enablePlaybackControls,
         enableVadControls: enableVadControls,
         getJumpTime: getJumpTime
     };
 })(); // End of uiManager IIFE
+// --- /vibe-player/js/uiManager.js ---

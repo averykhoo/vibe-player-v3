@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Optional: CSP for SharedArrayBuffer if needed later by Rubberband WASM -->
+    <!-- Optional: CSP for SharedArrayBuffer -->
     <!-- <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin"> -->
     <!-- <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp"> -->
     <title>Vibe Player</title>
@@ -35,9 +35,22 @@
         <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
         <span id="speedValue">1.00x</span>
     </div>
+     <!-- Pitch Control -->
+    <div class="control-group">
+        <label for="pitchControl">Pitch:</label>
+        <input type="range" id="pitchControl" min="0.5" max="2.0" value="1.0" step="0.01" disabled>
+        <span id="pitchValue">1.00x</span>
+    </div>
+    <!-- Formant Control -->
+    <div class="control-group">
+        <label for="formantControl">Formant:</label>
+        <input type="range" id="formantControl" min="0.5" max="2.0" value="1.0" step="0.01" disabled>
+        <span id="formantValue">1.00x</span>
+    </div>
     <div class="control-group">
         <label for="gainControl">Volume:</label>
-        <input type="range" id="gainControl" min="0" max="2" value="1.0" step="0.01"> <!-- Allow 0 volume, max 2x -->
+        <!-- Adjusted max to 5 for 5x gain -->
+        <input type="range" id="gainControl" min="0" max="5" value="1.0" step="0.01">
         <span id="gainValue">1.00x</span>
     </div>
     <div id="timeDisplay">0:00 / 0:00</div>
@@ -114,35 +127,23 @@
     </table>
 </section>
 
-<!-- === Hidden Audio Element REMOVED === -->
-<!-- <audio id="player" style="display: none;" preload="auto"></audio> -->
-<!-- Note: The audio element is no longer needed for playback. -->
-
-
 <!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
-<!-- Design Decision: Load external libraries first, then application modules in dependency order, finally initialize. -->
-
 <!-- 1. External Libraries -->
-<script src="lib/ort.min.js"></script> <!-- ONNX Runtime (creates global 'ort') -->
-<script src="lib/fft.js"></script>     <!-- FFT Library (creates global 'FFT') -->
-<!-- Note: Rubberband WASM loader (`rubberband-loader.js`) is NOT loaded here. -->
-<!-- It will be fetched and evaluated by the AudioWorklet. -->
-
-<!-- 2. Application Modules (using IIFE + Global Namespace 'AudioApp') -->
-<script src="js/app.js"></script>            <!-- Creates AudioApp namespace, MUST BE FIRST -->
-<script src="js/uiManager.js"></script>      <!-- Defines AudioApp.uiManager -->
-<script src="js/audioEngine.js"></script>    <!-- Defines AudioApp.audioEngine (Will be heavily modified) -->
-<script src="js/sileroWrapper.js"></script>  <!-- Defines AudioApp.sileroWrapper (needs global ort) -->
-<script src="js/sileroProcessor.js"></script><!-- Defines AudioApp.sileroProcessor (needs wrapper) -->
-<script src="js/vadAnalyzer.js"></script>    <!-- Defines AudioApp.vadAnalyzer (needs processor) -->
-<script src="js/visualizer.js"></script>     <!-- Defines AudioApp.visualizer (needs global FFT) -->
-<!-- Note: `js/rubberbandProcessor.js` is NOT loaded here. It's loaded dynamically by AudioEngine via addModule. -->
-
+<script src="lib/ort.min.js"></script>
+<script src="lib/fft.js"></script>
+<!-- 2. Application Modules -->
+<script src="js/app.js"></script>
+<script src="js/uiManager.js"></script>      <!-- Will be modified -->
+<script src="js/audioEngine.js"></script>    <!-- Will be modified -->
+<script src="js/sileroWrapper.js"></script>
+<script src="js/sileroProcessor.js"></script>
+<script src="js/vadAnalyzer.js"></script>
+<script src="js/visualizer.js"></script>
+<!-- Note: `js/rubberbandProcessor.js` is loaded dynamically by AudioEngine -->
 <!-- 3. Initialize the App -->
 <script>
-    // Design Decision: Use DOMContentLoaded to ensure HTML is parsed before trying to access elements or init app.
     document.addEventListener('DOMContentLoaded', () => {
-        AudioApp.init(); // Initialize the application defined in js/app.js
+        AudioApp.init();
     });
 </script>
 
