@@ -13,7 +13,7 @@ const audioLoader = (() => {
 
     let originalAudioBuffer = null;
     let vadResults = null;
-    let isProcessing = false; // Flag to prevent concurrent processing
+    let isProcessing = false;
 
     // --- Private Methods ---
 
@@ -86,31 +86,25 @@ const audioLoader = (() => {
      * @param {CustomEvent} event Event containing the selected file.
      */
     async function handleFileSelected(event) {
-        // --- FIX: Set processing flag immediately ---
         if (isProcessing) {
             console.warn("[AudioLoader] Already processing a file.");
-            uiManager?.showError("Already processing a file. Please wait.");
+             uiManager?.showError("Already processing a file. Please wait.");
             return;
         }
-        isProcessing = true; // Set flag right away
-        // --- End FIX ---
-
         if (!event.detail || !event.detail.file) {
             console.error("[AudioLoader] Invalid file selected event detail.");
-            isProcessing = false; // Reset flag on early exit
             return;
         }
 
         const file = event.detail.file;
         console.log(`[AudioLoader] File selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        // isProcessing = true; // Moved up
+        isProcessing = true;
         originalAudioBuffer = null;
         vadResults = null;
 
         // --- Update UI ---
         uiManager?.setFileInfo(`Loading: ${file.name}`);
         uiManager?.showLoading(true, 'Decoding...'); // Show spinner
-        uiManager?.disableFileInput(true); // Disable file input during processing
 
         try {
             // 1. Read File
@@ -150,18 +144,29 @@ const audioLoader = (() => {
                  throw new Error("Failed to convert resampled audio to mono for VAD.");
              }
 
-             // --- FIX: Remove incorrect vadAnalyzer.init() call ---
-             // c. Ensure VAD Analyzer's wrapper is potentially ready (session created on demand)
-             // We don't need to re-initialize vadAnalyzer itself here.
-             // Its analyze() method will handle creating the session via the wrapper if needed.
-             if (!vadAnalyzer) { // Check if the analyzer instance exists (it should)
-                  throw new Error("VAD Analyzer instance is missing in audioLoader.");
-             }
-             // --- End FIX ---
+            // c. Ensure VAD Analyzer's wrapper is potentially ready (session created on demand)
+            // We don't need to re-initialize vadAnalyzer itself here.
+            // Its analyze() method will handle creating the session via the wrapper if needed.
+            if (!vadAnalyzer) { // Check if the analyzer instance exists (it should)
+                 throw new Error("VAD Analyzer instance is missing in audioLoader.");
+            }
+            // Optional: Check wrapper readiness if needed, but analyze() handles it
+            // if (!vadAnalyzer.isReady()) {
+            //     console.log("[AudioLoader] VAD model session not yet created (will happen on first analyze call).");
+            // }
+            // user note: this was removed because it caused a bug
+            //  // c. Ensure VAD Analyzer is ready (model loaded etc.)
+            //  if (!vadAnalyzer || !vadAnalyzer.isReady()) {
+            //       console.log("[AudioLoader] VAD Analyzer not ready, attempting to initialize...");
+            //       const vadInitialized = await vadAnalyzer.init(config.vad); // Assume init returns promise/boolean
+            //       if (!vadInitialized) {
+            //            throw new Error("Failed to initialize VAD Analyzer.");
+            //       }
+            //       console.log("[AudioLoader] VAD Analyzer initialized.");
+            //  }
 
             // d. Run VAD analysis
             console.time("VAD Analysis Duration");
-            // vadAnalyzer.analyze will internally check/create the session via the wrapper
             vadResults = await vadAnalyzer.analyze(monoPcm16k);
             console.timeEnd("VAD Analysis Duration");
             console.log("[AudioLoader] VAD analysis complete.", vadResults);
@@ -187,8 +192,7 @@ const audioLoader = (() => {
             originalAudioBuffer = null; // Clear buffer on error
             vadResults = null;
         } finally {
-            isProcessing = false; // Reset flag when done or on error
-            uiManager?.disableFileInput(false); // Re-enable file input
+            isProcessing = false;
         }
     }
 
