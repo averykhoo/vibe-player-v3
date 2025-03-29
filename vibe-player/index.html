@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Optional: CSP for SharedArrayBuffer if needed later by Rubberband WASM -->
+    <!-- <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin"> -->
+    <!-- <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp"> -->
     <title>Vibe Player</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -111,8 +114,9 @@
     </table>
 </section>
 
-<!-- === Hidden Audio Element === -->
-<audio id="player" style="display: none;" preload="auto"></audio>
+<!-- === Hidden Audio Element REMOVED === -->
+<!-- <audio id="player" style="display: none;" preload="auto"></audio> -->
+<!-- Note: The audio element is no longer needed for playback. -->
 
 
 <!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
@@ -121,15 +125,18 @@
 <!-- 1. External Libraries -->
 <script src="lib/ort.min.js"></script> <!-- ONNX Runtime (creates global 'ort') -->
 <script src="lib/fft.js"></script>     <!-- FFT Library (creates global 'FFT') -->
+<!-- Note: Rubberband WASM loader (`rubberband-loader.js`) is NOT loaded here. -->
+<!-- It will be fetched and evaluated by the AudioWorklet. -->
 
 <!-- 2. Application Modules (using IIFE + Global Namespace 'AudioApp') -->
 <script src="js/app.js"></script>            <!-- Creates AudioApp namespace, MUST BE FIRST -->
 <script src="js/uiManager.js"></script>      <!-- Defines AudioApp.uiManager -->
-<script src="js/audioEngine.js"></script>    <!-- Defines AudioApp.audioEngine -->
+<script src="js/audioEngine.js"></script>    <!-- Defines AudioApp.audioEngine (Will be heavily modified) -->
 <script src="js/sileroWrapper.js"></script>  <!-- Defines AudioApp.sileroWrapper (needs global ort) -->
 <script src="js/sileroProcessor.js"></script><!-- Defines AudioApp.sileroProcessor (needs wrapper) -->
 <script src="js/vadAnalyzer.js"></script>    <!-- Defines AudioApp.vadAnalyzer (needs processor) -->
 <script src="js/visualizer.js"></script>     <!-- Defines AudioApp.visualizer (needs global FFT) -->
+<!-- Note: `js/rubberbandProcessor.js` is NOT loaded here. It's loaded dynamically by AudioEngine via addModule. -->
 
 <!-- 3. Initialize the App -->
 <script>
@@ -141,3 +148,4 @@
 
 </body>
 </html>
+<!-- /vibe-player/index.html -->

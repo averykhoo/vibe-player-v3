@@ -14,7 +14,6 @@ AudioApp = (function() {
     'use strict';
 
     // --- Application State ---
-    // Design Decision: Keep minimal state here. Modules manage their own internal state.
     /** @type {AudioBuffer|null} The fully decoded *original* audio buffer */
     let currentAudioBuffer = null;
     /** @type {Float32Array|null} The 16kHz mono resampled audio for VAD */
@@ -23,12 +22,11 @@ AudioApp = (function() {
     let currentVadResults = null;
      /** @type {File|null} The currently loaded audio file object */
     let currentFile = null;
-    /**
-     * Flag to track if the VAD model creation has been attempted and succeeded at least once.
-     * Prevents redundant attempts to load the model.
-     * @type {boolean}
-     */
+    /** @type {boolean} Flag indicating the VAD model ONNX session is ready */
     let vadModelReady = false;
+    /** @type {boolean} Flag indicating the AudioWorklet processor is ready for playback commands */
+    let workletPlaybackReady = false;
+
 
     // --- Initialization ---
 
@@ -40,15 +38,13 @@ AudioApp = (function() {
     function init() {
         console.log("AudioApp: Initializing...");
 
-        // Initialize modules in a logical order
+        // Initialize modules
         AudioApp.uiManager.init();
-        AudioApp.audioEngine.init();
+        AudioApp.audioEngine.init(); // Will fetch WASM/Loader in background now
         AudioApp.visualizer.init();
-        // VAD modules (sileroWrapper, sileroProcessor, vadAnalyzer) don't need explicit init before analysis
+        // VAD modules init implicitly when used
 
-        // Setup event listeners for communication between modules
-        // Design Decision: Use Custom DOM Events for loose coupling between modules.
-        // 'app.js' acts as the central listener and coordinator.
+        // Setup event listeners
         setupAppEventListeners();
 
         console.log("AudioApp: Initialized. Waiting for file...");
@@ -65,22 +61,25 @@ AudioApp = (function() {
         document.addEventListener('audioapp:fileSelected', handleFileSelected);
         document.addEventListener('audioapp:playPauseClicked', handlePlayPause);
         document.addEventListener('audioapp:jumpClicked', handleJump);
-        document.addEventListener('audioapp:seekRequested', handleSeek); // From Visualizer clicks
+        document.addEventListener('audioapp:seekRequested', handleSeek);
         document.addEventListener('audioapp:speedChanged', handleSpeedChange);
         document.addEventListener('audioapp:gainChanged', handleGainChange);
         document.addEventListener('audioapp:thresholdChanged', handleThresholdChange);
-        document.addEventListener('audioapp:keyPressed', handleKeyPress); // From uiManager
+        document.addEventListener('audioapp:keyPressed', handleKeyPress);
 
         // --- AudioEngine -> App Event Listeners ---
         document.addEventListener('audioapp:audioLoaded', handleAudioLoaded);
         document.addEventListener('audioapp:resamplingComplete', handleResamplingComplete);
+        // *** NEW EVENT LISTENER ***
+        document.addEventListener('audioapp:workletReady', handleWorkletReady); // Listen for worklet readiness
         document.addEventListener('audioapp:decodingError', handleAudioError);
         document.addEventListener('audioapp:resamplingError', handleAudioError);
-        document.addEventListener('audioapp:playbackError', handleAudioError); // Handle generic playback errors
+        document.addEventListener('audioapp:playbackError', handleAudioError); // From <audio> (now less likely) or worklet
+        document.addEventListener('audioapp:engineError', handleAudioError); // For context, connect, resource errors
         document.addEventListener('audioapp:timeUpdated', handleTimeUpdate);
         document.addEventListener('audioapp:playbackEnded', handlePlaybackEnded);
         document.addEventListener('audioapp:playbackStateChanged', handlePlaybackStateChange);
-        document.addEventListener('audioapp:engineError', handleAudioError); // Handle context/connect errors
+
 
         // --- Window Event Listeners ---
         window.addEventListener('resize', handleWindowResize);
@@ -90,10 +89,9 @@ AudioApp = (function() {
     // --- Event Handler Functions ---
 
     /**
-     * Handles the 'audioapp:fileSelected' event from uiManager.
-     * Resets state, starts the audio loading/processing pipeline.
-     * @param {CustomEvent} e - The event object.
-     * @param {File} e.detail.file - The selected audio file.
+     * Handles the 'audioapp:fileSelected' event.
+     * Resets state and initiates the loading pipeline via AudioEngine.
+     * @param {CustomEvent<{file: File}>} e
      * @private
      */
     async function handleFileSelected(e) {
@@ -103,22 +101,25 @@ AudioApp = (function() {
         currentFile = file;
         console.log("App: File selected -", file.name);
 
-        // Reset application state and UI
+        // Reset application state
         currentAudioBuffer = null;
         currentPcm16k = null;
         currentVadResults = null;
-        // vadModelReady flag persists across file loads unless the page is refreshed.
-        AudioApp.uiManager.resetUI();
+        workletPlaybackReady = false; // Reset worklet ready state
+        // vadModelReady persists across file loads
+
+        // Reset UI
+        AudioApp.uiManager.resetUI(); // This should disable controls initially
         AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`);
         AudioApp.visualizer.clearVisuals();
-        AudioApp.visualizer.showSpinner(true);
+        AudioApp.visualizer.showSpinner(true); // Show spinner early
 
         try {
-            // Delegate loading, decoding, and resampling to the Audio Engine
+            // Delegate loading, decoding, resampling, and worklet setup to AudioEngine
             await AudioApp.audioEngine.loadAndProcessFile(file);
-            // Subsequent processing steps are triggered by events from AudioEngine
+            // Subsequent processing (VAD, visualization) is triggered by events
+            // like 'resamplingComplete' and 'workletReady'.
         } catch (error) {
-            // Catch errors during the initial load trigger phase
             console.error("App: Error initiating file processing -", error);
             AudioApp.uiManager.setFileInfo(`Error loading: ${error.message}`);
             AudioApp.uiManager.resetUI();
@@ -127,120 +128,126 @@ AudioApp = (function() {
     }
 
     /**
-     * Handles the 'audioapp:audioLoaded' event from audioEngine.
-     * Stores the original decoded buffer and updates UI.
-     * @param {CustomEvent} e - The event object.
-     * @param {AudioBuffer} e.detail.audioBuffer - The decoded original audio buffer.
+     * Handles the 'audioapp:audioLoaded' event. Stores the buffer.
+     * @param {CustomEvent<{audioBuffer: AudioBuffer}>} e
      * @private
      */
     function handleAudioLoaded(e) {
         currentAudioBuffer = e.detail.audioBuffer;
         console.log(`App: Audio decoded (${currentAudioBuffer.duration.toFixed(2)}s)`);
-        // Update total time display immediately
         AudioApp.uiManager.updateTimeDisplay(0, currentAudioBuffer.duration);
-        // AudioEngine will proceed with resampling and dispatch 'resamplingComplete'
+        // AudioEngine proceeds with resampling...
     }
 
     /**
-     * Handles the 'audioapp:resamplingComplete' event from audioEngine.
-     * Stores the 16kHz PCM data, ensures VAD model is created (once per page load),
-     * triggers VAD analysis, then visualization.
-     * @param {CustomEvent} e - The event object.
-     * @param {Float32Array} e.detail.pcmData - The 16kHz mono PCM data.
+     * Handles the 'audioapp:resamplingComplete' event. Stores 16k PCM, triggers VAD model check/analysis.
+     * @param {CustomEvent<{pcmData: Float32Array}>} e
      * @private
      */
-    async function handleResamplingComplete(e) { // Still async
+    async function handleResamplingComplete(e) {
         currentPcm16k = e.detail.pcmData;
         console.log(`App: Audio resampled (${currentPcm16k.length} samples @ 16kHz)`);
 
-        // --- Ensure VAD Model is Created (Once per Page Load) ---
+        // --- VAD Model Check & Analysis ---
         let vadCreationSuccess = vadModelReady;
         if (!vadModelReady) {
-            console.log("App: Attempting to create/load VAD model for the first time...");
+            console.log("App: Attempting to create/load VAD model...");
             try {
                 vadCreationSuccess = await AudioApp.sileroWrapper.create(16000);
                 if (vadCreationSuccess) {
                     vadModelReady = true;
                     console.log("App: VAD model created successfully.");
                 } else {
-                    console.error("App: Failed to create VAD model via wrapper (returned false).");
-                    AudioApp.uiManager.setFileInfo("Error: Could not load VAD model.");
+                    console.error("App: Failed to create VAD model.");
+                    AudioApp.uiManager.setSpeechRegionsText("VAD Model Error"); // Update UI
                     AudioApp.uiManager.enableVadControls(false);
                 }
             } catch (creationError) {
                 console.error("App: Error during VAD model creation:", creationError);
                 vadCreationSuccess = false;
-                AudioApp.uiManager.setFileInfo(`Error: Could not load VAD model. ${creationError.message}`);
+                AudioApp.uiManager.setSpeechRegionsText(`VAD Load Error: ${creationError.message}`);
                 AudioApp.uiManager.enableVadControls(false);
             }
-        } else {
-            console.log("App: VAD model already initialized.");
-            // Processor calls wrapper.reset_state() internally now
         }
-        // --- End VAD Model Creation Check ---
 
-        // --- VAD Analysis Stage ---
         if (vadCreationSuccess) {
             console.log("App: Starting VAD analysis...");
-            AudioApp.uiManager.setSpeechRegionsText("Analyzing VAD..."); // Update status
+            AudioApp.uiManager.setSpeechRegionsText("Analyzing VAD...");
             try {
-                currentVadResults = await AudioApp.vadAnalyzer.analyze(currentPcm16k); // Line ~197
-                console.log(`App: VAD analysis complete. ${currentVadResults.regions.length} initial regions found.`);
-
-                // Update UI with VAD results
-                AudioApp.uiManager.updateVadDisplay( // Line ~201
+                currentVadResults = await AudioApp.vadAnalyzer.analyze(currentPcm16k);
+                console.log(`App: VAD analysis complete. ${currentVadResults.regions.length} regions.`);
+                AudioApp.uiManager.updateVadDisplay(
                     currentVadResults.initialPositiveThreshold,
                     currentVadResults.initialNegativeThreshold
                 );
-                // --- THIS IS THE FIX: Change 'updateSpeechRegionsText' to 'setSpeechRegionsText' ---
-                AudioApp.uiManager.setSpeechRegionsText(currentVadResults.regions); // Line ~204 (CORRECTED)
-                // --- END FIX ---
-                AudioApp.uiManager.enableVadControls(true); // Line ~205
-                AudioApp.uiManager.enablePlaybackControls(true); // Enable playback after successful VAD
+                AudioApp.uiManager.setSpeechRegionsText(currentVadResults.regions);
+                AudioApp.uiManager.enableVadControls(true);
+                // NOTE: Playback controls are NOT enabled here anymore. They wait for workletReady.
 
-                // --- Visualization Stage ---
-                console.log("App: Computing and drawing visualizations...");
-                await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, currentVadResults.regions);
-                console.log("App: Visualizations complete.");
-                handleThresholdChange({ detail: { type: 'positive', value: currentVadResults.initialPositiveThreshold } });
-
-            } catch (analysisError) { // Line ~219 context (catch block entry)
-                // Catch errors specifically from the analysis stage (e.g., inference error)
-                console.error("App: VAD Analysis failed -", analysisError); // <<< This was the error context
-                AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${analysisError.message}`);
-                if (currentAudioBuffer) AudioApp.uiManager.enablePlaybackControls(true);
-                AudioApp.uiManager.enableVadControls(false);
+                // Trigger initial visualization compute *after* VAD analysis completes
+                // but *before* necessarily waiting for the worklet (visuals don't depend on worklet)
                 if (currentAudioBuffer) {
-                     console.log("App: Drawing visuals without VAD highlighting due to analysis error..."); // Line ~226 context
-                     await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, []); // Empty regions
+                     console.log("App: Computing and drawing visualizations...");
+                     AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, currentVadResults.regions)
+                         .catch(visError => console.error("App: Visualization failed after VAD success:", visError))
+                         .finally(() => {
+                             // Spinner hiding is now primarily tied to worklet readiness or final error handling
+                             if (workletPlaybackReady || !vadCreationSuccess) { // Hide if worklet is already ready OR VAD failed
+                                 AudioApp.visualizer.showSpinner(false);
+                             }
+                         });
                 }
-            } finally {
-                 AudioApp.visualizer.showSpinner(false);
-                 AudioApp.uiManager.setFileInfo(`File: ${currentFile ? currentFile.name : 'Ready'}`);
+
+            } catch (analysisError) {
+                console.error("App: VAD Analysis failed -", analysisError);
+                AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${analysisError.message}`);
+                AudioApp.uiManager.enableVadControls(false);
+                // If VAD failed, still try to draw visuals without regions
+                 if (currentAudioBuffer) {
+                     console.log("App: Drawing visuals without VAD highlighting due to analysis error...");
+                     AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, [])
+                         .catch(visError => console.error("App: Visualization failed after VAD error:", visError))
+                         .finally(() => AudioApp.visualizer.showSpinner(false));
+                 } else {
+                      AudioApp.visualizer.showSpinner(false);
+                 }
             }
         } else {
-            // Handle case where VAD model failed to load/create
-            console.warn("App: Skipping VAD analysis due to model creation failure.");
+            // VAD model failed to load
             AudioApp.uiManager.setSpeechRegionsText("VAD Model Error");
             AudioApp.uiManager.enableVadControls(false);
-            if (currentAudioBuffer) AudioApp.uiManager.enablePlaybackControls(true);
+            // If VAD failed, still try to draw visuals without regions
             if (currentAudioBuffer) {
-                console.log("App: Computing/drawing visuals without VAD highlighting...");
+                console.log("App: Computing/drawing visuals without VAD highlighting (VAD init failed)...");
                  AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, [])
-                    .catch(visError => console.error("App: Visualization failed after VAD model error:", visError))
+                    .catch(visError => console.error("App: Visualization failed after VAD model init error:", visError))
                     .finally(() => AudioApp.visualizer.showSpinner(false));
             } else {
                  AudioApp.visualizer.showSpinner(false);
             }
-             AudioApp.uiManager.setFileInfo(`File: ${currentFile ? currentFile.name : 'Ready (VAD Error)'}`);
         }
-    } // --- End of handleResamplingComplete ---
+        // Final file info update might happen after worklet is ready
+    } // --- End handleResamplingComplete ---
+
 
     /**
-     * Handles various audio error events from audioEngine or processing stages.
+     * Handles the 'audioapp:workletReady' event from audioEngine.
+     * Enables playback controls and updates the file info status.
      * @param {CustomEvent} e - The event object.
-     * @param {string} [e.detail.type] - Type of error (e.g., 'decode', 'resample', 'playback', 'context', 'load', 'engine').
-     * @param {Error} e.detail.error - The error object.
+     * @private
+     */
+    function handleWorkletReady(e) {
+        console.log("App: AudioWorklet processor is ready.");
+        workletPlaybackReady = true;
+        AudioApp.uiManager.enablePlaybackControls(true); // Enable play/pause, jump, speed
+        AudioApp.visualizer.showSpinner(false); // Hide spinner now that everything is ready
+        AudioApp.uiManager.setFileInfo(`Ready: ${currentFile ? currentFile.name : 'Unknown File'}`);
+    }
+
+
+    /**
+     * Handles various audio error events.
+     * @param {CustomEvent<{type?: string, error: Error}>} e
      * @private
      */
     function handleAudioError(e) {
@@ -251,60 +258,61 @@ AudioApp = (function() {
         AudioApp.uiManager.resetUI();
         AudioApp.visualizer.clearVisuals();
         AudioApp.visualizer.showSpinner(false);
-        // Reset state variables
+        // Reset state
         currentAudioBuffer = null;
         currentPcm16k = null;
         currentVadResults = null;
         currentFile = null;
-        // Don't reset vadModelReady automatically on all errors
+        workletPlaybackReady = false;
+        // Consider if vadModelReady should be reset on certain critical errors
     }
 
     /**
-     * Handles 'audioapp:playPauseClicked' event. Toggles playback.
+     * Handles 'audioapp:playPauseClicked' event. Calls audioEngine.
      * @private
      */
     function handlePlayPause() {
-        if (!currentAudioBuffer) return;
+        if (!workletPlaybackReady) { // Check if the worklet is ready, not just buffer loaded
+             console.warn("App: Play/Pause ignored - Worklet not ready.");
+             return;
+        }
         AudioApp.audioEngine.togglePlayPause();
     }
 
     /**
-     * Handles 'audioapp:jumpClicked' event. Jumps playback time.
-     * @param {CustomEvent} e - The event object.
-     * @param {number} e.detail.seconds - Seconds to jump (positive or negative).
+     * Handles 'audioapp:jumpClicked' event. Calls audioEngine.
+     * @param {CustomEvent<{seconds: number}>} e
      * @private
      */
     function handleJump(e) {
-        if (!currentAudioBuffer) return;
+        if (!workletPlaybackReady) return;
         AudioApp.audioEngine.jumpBy(e.detail.seconds);
     }
 
     /**
-     * Handles 'audioapp:seekRequested' event (from visualizer click). Seeks playback time.
-     * @param {CustomEvent} e - The event object.
-     * @param {number} e.detail.fraction - The fraction of the duration to seek to (0.0 to 1.0).
+     * Handles 'audioapp:seekRequested' event. Calls audioEngine.
+     * @param {CustomEvent<{fraction: number}>} e
      * @private
      */
     function handleSeek(e) {
-        if (!currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0) return;
+        if (!workletPlaybackReady || !currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0) return;
         const targetTime = e.detail.fraction * currentAudioBuffer.duration;
         AudioApp.audioEngine.seek(targetTime);
     }
 
     /**
-     * Handles 'audioapp:speedChanged' event. Sets playback speed.
-     * @param {CustomEvent} e - The event object.
-     * @param {number} e.detail.speed - The new playback speed.
+     * Handles 'audioapp:speedChanged' event. Calls audioEngine.
+     * @param {CustomEvent<{speed: number}>} e
      * @private
      */
     function handleSpeedChange(e) {
+        // Speed can be changed even if worklet isn't fully ready, engine will pass it on later
         AudioApp.audioEngine.setSpeed(e.detail.speed);
     }
 
     /**
-     * Handles 'audioapp:gainChanged' event. Sets audio gain (volume).
-     * @param {CustomEvent} e - The event object.
-     * @param {number} e.detail.gain - The new gain value.
+     * Handles 'audioapp:gainChanged' event. Calls audioEngine.
+     * @param {CustomEvent<{gain: number}>} e
      * @private
      */
     function handleGainChange(e) {
@@ -312,34 +320,22 @@ AudioApp = (function() {
     }
 
     /**
-     * Handles 'audioapp:thresholdChanged' event (from uiManager sliders).
-     * Triggers VAD recalculation and waveform highlight redraw.
-     * @param {CustomEvent} e - The event object.
-     * @param {string} e.detail.type - 'positive' or 'negative'.
-     * @param {number} e.detail.value - The new threshold value.
+     * Handles 'audioapp:thresholdChanged' event. Triggers VAD recalculation.
+     * @param {CustomEvent<{type: string, value: number}>} e
      * @private
      */
     function handleThresholdChange(e) {
         if (!currentVadResults || !currentAudioBuffer) return; // Need VAD results and buffer
 
         const { type, value } = e.detail;
-
-        // Update VAD Analyzer's internal thresholds and get recalculated regions
         const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value);
-
-        // Update the text display for speech regions using the CORRECT function name
         AudioApp.uiManager.setSpeechRegionsText(newRegions);
-
-        // Redraw *only* the waveform highlighting using the new regions
         AudioApp.visualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
     }
 
     /**
-     * Handles 'audioapp:timeUpdated' event from audioEngine.
-     * Updates UI time display and visualizer progress indicators.
-     * @param {CustomEvent} e - The event object.
-     * @param {number} e.detail.currentTime - The current playback time in seconds.
-     * @param {number} e.detail.duration - The total audio duration in seconds.
+     * Handles 'audioapp:timeUpdated' event. Updates UI.
+     * @param {CustomEvent<{currentTime: number, duration: number}>} e
      * @private
      */
     function handleTimeUpdate(e) {
@@ -349,19 +345,17 @@ AudioApp = (function() {
     }
 
     /**
-     * Handles 'audioapp:playbackEnded' event from audioEngine.
-     * (Currently just logs, UI state changes handled by playbackStateChanged)
+     * Handles 'audioapp:playbackEnded' event. (Logs for now).
      * @private
      */
     function handlePlaybackEnded() {
-        console.log("App: Playback ended");
+        console.log("App: Playback ended event received.");
+        // UI state (button to 'Play') should be handled by playbackStateChanged
     }
 
     /**
-     * Handles 'audioapp:playbackStateChanged' event from audioEngine.
-     * Updates the play/pause button state in the UI.
-     * @param {CustomEvent} e - The event object.
-     * @param {boolean} e.detail.isPlaying - True if playing, false if paused/stopped.
+     * Handles 'audioapp:playbackStateChanged' event. Updates UI.
+     * @param {CustomEvent<{isPlaying: boolean}>} e
      * @private
      */
      function handlePlaybackStateChange(e) {
@@ -369,50 +363,46 @@ AudioApp = (function() {
     }
 
     /**
-     * Handles 'audioapp:keyPressed' event from uiManager.
-     * Executes playback actions based on keyboard shortcuts.
-     * @param {CustomEvent} e - The event object.
-     * @param {string} e.detail.key - The key code ('Space', 'ArrowLeft', 'ArrowRight').
+     * Handles 'audioapp:keyPressed' event. Executes actions.
+     * @param {CustomEvent<{key: string}>} e
      * @private
      */
     function handleKeyPress(e) {
-        if (!currentAudioBuffer) return; // Ignore keys if no audio loaded
+        // Check worklet readiness *before* sending commands
+        if (!workletPlaybackReady) {
+             console.warn(`App: Key press '${e.detail.key}' ignored - Worklet not ready.`);
+             return;
+        }
 
         const key = e.detail.key;
-        // Get jump time dynamically from UI manager in case user changed it
         const jumpTime = AudioApp.uiManager.getJumpTime();
 
         switch (key) {
             case 'Space':
-                AudioApp.audioEngine.togglePlayPause();
+                AudioApp.audioEngine.togglePlayPause(); // Will check worklet readiness internally too
                 break;
             case 'ArrowLeft':
-                AudioApp.audioEngine.jumpBy(-jumpTime);
+                AudioApp.audioEngine.jumpBy(-jumpTime); // Will check worklet readiness internally too
                 break;
             case 'ArrowRight':
-                AudioApp.audioEngine.jumpBy(jumpTime);
+                AudioApp.audioEngine.jumpBy(jumpTime); // Will check worklet readiness internally too
                 break;
         }
     }
 
     /**
-     * Handles the window 'resize' event.
-     * Triggers redraw of visualizations and updates progress indicators.
+     * Handles window 'resize' event. Updates visuals.
      * @private
      */
     function handleWindowResize() {
-        // Design Decision: Debouncing could be added here for performance on rapid resizing,
-        // but for simplicity, call directly for now.
         AudioApp.visualizer.resizeAndRedraw(currentAudioBuffer, AudioApp.vadAnalyzer.getCurrentRegions());
-         // Update progress immediately after resize ensures indicator is positioned correctly
-         const { currentTime, duration } = AudioApp.audioEngine.getCurrentTime();
-         AudioApp.visualizer.updateProgressIndicator(currentTime, duration);
-         AudioApp.uiManager.updateTimeDisplay(currentTime, duration); // Also update text time display
+        const { currentTime, duration } = AudioApp.audioEngine.getCurrentTime();
+        AudioApp.visualizer.updateProgressIndicator(currentTime, duration);
+        AudioApp.uiManager.updateTimeDisplay(currentTime, duration);
     }
 
     /**
-     * Handles the window 'beforeunload' event.
-     * Performs cleanup tasks like revoking Object URLs and closing AudioContext.
+     * Handles window 'beforeunload' event. Cleans up engine.
      * @private
      */
     function handleBeforeUnload() {
@@ -421,8 +411,8 @@ AudioApp = (function() {
 
 
     // --- Public Interface ---
-    // Design Decision: Only expose the `init` function publicly.
     return {
         init: init
     };
 })(); // End of AudioApp IIFE
+// --- /vibe-player/js/app.js ---
