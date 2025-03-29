@@ -4,9 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- CSP Headers for SharedArrayBuffer (Optional, might be needed for advanced WASM features/threading later) -->
-    <!-- <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin"> -->
-    <!-- <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp"> -->
     <title>Vibe Player</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -18,7 +15,7 @@
 <section id="file-loader">
     <h2>Load Audio File</h2>
     <input type="file" id="audioFile" accept="audio/*">
-    <p id="fileInfo">Please load an audio file.</p> <!-- Also used for status/errors -->
+    <p id="fileInfo">No file selected.</p>
 </section>
 
 <!-- === Playback Controls Section === -->
@@ -37,11 +34,10 @@
     </div>
     <div class="control-group">
         <label for="gainControl">Volume:</label>
-        <!-- Gain control remains enabled even when paused/stopped -->
-        <input type="range" id="gainControl" min="0" max="2" value="1.0" step="0.01">
+        <input type="range" id="gainControl" min="0" max="2" value="1.0" step="0.01"> <!-- Allow 0 volume, max 2x -->
         <span id="gainValue">1.00x</span>
     </div>
-    <div id="timeDisplay">0:00.000 / 0:00.000</div>
+    <div id="timeDisplay">0:00 / 0:00</div>
 </section>
 
 <!-- === VAD Tuning Section === -->
@@ -58,7 +54,7 @@
         <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
         <span id="vadNegativeThresholdValue">N/A</span>
     </div>
-    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting.</small>
+    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>
 </section>
 
 <!-- === Speech Info Section === -->
@@ -79,7 +75,6 @@
 </section>
 
 <section class="visualization">
-    <!-- Using uiManager.showLoading now, spinner element less critical -->
     <h3>Spectrogram <span id="spectrogramSpinner" class="spinner">(Computing...)</span></h3>
     <div class="canvas-container">
         <canvas id="spectrogramCanvas"></canvas>
@@ -112,57 +107,37 @@
             <td>Right Arrow</td>
             <td>Jump Forward (by specified seconds)</td>
         </tr>
-        <!-- Add more keybinds if implemented -->
         </tbody>
     </table>
 </section>
 
-<!-- === Removed Hidden Audio Element === -->
-<!-- <audio id="player" style="display: none;" preload="auto"></audio> -->
+<!-- === Hidden Audio Element === -->
+<audio id="player" style="display: none;" preload="auto"></audio>
 
 
 <!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
-<!-- Design Decision: Load external libraries first, then config, then application modules in dependency order, finally initialize via main.js. -->
-<!-- Assumes modules attach themselves to window.AudioApp -->
+<!-- Design Decision: Load external libraries first, then application modules in dependency order, finally initialize. -->
 
 <!-- 1. External Libraries -->
 <script src="lib/ort.min.js"></script> <!-- ONNX Runtime (creates global 'ort') -->
 <script src="lib/fft.js"></script>     <!-- FFT Library (creates global 'FFT') -->
 
-<!-- 2. Application Configuration -->
-<script src="js/config.js"></script>         <!-- Defines AudioApp.config -->
+<!-- 2. Application Modules (using IIFE + Global Namespace 'AudioApp') -->
+<script src="js/app.js"></script>            <!-- Creates AudioApp namespace, MUST BE FIRST -->
+<script src="js/uiManager.js"></script>      <!-- Defines AudioApp.uiManager -->
+<script src="js/audioEngine.js"></script>    <!-- Defines AudioApp.audioEngine -->
+<script src="js/sileroWrapper.js"></script>  <!-- Defines AudioApp.sileroWrapper (needs global ort) -->
+<script src="js/sileroProcessor.js"></script><!-- Defines AudioApp.sileroProcessor (needs wrapper) -->
+<script src="js/vadAnalyzer.js"></script>    <!-- Defines AudioApp.vadAnalyzer (needs processor) -->
+<script src="js/visualizer.js"></script>     <!-- Defines AudioApp.visualizer (needs global FFT) -->
 
-<!-- 3. Core Application Modules -->
-<!-- Order matters based on dependencies during init or direct calls -->
-<script src="js/uiManager.js"></script>         <!-- Needs config -->
-<script src="js/visualizer.js"></script>        <!-- Needs config, uiManager? -->
-<!-- VAD Pipeline -->
-<script src="vad/sileroWrapper.js"></script>   <!-- Needs config, global ort -->
-<script src="vad/sileroProcessor.js"></script> <!-- Needs sileroWrapper -->
-<script src="vad/vadAnalyzer.js"></script>     <!-- Needs config, sileroProcessor, sileroWrapper -->
-<!-- Audio Loading & Worklet Management -->
-<script src="js/workletManager.js"></script>   <!-- Needs config -->
-<script src="js/audioLoader.js"></script>      <!-- Needs config, uiManager, vadAnalyzer -->
-<!-- Playback Control Logic -->
-<script src="js/playbackController.js"></script><!-- Needs config, uiManager, workletManager, vadAnalyzer -->
-
-<!-- 4. Main Application Initializer -->
-<script src="js/main.js"></script>              <!-- Needs all other modules loaded, Creates AudioApp namespace -->
-
-<!-- 5. Initialize the App -->
+<!-- 3. Initialize the App -->
 <script>
-    // Use DOMContentLoaded to ensure HTML is parsed before init attempts to access elements.
+    // Design Decision: Use DOMContentLoaded to ensure HTML is parsed before trying to access elements or init app.
     document.addEventListener('DOMContentLoaded', () => {
-        // AudioApp and AudioApp.init should be defined by main.js
-        if (window.AudioApp && typeof window.AudioApp.init === 'function') {
-            window.AudioApp.init(); // Initialize the application
-        } else {
-            console.error("FATAL: AudioApp.init function not found. Check script loading order and main.js.");
-            alert("Application failed to initialize. Check console for errors.");
-        }
+        AudioApp.init(); // Initialize the application defined in js/app.js
     });
 </script>
 
 </body>
 </html>
-<!-- /vibe-player/index.html -->

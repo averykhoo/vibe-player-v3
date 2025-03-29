@@ -29,90 +29,30 @@ section {
 }
 
 /* --- Controls --- */
-/* Styles for section with ID 'controls' */
-#controls button, #controls input[type=number], #controls input[type=range] {
+#controls button, #controls input[type=number] {
   margin: 0 5px;
   padding: 8px 12px;
   border: 1px solid #ccc;
   border-radius: 4px;
   cursor: pointer;
-  vertical-align: middle; /* Align elements in control groups */
-}
-#controls button {
-     font-size: 0.95em;
-     background-color: #007bff;
-     color: white;
-     border: none;
-}
-#controls button:hover:not(:disabled) {
-    background-color: #0056b3;
 }
 #controls button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
-  background-color: #cccccc;
-}
-#controls input[type=number] {
-    width: 60px; /* Adjust width for jump time input */
-    padding: 8px; /* Match button padding */
-    text-align: center;
 }
 
 #controls .control-group {
     margin: 10px 0;
     display: flex;
     align-items: center;
-    flex-wrap: wrap; /* Allow wrapping on smaller screens */
 }
 #controls label {
     margin-right: 10px;
-    min-width: 60px; /* Align labels (Speed, Volume) */
-    font-weight: bold;
+    min-width: 50px; /* Align labels */
 }
 #controls input[type=range] {
-    flex-grow: 1; /* Allow slider to take up space */
-    margin: 0 10px;
-    min-width: 150px; /* Ensure slider has some minimum width */
-}
-#controls .control-group span { /* For speedValue, gainValue */
-    font-family: monospace;
-    min-width: 45px; /* Align the 'x' */
-    text-align: right;
-}
-
-
-/* --- VAD Tuning --- */
-/* Styles specific to the VAD Tuning section */
-#vad-tuning .control-group {
-    margin: 10px 0;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-}
-#vad-tuning label {
-    margin-right: 10px;
-    min-width: 70px; /* Slightly wider label for VAD */
-    font-weight: bold;
-}
-#vad-tuning input[type=range] {
     flex-grow: 1;
     margin: 0 10px;
-    min-width: 150px;
-    cursor: pointer;
-}
-#vad-tuning input[type=range]:disabled {
-     cursor: not-allowed;
-     opacity: 0.6;
-}
-#vad-tuning .control-group span { /* For vadThresholdValue etc. */
-    font-family: monospace;
-    min-width: 35px;
-    text-align: right;
-}
-#vad-tuning small {
-    display: block; /* Ensure small text is on its own line */
-    margin-top: 5px;
-    color: #555;
 }
 
 /* --- Time Display --- */
@@ -121,7 +61,6 @@ section {
   font-weight: bold;
   font-size: 14px;
   text-align: center;
-  font-family: monospace; /* Monospaced font for consistent time width */
 }
 
 /* --- Visualizations --- */
@@ -131,10 +70,7 @@ section {
 
 /* Container establishes positioning context for canvas and progress bar */
 .canvas-container {
-  position: relative; /* Needed for absolute positioning of progress bar */
-  background-color: #eee; /* Light background behind canvas */
-  border: 1px solid #ccc;
-  box-sizing: border-box;
+  position: relative;
 }
 
 .visualization h3 {
@@ -146,17 +82,13 @@ section {
 }
 
 canvas {
-  /* background-color: #fff; */ /* Background now on container */
-  /* border: 1px solid #ccc; */ /* Border now on container */
+  background-color: #fff;
+  border: 1px solid #ccc;
   display: block; /* Important for correct width/height behavior */
   width: 100%;   /* Make canvas responsive */
-  /* height is set via JS or specific ID rules */
+  height: 120px; /* Default height */
   cursor: crosshair; /* Indicate click-to-seek */
-  /* box-sizing: border-box; */ /* Box-sizing now on container */
-}
-
-#waveformCanvas {
-  height: 120px; /* Default waveform height */
+  box-sizing: border-box; /* Include border in width/height */
 }
 
 #spectrogramCanvas {
@@ -170,25 +102,22 @@ canvas {
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%; /* Make progress bar cover the whole container height */
   pointer-events: none; /* Allow clicks to pass through to canvas */
   box-sizing: border-box;
-  overflow: hidden; /* Hide overflow of the indicator line */
 }
 
-/* Remove specific height rules, rely on container height via height: 100% */
-/* #waveformProgressBar { height: 120px; } */
-/* #spectrogramProgressBar { height: 200px; } */
+/* Match progress bar container height to its respective canvas */
+#waveformProgressBar { height: 120px; }
+#spectrogramProgressBar { height: 200px; }
 
 .progress-indicator {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0%; /* Starts at left, controlled by JS/CSS variable */
+  left: 0; /* Starts at left */
   width: 2px;
   background: rgba(255, 0, 0, 0.7); /* Semi-transparent red */
-  pointer-events: none; /* Ensure indicator itself doesn't capture events */
-  transition: left 0.05s linear; /* Optional: Smooth transition for indicator movement */
+  pointer-events: none;
 }
 
 /* --- UI Elements --- */
@@ -197,30 +126,14 @@ canvas {
   font-size: 14px;
   color: #555;
   font-weight: normal;
-  margin-left: 5px; /* Space between heading and spinner */
 }
 
 #speechRegionsDisplay {
     white-space: pre-wrap; /* Allow wrapping while preserving formatting */
-    word-break: normal; /* Use normal word breaks */
+    word-break: break-all; /* Help break long lines if needed */
     max-height: 150px; /* Limit height */
     overflow-y: auto;  /* Add scrollbar if content exceeds max height */
-    background-color: #f8f8f8; /* Slight background for pre */
-    padding: 10px;
-    border: 1px solid #eee;
-    border-radius: 4px;
-    font-family: monospace;
-    font-size: 0.9em;
-    line-height: 1.4;
 }
-
-/* Style for status/error messages shown in #fileInfo */
-#fileInfo {
-    margin-top: 10px;
-    font-style: italic;
-    color: #555; /* Default status color */
-}
-
 
 /* --- Keybinds Table --- */
 #keybinds {
@@ -239,8 +152,5 @@ canvas {
 }
 
 #keybinds th {
-  background-color: #f0f0f0; /* Match body background */
-  font-weight: bold;
+  background: #f0f0f0;
 }
-
-/* /vibe-player/styles.css */
