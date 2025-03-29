@@ -34,7 +34,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
         // --- Processor Options & Initial State ---
         // Store options passed from the main thread during node creation
         this.processorOpts = options.processorOptions || {};
-        console.log("[Worklet Constructor] Received processorOptions:", JSON.stringify(this.processorOpts)); // Log received options (stringify avoids potential circular issues in console)
+        console.log("[Worklet Constructor] Received processorOptions:", this.processorOpts); // Log received options
 
         this.sampleRate = this.processorOpts.sampleRate || currentTime; // currentTime is from AudioWorkletGlobalScope
         this.numberOfChannels = this.processorOpts.numberOfChannels || 0;
@@ -53,8 +53,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
         this.outputPtrs = 0;          // WASM address of output channel pointer array
         this.inputChannelBufPtrs = [];// Array of WASM addresses for each input channel buffer
         this.outputChannelBufPtrs = [];// Array of WASM addresses for each output channel buffer
-        // Internal processing block size for WASM buffers (can be tuned)
-        this.blockSizeWasm = 2048; // e.g., ~42ms @ 48kHz
+        this.blockSizeWasm = 2048;    // Internal processing block size for WASM buffers
 
         // --- Playback & Parameter State ---
         this.isPlaying = false;        // Is the processor actively generating audio?
@@ -69,34 +68,28 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
         this.targetPitchSemitones = this.processorOpts.initialPitchSemitones ?? 0.0;
         this.targetFormantScale = this.processorOpts.initialFormantScale ?? 1.0;
         this.hybridThreshold = this.processorOpts.initialHybridThreshold ?? 0.8;
-        this.initialSlowSpeed = this.processorOpts.initialSlowSpeed ?? 0.25; // Speed used to generate slowChannels
-        this.sourceOverride = this.processorOpts.initialSourceOverride ?? 'auto'; // 'auto', 'original', 'slow'
-        // this.switchBehavior = this.processorOpts.initialSwitchBehavior ?? 'microfade'; // 'abrupt', 'mute', 'microfade'
-        this.switchBehavior = 'abrupt'; // Force abrupt, ignore processorOpts.initialSwitchBehavior
-        console.warn("[Worklet DEBUG] Forcing 'abrupt' switch behavior.");
-        // Ensure sampleRate is valid before calculating frames
-        this.microFadeDurationFrames = (this.sampleRate > 0)
-            ? Math.max(1, Math.round((this.processorOpts.microFadeDurationMs ?? 5) / 1000 * this.sampleRate))
-            : 128; // Default frame count if sampleRate is invalid
+        this.initialSlowSpeed = this.processorOpts.initialSlowSpeed ?? 0.25;
+        this.sourceOverride = this.processorOpts.initialSourceOverride ?? 'auto';
+        this.switchBehavior = this.processorOpts.initialSwitchBehavior ?? 'microfade';
+        this.microFadeDurationFrames = Math.max(1, Math.round((this.processorOpts.microFadeDurationMs ?? 5) / 1000 * this.sampleRate));
         this.fadeFramesTotal = this.microFadeDurationFrames; // Cache total fade frames
 
         // --- Internal Processing & State Tracking ---
-        this.actualSourceIsSlow = false;      // Which buffer are we *currently* reading from?
-        this.targetSourceIsSlow = false;      // Which buffer *should* we be reading from based on params?
-        this.lastAppliedStretchRatio = -1; // Initialize to invalid value to force first update
+        this.actualSourceIsSlow = false;
+        this.targetSourceIsSlow = false;
+        this.lastAppliedStretchRatio = -1;
         this.lastAppliedPitchScale = -1;
         this.lastAppliedFormantScale = -1;
-        this.resetNeeded = true;              // Force _rubberband_reset before first process block
-        this.streamEnded = false;             // Has source audio been fully processed by Rubberband?
-        this.finalBlockSent = false;          // Has the final flag been sent to _rubberband_process?
-        this.outputSilenceCounter = 0;        // Counter for outputting silence padding after stream ends
+        this.resetNeeded = true;
+        this.streamEnded = false;
+        this.finalBlockSent = false;
+        this.outputSilenceCounter = 0;
 
         // --- Switching State Machine ---
-        this.switchState = 'idle';      // 'idle', 'fading-out', 'muting', 'fading-in'
-        this.fadeGain = 1.0;            // Current gain multiplier for fades (0.0 to 1.0)
-        this.fadeFramesRemaining = 0;     // Frames left in current fade phase
+        this.switchState = 'idle';
+        this.fadeGain = 1.0;
+        this.fadeFramesRemaining = 0;
 
-        this.initializationFailed = false; // Flag to track constructor/init issues
 
         // --- Message Handling Setup ---
         this.port.onmessage = this.handleMessage.bind(this);
@@ -106,14 +99,18 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
         if (!this.wasmBinary || !this.loaderScriptText || !this.sampleRate || this.sampleRate <= 0 || !this.numberOfChannels || this.numberOfChannels <= 0) {
              const errorMsg = `Processor creation failed: Invalid options. SR=${this.sampleRate}, Ch=${this.numberOfChannels}, WASM=${!!this.wasmBinary}, Loader=${!!this.loaderScriptText}`;
              console.error(`[Worklet Constructor] ${errorMsg}`);
+             // Attempt to post error back immediately, though port might not be fully ready
              try { this.port.postMessage({type: 'error', message: errorMsg}); } catch(e){}
-             this.initializationFailed = true; // Set flag
+             // Cannot proceed, but need to let the system know to keep alive potentially? Or throw?
+             // Throwing here might prevent registration entirely. Let's rely on postError maybe.
+             this.initializationFailed = true; // Set a flag
              return;
         }
 
         // --- Pre-compile Loader Function ---
         console.log("[Worklet Constructor] Compiling loader script function...");
         try {
+            // Assuming the loader script defines a global variable 'Rubberband' which holds the async factory function
             const getLoaderFactory = new Function(`${this.loaderScriptText}; return Rubberband;`);
             RubberbandLoaderFn = getLoaderFactory(); // Store the factory function in outer scope
             if (typeof RubberbandLoaderFn !== 'function') {
@@ -157,17 +154,20 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
         console.log("[Worklet InitWasm] Initializing WASM & Rubberband instance via loader...");
         try {
             // --- Instantiate WASM using Loader Script ---
+            // Hook function for the loader script to call WebAssembly.instantiate
             const instantiateWasm = (imports, successCallback) => {
                  console.log("[Worklet InitWasm Hook] instantiateWasm hook called by loader.");
                  WebAssembly.instantiate(this.wasmBinary, imports)
                     .then(output => {
                         console.log("[Worklet InitWasm Hook] WASM instantiation successful via hook.");
+                        // Pass the instance and module object to the loader's callback
                         successCallback(output.instance, output.module);
                     }).catch(error => {
                         console.error("[Worklet InitWasm Hook] WASM Instantiation hook failed:", error);
+                        // Post error back to main thread
                         this.postError(`WASM Hook Error: ${error.message}`);
-                        // Consider how to reject the outer await RubberbandLoaderFn call here.
-                        // If the loader doesn't handle rejection from the hook, this might hang.
+                        // How to reject the outer promise depends on RubberbandLoaderFn's implementation.
+                        // If it doesn't handle rejection, this might hang or resolve incorrectly.
                     });
                  return {}; // Expected by Emscripten loaders
             };
@@ -176,6 +176,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
             console.log("[Worklet InitWasm] Calling RubberbandLoaderFn...");
             const loadedModule = await RubberbandLoaderFn({
                 instantiateWasm: instantiateWasm,
+                // Pass other potential options if the loader uses them (print, printErr)
                 print: (...args) => console.log("[WASM Log]", ...args),
                 printErr: (...args) => console.error("[WASM Err]", ...args),
                 onAbort: (reason) => this.postErrorAndStop(`WASM Aborted: ${reason}`),
@@ -183,19 +184,19 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
             console.log("[Worklet InitWasm] RubberbandLoaderFn resolved.");
 
             // --- Verify Module and Get Exports ---
-            wasmModule = loadedModule;
+            wasmModule = loadedModule; // Assign to the outer scope variable
             if (!wasmModule || typeof wasmModule._rubberband_new !== 'function') {
-                console.error("[Worklet InitWasm] Loaded module:", JSON.stringify(wasmModule)); // Log loaded object structure
+                console.error("[Worklet InitWasm] Loaded module:", wasmModule); // Log what was loaded
                 throw new Error("_rubberband_new function not found on loaded module. WASM loading failed.");
             }
             console.log("[Worklet InitWasm] WASM Module exports verified.");
-            this.RBOptions = wasmModule.RubberBandOptionFlag;
+            this.RBOptions = wasmModule.RubberBandOptionFlag; // Store options enum locally
 
             // --- Create Rubberband Instance (Real-time Flags) ---
-            const rbFlags = (this.RBOptions?.ProcessRealTime ?? 0x01) | // Use ?? for safety
-                          (this.RBOptions?.EngineDefault ?? 0x00) |
-                          (this.RBOptions?.PitchHighQuality ?? 0x02000000) |
-                          (this.RBOptions?.FormantPreserved ?? 0x01000000);
+            const rbFlags = this.RBOptions.ProcessRealTime |
+                          this.RBOptions.EngineDefault |
+                          this.RBOptions.PitchHighQuality |
+                          this.RBOptions.FormantPreserved;
             console.log(`[Worklet InitWasm] Creating Rubberband instance (RealTime). SR=${this.sampleRate}, Ch=${this.numberOfChannels}, Flags=0x${rbFlags.toString(16)}`);
             this.rubberbandStretcher = wasmModule._rubberband_new(
                 this.sampleRate, this.numberOfChannels, rbFlags, 1.0, 1.0
@@ -207,19 +208,20 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
 
             // --- Allocate WASM Memory Buffers ---
             console.log("[Worklet InitWasm] Allocating WASM memory...");
-            this._allocateWasmMemory();
+            this._allocateWasmMemory(); // This function logs internally too
 
             this.wasmReady = true;
             console.log("[Worklet InitWasm] WASM and Rubberband instance ready.");
             console.log("[Worklet InitWasm] Attempting to post 'processor-ready' status...");
-            this.postStatus('processor-ready');
-            console.log("[Worklet InitWasm] 'processor-ready' status posted.");
+            this.postStatus('processor-ready'); // Signal readiness to main thread
+            console.log("[Worklet InitWasm] 'processor-ready' status posted."); // Confirm it was called
 
         } catch (error) {
+             // Catch errors specifically during the initialization process
              console.error(`[Worklet InitWasm] FATAL INITIALIZATION ERROR: ${error.message}\n${error.stack}`);
-             this.postErrorAndStop(`Engine Init Error: ${error.message}`);
+             this.postErrorAndStop(`Engine Init Error: ${error.message}`); // Notify main thread
              this.wasmReady = false;
-             this.cleanupWasmResources();
+             this.cleanupWasmResources(); // Attempt cleanup
         }
     }
 
@@ -229,41 +231,24 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
      * @throws {Error} If allocation fails.
      */
     _allocateWasmMemory() {
-        if (!wasmModule || typeof wasmModule._malloc !== 'function') {
-            throw new Error("WASM module or _malloc function not available for memory allocation.");
-        }
-        console.log("[Worklet AllocMem] Allocating WASM memory buffers...");
-        const pointerSize = 4;
-        const frameSize = 4; // Float32
-        const bufferSizeBytes = this.blockSizeWasm * frameSize;
-
-        try { // Wrap allocations in try/catch for better error reporting if one fails
-            this.inputPtrs = wasmModule._malloc(this.numberOfChannels * pointerSize);
-            this.outputPtrs = wasmModule._malloc(this.numberOfChannels * pointerSize);
-            if (!this.inputPtrs || !this.outputPtrs) throw new Error("Failed pointer array alloc.");
-            console.log(`[Worklet AllocMem] Allocated pointer arrays: input=${this.inputPtrs}, output=${this.outputPtrs}`);
-
-            this.inputChannelBufPtrs = [];
-            this.outputChannelBufPtrs = [];
-
-            for (let i = 0; i < this.numberOfChannels; ++i) {
-                const inputBuf = wasmModule._malloc(bufferSizeBytes);
-                const outputBuf = wasmModule._malloc(bufferSizeBytes);
-                if (!inputBuf || !outputBuf) throw new Error(`Buffer alloc failed for Channel ${i}.`);
-
-                this.inputChannelBufPtrs.push(inputBuf);
-                this.outputChannelBufPtrs.push(outputBuf);
-
-                // Set the pointers in the WASM pointer arrays
-                wasmModule.HEAPU32[(this.inputPtrs / pointerSize) + i] = inputBuf;
-                wasmModule.HEAPU32[(this.outputPtrs / pointerSize) + i] = outputBuf;
-            }
-            console.log(`[Worklet AllocMem] Allocated ${this.numberOfChannels}x input/output WASM buffers (${this.blockSizeWasm} frames each).`);
-        } catch (allocError) {
-             console.error("[Worklet AllocMem] Error during WASM memory allocation:", allocError);
-             this.cleanupWasmMemory(); // Attempt to free any partially allocated memory
-             throw allocError; // Re-throw error to be caught by initializeWasmAndRubberband
-        }
+        // ... (Implementation remains the same - already includes logging) ...
+         if (!wasmModule || typeof wasmModule._malloc !== 'function') { throw new Error("WASM module or _malloc function not available."); }
+         console.log("[Worklet AllocMem] Allocating WASM memory buffers...");
+         const pointerSize = 4; const frameSize = 4; const bufferSizeBytes = this.blockSizeWasm * frameSize;
+         this.inputPtrs = wasmModule._malloc(this.numberOfChannels * pointerSize);
+         this.outputPtrs = wasmModule._malloc(this.numberOfChannels * pointerSize);
+         if (!this.inputPtrs || !this.outputPtrs) { throw new Error("Failed pointer array alloc."); }
+         console.log(`[Worklet AllocMem] Allocated pointer arrays: input=${this.inputPtrs}, output=${this.outputPtrs}`);
+         this.inputChannelBufPtrs = []; this.outputChannelBufPtrs = [];
+         for (let i = 0; i < this.numberOfChannels; ++i) {
+             const inputBuf = wasmModule._malloc(bufferSizeBytes);
+             const outputBuf = wasmModule._malloc(bufferSizeBytes);
+             if (!inputBuf || !outputBuf) { this.cleanupWasmMemory(); throw new Error(`Buffer alloc failed for Channel ${i}.`); }
+             this.inputChannelBufPtrs.push(inputBuf); this.outputChannelBufPtrs.push(outputBuf);
+             wasmModule.HEAPU32[(this.inputPtrs / pointerSize) + i] = inputBuf;
+             wasmModule.HEAPU32[(this.outputPtrs / pointerSize) + i] = outputBuf;
+         }
+         console.log(`[Worklet AllocMem] Allocated ${this.numberOfChannels}x input/output WASM buffers (${this.blockSizeWasm} frames each).`);
     }
 
 
@@ -275,9 +260,10 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
      */
     handleMessage(event) {
         const data = event.data;
-        // console.log(`[Worklet MsgHandler] Received message type: ${data.type}`); // Log message type
+        console.log(`[Worklet MsgHandler] Received message type: ${data.type}`); // Log message type
 
-        if (this.initializationFailed && data.type !== 'cleanup') {
+        // If constructor failed, ignore messages except cleanup?
+         if (this.initializationFailed && data.type !== 'cleanup') {
              console.warn("[Worklet MsgHandler] Ignoring message - processor initialization failed earlier.");
              return;
          }
@@ -305,7 +291,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
                     this.jumpPlayback(data.seconds);
                     break;
                 case 'set-params':
-                    // console.log("[Worklet MsgHandler] Handling 'set-params'. Params:", data.params); // Reduce log noise
+                    console.log("[Worklet MsgHandler] Handling 'set-params'. Params:", data.params);
                     this.updateParameters(data.params);
                     break;
                 case 'cleanup':
@@ -316,6 +302,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
                     console.warn("[Worklet MsgHandler] Received unknown message type:", data.type);
             }
         } catch (error) {
+            // Catch synchronous errors within message handlers
             console.error(`[Worklet MsgHandler] Error handling message type ${data.type}: ${error.message}\n${error.stack}`);
             this.postError(`Msg '${data.type}' Handler Error: ${error.message}`);
         }
@@ -352,19 +339,19 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
              this.slowChannels = data.slowChannels.map(buffer => new Float32Array(buffer));
              console.log("[Worklet LoadAudio] Conversion complete.");
 
-             // Validate buffer lengths
+             // Basic validation of buffer lengths
              if (!this.originalChannels[0] || this.originalChannels[0].length === 0) { throw new Error("Original audio channel 0 is empty."); }
              if (!this.slowChannels[0] || this.slowChannels[0].length === 0) { throw new Error("Slow audio channel 0 is empty."); }
 
              this.originalDurationSeconds = this.originalChannels[0].length / this.sampleRate;
              console.log(`[Worklet LoadAudio] Audio data processed. Original duration: ${this.originalDurationSeconds.toFixed(2)}s`);
              this.audioLoaded = true;
-             this.resetPlaybackState();
+             this.resetPlaybackState(); // Ensure clean state for new audio
 
              // --- Trigger WASM Initialization ---
              if (!this.wasmReady) {
                  console.log("[Worklet LoadAudio] WASM not ready. Calling initializeWasmAndRubberband...");
-                 this.initializeWasmAndRubberband(); // Intentionally async
+                 this.initializeWasmAndRubberband(); // Intentionally async, don't await here
              } else {
                   console.log("[Worklet LoadAudio] WASM ready, ensuring Rubberband state is reset for new audio.");
                   this.resetNeeded = true;
@@ -378,37 +365,35 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
 
     /** Resets playback-related state variables. @private */
     resetPlaybackState() {
-        // console.log("[Worklet ResetState] Resetting playback state."); // Less noise
+        console.log("[Worklet ResetState] Resetting playback state.");
         this.conceptualPlaybackTime = 0.0;
         this.isPlaying = false;
         this.streamEnded = false;
         this.finalBlockSent = false;
         this.outputSilenceCounter = 0;
-        this.resetNeeded = true;
+        this.resetNeeded = true; // Force Rubberband reset on next process
         this.switchState = 'idle';
         this.fadeGain = 1.0;
         this.fadeFramesRemaining = 0;
-        // Reset last applied values to force update after reset
-        this.lastAppliedStretchRatio = -1;
-        this.lastAppliedPitchScale = -1;
-        this.lastAppliedFormantScale = -1;
     }
 
     // --- Playback Control Logic ---
     /** Starts or resumes playback. @private */
     startPlayback() {
-         if (this.isPlaying) { /* console.warn("[Worklet Play] Already playing."); */ return; }
+        // ... (Implementation remains the same - includes checks and reset logic) ...
+         if (this.isPlaying) { console.warn("[Worklet Play] Already playing."); return; }
          if (!this.audioLoaded || !this.wasmReady) { this.postError("Cannot play: Audio/WASM not ready."); return; }
          console.log("[Worklet Play] Starting playback.");
          if (this.streamEnded || this.conceptualPlaybackTime >= this.originalDurationSeconds) { console.log("[Worklet Play] Resetting position from end."); this.resetPlaybackState(); }
          this.isPlaying = true;
-         // if (this.resetNeeded) console.log("[Worklet Play] Reset flag is true."); // Less noise
+         if (this.resetNeeded) console.log("[Worklet Play] Reset flag is true.");
          this.port.postMessage({type: 'playback-state', isPlaying: true});
     }
 
     /** Pauses playback. @private */
     pausePlayback() {
-         if (!this.isPlaying) { return; }
+        // ... (Implementation remains the same) ...
+         if (!this.isPlaying) { /* console.log("[Worklet Pause] Already paused."); */ return; }
          console.log("[Worklet Pause] Pausing playback.");
          this.isPlaying = false;
          this.port.postMessage({type: 'playback-state', isPlaying: false});
@@ -416,22 +401,25 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
 
     /** Seeks playback to a specific time. @private */
     seekPlayback(positionSeconds) {
-        if (!this.audioLoaded || !this.wasmReady) { console.warn("[Worklet Seek] Cannot seek: Not ready."); return; }
-        const targetTime = Math.max(0, Math.min(positionSeconds, this.originalDurationSeconds));
-        console.log(`[Worklet Seek] Seeking to ${targetTime.toFixed(3)}s`);
-        this.conceptualPlaybackTime = targetTime; this.resetNeeded = true; this.streamEnded = false; this.finalBlockSent = false; this.outputSilenceCounter = 0; this.switchState = 'idle'; this.fadeGain = 1.0;
+        // ... (Implementation remains the same - clamps time, sets resetNeeded) ...
+         if (!this.audioLoaded || !this.wasmReady) { console.warn("[Worklet Seek] Cannot seek: Not ready."); return; }
+         const targetTime = Math.max(0, Math.min(positionSeconds, this.originalDurationSeconds));
+         console.log(`[Worklet Seek] Seeking to ${targetTime.toFixed(3)}s`);
+         this.conceptualPlaybackTime = targetTime; this.resetNeeded = true; this.streamEnded = false; this.finalBlockSent = false; this.outputSilenceCounter = 0; this.switchState = 'idle'; this.fadeGain = 1.0;
     }
 
      /** Jumps playback forward or backward. @private */
      jumpPlayback(seconds) {
+        // ... (Implementation remains the same - calls seekPlayback) ...
         if (!this.audioLoaded || !this.wasmReady) { console.warn("[Worklet Jump] Cannot jump: Not ready."); return; }
         const newPosition = this.conceptualPlaybackTime + seconds; this.seekPlayback(newPosition);
      }
 
     /** Updates processing parameters from main thread message. @private */
     updateParameters(params) {
-         if (!this.wasmReady) { /* console.warn("[Worklet SetParams] Cannot update: WASM not ready."); */ return; }
-         // console.log("[Worklet SetParams] Updating parameters:", params); // Less noise
+        // ... (Implementation remains the same - updates internal state, sets resetNeeded if required) ...
+         if (!this.wasmReady) { console.warn("[Worklet SetParams] Cannot update: WASM not ready."); return; }
+         console.log("[Worklet SetParams] Updating parameters:", params);
          let needsReset = false;
          if (params.speed !== undefined && this.targetSpeed !== params.speed) { this.targetSpeed = Math.max(0.1, Math.min(params.speed, 10.0)); }
          if (params.pitchSemitones !== undefined && this.targetPitchSemitones !== params.pitchSemitones) { this.targetPitchSemitones = params.pitchSemitones; }
@@ -453,13 +441,14 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
      */
     process(inputs, outputs, parameters) {
         // --- Preconditions & State Checks ---
-        if (this.initializationFailed) return false;
+        if (this.initializationFailed) return false; // Stop if constructor failed
         if (!this.audioLoaded || !this.wasmReady || !this.rubberbandStretcher) {
+            // console.log("[Worklet Process] Waiting - Audio/WASM not ready."); // Reduce log noise
             this.outputSilence(outputs); return true;
         }
         const outputBuffer = outputs[0];
         if (!outputBuffer || outputBuffer.length !== this.numberOfChannels || !outputBuffer[0]) {
-            this.outputSilence(outputs); return true;
+             console.warn("[Worklet Process] Invalid output buffer structure."); this.outputSilence(outputs); return true;
         }
         const outputBlockSize = outputBuffer[0].length;
         if (outputBlockSize === 0) return true;
@@ -484,27 +473,31 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
             if (this.switchState !== 'idle') {
                 this.advanceSwitchState(outputBlockSize);
                 if (this.switchState === 'muting' || this.switchState === 'fading-out') {
-                    this.applyGainAndOutput(outputs, null, 0); return true;
+                    this.applyGainAndOutput(outputs, null, 0); return true; // Output silence/fade and skip processing
                 }
             }
 
             // 3. Get Current Source & Calculate Ratios
             const currentSourceChannels = this.actualSourceIsSlow ? this.slowChannels : this.originalChannels;
-            // Ensure source channels are available (should be checked by audioLoaded, but belt-and-suspenders)
-            if (!currentSourceChannels || !currentSourceChannels[0]) { throw new Error("Current source channel data is missing."); }
             const currentSourceNominalSpeed = this.actualSourceIsSlow ? this.initialSlowSpeed : 1.0;
             const { stretchRatio, pitchScale, formantScale } = this.calculateRubberbandParams(currentSourceNominalSpeed);
 
             // 4. Apply Updates to Rubberband (Reset / Ratio / Scale)
-            this.applyRubberbandUpdates(stretchRatio, pitchScale, formantScale);
+            this.applyRubberbandUpdates(stretchRatio, pitchScale, formantScale); // Handles resetNeeded flag
 
             // 5. Calculate Input Requirements
-            let inputFramesToRead = this.blockSizeWasm; // Start by trying to fill WASM block
+            // const safetyMarginFactor = 1.5; const latencyFrames = 0;
+            // let inputFramesNeeded = Math.ceil((outputBlockSize * safetyMarginFactor) / Math.max(0.1, stretchRatio)) + latencyFrames;
+            // inputFramesNeeded = Math.max(this.blockSizeWasm / 4, inputFramesNeeded);
+            // inputFramesNeeded = Math.min(this.blockSizeWasm, inputFramesNeeded); // Limit to WASM buffer
+             // Simplified: Just try to fill the WASM block unless near end? Or fixed small read?
+             // Let's try filling blockSizeWasm generally, unless near end.
+             let inputFramesToRead = this.blockSizeWasm;
+
 
             // 6. Calculate Read Position & Available Input
             const sourceSampleRate = this.sampleRate;
-            let readPosInSourceSamples = 0;
-            let sourceTotalSamples = 0;
+            let readPosInSourceSamples = 0; let sourceTotalSamples = 0;
             if (this.actualSourceIsSlow) {
                  sourceTotalSamples = this.slowChannels[0].length;
                  readPosInSourceSamples = Math.round((this.conceptualPlaybackTime / this.initialSlowSpeed) * sourceSampleRate);
@@ -513,7 +506,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
                  readPosInSourceSamples = Math.round(this.conceptualPlaybackTime * sourceSampleRate);
             }
             readPosInSourceSamples = Math.max(0, Math.min(readPosInSourceSamples, sourceTotalSamples));
-            let actualInputProvided = Math.min(inputFramesToRead, sourceTotalSamples - readPosInSourceSamples);
+            let actualInputProvided = Math.min(inputFramesToRead, sourceTotalSamples - readPosInSourceSamples); // Limit read by available data
             actualInputProvided = Math.max(0, actualInputProvided);
 
             // 7. Handle End Of Stream Input Signal
@@ -522,7 +515,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
 
             // 8. Prepare Input & Call Rubberband Process
             if (actualInputProvided > 0 || sendFinalFlag) {
-                for (let i = 0; i < this.numberOfChannels; i++) {
+                for (let i = 0; i < this.numberOfChannels; i++) { /* ... copy data to WASM input buffers ... */
                      const sourceData = currentSourceChannels[i];
                      const wasmInputBufferView = new Float32Array(wasmModule.HEAPF32.buffer, this.inputChannelBufPtrs[i], this.blockSizeWasm);
                      if (actualInputProvided > 0) {
@@ -540,7 +533,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
             // 9. Retrieve Processed Output
             let totalRetrieved = 0; let available = 0;
             const tempOutputBuffers = Array.from({length: this.numberOfChannels}, () => new Float32Array(outputBlockSize));
-            do {
+            do { /* ... retrieve loop as before ... */
                  available = wasmModule._rubberband_available(this.rubberbandStretcher); available = Math.max(0, available);
                  if (available > 0) {
                      const neededNow = outputBlockSize - totalRetrieved; if (neededNow <= 0) break;
@@ -554,7 +547,7 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
                          }
                          totalRetrieved += retrieved;
                      } else if (retrieved < 0) { console.error(`Retrieve error: ${retrieved}`); available = 0; break; }
-                       else { available = 0; } // retrieved 0
+                     else { available = 0; }
                  }
             } while (available > 0 && totalRetrieved < outputBlockSize);
 
@@ -562,26 +555,27 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
             this.applyGainAndOutput(outputs, tempOutputBuffers, totalRetrieved); // Applies fadeGain
             const sourceTimeConsumedThisBlock = (actualInputProvided / sourceSampleRate) * currentSourceNominalSpeed;
             this.conceptualPlaybackTime += sourceTimeConsumedThisBlock;
-            this.conceptualPlaybackTime = Math.min(this.conceptualPlaybackTime, this.originalDurationSeconds);
+            this.conceptualPlaybackTime = Math.min(this.conceptualPlaybackTime, this.originalDurationSeconds); // Clamp
 
             // 11. Send Time Update (Maybe throttle this later)
-             if (this.isPlaying) { this.port.postMessage({type: 'time-update', currentTime: this.conceptualPlaybackTime }); }
+             if(this.isPlaying) { // Only send updates if playing
+                 this.port.postMessage({type: 'time-update', currentTime: this.conceptualPlaybackTime });
+             }
 
             // 12. Check for Stream End Condition
-             // Use `available` from *after* the retrieve loop completed
-            if (this.finalBlockSent && available <= 0 && !this.streamEnded) {
-                 // Check if available is really 0 after the last possible retrieve attempt
-                 const finalAvailableCheck = wasmModule._rubberband_available(this.rubberbandStretcher);
-                 if (finalAvailableCheck <= 0) {
-                      console.log("[Worklet Process] Playback stream processing finished.");
-                      this.streamEnded = true; this.postStatus('Playback ended');
-                 }
+            if (this.finalBlockSent && available <= 0 && totalRetrieved < outputBlockSize) {
+                if (!this.streamEnded) {
+                     console.log("[Worklet Process] Playback stream processing finished.");
+                     this.streamEnded = true; this.postStatus('Playback ended');
+                     // Maybe automatically pause after end? Let main thread decide?
+                     // this.isPlaying = false; this.port.postMessage({type:'playback-state', isPlaying: false});
+                }
             }
 
         } catch (error) {
              console.error(`[Worklet Process] Error: ${error.message}\n${error.stack}`);
              this.postError(`Processing Error: ${error.message}`);
-             this.pausePlayback(); this.outputSilence(outputs); return true;
+             this.pausePlayback(); this.outputSilence(outputs); return true; // Keep alive after error?
         }
 
         return true; // Keep processor alive
@@ -590,100 +584,19 @@ class HybridAudioProcessor extends AudioWorkletProcessor {
 
     // --- Helper Methods ---
     /** Calculates the target source based on current parameters. @private */
-    determineTargetSource() { switch (this.sourceOverride) { case 'original': return false; case 'slow': return true; default: return this.targetSpeed <= this.hybridThreshold; } }
+    determineTargetSource() { /* ... same ... */ switch (this.sourceOverride) { case 'original': return false; case 'slow': return true; default: return this.targetSpeed <= this.hybridThreshold; } }
     /** Calculates the parameters needed by Rubberband. @private */
-    calculateRubberbandParams(sourceNominalSpeed) { const stretchRatio = sourceNominalSpeed / Math.max(0.01, this.targetSpeed); const pitchScale = Math.pow(2, this.targetPitchSemitones / 12.0); const formantScale = this.targetFormantScale; const clampedStretch = Math.max(0.05, Math.min(stretchRatio, 20.0)); const clampedPitch = Math.max(0.1, Math.min(pitchScale, 10.0)); const clampedFormant = Math.max(0.1, Math.min(formantScale, 10.0)); return { stretchRatio: clampedStretch, pitchScale: clampedPitch, formantScale: clampedFormant }; }
+    calculateRubberbandParams(sourceNominalSpeed) { /* ... same ... */ const stretchRatio = sourceNominalSpeed / Math.max(0.01, this.targetSpeed); const pitchScale = Math.pow(2, this.targetPitchSemitones / 12.0); const formantScale = this.targetFormantScale; const clampedStretch = Math.max(0.05, Math.min(stretchRatio, 20.0)); const clampedPitch = Math.max(0.1, Math.min(pitchScale, 10.0)); const clampedFormant = Math.max(0.1, Math.min(formantScale, 10.0)); return { stretchRatio: clampedStretch, pitchScale: clampedPitch, formantScale: clampedFormant }; }
     /** Applies updates (reset, ratios, scales) to the Rubberband instance. @private */
-applyRubberbandUpdates(stretchRatio, pitchScale, formantScale) {
-        // stretchRatio, pitchScale, formantScale are calculated *before* this function is called,
-        // based on the *current* this.actualSourceIsSlow state.
-
-        let paramsChanged = false;
-         const ratioTolerance = 1e-6;
-
-        if (this.resetNeeded) {
-            // **** PROBLEM AREA ****
-            // The 'stretchRatio' passed into this function was calculated BEFORE the reset logic runs.
-            // If we just switched TO the slow source, 'actualSourceIsSlow' might still be FALSE when
-            // calculateRubberbandParams was called OUTSIDE this function for this process() iteration.
-            // THEREFORE, the 'stretchRatio' passed in here might be based on the OLD source (1.0 / targetSpeed).
-            // We need to recalculate the ratio HERE using the NEW target source's nominal speed.
-
-            // Determine the nominal speed of the source we are *switching TO*
-            const targetNominalSpeed = this.targetSourceIsSlow ? this.initialSlowSpeed : 1.0;
-            // Recalculate the correct parameters based on the TARGET state
-            const correctParams = this.calculateRubberbandParams(targetNominalSpeed);
-            const correctStretchRatio = correctParams.stretchRatio;
-            const correctPitchScale = correctParams.pitchScale;
-            const correctFormantScale = correctParams.formantScale;
-
-            // **** USE THE CORRECTED VALUES FOR LOGGING AND SETTING ****
-            console.log(`[Worklet Reset] Applying R=${correctStretchRatio.toFixed(3)}, P=${correctPitchScale.toFixed(3)}, F=${correctFormantScale.toFixed(3)} (TargetSpeed=${this.targetSpeed.toFixed(3)}, SwitchingToSlow=${this.targetSourceIsSlow})`);
-
-            wasmModule._rubberband_reset(this.rubberbandStretcher);
-            // Apply the *corrected* values after reset
-            wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, correctStretchRatio);
-            wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, correctPitchScale);
-            wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, correctFormantScale);
-
-            // Update last applied values with the corrected ones
-            this.lastAppliedStretchRatio = correctStretchRatio;
-            this.lastAppliedPitchScale = correctPitchScale;
-            this.lastAppliedFormantScale = correctFormantScale;
-
-            this.resetNeeded = false;
-            this.finalBlockSent = false;
-            this.streamEnded = false;
-            // Sync the actual source state AFTER the reset is complete and correct ratio is applied
-            this.actualSourceIsSlow = this.targetSourceIsSlow;
-            paramsChanged = true; // Mark that params were applied
-            return paramsChanged; // Exit early after reset
-        }
-
-        // --- Apply normal updates if NOT resetting ---
-        // (The rest of the function remains the same, using the originally passed-in stretchRatio etc.)
-        if (Math.abs(stretchRatio - this.lastAppliedStretchRatio) > ratioTolerance) { /* ... */ }
-        if (Math.abs(pitchScale - this.lastAppliedPitchScale) > ratioTolerance) { /* ... */ }
-        if (Math.abs(formantScale - this.lastAppliedFormantScale) > ratioTolerance) { /* ... */ }
-
-        return paramsChanged;
-    }
+    applyRubberbandUpdates(stretchRatio, pitchScale, formantScale) { /* ... same ... */ let paramsChanged = false; const ratioTolerance = 1e-6; if (this.resetNeeded) { console.log(`[Worklet Reset] Applying R=${stretchRatio.toFixed(3)}, P=${pitchScale.toFixed(3)}, F=${formantScale.toFixed(3)}`); wasmModule._rubberband_reset(this.rubberbandStretcher); wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, stretchRatio); wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, pitchScale); wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, formantScale); this.lastAppliedStretchRatio = stretchRatio; this.lastAppliedPitchScale = pitchScale; this.lastAppliedFormantScale = formantScale; this.resetNeeded = false; this.finalBlockSent = false; this.streamEnded = false; this.actualSourceIsSlow = this.targetSourceIsSlow; paramsChanged = true; return paramsChanged; } if (Math.abs(stretchRatio - this.lastAppliedStretchRatio) > ratioTolerance) { wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, stretchRatio); this.lastAppliedStretchRatio = stretchRatio; paramsChanged = true; } if (Math.abs(pitchScale - this.lastAppliedPitchScale) > ratioTolerance) { wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, pitchScale); this.lastAppliedPitchScale = pitchScale; paramsChanged = true; } if (Math.abs(formantScale - this.lastAppliedFormantScale) > ratioTolerance) { wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, formantScale); this.lastAppliedFormantScale = formantScale; paramsChanged = true; } return paramsChanged; }
     /** Initiates the source switching process. @private */
-    initiateSwitch() { console.log(`[Worklet Switch] Init: ${this.actualSourceIsSlow ? 'Slow' : 'Orig'} -> ${this.targetSourceIsSlow ? 'Slow' : 'Orig'} (${this.switchBehavior})`); switch (this.switchBehavior) { case 'mute': this.switchState = 'muting'; this.fadeFramesRemaining = Math.max(128, Math.round(this.sampleRate * 0.01)); this.fadeGain = 0.0; break; case 'microfade': this.switchState = 'fading-out'; this.fadeFramesRemaining = this.fadeFramesTotal; break; default: this.resetNeeded = true; this.switchState = 'idle'; break; } }
+    initiateSwitch() { /* ... same ... */ console.log(`[Worklet Switch] Init: ${this.actualSourceIsSlow ? 'Slow' : 'Orig'} -> ${this.targetSourceIsSlow ? 'Slow' : 'Orig'} (${this.switchBehavior})`); switch (this.switchBehavior) { case 'mute': this.switchState = 'muting'; this.fadeFramesRemaining = Math.round(this.sampleRate * 0.01); this.fadeGain = 0.0; break; case 'microfade': this.switchState = 'fading-out'; this.fadeFramesRemaining = this.fadeFramesTotal; break; default: this.resetNeeded = true; this.switchState = 'idle'; break; } }
     /** Advances the state machine for mute/fade transitions. @private */
-    advanceSwitchState(blockSize) {
-         // Only advance if frames remaining > 0 OR we are starting fade-in
-        if (this.fadeFramesRemaining > 0 || this.switchState === 'fading-in') {
-            if (this.switchState === 'fading-out') { this.fadeGain = Math.max(0, this.fadeFramesRemaining / this.fadeFramesTotal); this.fadeFramesRemaining -= blockSize; }
-            else if (this.switchState === 'fading-in') { this.fadeGain = 1.0 - Math.max(0, this.fadeFramesRemaining / this.fadeFramesTotal); this.fadeFramesRemaining -= blockSize; }
-            else if (this.switchState === 'muting') { this.fadeGain = 0.0; this.fadeFramesRemaining -= blockSize; }
-            else { this.fadeGain = 1.0; } // Idle
-            this.fadeGain = Math.max(0.0, Math.min(1.0, this.fadeGain)); // Clamp gain
-        }
-
-        // Check for state transition completion *after* updating gain/frames
-        if (this.fadeFramesRemaining <= 0 && this.switchState !== 'idle') {
-             if (this.switchState === 'fading-out' || this.switchState === 'muting') {
-                 console.log("[Worklet Switch] Resetting after fade/mute."); this.resetNeeded = true;
-                 if (this.switchBehavior === 'microfade') { this.switchState = 'fading-in'; this.fadeFramesRemaining = this.fadeFramesTotal; this.fadeGain = 0; /* Start fade-in from 0 */}
-                 else { this.switchState = 'idle'; this.fadeGain = 1.0; }
-             } else if (this.switchState === 'fading-in') {
-                 console.log("[Worklet Switch] Fade-in complete."); this.switchState = 'idle'; this.fadeGain = 1.0;
-             }
-        }
-    }
+    advanceSwitchState(blockSize) { /* ... same ... */ if (this.fadeFramesRemaining <= 0 && this.switchState !== 'idle') { if (this.switchState === 'fading-out' || this.switchState === 'muting') { console.log("[Worklet Switch] Resetting after fade/mute."); this.resetNeeded = true; if (this.switchBehavior === 'microfade') { this.switchState = 'fading-in'; this.fadeFramesRemaining = this.fadeFramesTotal; } else { this.switchState = 'idle'; this.fadeGain = 1.0; } } else if (this.switchState === 'fading-in') { console.log("[Worklet Switch] Fade-in complete."); this.switchState = 'idle'; this.fadeGain = 1.0; } } if (this.switchState === 'fading-out') { this.fadeGain = Math.max(0, this.fadeFramesRemaining / this.fadeFramesTotal); this.fadeFramesRemaining -= blockSize; } else if (this.switchState === 'fading-in') { this.fadeGain = 1.0 - Math.max(0, this.fadeFramesRemaining / this.fadeFramesTotal); this.fadeFramesRemaining -= blockSize; } else if (this.switchState === 'muting') { this.fadeGain = 0.0; this.fadeFramesRemaining -= blockSize; } else { this.fadeGain = 1.0; } this.fadeGain = Math.max(0.0, Math.min(1.0, this.fadeGain)); }
     /** Applies fade gain and copies data to worklet output buffers. @private */
-    applyGainAndOutput(outputs, sourceDataArrays, frameCount) {
-         const outputBuffer = outputs[0]; const outputBlockSize = outputBuffer[0].length;
-         for (let i = 0; i < this.numberOfChannels; ++i) {
-             const targetChannel = outputBuffer[i]; const sourceData = sourceDataArrays ? sourceDataArrays[i] : null;
-             for (let j = 0; j < outputBlockSize; ++j) {
-                 const sample = (sourceData && j < frameCount) ? sourceData[j] : 0.0; targetChannel[j] = sample * this.fadeGain;
-             }
-         }
-     }
+    applyGainAndOutput(outputs, sourceDataArrays, frameCount) { /* ... same ... */ const outputBuffer = outputs[0]; const outputBlockSize = outputBuffer[0].length; for (let i = 0; i < this.numberOfChannels; ++i) { const targetChannel = outputBuffer[i]; const sourceData = sourceDataArrays ? sourceDataArrays[i] : null; for (let j = 0; j < outputBlockSize; ++j) { const sample = (sourceData && j < frameCount) ? sourceData[j] : 0.0; targetChannel[j] = sample * this.fadeGain; } } }
     /** Fills the output buffers with silence. @private */
-    outputSilence(outputs) { const outputBuffer = outputs[0]; if (!outputBuffer) return; for (let i = 0; i < outputBuffer.length; i++) { if (outputBuffer[i]) { outputBuffer[i].fill(0.0); } } }
+    outputSilence(outputs) { /* ... same ... */ const outputBuffer = outputs[0]; if (!outputBuffer) return; for (let i = 0; i < outputBuffer.length; i++) { if (outputBuffer[i]) { outputBuffer[i].fill(0.0); } } }
 
     // --- Communication Helpers ---
     /** Posts a status message back to the main thread. @private */
@@ -695,9 +608,9 @@ applyRubberbandUpdates(stretchRatio, pitchScale, formantScale) {
 
     // --- Cleanup ---
     /** Cleans up WASM memory and the Rubberband instance. @private */
-    cleanupWasmResources() { console.log("[Worklet Cleanup] Cleaning up WASM resources..."); if (this.rubberbandStretcher !== 0 && wasmModule?._rubberband_delete) { try { console.log(`[Worklet Cleanup] Deleting Rubberband instance: ptr=${this.rubberbandStretcher}`); wasmModule._rubberband_delete(this.rubberbandStretcher); } catch (e) { console.error("[Worklet Cleanup] Error deleting RB instance:", e); } finally { this.rubberbandStretcher = 0; } } this.cleanupWasmMemory(); this.wasmReady = false; }
+    cleanupWasmResources() { /* ... same ... */ console.log("[Worklet Cleanup] Cleaning up WASM resources..."); if (this.rubberbandStretcher !== 0 && wasmModule?._rubberband_delete) { try { console.log(`[Worklet Cleanup] Deleting Rubberband instance: ptr=${this.rubberbandStretcher}`); wasmModule._rubberband_delete(this.rubberbandStretcher); } catch (e) { console.error("[Worklet Cleanup] Error deleting Rubberband instance:", e); } finally { this.rubberbandStretcher = 0; } } this.cleanupWasmMemory(); this.wasmReady = false; }
     /** Frees memory allocated in the WASM heap. @private */
-    cleanupWasmMemory() { if (wasmModule?._free) { /* console.log("[Worklet Cleanup] Freeing WASM buffers..."); */ this.inputChannelBufPtrs.forEach(ptr => { if (ptr) try { wasmModule._free(ptr); } catch(e){} }); this.outputChannelBufPtrs.forEach(ptr => { if (ptr) try { wasmModule._free(ptr); } catch(e){} }); this.inputChannelBufPtrs = []; this.outputChannelBufPtrs = []; if (this.inputPtrs) try { wasmModule._free(this.inputPtrs); } catch(e){} if (this.outputPtrs) try { wasmModule._free(this.outputPtrs); } catch(e){} this.inputPtrs = 0; this.outputPtrs = 0; } }
+    cleanupWasmMemory() { /* ... same ... */ if (wasmModule?._free) { this.inputChannelBufPtrs.forEach(ptr => { if (ptr) try { wasmModule._free(ptr); } catch(e){} }); this.outputChannelBufPtrs.forEach(ptr => { if (ptr) try { wasmModule._free(ptr); } catch(e){} }); this.inputChannelBufPtrs = []; this.outputChannelBufPtrs = []; if (this.inputPtrs) try { wasmModule._free(this.inputPtrs); } catch(e){} if (this.outputPtrs) try { wasmModule._free(this.outputPtrs); } catch(e){} this.inputPtrs = 0; this.outputPtrs = 0; } }
     /** Full processor cleanup. @private */
     cleanup() { console.log("[Worklet Cleanup] Full cleanup requested."); this.isPlaying = false; this.audioLoaded = false; this.cleanupWasmResources(); this.originalChannels = null; this.slowChannels = null; wasmModule = null; RubberbandLoaderFn = null; console.log("[Worklet Cleanup] Full cleanup finished."); this.postStatus("Processor cleaned up"); }
 
@@ -705,14 +618,21 @@ applyRubberbandUpdates(stretchRatio, pitchScale, formantScale) {
 
 // --- Register the Processor ---
 try {
+    // Check if already registered - might happen with hot reload?
+    // This check isn't standard but can prevent errors in some dev environments.
+    // if (typeof registerProcessor === 'function' && !processorRegistry.has(PROCESSOR_NAME)) {
     if (typeof registerProcessor === 'function') {
          registerProcessor(PROCESSOR_NAME, HybridAudioProcessor);
          console.log(`[Worklet Script] Processor '${PROCESSOR_NAME}' registered successfully.`);
-    } else {
+    } else if (typeof registerProcessor !== 'function') {
         console.error(`[Worklet Script] FATAL: 'registerProcessor' function not found.`);
     }
+    // } else {
+    //     console.warn(`[Worklet Script] Processor '${PROCESSOR_NAME}' already registered? Skipping.`);
+    // }
 } catch (error) {
     console.error(`[Worklet Script] FATAL: Failed to register processor '${PROCESSOR_NAME}':`, error);
+    // Attempt to notify main thread about registration failure
     try { self.postMessage?.({ type: 'error', message: `FATAL: Failed to register processor ${PROCESSOR_NAME}: ${error.message}` }); } catch(e) {}
 }
 
