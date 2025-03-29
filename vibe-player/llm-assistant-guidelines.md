@@ -15,6 +15,7 @@
     * i will manually copy the entire file over and let you know when i'm done
 * write file and function docstrings with types, ideally compatible with pycharm's js support
 * anything unclear, check with me first before doing anything, i'll clarify and we can continue
+* don't start by generating a solution. first discuss the solution with me, confirm that its right, and ask before you start generating the first code block.
 
 todo:
 
