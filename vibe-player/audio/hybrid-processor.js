@@ -103,37 +103,32 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                         successCallback(output.instance, output.module);
                         console.log("[Worklet] instantiateWasm successCallback executed.");
                     }).catch(error => {
-                        console.error("[Worklet] WebAssembly.instantiate (hook) failed:", error);
-                        this.postErrorAndStop(`WASM Instantiation hook failed: ${error.message}`);
-                    });
+                    console.error("[Worklet] WebAssembly.instantiate (hook) failed:", error);
+                    this.postErrorAndStop(`WASM Instantiation hook failed: ${error.message}`);
+                });
                 // Required by Emscripten loader pattern
                 return {};
             };
 
+            // --- FIX: Correctly get the loader factory/function ---
             // 2. Evaluate the loader script text to get the loader function factory
-            let loaderFuncFactory;
+            let loaderFunc;
             try {
-                console.log("[Worklet] Evaluating loader script text...");
-                // Use 'self' explicitly if 'window' isn't reliable in worklet context
-                const getLoaderFactory = new Function(`${this.loaderScriptText}; return self.Rubberband;`);
-                loaderFuncFactory = getLoaderFactory();
-                if (typeof loaderFuncFactory !== 'function') {
+                 console.log("[Worklet] Evaluating loader script text...");
+                 // Execute the script text (which contains an IIFE defining 'Rubberband')
+                 // and return the 'Rubberband' variable from that script's scope.
+                 const loaderFactory = new Function(`${this.loaderScriptText}; return Rubberband;`);
+                 loaderFunc = loaderFactory(); // This should be the async loader function
+                if (typeof loaderFunc !== 'function') {
                     throw new Error(`Loader script evaluation did not return a function.`);
                 }
-                console.log("[Worklet] Loader function factory obtained via new Function.");
+                console.log("[Worklet] Loader async function obtained via new Function.");
             } catch (loaderError) {
-                console.error("[Worklet] Error evaluating loader script:", loaderError);
-                throw new Error(`Could not get loader factory from script: ${loaderError.message}`);
+                console.error("[Worklet] Error evaluating loader script or getting function:", loaderError);
+                throw new Error(`Could not get loader function from script: ${loaderError.message}`);
             }
+            // --- End FIX ---
 
-            // 3. Call the factory to get the actual loader function
-            // const loaderFunc = loaderFuncFactory(); // Factory returns the async function
-            // if (typeof loaderFunc !== 'function') {
-            //     throw new Error(`Loader factory did not return the expected async function.`);
-            // }
-
-             // 3. Call the loader function directly (assuming factory returns the async loader directly)
-             const loaderFunc = loaderFuncFactory; // Assuming factory returns the async loader
 
             // 4. Call the loader function with the hook and WASM binary
             console.log("[Worklet] Calling loader function with hook and WASM binary...");
@@ -269,7 +264,10 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                     this.isPlaying = true;
                     this.streamEnded = false; // Reset end flag
                     this.finalBlockProcessed = false; // Reset final block flag
-                    if (this.resetNeeded) console.log("[Worklet] Reset flag was true on Play command.");
+                    if (this.resetNeeded) {
+                         console.log("[Worklet] Reset flag was true on Play command, performing reset.");
+                         this.resetRubberbandState(); // Perform reset now if needed
+                     }
                     this.port.postMessage({type: 'playback-state', isPlaying: true});
                     break;
 
@@ -298,7 +296,9 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                     this.finalBlockProcessed = false;
                     console.log(`[Worklet] Seek to ${this.playbackPositionInSeconds.toFixed(3)}s. Reset needed.`);
                     // Optional: Send time update immediately after seek?
-                    // this.sendTimeUpdate(this.playbackPositionInSeconds);
+                     this.sendTimeUpdate(this.playbackPositionInSeconds, true); // Force update
+                    // If playing, need to ensure state is reset in process loop
+                    if(this.isPlaying) { this.resetRubberbandState(); }
                     break;
 
                 case 'jump':
@@ -315,7 +315,9 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                     this.finalBlockProcessed = false;
                     console.log(`[Worklet] Jumped by ${jumpSeconds}s to ${this.playbackPositionInSeconds.toFixed(3)}s. Reset needed.`);
                      // Optional: Send time update immediately after jump?
-                    // this.sendTimeUpdate(this.playbackPositionInSeconds);
+                     this.sendTimeUpdate(this.playbackPositionInSeconds, true); // Force update
+                     // If playing, need to ensure state is reset in process loop
+                     if(this.isPlaying) { this.resetRubberbandState(); }
                     break;
 
                 case 'set-speed':
@@ -362,17 +364,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             return true; // Keep processor alive
         }
 
-        // Output silence if paused or playback has finished and drained
-        if (!this.isPlaying) {
-             if (this.streamEnded && wasmModule._rubberband_available(this.rubberbandStretcher) <= 0) {
-                 // If paused AFTER the stream ended and buffer is drained, stay silent.
-                 this.outputSilence(outputs);
-                 return true;
-             }
-             // If paused MID-STREAM, we still need to process available output
-             // to drain the buffer from when it was playing.
-        }
-
         const outputBuffer = outputs[0];
         // Validate output buffer structure
         if (!outputBuffer || outputBuffer.length !== this.numberOfChannels || !outputBuffer[0]) {
@@ -382,6 +373,27 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         }
         const outputBlockSize = outputBuffer[0].length; // Samples per channel in this block
         if (outputBlockSize === 0) return true; // Nothing to do
+
+
+        // If paused, still need to drain remaining output from Rubberband buffer
+        let available = 0;
+        try {
+            available = wasmModule._rubberband_available(this.rubberbandStretcher);
+            available = Math.max(0, available);
+        } catch(e) {
+             console.error("[Worklet] Error calling _rubberband_available:", e);
+             this.postErrorAndStop("Error checking available samples.");
+             this.outputSilence(outputs);
+             return true;
+        }
+
+        if (!this.isPlaying && available <= 0) {
+            // Paused AND buffer is empty, output silence and do nothing else
+            this.outputSilence(outputs);
+            // Set resetNeeded true so it resets when play resumes
+            this.resetNeeded = true;
+            return true;
+        }
 
         // --- Processing Logic ---
         try {
@@ -394,14 +406,13 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             const ratioChanged = Math.abs(safeStretchRatio - this.lastAppliedStretchRatio) > 1e-6;
 
             // 2. Reset Rubberband State if Needed (Seek, Pause/Resume, Start, Significant Ratio Change?)
-            // Resetting on pause/resume ensures clean start. Reset on seek/jump is handled in message handler.
             if (this.resetNeeded) {
-                console.log(`[Worklet] Resetting Rubberband state. Ratio: ${safeStretchRatio.toFixed(3)}`);
-                wasmModule._rubberband_reset(this.rubberbandStretcher);
-                wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio);
-                this.lastAppliedStretchRatio = safeStretchRatio;
-                this.resetNeeded = false; // Reset the flag
-                // No need to reset streamEnded or finalBlockProcessed here, handled by seek/play/load
+                 this.resetRubberbandState(); // Use helper function
+                 // Re-apply current ratio after reset
+                 this.lastAppliedStretchRatio = safeStretchRatio;
+                 wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio);
+                 console.log(`[Worklet] Reset Rubberband state applied. Ratio: ${safeStretchRatio.toFixed(3)}`);
+                 this.resetNeeded = false; // Reset the flag AFTER applying
             } else if (ratioChanged) {
                 // Apply ratio changes dynamically if not resetting
                 wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio);
@@ -409,8 +420,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             }
 
             // 3. Calculate Input Samples Needed (Estimate)
-            // Need enough input to generate approximately outputBlockSize output.
-            // Add some padding (e.g., latency, processing delay). Rubberband docs might specify padding needed.
             const latencyFrames = wasmModule._rubberband_get_latency(this.rubberbandStretcher) ?? 0;
             let inputFramesNeeded = Math.ceil(outputBlockSize / safeStretchRatio) + latencyFrames + 4; // Heuristic padding
             inputFramesNeeded = Math.max(1, Math.min(inputFramesNeeded, this.blockSizeWasm)); // Don't exceed internal buffer size
@@ -439,37 +448,24 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                  // Copy data from originalChannels to WASM input buffers
                 for (let i = 0; i < this.numberOfChannels; i++) {
                     const sourceData = this.originalChannels[i];
-                    // Create a view into the specific WASM memory region for this channel's input buffer
                     const wasmInputBufferView = new Float32Array(wasmModule.HEAPF32.buffer, this.inputChannelBuffers[i], this.blockSizeWasm);
                     const endReadPos = readPosInSourceSamples + actualInputProvided;
                     const inputSlice = sourceData.subarray(readPosInSourceSamples, endReadPos);
-
-                     // Check slice length vs wasm buffer view length
                     const copyLength = Math.min(inputSlice.length, wasmInputBufferView.length);
-                    wasmInputBufferView.set(inputSlice.subarray(0, copyLength));
-
-                    // Zero out remaining part of the WASM buffer if input slice was shorter
+                    if(copyLength > 0) wasmInputBufferView.set(inputSlice.subarray(0, copyLength));
                     if (copyLength < wasmInputBufferView.length) {
                          wasmInputBufferView.fill(0.0, copyLength);
                      }
                 }
-                // Call _rubberband_process
                 wasmModule._rubberband_process(this.rubberbandStretcher, this.inputPtrs, actualInputProvided, sendFinalFlag ? 1 : 0);
-
-                 // Update conceptual playback position based on input consumed
                  const inputSecondsConsumed = actualInputProvided / this.sampleRate;
                  this.playbackPositionInSeconds += inputSecondsConsumed;
-                 this.playbackPositionInSeconds = Math.min(this.playbackPositionInSeconds, this.sourceDurationSeconds); // Clamp to duration
+                 this.playbackPositionInSeconds = Math.min(this.playbackPositionInSeconds, this.sourceDurationSeconds); // Clamp
 
                 if (sendFinalFlag) {
                     console.log("[Worklet] Final block flag sent to process().");
-                    this.finalBlockProcessed = true; // Mark final block as sent
+                    this.finalBlockProcessed = true;
                  }
-                 if (isFinalDataBlock) {
-                      // We've reached the end of the source buffer with this input block
-                      // Don't mark streamEnded yet, wait for output buffer to drain.
-                 }
-
             } else if (sendFinalFlag) {
                  // Special case: End of stream reached exactly, need to send final flag with 0 input samples.
                  wasmModule._rubberband_process(this.rubberbandStretcher, this.inputPtrs, 0, 1);
@@ -480,47 +476,43 @@ class RubberbandProcessor extends AudioWorkletProcessor {
 
             // 6. Retrieve Output from Rubberband
             let totalRetrieved = 0;
-            let available = 0;
-            // Use temporary buffers to avoid modifying worklet output buffers directly in loop
+            // available = wasmModule._rubberband_available(this.rubberbandStretcher); // Check again before retrieve loop
+            // available = Math.max(0, available);
+
             const tempOutputBuffers = Array.from({ length: this.numberOfChannels }, () => new Float32Array(outputBlockSize));
 
+             // Use the 'available' calculated at the start of process() or re-calculate?
+             // Let's re-calculate within the loop for safety, though slightly less efficient.
             do {
-                available = wasmModule._rubberband_available(this.rubberbandStretcher);
-                available = Math.max(0, available); // Ensure non-negative
+                 available = wasmModule._rubberband_available(this.rubberbandStretcher);
+                 available = Math.max(0, available);
 
                 if (available > 0) {
                     const neededNow = outputBlockSize - totalRetrieved;
-                    if (neededNow <= 0) break; // Output block is full
-
-                    const framesToRetrieve = Math.min(available, neededNow, this.blockSizeWasm); // Don't exceed internal buffer size
-                    if (framesToRetrieve <= 0) break; // Should not happen if available > 0
-
+                    if (neededNow <= 0) break;
+                    const framesToRetrieve = Math.min(available, neededNow, this.blockSizeWasm);
+                    if (framesToRetrieve <= 0) break;
                     const retrieved = wasmModule._rubberband_retrieve(this.rubberbandStretcher, this.outputPtrs, framesToRetrieve);
 
                     if (retrieved > 0) {
-                        // Copy retrieved data from WASM output buffers to temp JS buffers
                         for (let i = 0; i < this.numberOfChannels; i++) {
                             const wasmOutputBufferView = new Float32Array(wasmModule.HEAPF32.buffer, this.outputChannelBuffers[i], retrieved);
-                             // Calculate remaining space in the temporary output buffer for this channel
                             const remainingSpace = tempOutputBuffers[i].length - totalRetrieved;
-                            const copyLength = Math.min(retrieved, remainingSpace); // Copy only what fits
+                            const copyLength = Math.min(retrieved, remainingSpace);
                              if (copyLength > 0) {
-                                 // Copy from WASM view to the correct position in the temp buffer
                                  tempOutputBuffers[i].set(wasmOutputBufferView.subarray(0, copyLength), totalRetrieved);
                              }
                         }
                         totalRetrieved += retrieved;
                     } else if (retrieved < 0) {
                         console.error(`[Worklet] _rubberband_retrieve error code: ${retrieved}`);
-                        available = 0; // Stop retrieving on error
-                        break;
+                        available = 0; break; // Stop retrieving on error
                     } else {
-                         // retrieved == 0, even if available > 0. Might indicate internal state issue?
                         console.warn(`[Worklet] _rubberband_available returned ${available} but _retrieve returned 0.`);
                         available = 0; // Stop retrieving
                     }
                 }
-            } while (available > 0 && totalRetrieved < outputBlockSize); // Loop until output block is full or no more available
+            } while (available > 0 && totalRetrieved < outputBlockSize);
 
             // 7. Copy retrieved data to actual worklet output buffers and apply gain
             for (let i = 0; i < this.numberOfChannels; ++i) {
@@ -531,16 +523,13 @@ class RubberbandProcessor extends AudioWorkletProcessor {
 
                      if (copyLength > 0) {
                          if (this.currentGain === 1.0) {
-                              // If gain is 1, just copy directly
                              targetChannelBuffer.set(sourceTempData.subarray(0, copyLength));
                          } else {
-                             // Apply gain while copying
                              for (let j = 0; j < copyLength; j++) {
                                  targetChannelBuffer[j] = sourceTempData[j] * this.currentGain;
                              }
                          }
                      }
-                     // Fill remaining part with silence if not enough data was retrieved
                      if (copyLength < targetChannelBuffer.length) {
                          targetChannelBuffer.fill(0.0, copyLength);
                      }
@@ -548,23 +537,23 @@ class RubberbandProcessor extends AudioWorkletProcessor {
              }
 
             // 8. Check for End of Stream Condition
-            // Stream ends when the final block has been *processed* by Rubberband
-            // AND there's no more output available.
-            if (this.finalBlockProcessed && available <= 0 && totalRetrieved < outputBlockSize) {
-                 if (!this.streamEnded) { // Check if already marked as ended
+             available = wasmModule._rubberband_available(this.rubberbandStretcher); // Check one last time after retrieve loop
+             available = Math.max(0, available);
+            if (this.finalBlockProcessed && available <= 0) {
+                 if (!this.streamEnded) {
                       console.log("[Worklet] Playback stream ended (final block processed, buffer drained).");
                       this.streamEnded = true;
-                      this.isPlaying = false; // Stop playback automatically
-                      this.playbackPositionInSeconds = this.sourceDurationSeconds; // Ensure position is exactly at the end
-                      this.resetNeeded = true; // Need reset before next play
+                      this.isPlaying = false;
+                      this.playbackPositionInSeconds = this.sourceDurationSeconds;
+                      this.resetNeeded = true;
                       this.postStatus('Playback ended');
                       this.port.postMessage({type: 'playback-state', isPlaying: false});
-                      // Send final time update
-                      this.sendTimeUpdate(this.playbackPositionInSeconds, true); // Force send last update
+                      this.sendTimeUpdate(this.playbackPositionInSeconds, true);
                  }
             }
 
             // 9. Send Time Updates (Throttled)
+             // Use process `currentTime` global which increments each block
             if (this.isPlaying && currentTime - this.lastTimeUpdateSent >= TIME_UPDATE_INTERVAL_MS / 1000) {
                  this.sendTimeUpdate(this.playbackPositionInSeconds);
             }
@@ -572,7 +561,7 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         } catch (error) {
             console.error(`[Worklet] Processing Error: ${error.message}\n${error.stack}`);
             this.postErrorAndStop(`Processing Error: ${error.message}`);
-            this.outputSilence(outputs); // Output silence on error
+            this.outputSilence(outputs);
             return true; // Keep processor alive but stop playback
         }
 
@@ -590,39 +579,40 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         this.playbackPositionInSeconds = 0;
         this.lastTimeUpdateSent = -Infinity;
         // Don't reset targetSpeed or gain, keep user settings.
-        // Reset lastAppliedRatio? Maybe not, let process() handle it.
-        this.lastAppliedStretchRatio = 1.0 / this.currentTargetSpeed; // Re-calculate based on current speed
+        this.lastAppliedStretchRatio = 1.0 / this.currentTargetSpeed;
     }
 
     resetRubberbandState() {
-         if (wasmReady && this.rubberbandStretcher && wasmModule._rubberband_reset) {
+         if (wasmReady && this.rubberbandStretcher && wasmModule?._rubberband_reset) {
              try {
                  wasmModule._rubberband_reset(this.rubberbandStretcher);
-                 // Reapply current ratio after reset
-                 const safeTargetSpeed = Math.max(0.01, this.currentTargetSpeed);
-                 const safeStretchRatio = Math.max(0.05, Math.min(20.0, 1.0 / safeTargetSpeed));
-                 wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio);
-                 this.lastAppliedStretchRatio = safeStretchRatio;
-                 console.log("[Worklet] Rubberband internal state reset.");
+                 // Reapply current ratio after reset is done in process loop now
+                 // console.log("[Worklet] Rubberband internal state reset.");
+                 this.resetNeeded = false; // Mark as reset *requested*, process loop applies it
              } catch (e) {
                  console.error("[Worklet] Error calling _rubberband_reset:", e);
                  this.postErrorAndStop("Error resetting Rubberband state.");
+                 this.resetNeeded = false; // Clear flag even on error to avoid loop
              }
+         } else {
+             // If called when not ready, ensure flag is still false if it was set true
+             this.resetNeeded = false;
          }
-         this.resetNeeded = false; // Mark as reset
     }
 
     sendTimeUpdate(time, force = false) {
+         // Use process `currentTime` global for throttling
         if (force || currentTime - this.lastTimeUpdateSent >= TIME_UPDATE_INTERVAL_MS / 1000) {
             try {
-                this.port.postMessage({
-                    type: 'time-update',
-                    currentTime: Math.min(time, this.sourceDurationSeconds) // Ensure time doesn't exceed duration
-                });
-                this.lastTimeUpdateSent = currentTime;
+                if (this.port) { // Check port exists
+                     this.port.postMessage({
+                         type: 'time-update',
+                         currentTime: Math.min(time, this.sourceDurationSeconds) // Ensure time doesn't exceed duration
+                     });
+                     this.lastTimeUpdateSent = currentTime;
+                 }
             } catch (e) {
                 console.error("[Worklet] Failed to post time update:", e);
-                // Don't stop processor for this error
             }
         }
     }
@@ -630,7 +620,7 @@ class RubberbandProcessor extends AudioWorkletProcessor {
     outputSilence(outputs) {
         if (!outputs || !outputs[0] || !outputs[0][0]) return;
         const outputChannels = outputs[0];
-        const numChannels = Math.min(outputChannels.length, this.numberOfChannels);
+        const numChannels = Math.min(outputChannels.length, this.numberOfChannels || outputChannels.length);
         const blockSize = outputChannels[0]?.length || 0;
         if (blockSize === 0) return;
         for (let i = 0; i < numChannels; ++i) {
@@ -680,7 +670,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 console.log("[Worklet] Freed WASM buffers/pointers.");
             } catch (e) {
                 console.error("[Worklet] Error during WASM memory cleanup:", e);
-                // Don't stop processor, but log error
                 this.postError(`Error during WASM memory cleanup: ${e.message}`);
             }
         } else {
@@ -708,7 +697,7 @@ class RubberbandProcessor extends AudioWorkletProcessor {
 
         // Reset state variables
         wasmReady = false;
-        wasmModule = null;
+        wasmModule = null; // Clear module reference
         this.audioLoaded = false;
         this.originalChannels = null;
         this.playbackPositionInSeconds = 0;
