@@ -2,7 +2,7 @@
 * when writing a file, include section header comments if the file is long and does more than one conceptual task
 * all edits are to be:
     * single line changes, show before and after
-    * entire function replacements, show the skeleton before and the full code after
+    * if changes are in one function, provide entire function replacements: show the skeleton before and the full code after
     * entire section of the file, starting and ending at section comments
     * entire file changes
 * when multiple files / sections need changes:
