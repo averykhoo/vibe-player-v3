@@ -7,52 +7,171 @@ AudioApp.uiManager = (function() {
     'use strict';
 
     // --- DOM Element References ---
-    // ... (All element references remain the same) ...
-    let fileInput, fileInfo, playPauseButton, jumpBackButton, jumpForwardButton, jumpTimeInput, timeDisplay, playbackSpeedControl, speedValueDisplay, speedTooltip, speedMarkers, pitchControl, pitchValueDisplay, pitchTooltip, pitchMarkers, formantControl, formantValueDisplay, formantTooltip, formantMarkers, gainControl, gainValueDisplay, gainTooltip, gainMarkers, vadThresholdSlider, vadThresholdValueDisplay, vadNegativeThresholdSlider, vadNegativeThresholdValueDisplay, waveformCanvas, spectrogramCanvas, spectrogramSpinner, waveformProgressIndicator, spectrogramProgressIndicator, speechRegionsDisplay;
+    // File/Info
+    /** @type {HTMLInputElement|null} */ let fileInput;
+    /** @type {HTMLParagraphElement|null} */ let fileInfo;
+    // Buttons
+    /** @type {HTMLButtonElement|null} */ let playPauseButton;
+    /** @type {HTMLButtonElement|null} */ let jumpBackButton;
+    /** @type {HTMLButtonElement|null} */ let jumpForwardButton;
+    /** @type {HTMLInputElement|null} */ let jumpTimeInput;
+    // Time
+    /** @type {HTMLDivElement|null} */ let timeDisplay;
+    // Sliders & Displays & Markers (Tooltips Removed)
+    /** @type {HTMLInputElement|null} */ let playbackSpeedControl;
+    /** @type {HTMLSpanElement|null} */ let speedValueDisplay;
+    /** @type {HTMLDivElement|null} */ let speedMarkers;
+    /** @type {HTMLInputElement|null} */ let pitchControl;
+    /** @type {HTMLSpanElement|null} */ let pitchValueDisplay;
+    /** @type {HTMLDivElement|null} */ let pitchMarkers;
+    /** @type {HTMLInputElement|null} */ let formantControl;
+    /** @type {HTMLSpanElement|null} */ let formantValueDisplay;
+    /** @type {HTMLDivElement|null} */ let formantMarkers;
+    /** @type {HTMLInputElement|null} */ let gainControl;
+    /** @type {HTMLSpanElement|null} */ let gainValueDisplay;
+    /** @type {HTMLDivElement|null} */ let gainMarkers;
+    /** @type {HTMLInputElement|null} */ let vadThresholdSlider;
+    /** @type {HTMLSpanElement|null} */ let vadThresholdValueDisplay;
+    /** @type {HTMLInputElement|null} */ let vadNegativeThresholdSlider;
+    /** @type {HTMLSpanElement|null} */ let vadNegativeThresholdValueDisplay;
+    // Visuals
+    /** @type {HTMLCanvasElement|null} */ let waveformCanvas;
+    /** @type {HTMLCanvasElement|null} */ let spectrogramCanvas;
+    /** @type {HTMLSpanElement|null} */ let spectrogramSpinner;
+    /** @type {HTMLDivElement|null} */ let waveformProgressIndicator;
+    /** @type {HTMLDivElement|null} */ let spectrogramProgressIndicator;
+    // VAD Output
+    /** @type {HTMLPreElement|null} */ let speechRegionsDisplay;
 
 
     // --- Initialization ---
-    /** @public */
+
+    /**
+     * Initializes the UI Manager: finds elements, sets up listeners, positions markers.
+     * @public
+     */
     function init() {
         console.log("UIManager: Initializing...");
         assignDOMElements();
-        initializeSliderMarkers();
+        initializeSliderMarkers(); // Position the markers based on slider range
         setupEventListeners();
         resetUI();
         console.log("UIManager: Initialized.");
     }
 
     // --- DOM Element Assignment ---
-    /** @private */
+
+    /**
+     * Gets references to all needed DOM elements by their ID.
+     * @private
+     */
     function assignDOMElements() {
-        // ... (Assignments remain the same) ...
-        fileInput = document.getElementById('audioFile'); fileInfo = document.getElementById('fileInfo'); playPauseButton = document.getElementById('playPause'); jumpBackButton = document.getElementById('jumpBack'); jumpForwardButton = document.getElementById('jumpForward'); jumpTimeInput = document.getElementById('jumpTime'); timeDisplay = document.getElementById('timeDisplay'); playbackSpeedControl = document.getElementById('playbackSpeed'); speedValueDisplay = document.getElementById('speedValue'); speedTooltip = document.getElementById('speedTooltip'); speedMarkers = document.getElementById('speedMarkers'); pitchControl = document.getElementById('pitchControl'); pitchValueDisplay = document.getElementById('pitchValue'); pitchTooltip = document.getElementById('pitchTooltip'); pitchMarkers = document.getElementById('pitchMarkers'); formantControl = document.getElementById('formantControl'); formantValueDisplay = document.getElementById('formantValue'); formantTooltip = document.getElementById('formantTooltip'); formantMarkers = document.getElementById('formantMarkers'); gainControl = document.getElementById('gainControl'); gainValueDisplay = document.getElementById('gainValue'); gainTooltip = document.getElementById('gainTooltip'); gainMarkers = document.getElementById('gainMarkers'); vadThresholdSlider = document.getElementById('vadThreshold'); vadThresholdValueDisplay = document.getElementById('vadThresholdValue'); vadNegativeThresholdSlider = document.getElementById('vadNegativeThreshold'); vadNegativeThresholdValueDisplay = document.getElementById('vadNegativeThresholdValue'); waveformCanvas = document.getElementById('waveformCanvas'); spectrogramCanvas = document.getElementById('spectrogramCanvas'); spectrogramSpinner = document.getElementById('spectrogramSpinner'); waveformProgressIndicator = document.getElementById('waveformProgressIndicator'); spectrogramProgressIndicator = document.getElementById('spectrogramProgressIndicator'); speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
-        if (!fileInput || !playbackSpeedControl || !pitchControl || !formantControl || !gainControl ) { console.warn("UIManager: Could not find all required UI elements!"); }
+        fileInput = document.getElementById('audioFile');
+        fileInfo = document.getElementById('fileInfo');
+        playPauseButton = document.getElementById('playPause');
+        jumpBackButton = document.getElementById('jumpBack');
+        jumpForwardButton = document.getElementById('jumpForward');
+        jumpTimeInput = document.getElementById('jumpTime');
+        timeDisplay = document.getElementById('timeDisplay');
+
+        // Slider groups
+        playbackSpeedControl = document.getElementById('playbackSpeed');
+        speedValueDisplay = document.getElementById('speedValue');
+        speedMarkers = document.getElementById('speedMarkers'); // Keep markers div
+
+        pitchControl = document.getElementById('pitchControl');
+        pitchValueDisplay = document.getElementById('pitchValue');
+        pitchMarkers = document.getElementById('pitchMarkers'); // Keep markers div
+
+        formantControl = document.getElementById('formantControl');
+        formantValueDisplay = document.getElementById('formantValue');
+        formantMarkers = document.getElementById('formantMarkers'); // Keep markers div
+
+        gainControl = document.getElementById('gainControl');
+        gainValueDisplay = document.getElementById('gainValue');
+        gainMarkers = document.getElementById('gainMarkers'); // Keep markers div
+
+        // VAD sliders
+        vadThresholdSlider = document.getElementById('vadThreshold');
+        vadThresholdValueDisplay = document.getElementById('vadThresholdValue');
+        vadNegativeThresholdSlider = document.getElementById('vadNegativeThreshold');
+        vadNegativeThresholdValueDisplay = document.getElementById('vadNegativeThresholdValue');
+
+        // Visuals
+        waveformCanvas = document.getElementById('waveformCanvas');
+        spectrogramCanvas = document.getElementById('spectrogramCanvas');
+        spectrogramSpinner = document.getElementById('spectrogramSpinner');
+        waveformProgressIndicator = document.getElementById('waveformProgressIndicator');
+        spectrogramProgressIndicator = document.getElementById('spectrogramProgressIndicator');
+        speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
+
+        // Simple check
+        if (!fileInput || !playbackSpeedControl || !pitchControl || !formantControl || !gainControl ) {
+             console.warn("UIManager: Could not find all required UI elements!");
+        }
     }
 
     // --- Slider Marker Positioning ---
-    /** @private */
+
+    /**
+     * Calculates and sets the absolute position of slider markers based on their value.
+     * @private
+     */
     function initializeSliderMarkers() {
-        // ... (Marker positioning logic remains the same) ...
-        const markerConfigs = [ { slider: playbackSpeedControl, markersDiv: speedMarkers }, { slider: pitchControl, markersDiv: pitchMarkers }, { slider: formantControl, markersDiv: formantMarkers }, { slider: gainControl, markersDiv: gainMarkers } ]; markerConfigs.forEach(config => { const { slider, markersDiv } = config; if (!slider || !markersDiv) return; const min = parseFloat(slider.min); const max = parseFloat(slider.max); const range = max - min; if (range <= 0) return; const markers = markersDiv.querySelectorAll('span[data-value]'); markers.forEach(span => { const value = parseFloat(span.dataset.value); if (!isNaN(value)) { const percent = ((value - min) / range) * 100; span.style.left = `${percent}%`; } }); });
+        const markerConfigs = [
+            { slider: playbackSpeedControl, markersDiv: speedMarkers },
+            { slider: pitchControl, markersDiv: pitchMarkers },
+            { slider: formantControl, markersDiv: formantMarkers },
+            { slider: gainControl, markersDiv: gainMarkers }
+        ];
+        markerConfigs.forEach(config => { /* ... (Logic remains the same) ... */ const { slider, markersDiv } = config; if (!slider || !markersDiv) return; const min = parseFloat(slider.min); const max = parseFloat(slider.max); const range = max - min; if (range <= 0) return; const markers = markersDiv.querySelectorAll('span[data-value]'); markers.forEach(span => { const value = parseFloat(span.dataset.value); if (!isNaN(value)) { const percent = ((value - min) / range) * 100; span.style.left = `${percent}%`; } }); });
     }
 
     // --- Event Listener Setup ---
-    /** @private */
+
+    /**
+     * Sets up event listeners for user interactions on UI elements.
+     * @private
+     */
     function setupEventListeners() {
-        // ... (Listeners remain the same) ...
+        // File Input
         fileInput?.addEventListener('change', (e) => { const file = e.target.files?.[0]; if (file) dispatchUIEvent('audioapp:fileSelected', { file: file }); fileInput.blur(); });
-        playPauseButton?.addEventListener('click', () => dispatchUIEvent('audioapp:playPauseClicked')); jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: -getJumpTime() })); jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: getJumpTime() }));
-        setupSliderListeners(playbackSpeedControl, speedValueDisplay, speedTooltip, 'audioapp:speedChanged', 'speed'); setupSliderListeners(pitchControl, pitchValueDisplay, pitchTooltip, 'audioapp:pitchChanged', 'pitch'); setupSliderListeners(formantControl, formantValueDisplay, formantTooltip, 'audioapp:formantChanged', 'formant'); setupSliderListeners(gainControl, gainValueDisplay, gainTooltip, 'audioapp:gainChanged', 'gain');
-        speedMarkers?.addEventListener('click', (e) => handleMarkerClick(e, playbackSpeedControl)); pitchMarkers?.addEventListener('click', (e) => handleMarkerClick(e, pitchControl)); formantMarkers?.addEventListener('click', (e) => handleMarkerClick(e, formantControl)); gainMarkers?.addEventListener('click', (e) => handleMarkerClick(e, gainControl));
-        vadThresholdSlider?.addEventListener('input', handleVadSliderInput); vadNegativeThresholdSlider?.addEventListener('input', handleVadSliderInput);
+        // Playback Buttons
+        playPauseButton?.addEventListener('click', () => dispatchUIEvent('audioapp:playPauseClicked'));
+        jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: -getJumpTime() }));
+        jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: getJumpTime() }));
+        // Sliders (Simplified - only listen for input)
+        setupSliderListeners(playbackSpeedControl, speedValueDisplay, 'audioapp:speedChanged', 'speed');
+        setupSliderListeners(pitchControl, pitchValueDisplay, 'audioapp:pitchChanged', 'pitch');
+        setupSliderListeners(formantControl, formantValueDisplay, 'audioapp:formantChanged', 'formant');
+        setupSliderListeners(gainControl, gainValueDisplay, 'audioapp:gainChanged', 'gain');
+        // Marker Clicks
+        speedMarkers?.addEventListener('click', (e) => handleMarkerClick(e, playbackSpeedControl));
+        pitchMarkers?.addEventListener('click', (e) => handleMarkerClick(e, pitchControl));
+        formantMarkers?.addEventListener('click', (e) => handleMarkerClick(e, formantControl));
+        gainMarkers?.addEventListener('click', (e) => handleMarkerClick(e, gainControl));
+        // VAD Tuning Sliders
+        vadThresholdSlider?.addEventListener('input', handleVadSliderInput);
+        vadNegativeThresholdSlider?.addEventListener('input', handleVadSliderInput);
+        // Global Keyboard Shortcuts
         document.addEventListener('keydown', handleKeyDown);
     }
 
-    /** Helper to set up slider listeners. @private */
-    function setupSliderListeners(slider, valueDisplay, tooltip, eventName, detailKey) {
-        // ... (Listener setup logic remains the same) ...
-        if (!slider || !valueDisplay || !tooltip) return; const updateStaticDisplay = () => { const value = parseFloat(slider.value); valueDisplay.textContent = value.toFixed(2) + "x"; }; slider.addEventListener('input', () => { updateStaticDisplay(); updateTooltip(slider, tooltip); dispatchUIEvent(eventName, { [detailKey]: parseFloat(slider.value) }); }); const showTooltip = () => { if (slider.disabled) return; updateTooltip(slider, tooltip); tooltip.style.visibility = 'visible'; }; const hideTooltip = () => { tooltip.style.visibility = 'hidden'; }; slider.addEventListener('mousedown', showTooltip); slider.addEventListener('touchstart', showTooltip, { passive: true }); slider.addEventListener('mouseup', hideTooltip); slider.addEventListener('touchend', hideTooltip); slider.addEventListener('mouseleave', hideTooltip);
+    /**
+     * Helper to set up simplified input listener for a slider.
+     * @param {HTMLInputElement | null} slider
+     * @param {HTMLSpanElement | null} valueDisplay
+     * @param {string} eventName
+     * @param {string} detailKey
+     */
+    function setupSliderListeners(slider, valueDisplay, eventName, detailKey) {
+        if (!slider || !valueDisplay) return;
+
+        slider.addEventListener('input', () => {
+            const value = parseFloat(slider.value);
+            valueDisplay.textContent = value.toFixed(2) + "x";
+            dispatchUIEvent(eventName, { [detailKey]: value });
+        });
     }
 
      // --- Specific Event Handlers ---
@@ -64,33 +183,7 @@ AudioApp.uiManager = (function() {
     function handleMarkerClick(event, sliderElement) { /* ... (No changes) ... */ if (!sliderElement || sliderElement.disabled) return; const target = event.target; if (target.tagName === 'SPAN' && target.dataset.value) { const value = parseFloat(target.dataset.value); if (!isNaN(value)) { sliderElement.value = String(value); sliderElement.dispatchEvent(new Event('input', { bubbles: true })); } } }
 
     // --- Tooltip Update ---
-
-    /**
-     * Updates the position and text content of a slider's tooltip based on percentage.
-     * @param {HTMLInputElement} slider - The slider element.
-     * @param {HTMLSpanElement} tooltip - The tooltip element for this slider.
-     * @private
-     */
-    function updateTooltip(slider, tooltip) {
-        if (!slider || !tooltip) return;
-
-        const min = parseFloat(slider.min);
-        const max = parseFloat(slider.max);
-        const val = parseFloat(slider.value);
-        const range = max - min;
-
-        // Calculate the percentage position of the value within the range
-        const percent = range === 0 ? 0 : (val - min) / range;
-
-        // Set the 'left' style directly as a percentage.
-        // The CSS 'transform: translateX(-50%)' will center the tooltip.
-        const leftPercent = percent * 100;
-
-        tooltip.textContent = val.toFixed(2) + "x";
-        tooltip.style.left = `${leftPercent}%`;
-        // Visibility is handled by mouse/touch event listeners
-    }
-
+    // Removed updateTooltip function
 
     // --- Helper to Dispatch Custom Events ---
     /** Dispatches event. @param {string} eventName @param {object} [detail={}] @private */
@@ -98,7 +191,17 @@ AudioApp.uiManager = (function() {
 
     // --- Public Methods for Updating UI ---
     /** Resets UI elements. @public */
-    function resetUI() { /* ... (No changes needed here) ... */ console.log("UIManager: Resetting UI"); setFileInfo("No file selected."); setPlayButtonState(false); updateTimeDisplay(0, 0); setSpeechRegionsText("None"); updateVadDisplay(0.5, 0.35, true); if (playbackSpeedControl) playbackSpeedControl.value = "1.0"; if (speedValueDisplay) speedValueDisplay.textContent = "1.00x"; if (pitchControl) pitchControl.value = "1.0"; if (pitchValueDisplay) pitchValueDisplay.textContent = "1.00x"; if (formantControl) formantControl.value = "1.0"; if (formantValueDisplay) formantValueDisplay.textContent = "1.00x"; if (gainControl) gainControl.value = "1.0"; if (gainValueDisplay) gainValueDisplay.textContent = "1.00x"; if (jumpTimeInput) jumpTimeInput.value = "5"; [speedTooltip, pitchTooltip, formantTooltip, gainTooltip].forEach(tip => { if(tip) tip.style.visibility = 'hidden'; }); enablePlaybackControls(false); enableVadControls(false); }
+    function resetUI() {
+        console.log("UIManager: Resetting UI");
+        setFileInfo("No file selected."); setPlayButtonState(false); updateTimeDisplay(0, 0); setSpeechRegionsText("None"); updateVadDisplay(0.5, 0.35, true);
+        if (playbackSpeedControl) playbackSpeedControl.value = "1.0"; if (speedValueDisplay) speedValueDisplay.textContent = "1.00x";
+        if (pitchControl) pitchControl.value = "1.0"; if (pitchValueDisplay) pitchValueDisplay.textContent = "1.00x";
+        if (formantControl) formantControl.value = "1.0"; if (formantValueDisplay) formantValueDisplay.textContent = "1.00x";
+        if (gainControl) gainControl.value = "1.0"; if (gainValueDisplay) gainValueDisplay.textContent = "1.00x";
+        if (jumpTimeInput) jumpTimeInput.value = "5";
+        // Removed tooltip hiding logic
+        enablePlaybackControls(false); enableVadControls(false);
+    }
     /** Sets file info text. @param {string} text @public */
     function setFileInfo(text) { /* ... (No changes) ... */ if (fileInfo) fileInfo.textContent = text; }
     /** Sets play/pause button text. @param {boolean} isPlaying @public */

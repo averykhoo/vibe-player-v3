@@ -39,7 +39,7 @@
              <span id="speedValue">1.00x</span>
         </div>
         <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-        <span class="slider-tooltip" id="speedTooltip">1.00x</span> <!-- Tooltip -->
+        <!-- Tooltip Removed -->
         <div class="slider-markers" id="speedMarkers">
              <span data-value="0.5">0.5x</span>
              <span data-value="1.0">1.0x</span>
@@ -55,7 +55,7 @@
              <span id="pitchValue">1.00x</span>
         </div>
         <input type="range" id="pitchControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-        <span class="slider-tooltip" id="pitchTooltip">1.00x</span> <!-- Tooltip -->
+        <!-- Tooltip Removed -->
         <div class="slider-markers" id="pitchMarkers">
              <span data-value="0.5">0.5x</span>
              <span data-value="1.0">1.0x</span>
@@ -71,7 +71,7 @@
              <span id="formantValue">1.00x</span>
          </div>
         <input type="range" id="formantControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-         <span class="slider-tooltip" id="formantTooltip">1.00x</span> <!-- Tooltip -->
+        <!-- Tooltip Removed -->
         <div class="slider-markers" id="formantMarkers">
              <span data-value="0.5">0.5x</span>
              <span data-value="1.0">1.0x</span>
@@ -83,12 +83,11 @@
     <!-- Gain Control Unit -->
     <div class="control-group slider-unit">
          <div class="slider-label-value">
-            <label for="gainControl">Gain:</label> <!-- Changed label text -->
+            <label for="gainControl">Gain:</label>
             <span id="gainValue">1.00x</span>
         </div>
-        <!-- Changed min to 1 -->
         <input type="range" id="gainControl" min="1" max="5" value="1.0" step="0.01">
-        <span class="slider-tooltip" id="gainTooltip">1.00x</span> <!-- Tooltip -->
+        <!-- Tooltip Removed -->
         <div class="slider-markers" id="gainMarkers">
              <span data-value="1.0">1x</span>
              <span data-value="2.0">2x</span>
@@ -100,7 +99,6 @@
 
 </section>
 
-<!-- ... (rest of the sections VAD, Speech Info, Visualizations, Keybinds remain the same) ... -->
 <!-- === VAD Tuning Section === -->
 <section id="vad-tuning">
     <h2>VAD Tuning (Silero)</h2>
@@ -121,7 +119,7 @@
 <!-- === Speech Info Section === -->
 <section id="speech-info">
     <h2>Detected Speech Regions</h2>
-    <pre id="speechRegionsDisplay">None</pre> <!-- Use <pre> for better formatting -->
+    <pre id="speechRegionsDisplay">None</pre>
 </section>
 
 <!-- === Visualizations Section === -->
@@ -174,10 +172,8 @@
 
 
 <!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
-<!-- 1. External Libraries -->
 <script src="lib/ort.min.js"></script>
 <script src="lib/fft.js"></script>
-<!-- 2. Application Modules -->
 <script src="js/app.js"></script>
 <script src="js/uiManager.js"></script>
 <script src="js/audioEngine.js"></script>
@@ -185,7 +181,6 @@
 <script src="js/sileroProcessor.js"></script>
 <script src="js/vadAnalyzer.js"></script>
 <script src="js/visualizer.js"></script>
-<!-- 3. Initialize the App -->
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         AudioApp.init();

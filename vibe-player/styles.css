@@ -55,13 +55,13 @@ section {
 
 /* --- Slider Units --- */
 .slider-unit {
-    position: relative;
-    margin-bottom: 15px; /* Space between units */
-    padding: 10px 15px 1.5em 15px; /* Top/Horiz/Bottom padding */
-    border: 1px solid #ddd; /* Add a border */
-    border-radius: 8px; /* Rounded corners */
-    background-color: #fdfdfd; /* Slightly off-white background */
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); /* Subtle inner shadow */
+    position: relative; /* Still needed for markers */
+    margin-bottom: 15px;
+    padding: 10px 15px 1.5em 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #fdfdfd;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .slider-label-value {
@@ -91,34 +91,8 @@ section {
 }
 
 /* --- Slider Tooltip --- */
-.slider-tooltip {
-    position: absolute;
-    visibility: hidden;
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    text-align: center;
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 0.85em;
-    bottom: 100%;
-    left: 50%; /* Adjusted by JS */
-    transform: translateX(-50%);
-    margin-bottom: 10px;
-    white-space: nowrap;
-    z-index: 10;
-    pointer-events: none;
-}
-
-.slider-tooltip::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    margin-left: -5px;
-    border-width: 5px;
-    border-style: solid;
-    border-color: rgba(0, 0, 0, 0.7) transparent transparent transparent;
-}
+/* Removed .slider-tooltip rule */
+/* Removed .slider-tooltip::after rule */
 
 
 /* --- Slider Markers --- */
