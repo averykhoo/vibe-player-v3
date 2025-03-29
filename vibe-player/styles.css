@@ -2,65 +2,164 @@
 
 /* --- Global Styles --- */
 body {
-  font-family: sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   margin: 20px;
   background-color: #f4f4f4;
   color: #333;
+  line-height: 1.5;
 }
 
 h1, h2, h3 {
   border-bottom: 1px solid #ccc;
   padding-bottom: 5px;
   margin-top: 1.5em;
+  margin-bottom: 0.8em;
+  color: #444;
 }
 
 h1 {
-    text-align: center;
-    margin-bottom: 1.5em;
+  text-align: center;
+  margin-bottom: 1.5em;
+  color: #333;
 }
+
+h2 {
+    font-size: 1.2em;
+}
+
+h3 {
+    font-size: 1.0em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+}
+h3 small {
+    font-weight: normal;
+    font-size: 0.9em;
+    color: #555;
+}
+
 
 /* --- Layout Sections --- */
 section {
   background-color: #fff;
-  padding: 15px;
+  padding: 15px 20px;
   margin-bottom: 20px;
-  border-radius: 5px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-/* --- Controls --- */
-#controls button, #controls input[type=number] {
-  margin: 0 5px;
-  padding: 8px 12px;
+/* --- Control Layouts --- */
+/* Grid layout for parameter sections */
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Responsive grid */
+  gap: 15px 20px; /* Row and column gap */
+  margin-top: 10px;
+}
+
+/* Flex layout for individual control groups */
+.control-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap; /* Prevent wrapping by default */
+  gap: 10px; /* Gap between label, control, value */
+}
+
+.control-group label {
+  font-weight: 600;
+  min-width: 75px; /* Adjust for alignment */
+  text-align: right;
+  flex-shrink: 0; /* Prevent label from shrinking */
+}
+
+.control-group input[type=range] {
+  flex-grow: 1; /* Allow sliders to take available space */
+  min-width: 120px;
+  cursor: pointer;
+}
+
+.control-group input[type=number] {
+  width: 65px;
+  padding: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.control-group span { /* Value displays */
+  font-family: monospace;
+  min-width: 55px; /* Width for values like "1.00x" or "0.0 ST" */
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.control-group select {
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  flex-grow: 1; /* Allow select to fill space if needed */
+}
+
+.control-group small { /* Descriptions */
+  flex-basis: 100%; /* Make description take full width below */
+  font-size: 0.8em;
+  color: #555;
+  margin-top: -8px; /* Adjust spacing */
+  margin-left: 85px; /* Align with controls */
+  line-height: 1.3;
+}
+
+
+/* --- Specific Controls & Sections --- */
+
+/* File Loader */
+#file-loader input[type=file] {
+    margin-top: 5px;
+}
+#fileInfo {
+    margin-top: 10px;
+    font-style: italic;
+    color: #555;
+}
+
+/* Playback Controls */
+#controls > div:first-of-type { /* Button group */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+#controls button {
+  margin: 0; /* Remove default margin */
+  padding: 8px 15px;
   border: 1px solid #ccc;
   border-radius: 4px;
   cursor: pointer;
+  background-color: #e9e9e9;
+  font-size: 0.95em;
 }
-#controls button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+#controls button:hover:not(:disabled) {
+    background-color: #dcdcdc;
+    border-color: #bbb;
 }
-
-#controls .control-group {
-    margin: 10px 0;
-    display: flex;
-    align-items: center;
+#controls #playPause {
+    font-weight: bold;
+    min-width: 70px; /* Ensure Play/Pause have same width */
 }
-#controls label {
-    margin-right: 10px;
-    min-width: 50px; /* Align labels */
-}
-#controls input[type=range] {
-    flex-grow: 1;
-    margin: 0 10px;
+#controls input#jumpTime {
+    width: 50px;
+    text-align: center;
 }
 
-/* --- Time Display --- */
 #timeDisplay {
-  margin: 15px 0 5px 0;
+  margin: 10px 0 5px 0;
   font-weight: bold;
-  font-size: 14px;
+  font-size: 1.1em;
   text-align: center;
+  color: #333;
 }
 
 /* --- Visualizations --- */
@@ -68,89 +167,135 @@ section {
   margin-bottom: 20px;
 }
 
-/* Container establishes positioning context for canvas and progress bar */
 .canvas-container {
-  position: relative;
-}
-
-.visualization h3 {
-  margin: 0 0 10px 0;
-  font-size: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  position: relative; /* For progress bar positioning */
+  margin-top: 5px;
 }
 
 canvas {
-  background-color: #fff;
+  background-color: #fdfdfd; /* Slightly off-white canvas */
   border: 1px solid #ccc;
-  display: block; /* Important for correct width/height behavior */
-  width: 100%;   /* Make canvas responsive */
-  height: 120px; /* Default height */
-  cursor: crosshair; /* Indicate click-to-seek */
-  box-sizing: border-box; /* Include border in width/height */
+  display: block;
+  width: 100%;   /* Responsive width */
+  height: 120px; /* Default height for waveform */
+  cursor: crosshair;
+  box-sizing: border-box;
 }
 
 #spectrogramCanvas {
   height: 200px; /* Taller spectrogram */
 }
 
-/* --- Progress Bar Overlay --- */
-/* Design Decision: Use absolute positioning to overlay progress indicator on canvases */
+/* Progress Bar Overlay */
 .progress-bar {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  pointer-events: none; /* Allow clicks to pass through to canvas */
+  height: 100%; /* Cover the canvas height */
+  pointer-events: none;
   box-sizing: border-box;
+  overflow: hidden; /* Prevent indicator going outside */
 }
-
-/* Match progress bar container height to its respective canvas */
-#waveformProgressBar { height: 120px; }
-#spectrogramProgressBar { height: 200px; }
 
 .progress-indicator {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0; /* Starts at left */
+  left: 0; /* Position updated via JS */
   width: 2px;
-  background: rgba(255, 0, 0, 0.7); /* Semi-transparent red */
+  background: rgba(220, 50, 50, 0.7); /* Red indicator */
   pointer-events: none;
 }
 
-/* --- UI Elements --- */
+/* Spinner */
 .spinner {
   display: none; /* Hidden by default */
-  font-size: 14px;
+  font-size: 0.9em;
   color: #555;
   font-weight: normal;
+  margin-left: 5px;
 }
 
+/* --- VAD & Speech Info --- */
 #speechRegionsDisplay {
-    white-space: pre-wrap; /* Allow wrapping while preserving formatting */
-    word-break: break-all; /* Help break long lines if needed */
-    max-height: 150px; /* Limit height */
-    overflow-y: auto;  /* Add scrollbar if content exceeds max height */
+  background-color: #f8f8f8;
+  border: 1px solid #eee;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 150px;
+  overflow-y: auto;
+  border-radius: 4px;
+  color: #444;
 }
 
-/* --- Keybinds Table --- */
-#keybinds {
-  margin-top: 20px;
-}
-
+/* --- Keyboard Shortcuts Table --- */
 #keybinds table {
   width: 100%;
   border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.9em;
 }
-
 #keybinds th, #keybinds td {
-  border: 1px solid #ccc;
-  padding: 8px;
+  border: 1px solid #ddd;
+  padding: 6px 10px;
   text-align: left;
 }
-
 #keybinds th {
-  background: #f0f0f0;
+  background-color: #f0f0f0;
+  font-weight: 600;
 }
+#keybinds td:first-child { /* Key column */
+    font-family: monospace;
+    font-weight: bold;
+    text-align: center;
+    width: 100px; /* Fixed width for keys */
+}
+
+
+/* --- Disabled States --- */
+input:disabled, button:disabled, select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  background-color: #f0f0f0 !important; /* Light gray background for disabled */
+}
+input[type=range]:disabled::-webkit-slider-thumb {
+    background: #bbb;
+    cursor: not-allowed;
+}
+input[type=range]:disabled::-moz-range-thumb {
+    background: #bbb;
+    cursor: not-allowed;
+}
+
+
+/* --- Responsive Adjustments --- */
+@media (max-width: 600px) {
+    body {
+        margin: 10px;
+    }
+    section {
+        padding: 10px 15px;
+    }
+    .control-grid {
+        grid-template-columns: 1fr; /* Stack controls on small screens */
+    }
+    .control-group label {
+        min-width: 65px; /* Slightly reduce label width */
+        text-align: left;
+    }
+    .control-group small {
+        margin-left: 0; /* Remove indent for description */
+        font-size: 0.75em;
+    }
+    #controls > div:first-of-type { /* Button group */
+        flex-wrap: wrap; /* Allow wrapping */
+    }
+    h1 { font-size: 1.5em; }
+    h2 { font-size: 1.1em; }
+}
+
+/* /vibe-player/styles.css */
