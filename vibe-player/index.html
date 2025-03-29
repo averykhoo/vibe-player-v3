@@ -4,9 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Optional: CSP for SharedArrayBuffer -->
-    <!-- <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin"> -->
-    <!-- <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp"> -->
     <title>Vibe Player</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -24,38 +21,86 @@
 <!-- === Playback Controls Section === -->
 <section id="controls">
     <h2>Controls</h2>
-    <div>
+    <!-- Jump Controls -->
+    <div class="control-group jump-controls">
         <button id="playPause" disabled>Play</button>
         <button id="jumpBack" disabled>◀◀ Back</button>
         <input type="number" id="jumpTime" value="5" min="1" step="1" title="Seconds to jump">s
         <button id="jumpForward" disabled>Forward ▶▶</button>
     </div>
-    <div class="control-group">
-        <label for="playbackSpeed">Speed:</label>
-        <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-        <span id="speedValue">1.00x</span>
-    </div>
-     <!-- Pitch Control -->
-    <div class="control-group">
-        <label for="pitchControl">Pitch:</label>
-        <input type="range" id="pitchControl" min="0.5" max="2.0" value="1.0" step="0.01" disabled>
-        <span id="pitchValue">1.00x</span>
-    </div>
-    <!-- Formant Control -->
-    <div class="control-group">
-        <label for="formantControl">Formant:</label>
-        <input type="range" id="formantControl" min="0.5" max="2.0" value="1.0" step="0.01" disabled>
-        <span id="formantValue">1.00x</span>
-    </div>
-    <div class="control-group">
-        <label for="gainControl">Volume:</label>
-        <!-- Adjusted max to 5 for 5x gain -->
-        <input type="range" id="gainControl" min="0" max="5" value="1.0" step="0.01">
-        <span id="gainValue">1.00x</span>
-    </div>
+
+    <!-- Time Display -->
     <div id="timeDisplay">0:00 / 0:00</div>
+
+    <!-- Speed Control Unit -->
+    <div class="control-group slider-unit">
+        <div class="slider-label-value">
+             <label for="playbackSpeed">Speed:</label>
+             <span id="speedValue">1.00x</span>
+        </div>
+        <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
+        <span class="slider-tooltip" id="speedTooltip">1.00x</span> <!-- Tooltip -->
+        <div class="slider-markers" id="speedMarkers">
+             <span data-value="0.5">0.5x</span>
+             <span data-value="1.0">1.0x</span>
+             <span data-value="1.5">1.5x</span>
+             <span data-value="2.0">2.0x</span>
+        </div>
+    </div>
+
+     <!-- Pitch Control Unit -->
+    <div class="control-group slider-unit">
+         <div class="slider-label-value">
+             <label for="pitchControl">Pitch:</label>
+             <span id="pitchValue">1.00x</span>
+        </div>
+        <input type="range" id="pitchControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
+        <span class="slider-tooltip" id="pitchTooltip">1.00x</span> <!-- Tooltip -->
+        <div class="slider-markers" id="pitchMarkers">
+             <span data-value="0.5">0.5x</span>
+             <span data-value="1.0">1.0x</span>
+             <span data-value="1.5">1.5x</span>
+             <span data-value="2.0">2.0x</span>
+        </div>
+    </div>
+
+    <!-- Formant Control Unit -->
+    <div class="control-group slider-unit">
+         <div class="slider-label-value">
+             <label for="formantControl">Formant:</label>
+             <span id="formantValue">1.00x</span>
+         </div>
+        <input type="range" id="formantControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
+         <span class="slider-tooltip" id="formantTooltip">1.00x</span> <!-- Tooltip -->
+        <div class="slider-markers" id="formantMarkers">
+             <span data-value="0.5">0.5x</span>
+             <span data-value="1.0">1.0x</span>
+             <span data-value="1.5">1.5x</span>
+             <span data-value="2.0">2.0x</span>
+        </div>
+    </div>
+
+    <!-- Gain Control Unit -->
+    <div class="control-group slider-unit">
+         <div class="slider-label-value">
+            <label for="gainControl">Gain:</label> <!-- Changed label text -->
+            <span id="gainValue">1.00x</span>
+        </div>
+        <!-- Changed min to 1 -->
+        <input type="range" id="gainControl" min="1" max="5" value="1.0" step="0.01">
+        <span class="slider-tooltip" id="gainTooltip">1.00x</span> <!-- Tooltip -->
+        <div class="slider-markers" id="gainMarkers">
+             <span data-value="1.0">1x</span>
+             <span data-value="2.0">2x</span>
+             <span data-value="3.0">3x</span>
+             <span data-value="4.0">4x</span>
+             <span data-value="5.0">5x</span>
+        </div>
+    </div>
+
 </section>
 
+<!-- ... (rest of the sections VAD, Speech Info, Visualizations, Keybinds remain the same) ... -->
 <!-- === VAD Tuning Section === -->
 <section id="vad-tuning">
     <h2>VAD Tuning (Silero)</h2>
@@ -127,19 +172,19 @@
     </table>
 </section>
 
+
 <!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
 <!-- 1. External Libraries -->
 <script src="lib/ort.min.js"></script>
 <script src="lib/fft.js"></script>
 <!-- 2. Application Modules -->
 <script src="js/app.js"></script>
-<script src="js/uiManager.js"></script>      <!-- Will be modified -->
-<script src="js/audioEngine.js"></script>    <!-- Will be modified -->
+<script src="js/uiManager.js"></script>
+<script src="js/audioEngine.js"></script>
 <script src="js/sileroWrapper.js"></script>
 <script src="js/sileroProcessor.js"></script>
 <script src="js/vadAnalyzer.js"></script>
 <script src="js/visualizer.js"></script>
-<!-- Note: `js/rubberbandProcessor.js` is loaded dynamically by AudioEngine -->
 <!-- 3. Initialize the App -->
 <script>
     document.addEventListener('DOMContentLoaded', () => {
