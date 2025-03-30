@@ -34,7 +34,7 @@ section {
   margin-bottom: 8px;
   background: silver;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
-  padding: 6px 8px; /* Reduced vertical padding, keep horizontal */
+  padding: 8px 8px; /* Reduced vertical padding, keep horizontal */
 }
 
 section h2, section h3 {
@@ -251,7 +251,7 @@ input[type=range] {
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
-    padding: 4px 6px; /* Reduced padding */
+    padding: 7px 7px; /* Reduced padding */
     background-color: silver;
 }
 .canvas-container {
