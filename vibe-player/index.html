@@ -64,22 +64,22 @@
         </div>
     </div>
 
-<!--    hidden because formant control isn't working  -->
-<!--    &lt;!&ndash; Formant Control Unit &ndash;&gt;-->
-<!--    <div class="control-group slider-unit">-->
-<!--         <div class="slider-label-value">-->
-<!--             <label for="formantControl">Formant:</label>-->
-<!--             <span id="formantValue">1.00x</span>-->
-<!--         </div>-->
-<!--        <input type="range" id="formantControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>-->
-<!--        &lt;!&ndash; Tooltip Removed &ndash;&gt;-->
-<!--        <div class="slider-markers" id="formantMarkers">-->
-<!--             <span data-value="0.5">0.5x</span>-->
-<!--             <span data-value="1.0">1.0x</span>-->
-<!--             <span data-value="1.5">1.5x</span>-->
-<!--             <span data-value="2.0">2.0x</span>-->
-<!--        </div>-->
-<!--    </div>-->
+    <!-- hidden because formant control isn't working -->
+    <!--
+    <div class="control-group slider-unit">
+         <div class="slider-label-value">
+             <label for="formantControl">Formant:</label>
+             <span id="formantValue">1.00x</span>
+         </div>
+        <input type="range" id="formantControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
+        <div class="slider-markers" id="formantMarkers">
+             <span data-value="0.5">0.5x</span>
+             <span data-value="1.0">1.0x</span>
+             <span data-value="1.5">1.5x</span>
+             <span data-value="2.0">2.0x</span>
+        </div>
+    </div>
+    -->
 
     <!-- Gain Control Unit -->
     <div class="control-group slider-unit">
@@ -87,7 +87,7 @@
             <label for="gainControl">Gain:</label>
             <span id="gainValue">1.00x</span>
         </div>
-        <input type="range" id="gainControl" min="1" max="5" value="1.0" step="0.01">
+        <input type="range" id="gainControl" min="1" max="5" value="1.0" step="0.01"> <!-- Gain enabled by default -->
         <!-- Tooltip Removed -->
         <div class="slider-markers" id="gainMarkers">
              <span data-value="1.0">1x</span>
@@ -173,18 +173,24 @@
 
 
 <!-- === SCRIPT LOADING ORDER (CRITICAL!) === -->
-<script src="lib/ort.min.js"></script>
-<script src="lib/fft.js"></script>
-<script src="js/app.js"></script>
+<!-- External Libs -->
+<script src="lib/ort.min.js"></script> <!-- ONNX Runtime -->
+<script src="lib/fft.js"></script> <!-- FFT for Visualizer -->
+<!-- app.js must load before (some of) the following modules otherwise the app crashes on launch -->
+<script src="js/app.js"></script> <!-- Main App Orchestrator -->
+<!-- App Modules (Order can matter depending on dependencies) -->
 <script src="js/uiManager.js"></script>
 <script src="js/audioEngine.js"></script>
-<script src="js/sileroWrapper.js"></script>
-<script src="js/sileroProcessor.js"></script>
-<script src="js/vadAnalyzer.js"></script>
+<script src="js/sileroWrapper.js"></script> <!-- VAD: ONNX Wrapper -->
+<script src="js/sileroProcessor.js"></script> <!-- VAD: Frame Processor -->
+<script src="js/vadAnalyzer.js"></script> <!-- VAD: State & Recalculation -->
 <script src="js/visualizer.js"></script>
+
+<!-- App Initialization -->
 <script>
+    // Ensure DOM is fully loaded before initializing the application
     document.addEventListener('DOMContentLoaded', () => {
-        AudioApp.init();
+        AudioApp.init(); // Call the main init function
     });
 </script>
 
