@@ -20,7 +20,19 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         // Extract processor options provided from the main thread
         this.processorOpts = options.processorOptions || {};
         // Audio properties
-        this.sampleRate = this.processorOpts.sampleRate || currentTime; // currentTime is a global in AudioWorkletGlobalScope
+        // `currentTime` is a global in AudioWorkletGlobalScope representing the context time,
+        // but `sampleRate` should come from the node options or the context itself passed in options.
+        this.sampleRate = this.processorOpts.sampleRate || currentTime; // Use currentTime as fallback only
+        if (this.sampleRate === currentTime && typeof sampleRate !== 'undefined') {
+             // If options didn't provide it, try the global scope `sampleRate` variable
+             this.sampleRate = sampleRate;
+        }
+        if (this.sampleRate === currentTime) {
+             console.warn(`[Worklet] sampleRate defaulting to global currentTime (${currentTime}), expected in processorOptions.`);
+             // Use a common default if still unresolved, though this is risky
+             this.sampleRate = this.sampleRate || 44100;
+        }
+
         this.numberOfChannels = this.processorOpts.numberOfChannels || 0;
         // WASM resources (passed from main thread)
         this.wasmBinary = this.processorOpts.wasmBinary;
@@ -68,7 +80,7 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         // --- Initial Validation ---
         if (!this.wasmBinary) this.postErrorAndStop("WASM binary missing.");
         if (!this.loaderScriptText) this.postErrorAndStop("Loader script text missing.");
-        if (!this.sampleRate || this.sampleRate <= 0) this.postErrorAndStop("Invalid SampleRate provided.");
+        if (!this.sampleRate || this.sampleRate <= 0) this.postErrorAndStop(`Invalid SampleRate provided: ${this.sampleRate}`);
         if (!this.numberOfChannels || this.numberOfChannels <= 0) this.postErrorAndStop("Invalid NumberOfChannels provided.");
 
         console.log("[Worklet] Initialized state variables. Waiting for audio data via message.");
@@ -157,28 +169,15 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             const PitchHighQuality = RBOptions.PitchHighQuality ?? 0x02000000; // High quality pitch shifting
             const PhaseIndependent = RBOptions.PhaseIndependent ?? 0x00002000; // Often good for voice
             const TransientsCrisp = RBOptions.TransientsCrisp ?? 0x00000000;   // Default, good for consonants
-            // const TransientsMixed = RBOptions.TransientsMixed ?? 0x00000100; // Alternative if Crisp is harsh
+            // const FormantPreserved = RBOptions.FormantPreserved ?? 0x01000000; // Keep for reference
 
-            // --- Formant Handling Investigation (Start) ---
-            // NOTE: Attempts were made to enable formant shifting via the FormantPreserved flag (0x01000000).
-            // - Adding `FormantPreserved` alone did not produce audible formant shifts.
-            // - Combining `FormantPreserved` and removing `PhaseIndependent` also had no effect.
-            // - Simplifying options to only `ProcessRealTime | FormantPreserved` also had no effect.
-            // - The `set-formant` message is received, and `_rubberband_set_formant_scale` is called in process(),
-            //   but it yields no audible difference even when pitch != 1.0.
-            // CONCLUSION: Real-time formant shifting might be non-functional in this specific WASM build
-            // or requires other configurations/modes not currently enabled or understood.
-            // The `FormantPreserved` flag is NOT included in the options below for now.
-            // --- Formant Handling Investigation (End) ---
-
-            // *** ORIGINAL OPTIONS *** (Reverted)
             const options = ProcessRealTime | PitchHighQuality | PhaseIndependent | TransientsCrisp;
-            console.log(`[Worklet] Creating Rubberband instance with options: ${options.toString(16)} (Speech Quality Focus - Original)`);
+            console.log(`[Worklet] Creating Rubberband instance with options: ${options.toString(16)} (SampleRate: ${this.sampleRate}, Channels: ${this.numberOfChannels})`);
 
             this.rubberbandStretcher = this.wasmModule._rubberband_new(
                 this.sampleRate,
                 this.numberOfChannels,
-                options, // Use the original options
+                options,
                 1.0, // Initial time ratio (corresponds to speed = 1.0)
                 1.0 // Initial pitch scale
             );
@@ -206,8 +205,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             const frameSize = 4; // sizeof(float)
 
             // Determine blockSizeWasm (e.g., 1024 samples per channel per block)
-            // This size must be sufficient for Rubberband's internal processing needs.
-            // It doesn't have to match the AudioWorkletProcessor's process block size (128).
             this.blockSizeWasm = 1024; // A common size, adjust if needed.
 
             // Allocate memory for each channel's input and output buffer in WASM heap
@@ -273,7 +270,7 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                         this.originalChannels = data.channelData.map(buffer => new Float32Array(buffer));
                         this.audioLoaded = true;
                         this.sourceDurationSeconds = (this.originalChannels[0]?.length || 0) / this.sampleRate;
-                        console.log(`[Worklet] Audio loaded. Duration: ${this.sourceDurationSeconds.toFixed(3)}s, Channels: ${this.numberOfChannels}`);
+                        console.log(`[Worklet] Audio loaded. Duration: ${this.sourceDurationSeconds.toFixed(3)}s, Channels: ${this.numberOfChannels}, SampleRate: ${this.sampleRate}`);
 
                         // Initialize WASM now if not already done
                         if (!this.wasmReady) {
@@ -340,7 +337,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                         const newFormant = Math.max(0.1, data.value || 1.0); // Ensure positive formant scale
                         if (this.currentTargetFormantScale !== newFormant) {
                             this.currentTargetFormantScale = newFormant;
-                            // console.log(`[Worklet] Received set-formant. Target set to: ${this.currentTargetFormantScale.toFixed(3)}`); // Keep console cleaner
                             // Actual application happens in process() loop
                         }
                     }
@@ -387,45 +383,33 @@ class RubberbandProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
         // --- Precondition Checks ---
         if (!this.wasmReady || !this.audioLoaded || !this.rubberbandStretcher || !this.wasmModule) {
-            // If WASM/audio not ready, output silence and keep alive
             this.outputSilence(outputs);
             return true;
         }
-
-        // If paused, output silence and keep alive
         if (!this.isPlaying) {
             this.outputSilence(outputs);
             return true;
         }
-
-        // If stream ended AND no more buffered output from Rubberband, output silence and keep alive (wait for play/seek)
         if (this.streamEnded) {
              let available = 0;
              try {
                 available = this.wasmModule._rubberband_available?.(this.rubberbandStretcher) ?? 0;
              } catch (e) { console.error("[Worklet] Error calling _rubberband_available:", e); }
-
             if (Math.max(0, available) <= 0) {
-                // console.log("[Worklet] Process: Stream ended and no samples available."); // Too noisy
                 this.outputSilence(outputs);
-                return true; // Keep alive, waiting for next play/seek
+                return true;
             }
-            // else: stream ended, but samples still available, proceed to retrieve them
         }
 
-
-        // Get the first output buffer array (assuming one output)
         const outputBuffer = outputs[0];
-        // Validate output buffer structure
         if (!outputBuffer || outputBuffer.length !== this.numberOfChannels || !outputBuffer[0]) {
              console.warn("[Worklet] Invalid output buffer structure.");
-             this.outputSilence(outputs); // Try to output silence safely
+             this.outputSilence(outputs);
              return true;
         }
-
         const outputBlockSize = outputBuffer[0].length; // Number of frames to generate (typically 128)
         if (outputBlockSize === 0) {
-            return true; // Nothing to do if block size is zero
+            return true;
         }
 
 
@@ -433,13 +417,11 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             // --- Parameter Updates ---
             const sourceChannels = this.originalChannels;
             const safeTargetSpeed = Math.max(0.01, this.currentTargetSpeed);
-            const targetStretchRatio = 1.0 / safeTargetSpeed; // Rubberband uses time ratio
-            const safeStretchRatio = Math.max(0.05, Math.min(20.0, targetStretchRatio)); // Clamp ratio
+            const targetStretchRatio = 1.0 / safeTargetSpeed;
+            const safeStretchRatio = Math.max(0.05, Math.min(20.0, targetStretchRatio));
             const ratioChanged = Math.abs(safeStretchRatio - this.lastAppliedStretchRatio) > 1e-6;
-
             const safeTargetPitch = Math.max(0.1, this.currentTargetPitchScale);
             const pitchChanged = Math.abs(safeTargetPitch - this.lastAppliedPitchScale) > 1e-6;
-
             const safeTargetFormant = Math.max(0.1, this.currentTargetFormantScale);
             const formantChanged = Math.abs(safeTargetFormant - this.lastAppliedFormantScale) > 1e-6;
 
@@ -467,11 +449,8 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 if (pitchChanged) {
                     this.wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, safeTargetPitch);
                     this.lastAppliedPitchScale = safeTargetPitch;
-                    // console.log(`[Worklet] Pitch updated to ${safeTargetPitch.toFixed(3)}`); // Less noise
                 }
                  if (formantChanged) {
-                     // console.log(`[Worklet] Applying formant scale: ${safeTargetFormant.toFixed(3)}`); // Less noise
-                     // Still call set_formant_scale even if we suspect it does nothing
                      this.wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, safeTargetFormant);
                      this.lastAppliedFormantScale = safeTargetFormant;
                  }
@@ -543,16 +522,45 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 // Clamp position just in case of floating point inaccuracies
                 this.playbackPositionInSeconds = Math.min(this.playbackPositionInSeconds, this.sourceDurationSeconds);
 
-                // Send time update message
+                // --- Latency Correction for Time Update --- // *** MODIFIED BLOCK START ***
+                let correctedTime = this.playbackPositionInSeconds; // Default to uncorrected time
+                try {
+                    // Check if wasmModule and the function exist before calling
+                    if (this.wasmModule && typeof this.wasmModule._rubberband_get_latency === 'function') {
+                        const latencySamples = this.wasmModule._rubberband_get_latency(this.rubberbandStretcher);
+                        if (typeof latencySamples === 'number' && latencySamples >= 0 && this.sampleRate > 0) {
+                            const rubberbandLatencySeconds = latencySamples / this.sampleRate;
+                            // ALSO consider the latency of the current output block buffer (typically 128 samples)
+                            const outputBlockLatencySeconds = outputBlockSize / this.sampleRate;
+                            const totalLatencySeconds = rubberbandLatencySeconds + outputBlockLatencySeconds;
+
+                            // Subtract TOTAL latency: reported time should reflect the input time corresponding to the *actual audio hitting the speakers*
+                            correctedTime = Math.max(0, this.playbackPositionInSeconds - totalLatencySeconds);
+                            // console.log(`Pos: ${this.playbackPositionInSeconds.toFixed(3)}, RB Latency: ${rubberbandLatencySeconds.toFixed(3)}, Block Latency: ${outputBlockLatencySeconds.toFixed(3)}, Corrected: ${correctedTime.toFixed(3)}`); // Debug
+                        } else {
+                           // Log only if latency is invalid, avoid spamming for valid 0 latency
+                           if (typeof latencySamples !== 'number' || latencySamples < 0) {
+                               console.warn("[Worklet] _rubberband_get_latency returned invalid value or sampleRate invalid:", latencySamples, this.sampleRate);
+                           }
+                        }
+                    } else if (!this.wasmModule || typeof this.wasmModule._rubberband_get_latency !== 'function') {
+                        // Log if the function is missing (should only happen once or if module unloaded)
+                        // console.warn("[Worklet] _rubberband_get_latency function not available on wasmModule.");
+                    }
+                } catch(latencyError) {
+                    console.warn("[Worklet] Error getting latency:", latencyError);
+                }
+                // --- Latency Correction --- // *** MODIFIED BLOCK END ***
+
+                // Send time update message (using corrected time)
                 // Debounce this? Sending every 128 samples might be excessive.
-                 // Send less frequently? e.g., every N calls?
-                 // For now, send every time.
-                this.port?.postMessage({type: 'time-update', currentTime: this.playbackPositionInSeconds });
+                // Send less frequently? e.g., every N calls?
+                // For now, send every time.
+                this.port?.postMessage({type: 'time-update', currentTime: correctedTime });
 
 
                 if (sendFinalFlag) {
                     this.finalBlockSent = true; // Mark final flag as sent
-                    // console.log("[Worklet] Final input block processed by Rubberband."); // Debug
                 }
             } // End if (actualInputProvided > 0 || sendFinalFlag)
 
@@ -564,8 +572,14 @@ class RubberbandProcessor extends AudioWorkletProcessor {
 
             // Loop to retrieve frames until the output buffer is full or Rubberband has no more
             do {
-                available = this.wasmModule._rubberband_available(this.rubberbandStretcher);
-                available = Math.max(0, available); // Ensure non-negative
+                 // Check if wasmModule and function exist before calling
+                 if (this.wasmModule && typeof this.wasmModule._rubberband_available === 'function') {
+                    available = this.wasmModule._rubberband_available(this.rubberbandStretcher);
+                    available = Math.max(0, available); // Ensure non-negative
+                 } else {
+                    available = 0; // Assume none available if function missing
+                 }
+
 
                 if (available > 0) {
                     const neededNow = outputBlockSize - totalRetrieved;
@@ -575,12 +589,19 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                     const framesToRetrieve = Math.min(available, neededNow, this.blockSizeWasm); // Cannot retrieve more than blocksizeWasm at once
                     if (framesToRetrieve <= 0) break; // Should not happen if available > 0
 
-                    // Call rubberband_retrieve
-                    const retrieved = this.wasmModule._rubberband_retrieve(
-                        this.rubberbandStretcher,
-                        this.outputPtrs,     // Pointer to array of output buffer pointers
-                        framesToRetrieve     // Number of frames requested
-                    );
+                    // Call rubberband_retrieve (check function existence)
+                    let retrieved = 0;
+                    if (this.wasmModule && typeof this.wasmModule._rubberband_retrieve === 'function') {
+                        retrieved = this.wasmModule._rubberband_retrieve(
+                            this.rubberbandStretcher,
+                            this.outputPtrs,     // Pointer to array of output buffer pointers
+                            framesToRetrieve     // Number of frames requested
+                        );
+                    } else {
+                         console.warn("[Worklet] _rubberband_retrieve function not available.");
+                         retrieved = -1; // Simulate error if function missing
+                    }
+
 
                     if (retrieved > 0) {
                         // Copy retrieved data from WASM buffers to temporary JS buffers
@@ -736,7 +757,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 this.inputPtrs = 0; // Reset pointers
                 this.outputPtrs = 0;
 
-                // console.log("[Worklet] Freed WASM buffers."); // Keep console cleaner
             } catch (e) {
                  console.error("[Worklet] Error during WASM memory cleanup with _free:", e);
                  // Avoid throwing here, cleanup should be best-effort
@@ -762,7 +782,6 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         if (this.wasmReady && this.rubberbandStretcher !== 0 && this.wasmModule && typeof this.wasmModule._rubberband_delete === 'function') {
             try {
                 this.wasmModule._rubberband_delete(this.rubberbandStretcher);
-                // console.log("[Worklet] Rubberband instance deleted."); // Keep console cleaner
             } catch (e) {
                 console.error("[Worklet] Error deleting Rubberband instance:", e);
             }
@@ -798,12 +817,13 @@ class RubberbandProcessor extends AudioWorkletProcessor {
 // Handle potential errors during registration.
 try {
     // Check if running in an AudioWorkletGlobalScope where registerProcessor is defined
-    if (typeof registerProcessor === 'function') {
+    // Also check for `sampleRate` global which is expected in this scope
+    if (typeof registerProcessor === 'function' && typeof sampleRate !== 'undefined') {
         registerProcessor(PROCESSOR_NAME, RubberbandProcessor);
     } else {
-        console.error("[Worklet] registerProcessor not defined. Ensure this script is loaded via addModule().");
+        console.error("[Worklet] registerProcessor or global sampleRate not defined. Ensure this script is loaded via addModule().");
         // Attempt to notify main thread if possible (might fail if port isn't set up yet)
-        try { if (self?.postMessage) self.postMessage({ type: 'error', message: 'registerProcessor not defined.' }); } catch(e) {}
+        try { if (self?.postMessage) self.postMessage({ type: 'error', message: 'registerProcessor or global sampleRate not defined.' }); } catch(e) {}
     }
 } catch (error) {
     console.error(`[Worklet] Failed to register processor '${PROCESSOR_NAME}':`, error);

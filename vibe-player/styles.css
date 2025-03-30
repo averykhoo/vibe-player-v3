@@ -266,7 +266,7 @@ canvas {
 }
 #spectrogramCanvas {
     height: 200px;
-    background-color: #fff; /* Keep spectrogram white background */
+    background-color: #000;
 }
 
 
