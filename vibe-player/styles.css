@@ -2,77 +2,74 @@
 
 /* --- Global Styles --- */
 body {
-  /* Change base font to the pixelated font from 98.css, use Arial as fallback */
   font-family: "Pixelated MS Sans Serif", Arial;
-  margin: 20px;
-  background-color: silver; /* Match 98.css background */
-  color: #222; /* 98.css default text */
-  /* Base size for pixelated font is often 8pt or 11px, 11px is already set */
-  font-size: 11px;
-  /* Remove default browser anti-aliasing for sharper pixels */
+  font-size: 15px;
+  margin: 15px;
+  background-color: silver;
+  color: #222;
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: grayscale;
-  image-rendering: pixelated; /* Helps with pixelated images/borders too */
+  font-smooth: never;
+  text-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
 }
 
 /* Style H2 and H3 */
 h2, h3 {
   border-bottom: 1px solid grey;
   padding-bottom: 3px;
-  margin-top: 1.5em;
-  margin-bottom: 0.8em;
-  /* Remove explicit font - inherit from body */
-  /* font-family: "Tahoma", sans-serif; */
+  margin-top: 1.2em;
+  margin-bottom: 0.7em;
   font-weight: bold;
+  /* Make headers the same size as body text */
+  font-size: 15px;
 }
 
+/* Remove specific H2/H3 size overrides */
+/*
 h2 {
-    font-size: 14px; /* Slightly larger H2 */
+    font-size: 18px;
 }
-
 h3 {
-    font-size: 12px; /* Slightly larger H3 */
+    font-size: 16px;
 }
+*/
 
 /* --- Layout Sections --- */
 section {
-  margin-bottom: 20px;
-  /* Add .window styles */
+  margin-bottom: 15px;
   background: silver;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
-  padding: 15px;
+  padding: 12px;
 }
 
-/* Adjust section title margin */
 section h2, section h3 {
-    margin-top: 0; /* Remove top margin for titles inside sections */
+    margin-top: 0;
+    margin-bottom: 0.6em;
 }
 
 /* --- File Input --- */
-/* Hide the actual file input */
 #hiddenAudioFile {
     display: none;
 }
-/* Style the replacement button and span */
 #file-loader .field-row button {
     flex-shrink: 0;
+    font-size: 15px;
 }
 #file-loader .field-row span#fileNameDisplay {
-    margin-left: 10px;
+    margin-left: 8px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     flex-grow: 1;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 11px;
+    font-size: 15px;
     line-height: 1.5;
 }
 #file-loader p#fileInfo {
-    margin-top: 5px;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 11px;
+    margin-top: 6px;
+    font-size: 15px;
 }
 
 
@@ -80,8 +77,8 @@ section h2, section h3 {
 #playback-progress {
     display: flex;
     align-items: center;
-    padding: 5px 0px; /* Reduced padding as box is removed */
-    margin-bottom: 10px;
+    padding: 5px 0px;
+    margin-bottom: 8px;
     background: none;
     box-shadow: none;
     border-image: none;
@@ -89,29 +86,19 @@ section h2, section h3 {
 }
 #playback-progress input[type=range]#seekBar {
     flex-grow: 1;
-    margin: 0 15px;
+    margin: 0 10px;
     height: auto;
     vertical-align: middle;
 }
 #playback-progress #timeDisplay {
     margin: 0;
     flex-shrink: 0;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 11px;
+    font-size: 15px;
     font-weight: normal;
 }
-/* Visually hidden class for labels */
 .visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
 
@@ -120,42 +107,48 @@ section h2, section h3 {
   margin: 0 5px;
   cursor: pointer;
   vertical-align: middle;
-  /* Let controls inherit body font OR rely on 98.css defaults for buttons/inputs */
-  /* font-family: "Tahoma", sans-serif; */
+  font-size: 15px;
 }
-
+#controls button {
+    min-height: 28px;
+    padding: 2px 12px;
+}
 #controls .control-group {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 #controls .control-group:last-child {
     margin-bottom: 0;
 }
-
 #controls .jump-controls {
-    margin-bottom: 20px; /* Space above jump controls */
-    margin-top: 10px; /* Space below sliders */
+    margin-bottom: 15px;
+    margin-top: 12px;
     display: flex;
     align-items: center;
-    justify-content: center; /* Center the jump controls */
+    justify-content: center;
 }
 #controls .jump-controls input[type=number] {
-    width: 50px;
+    width: 60px;
+    height: 28px;
+    padding: 3px 4px;
+    box-shadow: inset -1px -1px #fff,inset 1px 1px grey,inset -2px -2px #dfdfdf,inset 2px 2px #0a0a0a;
+    border: none;
 }
 
 /* Horizontal Slider Layout (Applies to Controls and VAD) */
 .horizontal-sliders {
     display: flex;
     flex-wrap: wrap;
-    gap: 15px;
-    margin-top: 15px;
-    align-items: flex-start; /* Prevent vertical stretching */
+    gap: 12px;
+    margin-top: 12px;
+    align-items: flex-start;
 }
 /* Individual slider units - Equal Width */
 .horizontal-sliders .slider-unit {
-    flex: 1; /* Grow equally */
-    min-width: 180px; /* Prevent becoming too narrow */
+    flex: 1;
+    min-width: 200px;
     margin-bottom: 0;
-    padding: 10px 10px 1.5em 10px;
+    /* Increase horizontal padding again */
+    padding: 10px 12px 1.8em 12px; /* INCREASED horizontal padding */
 }
 
 
@@ -168,37 +161,39 @@ section h2, section h3 {
     background-color: silver;
 }
 .slider-label-value {
-    margin-bottom: 5px;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 11px;
+    margin-bottom: 6px;
+    /* Ensure label uses base font size */
+    font-size: 15px;
 }
 .slider-label-value label {
     margin-right: 5px;
     font-weight: bold;
     display: inline;
+    /* Ensure label size is explicitly set if needed */
+    font-size: 15px;
 }
 .slider-label-value span {
-    font-family: monospace; /* Keep monospace for value display */
+    /* Change font to inherit from body */
+    /* font-family: monospace; */
     display: inline;
-    margin-left: 2px;
+    margin-left: 3px;
+    /* Ensure value size matches base */
+    font-size: 15px;
 }
-/* Styling for range input - Let 98.css handle appearance */
-input[type=range] { /* Apply to ALL range inputs */
+input[type=range] {
     width: 100%;
     box-sizing: border-box;
-    margin: 5px 0;
-    height: 8px; /* Adjust height slightly if needed for pixel font */
+    margin: 10px 0 10px 0;
+    height: 21px;
     cursor: pointer;
     display: block;
     vertical-align: middle;
 }
-/* --- Slider Markers --- */
 .slider-markers {
     position: relative;
     width: 100%;
     height: 1.5em;
-    margin-top: 8px;
+    margin-top: 6px;
 }
 .slider-markers span {
     position: absolute;
@@ -207,9 +202,7 @@ input[type=range] { /* Apply to ALL range inputs */
     cursor: pointer;
     transform: translateX(-50%);
     white-space: nowrap;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 10px; /* Keep slightly smaller for markers */
+    font-size: 15px; /* Set marker font size to base */
 }
 .slider-markers span:hover {
     color: #00f;
@@ -218,52 +211,63 @@ input[type=range] { /* Apply to ALL range inputs */
 
 /* --- VAD Tuning Section --- */
 #vad-tuning .horizontal-sliders {
-    margin-top: 0; /* No extra top margin for VAD sliders */
+    margin-top: 0;
 }
 #vad-tuning .slider-unit {
-    padding: 10px; /* Specific padding for VAD units if needed */
+    /* Increase horizontal padding for VAD unit */
+    padding: 10px 12px 10px 12px; /* INCREASED horizontal padding */
 }
-#vad-tuning .control-group { /* Targets inner divs */
-    margin-bottom: 0; /* No margin between label/value and slider */
+#vad-tuning .control-group {
+    margin-bottom: 0;
 }
 #vad-tuning .slider-label-value {
      display: flex;
-     justify-content: space-between;
+     justify-content: flex-start;
+     align-items: center;
      width: 100%;
-     margin-bottom: 3px;
+     margin-bottom: 6px;
+     /* Ensure font size is base */
+     font-size: 15px;
+}
+#vad-tuning .slider-label-value label {
+    /* Ensure font size is base */
+    font-size: 15px;
+}
+#vad-tuning .slider-label-value span {
+    margin-left: 6px;
+    /* Ensure font size is base */
+    font-size: 15px;
+     /* Change font to inherit from body */
+    /* font-family: monospace; */
 }
 #vad-tuning input[type=range] {
-    margin-top: 0;
+    margin: 10px 0 10px 0;
+    height: 21px;
 }
 
 
 /* --- Visualizations Section --- */
 .visualization {
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
-    padding: 5px;
+    padding: 8px;
     background-color: silver;
 }
 .canvas-container {
     position: relative;
 }
-/* Style visualization H3 */
 .visualization h3 {
-    margin: 0 0 10px 0; /* Adjust margin */
+    margin: 0 0 8px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: none;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
+    font-size: 15px; /* Ensure header matches base */
 }
-/* Make small text inside H3 also use correct font */
 .visualization h3 small {
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 10px;
+    font-size: 15px; /* Ensure small matches base */
     font-weight: normal;
 }
 canvas {
@@ -274,71 +278,59 @@ canvas {
     box-sizing: border-box;
     border: 1px solid grey;
     box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px grey;
-    image-rendering: pixelated; /* Try adding for canvas */
+    image-rendering: pixelated;
 }
-/* Specific Waveform Canvas Style */
 #waveformCanvas {
-    background-color: #000; /* Black background */
+    background-color: #000;
 }
 #spectrogramCanvas {
     height: 200px;
-    background-color: #000; /* Black background */
+    background-color: #000;
 }
 
 
 /* --- Progress Bar Overlay --- */
 .progress-bar { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; box-sizing: border-box; }
-#waveformProgressBar { height: 120px; /* Match canvas height */ }
-#spectrogramProgressBar { height: 200px; /* Match canvas height */ }
+#waveformProgressBar { height: 120px; }
+#spectrogramProgressBar { height: 200px; }
 .progress-indicator {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 2px;
-    background: rgba(255, 0, 0, 0.7); /* Keep bright red */
-    pointer-events: none;
+    position: absolute; top: 0; bottom: 0; left: 0; width: 2px;
+    background: rgba(255, 0, 0, 0.7); pointer-events: none;
 }
 
 /* --- UI Elements --- */
 .spinner {
     display: none;
-    font-size: 11px;
+    font-size: 15px;
     color: #222;
     font-weight: normal;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
 }
-#speechRegionsDisplay { /* Still styled even if hidden */
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 150px;
-    overflow-y: auto;
+#speechRegionsDisplay {
+    white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow-y: auto;
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-    padding: 3px 4px;
-    font-family: monospace; /* Keep monospace for code-like display */
-    font-size: 11px;
+    padding: 4px 5px;
+    font-family: monospace; /* Keep monospace for this specific display */
+    font-size: 15px;
 }
 
 
 /* --- Keybinds Table --- */
-#keybinds { margin-top: 20px; }
+#keybinds { margin-top: 15px; }
 #keybinds table {
-    width: 100%;
-    border-collapse: collapse;
+    width: 100%; border-collapse: collapse;
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
-    font-size: 11px;
+    font-size: 15px;
 }
 #keybinds th, #keybinds td {
-    padding: 3px 6px;
+    padding: 4px 6px;
     border-bottom: 1px solid silver;
     text-align: left;
+    /* Ensure explicit size */
+    font-size: 15px;
 }
 #keybinds tr:last-child td {
     border-bottom: none;
@@ -346,19 +338,16 @@ canvas {
 #keybinds th {
     background: silver;
     box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
-    box-sizing: border-box;
-    font-weight: normal;
-    padding: 2px 6px;
+    box-sizing: border-box; font-weight: normal;
+    padding: 3px 6px;
     border-bottom: 1px solid #0a0a0a;
-    /* Remove explicit font - inherit from body */
-    /* font-family: "Tahoma", sans-serif; */
+     /* Ensure explicit size */
+    font-size: 15px;
 }
 
 /* --- Small Tag --- */
 small {
-  /* Remove explicit font - inherit from body */
-  /* font-family: "Tahoma", sans-serif; */
-  font-size: 10px; /* Slightly smaller */
+  font-size: 15px; /* Ensure small tag matches base */
 }
 
 /* /vibe-player/styles.css */
