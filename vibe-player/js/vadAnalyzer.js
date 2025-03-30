@@ -57,7 +57,7 @@ AudioApp.vadAnalyzer = (function(processor) {
         currentNegativeThreshold = 0.35;
 
         // Extract onProgress callback and frameSamples from options if provided
-        const onProgressCallback = options.onProgress;
+        const onProgressCallback = options.onProgress; // Extract the callback
         const frameSamplesOverride = options.frameSamples;
 
         // Define initial options for the processor, passing along the callback and potential override
@@ -65,13 +65,13 @@ AudioApp.vadAnalyzer = (function(processor) {
              positiveSpeechThreshold: currentPositiveThreshold, // Pass current defaults
              negativeSpeechThreshold: currentNegativeThreshold,
              frameSamples: frameSamplesOverride || DEFAULT_FRAME_SAMPLES, // Use override or default
-             onProgress: onProgressCallback // Pass the callback function along
+             onProgress: onProgressCallback // Pass the callback function along to the processor
             // redemptionFrames: 7 // Can be passed from app config if needed
         };
 
         console.log("VadAnalyzer: Starting analysis via processor...");
         try {
-            // Delegate the core analysis to the sileroProcessor module
+            // Delegate the core analysis to the sileroProcessor module, passing options
             const results = await processor.analyzeAudio(pcm16k, processorOptions);
 
             // Store the results and update current thresholds based on what was actually used

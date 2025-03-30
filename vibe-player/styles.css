@@ -4,7 +4,6 @@
 body {
   font-family: "Pixelated MS Sans Serif", Arial;
   font-size: 15px;
-  /* Further reduced body margin */
   margin: 8px;
   background-color: silver;
   color: #222;
@@ -20,8 +19,7 @@ body {
 /* Style H2 and H3 */
 h2, h3 {
   border-bottom: 1px solid grey;
-  padding-bottom: 1px; /* Reduced padding */
-  /* Reduced margins */
+  padding-bottom: 1px;
   margin-top: 0.8em;
   margin-bottom: 0.4em;
   font-weight: bold;
@@ -30,91 +28,58 @@ h2, h3 {
 
 /* --- Layout Sections --- */
 section {
-  /* Reduced margin and padding */
   margin-bottom: 8px;
   background: silver;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
-  padding: 8px 8px; /* Reduced vertical padding, keep horizontal */
+  padding: 8px 8px;
 }
 
 section h2, section h3 {
     margin-top: 0;
-    margin-bottom: 0.4em; /* Reduced margin */
+    margin-bottom: 0.4em;
 }
 
 /* --- File Input --- */
 #hiddenAudioFile {
     display: none;
 }
-/* Adjust styles for inlined elements */
 #file-loader .field-row {
-    /* Align items vertically */
-    align-items: baseline; /* Changed from center */
+    align-items: baseline;
 }
 #file-loader .field-row button {
     flex-shrink: 0;
     font-size: 15px;
-    min-height: 26px; /* Slightly reduced button height */
-    padding: 1px 10px; /* Adjusted padding */
+    min-height: 26px;
+    padding: 1px 10px;
 }
 #file-loader .field-row span#fileNameDisplay {
-    margin-left: 6px; /* Keep small left margin */
+    margin-left: 6px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* Allow shrinking, but maintain some width */
     flex-shrink: 1;
     min-width: 80px;
     font-size: 15px;
-    line-height: 1.4; /* Adjusted line height */
+    line-height: 1.4;
 }
 #file-loader p#fileInfo {
-    /* Reset default paragraph margins */
-    margin: 0 0 0 10px; /* Only left margin */
-    /* Allow to take remaining space */
+    margin: 0 0 0 10px;
     flex-grow: 1;
     font-size: 15px;
-    /* Make status text less prominent */
     color: grey;
-    white-space: nowrap; /* Prevent wrapping */
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* --- NEW: VAD Progress Bar Styles --- */
-.vad-progress-container {
-    width: 100%;
-    height: 18px; /* Height of the progress bar */
-    box-sizing: border-box;
-    /* Sunken border like a text input */
-    border: 1px solid;
-    border-color: grey #fff #fff grey;
-    box-shadow: inset 1px 1px #0a0a0a;
-    padding: 2px; /* Inner padding */
-    background-color: silver; /* Background if needed */
-    display: none; /* Hidden by default */
-    overflow: hidden; /* Prevent segments from overflowing */
-}
-.vad-progress-segment {
-    display: inline-block; /* Allows segments to sit side-by-side */
-    width: 8px; /* Width of each segment block */
-    height: 100%; /* Fill the container height */
-    background-color: silver; /* Default background (empty) */
-    border-left: 1px solid silver; /* Default border */
-    border-right: 1px solid silver; /* Default border */
-    box-sizing: border-box;
-    margin-right: 2px; /* Space between segments */
-}
-.vad-progress-segment:first-child {
-    margin-left: 0; /* No left margin for the first segment */
-}
-/* Style for filled segments */
-.vad-progress-segment.filled {
-    background-color: navy; /* Win9x progress bar blue */
-    /* Optional: Add slight inset effect */
-    border-left: 1px solid navy;
-    border-right: 1px solid navy;
-    /* Or use a border-image if a more complex pixel effect is desired */
+/* --- REMOVED Old VAD Progress Bar Styles --- */
+/* (No rules here anymore) */
+
+/* --- NEW: Style for 98.css VAD progress bar container --- */
+#vadProgressContainer {
+    margin-top: 5px; /* Add space above the progress bar */
+    display: block; /* Ensure it's always visible */
+    /* Height is determined by 98.css */
 }
 
 
@@ -122,8 +87,8 @@ section h2, section h3 {
 #playback-progress {
     display: flex;
     align-items: center;
-    padding: 2px 0px; /* Reduced padding */
-    margin-bottom: 4px; /* Reduced margin */
+    padding: 2px 0px;
+    margin-bottom: 4px;
     background: none;
     box-shadow: none;
     border-image: none;
@@ -131,7 +96,7 @@ section h2, section h3 {
 }
 #playback-progress input[type=range]#seekBar {
     flex-grow: 1;
-    margin: 0 8px; /* Keep horizontal margin */
+    margin: 0 8px;
     height: auto;
     vertical-align: middle;
 }
@@ -149,32 +114,32 @@ section h2, section h3 {
 
 /* --- Controls Section --- */
 #controls button, #controls input[type=number] {
-  margin: 0 4px; /* Reduced margin */
+  margin: 0 4px;
   cursor: pointer;
   vertical-align: middle;
   font-size: 15px;
 }
 #controls button {
-    min-height: 26px; /* Match file button height */
-    padding: 1px 10px; /* Match file button padding */
+    min-height: 26px;
+    padding: 1px 10px;
 }
 #controls .control-group {
-    margin-bottom: 5px; /* Reduced margin */
+    margin-bottom: 5px;
 }
 #controls .control-group:last-child {
     margin-bottom: 0;
 }
 #controls .jump-controls {
-    margin-bottom: 8px; /* Reduced margin */
-    margin-top: 6px; /* Reduced margin */
+    margin-bottom: 8px;
+    margin-top: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 #controls .jump-controls input[type=number] {
-    width: 50px; /* Reduced width */
-    height: 26px; /* Match button height */
-    padding: 2px 3px; /* Adjusted padding */
+    width: 50px;
+    height: 26px;
+    padding: 2px 3px;
     box-shadow: inset -1px -1px #fff,inset 1px 1px grey,inset -2px -2px #dfdfdf,inset 2px 2px #0a0a0a;
     border: none;
 }
@@ -183,17 +148,15 @@ section h2, section h3 {
 .horizontal-sliders {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px; /* Keep reduced gap */
+    gap: 8px;
     margin-top: 6px;
     align-items: flex-start;
 }
-/* Individual slider units - Equal Width */
 .horizontal-sliders .slider-unit {
     flex: 1;
-    min-width: 180px; /* Adjusted min-width */
+    min-width: 180px;
     margin-bottom: 0;
-    /* Increase horizontal padding, decrease bottom padding */
-    padding: 6px 15px 6px 15px; /* INCREASED horizontal to 15px, DECREASED bottom to 1.0em */
+    padding: 6px 15px 1.0em 15px;
 }
 
 
@@ -232,12 +195,12 @@ input[type=range] {
 .slider-markers {
     position: relative;
     width: 100%;
-    height: 1.3em; /* Keep this height */
+    height: 1.3em;
     margin-top: 2px;
 }
 .slider-markers span {
     position: absolute;
-    bottom: 0; /* Keep marker text aligned to the bottom of its container */
+    bottom: 0;
     color: #222;
     cursor: pointer;
     transform: translateX(-50%);
@@ -254,7 +217,7 @@ input[type=range] {
     margin-top: 0;
 }
 #vad-tuning .slider-unit {
-    padding: 6px 8px 6px 8px; /* Reduced vertical padding */
+    padding: 6px 15px 6px 15px;
 }
 #vad-tuning .control-group {
     margin-bottom: 0;
@@ -264,7 +227,7 @@ input[type=range] {
      justify-content: flex-start;
      align-items: center;
      width: 100%;
-     margin-bottom: 2px; /* Reduced margin */
+     margin-bottom: 2px;
      font-size: 15px;
 }
 #vad-tuning .slider-label-value label {
@@ -275,25 +238,25 @@ input[type=range] {
     font-size: 15px;
 }
 #vad-tuning input[type=range] {
-    margin: 4px 0 4px 0; /* Reduced margin */
+    margin: 4px 0 4px 0;
     height: 21px;
 }
 
 
 /* --- Visualizations Section --- */
 .visualization {
-    margin-bottom: 8px; /* Reduced margin */
+    margin-bottom: 8px;
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
-    padding: 7px 7px; /* Reduced padding */
+    padding: 7px 7px;
     background-color: silver;
 }
 .canvas-container {
-    position: relative; /* Ensure container is positioned for absolute children */
+    position: relative;
 }
 .visualization h3 {
-    margin: 0 0 4px 0; /* Reduced margin */
+    margin: 0 0 4px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -304,23 +267,7 @@ input[type=range] {
     font-size: 15px;
     font-weight: normal;
 }
-/* Style for the overlay indicator on waveform */
-.vad-indicator {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: rgba(0, 0, 0, 0.65);
-    color: white;
-    padding: 5px 10px;
-    border-radius: 3px;
-    font-size: 15px;
-    font-family: "Pixelated MS Sans Serif", Arial;
-    z-index: 10;
-    display: none; /* Hidden by default */
-    pointer-events: none;
-    white-space: nowrap;
-}
+/* Removed .vad-indicator styles */
 canvas {
     display: block;
     width: 100%;
@@ -340,14 +287,14 @@ canvas {
 }
 
 
-/* --- Progress Bar Overlay --- */
-.progress-bar { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; box-sizing: border-box; }
-#waveformProgressBar { height: 120px; }
-#spectrogramProgressBar { height: 200px; }
-.progress-indicator {
-    position: absolute; top: 0; bottom: 0; left: 0; width: 2px;
-    background: rgba(255, 0, 0, 0.7); pointer-events: none;
-}
+/*!* --- Progress Bar Overlay --- *!*/
+/*.progress-bar { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; box-sizing: border-box; }*/
+/*#waveformProgressBar { height: 120px; }*/
+/*#spectrogramProgressBar { height: 200px; }*/
+/*.progress-indicator {*/
+/*    position: absolute; top: 0; bottom: 0; left: 0; width: 2px;*/
+/*    background: rgba(255, 0, 0, 0.7); pointer-events: none;*/
+/*}*/
 
 /* --- UI Elements --- */
 .spinner {
@@ -357,19 +304,19 @@ canvas {
     font-weight: normal;
 }
 #speechRegionsDisplay {
-    white-space: pre-wrap; word-break: break-all; max-height: 120px; /* Reduced max height */ overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-    padding: 2px 3px; /* Reduced padding */
+    padding: 2px 3px;
     font-family: monospace;
     font-size: 15px;
-    line-height: 1.2; /* Reduced line height */
+    line-height: 1.2;
 }
 
 
 /* --- Keybinds Table --- */
-#keybinds { margin-top: 8px; /* Reduced margin */ }
+#keybinds { margin-top: 8px; }
 #keybinds table {
     width: 100%; border-collapse: collapse;
     border: 2px groove transparent;
@@ -378,7 +325,7 @@ canvas {
     font-size: 15px;
 }
 #keybinds th, #keybinds td {
-    padding: 2px 4px; /* Reduced padding */
+    padding: 2px 4px;
     border-bottom: 1px solid silver;
     text-align: left;
     font-size: 15px;
@@ -390,7 +337,7 @@ canvas {
     background: silver;
     box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
     box-sizing: border-box; font-weight: normal;
-    padding: 2px 4px; /* Reduced padding */
+    padding: 2px 4px;
     border-bottom: 1px solid #0a0a0a;
     font-size: 15px;
 }

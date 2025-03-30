@@ -12,6 +12,9 @@
 </head>
 <body>
 
+<!-- === REMOVED Progress Indicator Example Section === -->
+
+
 <!-- === File Loading Section === -->
 <section id="file-loader">
     <h2>Load Audio File</h2>
@@ -24,9 +27,9 @@
     <!-- Hidden actual file input -->
     <input type="file" id="hiddenAudioFile" accept="audio/*" style="display: none;">
 
-    <!-- NEW: VAD Progress Bar Container -->
-    <div id="vadProgressContainer" class="vad-progress-container" style="margin-top: 5px;">
-        <!-- Segments will be added here by JS -->
+    <!-- NEW: VAD Progress Bar using 98.css structure -->
+    <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container" style="margin-top: 5px;">
+        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0%;"></span>
     </div>
 </section>
 
@@ -67,23 +70,6 @@
             </div>
         </div>
 
-        <!-- hidden because formant control isn't working -->
-        <!--
-        <div class="control-group slider-unit">
-             <div class="slider-label-value">
-                 <label for="formantControl">Formant:</label>
-                 <span id="formantValue">1.00x</span>
-             </div>
-            <input type="range" id="formantControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-            <div class="slider-markers" id="formantMarkers">
-                 <span data-value="0.5">0.5x</span>
-                 <span data-value="1.0">1.0x</span>
-                 <span data-value="1.5">1.5x</span>
-                 <span data-value="2.0">2.0x</span>
-            </div>
-        </div>
-        -->
-
         <!-- Gain Control Unit -->
         <div class="control-group slider-unit">
             <div class="slider-label-value">
@@ -119,43 +105,35 @@
 
 </section>
 
-<!--&lt;!&ndash; === VAD Tuning Section === &ndash;&gt;-->
-<!--<section id="vad-tuning">-->
-<!--    <h2>VAD Tuning (Silero)</h2>-->
+<!-- === VAD Tuning Section === -->
+<section id="vad-tuning">
+    <h2>VAD Tuning (Silero)</h2>
 
-<!--    &lt;!&ndash; Corrected Structure: Both VAD controls inside one horizontal container &ndash;&gt;-->
-<!--    <div class="horizontal-sliders">-->
-<!--        <div class="control-group slider-unit"> &lt;!&ndash; Unit for Positive &ndash;&gt;-->
-<!--            <div class="control-group">-->
-<!--                <div class="slider-label-value">-->
-<!--                    <label for="vadThreshold"-->
-<!--                           title="Probability above which a frame is considered speech.">Positive:</label>-->
-<!--                    <span id="vadThresholdValue">N/A</span>-->
-<!--                </div>-->
-<!--                <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>-->
-<!--            </div>-->
-<!--        </div>-->
-<!--        <div class="control-group slider-unit"> &lt;!&ndash; Unit for Negative &ndash;&gt;-->
-<!--             <div class="control-group">-->
-<!--                <div class="slider-label-value">-->
-<!--                    <label for="vadNegativeThreshold"-->
-<!--                           title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>-->
-<!--                    <span id="vadNegativeThresholdValue">N/A</span>-->
-<!--                </div>-->
-<!--                <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>-->
-<!--            </div>-->
-<!--        </div>-->
-<!--    </div> &lt;!&ndash; End horizontal-sliders for VAD &ndash;&gt;-->
+    <!-- Corrected Structure: Both VAD controls inside one horizontal container -->
+    <div class="horizontal-sliders">
+        <div class="control-group slider-unit"> <!-- Unit for Positive -->
+            <div class="control-group">
+                <div class="slider-label-value">
+                    <label for="vadThreshold"
+                           title="Probability above which a frame is considered speech.">Positive:</label>
+                    <span id="vadThresholdValue">N/A</span>
+                </div>
+                <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
+            </div>
+        </div>
+        <div class="control-group slider-unit"> <!-- Unit for Negative -->
+             <div class="control-group">
+                <div class="slider-label-value">
+                    <label for="vadNegativeThreshold"
+                           title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>
+                    <span id="vadNegativeThresholdValue">N/A</span>
+                </div>
+                <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
+            </div>
+        </div>
+    </div> <!-- End horizontal-sliders for VAD -->
 
-<!--    &lt;!&ndash; === Speech Info Section (used for debugging, now hidden) === &ndash;&gt;-->
-<!--    &lt;!&ndash;-->
-<!--    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>-->
-<!--    <section id="speech-info">-->
-<!--        <h3>Detected Speech Regions</h3>-->
-<!--        <pre id="speechRegionsDisplay">None</pre>-->
-<!--    </section>-->
-<!--    &ndash;&gt;-->
-<!--</section>-->
+</section>
 
 
 <!-- === Visualizations Section === -->
@@ -163,6 +141,9 @@
     <h3>Waveform <small>(Speech in Yellow)</small></h3>
     <div class="canvas-container">
         <canvas id="waveformCanvas"></canvas>
+        <!-- Removed the overlay span
+        <span id="waveformVadIndicator" class="vad-indicator">Analyzing Speech...</span>
+        -->
         <div id="waveformProgressBar" class="progress-bar">
             <div id="waveformProgressIndicator" class="progress-indicator"></div>
         </div>

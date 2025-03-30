@@ -22,14 +22,27 @@ AudioApp.sileroProcessor = (function(wrapper) {
     /** @const {number} The fixed sample rate required by the Silero VAD model */
     const VAD_SAMPLE_RATE = 16000;
     /** @const {number} How often to report progress (e.g., report every 20 frames ~1/20th or 5%) */
-    const PROGRESS_REPORT_INTERVAL_FRAMES = 20;
+    const PROGRESS_REPORT_INTERVAL_FRAMES = 20; // Frequency of calling onProgress
+    /** @const {number} How often to explicitly yield the main thread */
+    const YIELD_INTERVAL_FRAMES = 5; // Frequency of inserting await yieldToMainThread()
+
+    // --- Helper Function ---
+    /**
+     * Helper function to yield control back to the main event loop.
+     * Uses `setTimeout(resolve, 0)` inside a Promise.
+     * @returns {Promise<void>} Resolves on the next tick.
+     */
+    async function yieldToMainThread() {
+        return new Promise(resolve => setTimeout(resolve, 0));
+    }
+
 
     // --- Core Analysis Function ---
 
     /**
      * Analyzes 16kHz mono PCM data for speech regions using the Silero VAD model via the wrapper.
      * Returns initial speech regions and the raw probabilities for each frame.
-     * Calls an optional onProgress callback during processing.
+     * Calls an optional onProgress callback during processing and yields periodically.
      * @param {Float32Array} pcmData - The 16kHz mono Float32Array audio data.
      * @param {object} [options={}] - VAD parameters and callback.
      * @param {number} [options.frameSamples=1536] - Samples per VAD frame (e.g., 96ms @ 16kHz). Affects latency and granularity.
@@ -59,18 +72,22 @@ AudioApp.sileroProcessor = (function(wrapper) {
         }
 
         // --- VAD Parameters ---
-        const frameSamples = options.frameSamples || 1536;
+        const frameSamples = options.frameSamples || 1536; // Use provided or default
         const positiveThreshold = options.positiveSpeechThreshold !== undefined ? options.positiveSpeechThreshold : 0.5;
         const negativeThreshold = options.negativeSpeechThreshold !== undefined ? options.negativeSpeechThreshold : Math.max(0.01, positiveThreshold - 0.15);
         const redemptionFrames = options.redemptionFrames !== undefined ? options.redemptionFrames : 7;
         // Get the progress callback, default to a no-op function if not provided
         const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
 
+        // *** Logging from previous step - can be removed if desired ***
+        // console.log('[SileroProcessor] Received onProgress type:', typeof onProgress);
+
         // Handle empty input after getting frameSamples
          if (!pcmData || pcmData.length === 0 || frameSamples <= 0) {
              console.log("SileroProcessor: No audio data or invalid frame size provided to analyze.");
-             // Trigger progress completion immediately if empty
-             onProgress({ processedFrames: 0, totalFrames: 0 });
+             // Trigger progress completion immediately if empty, using setTimeout
+             // (setTimeout is fine here as it's outside the main blocking loop)
+             setTimeout(() => onProgress({ processedFrames: 0, totalFrames: 0 }), 0);
              return {
                  regions: [], probabilities: new Float32Array(),
                  frameSamples: frameSamples, sampleRate: VAD_SAMPLE_RATE,
@@ -92,7 +109,8 @@ AudioApp.sileroProcessor = (function(wrapper) {
         // --- Process Audio Frames ---
         /** @type {number[]} Temporary array to store probabilities */
         const allProbabilities = [];
-        const totalFrames = Math.floor(pcmData.length / frameSamples); // Calculate total frames
+        // Calculate total frames based on *valid* full frames
+        const totalFrames = Math.floor(pcmData.length / frameSamples);
         let processedFrames = 0; // Initialize processed frame counter
 
         console.log(`SileroProcessor: Analyzing ${pcmData.length} samples (${totalFrames} frames) with frame size ${frameSamples}...`);
@@ -100,35 +118,47 @@ AudioApp.sileroProcessor = (function(wrapper) {
 
         try {
             // Iterate through the audio data in non-overlapping frames.
-            for (let i = 0; (i + frameSamples) <= pcmData.length; i += frameSamples) { // Ensure full frame exists
+            // Ensure loop condition `(i + frameSamples) <= pcmData.length` only processes full frames.
+            for (let i = 0; (i + frameSamples) <= pcmData.length; i += frameSamples) {
                 const frame = pcmData.slice(i, i + frameSamples);
 
                 // Run the Silero VAD model on the frame using the wrapper.
-                const probability = await wrapper.process(frame);
+                const probability = await wrapper.process(frame); // This might block
                 allProbabilities.push(probability);
-                processedFrames++;
+                processedFrames++; // Increment counter *after* successful processing of a frame
 
-                // --- Report Progress Periodically ---
-                // Report on the first frame, last frame, and at intervals
+                // --- Report Progress Periodically (Synchronously) ---
                 if (processedFrames === 1 || processedFrames === totalFrames || (processedFrames % PROGRESS_REPORT_INTERVAL_FRAMES === 0)) {
-                    // Use requestAnimationFrame to avoid blocking main thread if processing is very fast
-                    // Although analyzeAudio is async, the loop itself can be tight.
-                    // await new Promise(requestAnimationFrame); // Optional: yield to main thread briefly
-                    onProgress({ processedFrames, totalFrames });
+                     // Call the callback directly now
+                     onProgress({ processedFrames, totalFrames });
                 }
                 // --- End Progress Reporting ---
+
+                // --- Force Yield Periodically ---
+                if (processedFrames % YIELD_INTERVAL_FRAMES === 0 && processedFrames < totalFrames) {
+                     await yieldToMainThread(); // Explicitly yield control
+                }
+                // --- End Force Yield ---
             }
         } catch (e) {
             const endTime = performance.now();
             console.error(`SileroProcessor: Error during frame processing after ${((endTime - startTime)/1000).toFixed(2)}s:`, e);
-            onProgress({ processedFrames, totalFrames }); // Report final progress on error
+            // Ensure final progress is reported even on error, using setTimeout
+            const progressData = { processedFrames, totalFrames };
+             setTimeout(() => onProgress(progressData), 0); // setTimeout is fine here
             throw new Error(`VAD inference failed: ${e.message}`);
         }
+
         const endTime = performance.now();
         console.log(`SileroProcessor: VAD analysis took ${((endTime - startTime)/1000).toFixed(2)}s.`);
 
-        // Ensure final progress is reported
-        onProgress({ processedFrames, totalFrames });
+        // Ensure final progress (100%) is reported if loop completed successfully, using setTimeout
+        const finalProgressData = { processedFrames, totalFrames };
+         setTimeout(() => onProgress(finalProgressData), 0); // setTimeout is fine here
+        if (processedFrames !== totalFrames) {
+             console.warn(`[SileroProcessor] Loop finished but processedFrames (${processedFrames}) != totalFrames (${totalFrames}). Progress might not reach 100%. Final callback sent.`);
+        }
+
 
         // --- Calculate Initial Regions ---
         const probabilities = new Float32Array(allProbabilities);
