@@ -1,12 +1,18 @@
-/* /vibe-player/styles.css */
+/* --- /vibe-player/styles.css --- */
 
 /* --- Global Styles --- */
 body {
-  font-family: "Tahoma", sans-serif; /* Base Font */
+  /* Change base font to the pixelated font from 98.css, use Arial as fallback */
+  font-family: "Pixelated MS Sans Serif", Arial;
   margin: 20px;
   background-color: silver; /* Match 98.css background */
   color: #222; /* 98.css default text */
-  font-size: 11px; /* Base size for Tahoma */
+  /* Base size for pixelated font is often 8pt or 11px, 11px is already set */
+  font-size: 11px;
+  /* Remove default browser anti-aliasing for sharper pixels */
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  image-rendering: pixelated; /* Helps with pixelated images/borders too */
 }
 
 /* Style H2 and H3 */
@@ -15,7 +21,8 @@ h2, h3 {
   padding-bottom: 3px;
   margin-top: 1.5em;
   margin-bottom: 0.8em;
-  font-family: "Tahoma", sans-serif;
+  /* Remove explicit font - inherit from body */
+  /* font-family: "Tahoma", sans-serif; */
   font-weight: bold;
 }
 
@@ -56,13 +63,15 @@ section h2, section h3 {
     overflow: hidden;
     text-overflow: ellipsis;
     flex-grow: 1;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
     font-size: 11px;
     line-height: 1.5;
 }
 #file-loader p#fileInfo {
     margin-top: 5px;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
     font-size: 11px;
 }
 
@@ -87,7 +96,8 @@ section h2, section h3 {
 #playback-progress #timeDisplay {
     margin: 0;
     flex-shrink: 0;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
     font-size: 11px;
     font-weight: normal;
 }
@@ -110,7 +120,8 @@ section h2, section h3 {
   margin: 0 5px;
   cursor: pointer;
   vertical-align: middle;
-  font-family: "Tahoma", sans-serif;
+  /* Let controls inherit body font OR rely on 98.css defaults for buttons/inputs */
+  /* font-family: "Tahoma", sans-serif; */
 }
 
 #controls .control-group {
@@ -137,7 +148,7 @@ section h2, section h3 {
     flex-wrap: wrap;
     gap: 15px;
     margin-top: 15px;
-    align-items: flex-start; /* ADDED: Prevent vertical stretching */
+    align-items: flex-start; /* Prevent vertical stretching */
 }
 /* Individual slider units - Equal Width */
 .horizontal-sliders .slider-unit {
@@ -158,7 +169,8 @@ section h2, section h3 {
 }
 .slider-label-value {
     margin-bottom: 5px;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
     font-size: 11px;
 }
 .slider-label-value label {
@@ -167,7 +179,7 @@ section h2, section h3 {
     display: inline;
 }
 .slider-label-value span {
-    font-family: monospace;
+    font-family: monospace; /* Keep monospace for value display */
     display: inline;
     margin-left: 2px;
 }
@@ -176,7 +188,7 @@ input[type=range] { /* Apply to ALL range inputs */
     width: 100%;
     box-sizing: border-box;
     margin: 5px 0;
-    height: 8px;
+    height: 8px; /* Adjust height slightly if needed for pixel font */
     cursor: pointer;
     display: block;
     vertical-align: middle;
@@ -195,8 +207,9 @@ input[type=range] { /* Apply to ALL range inputs */
     cursor: pointer;
     transform: translateX(-50%);
     white-space: nowrap;
-    font-family: "Tahoma", sans-serif;
-    font-size: 10px;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
+    font-size: 10px; /* Keep slightly smaller for markers */
 }
 .slider-markers span:hover {
     color: #00f;
@@ -243,11 +256,13 @@ input[type=range] { /* Apply to ALL range inputs */
     justify-content: space-between;
     align-items: center;
     border-bottom: none;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
 }
 /* Make small text inside H3 also use correct font */
 .visualization h3 small {
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
     font-size: 10px;
     font-weight: normal;
 }
@@ -259,6 +274,7 @@ canvas {
     box-sizing: border-box;
     border: 1px solid grey;
     box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px grey;
+    image-rendering: pixelated; /* Try adding for canvas */
 }
 /* Specific Waveform Canvas Style */
 #waveformCanvas {
@@ -266,7 +282,7 @@ canvas {
 }
 #spectrogramCanvas {
     height: 200px;
-    background-color: #000;
+    background-color: #000; /* Black background */
 }
 
 
@@ -285,7 +301,14 @@ canvas {
 }
 
 /* --- UI Elements --- */
-.spinner { display: none; font-size: 11px; color: #222; font-weight: normal; font-family: "Tahoma", sans-serif; }
+.spinner {
+    display: none;
+    font-size: 11px;
+    color: #222;
+    font-weight: normal;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
+}
 #speechRegionsDisplay { /* Still styled even if hidden */
     white-space: pre-wrap;
     word-break: break-all;
@@ -295,7 +318,7 @@ canvas {
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
     padding: 3px 4px;
-    font-family: monospace;
+    font-family: monospace; /* Keep monospace for code-like display */
     font-size: 11px;
 }
 
@@ -308,7 +331,8 @@ canvas {
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
     font-size: 11px;
 }
 #keybinds th, #keybinds td {
@@ -326,12 +350,14 @@ canvas {
     font-weight: normal;
     padding: 2px 6px;
     border-bottom: 1px solid #0a0a0a;
-    font-family: "Tahoma", sans-serif;
+    /* Remove explicit font - inherit from body */
+    /* font-family: "Tahoma", sans-serif; */
 }
 
 /* --- Small Tag --- */
 small {
-  font-family: "Tahoma", sans-serif;
+  /* Remove explicit font - inherit from body */
+  /* font-family: "Tahoma", sans-serif; */
   font-size: 10px; /* Slightly smaller */
 }
 
