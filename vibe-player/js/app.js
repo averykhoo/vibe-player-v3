@@ -170,7 +170,7 @@ AudioApp = (function() {
                     // Calculate percentage (0-100)
                     const percentage = (progress.processedFrames / progress.totalFrames) * 100;
                     // *** ADDED LOGGING ***
-                    console.log('[App] vadProgressCallback: calculated percentage:', percentage.toFixed(1));
+                    // console.log('[App] vadProgressCallback: calculated percentage:', percentage.toFixed(1));
                     // Call uiManager to update the bar width
                     AudioApp.uiManager.updateVadProgress(percentage);
                 } else {
