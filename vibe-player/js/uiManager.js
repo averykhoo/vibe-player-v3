@@ -7,17 +7,19 @@ AudioApp.uiManager = (function() {
     'use strict';
 
     // --- DOM Element References ---
-    // File/Info (Updated)
+    // File/Info
     /** @type {HTMLButtonElement|null} */ let chooseFileButton;
     /** @type {HTMLInputElement|null} */ let hiddenAudioFile; // Renamed from fileInput
     /** @type {HTMLSpanElement|null} */ let fileNameDisplay;
     /** @type {HTMLParagraphElement|null} */ let fileInfo;
+    /** @type {HTMLDivElement|null} */ let vadProgressContainer; // VAD Progress Bar
+
     // Buttons
     /** @type {HTMLButtonElement|null} */ let playPauseButton;
     /** @type {HTMLButtonElement|null} */ let jumpBackButton;
     /** @type {HTMLButtonElement|null} */ let jumpForwardButton;
     /** @type {HTMLInputElement|null} */ let jumpTimeInput;
-    // Time & Seek (Updated)
+    // Time & Seek
     /** @type {HTMLDivElement|null} */ let timeDisplay;
     /** @type {HTMLInputElement|null} */ let seekBar; // New seek bar
     // Sliders & Displays & Markers
@@ -39,10 +41,13 @@ AudioApp.uiManager = (function() {
     /** @type {HTMLSpanElement|null} */ let vadNegativeThresholdValueDisplay;
     // Visuals
     /** @type {HTMLCanvasElement|null} */ let waveformCanvas;
+    /** @type {CanvasRenderingContext2D|null} */ let waveformCtx; // Context reference
     /** @type {HTMLCanvasElement|null} */ let spectrogramCanvas;
+    /** @type {CanvasRenderingContext2D|null} */ let spectrogramCtx; // Context reference
     /** @type {HTMLSpanElement|null} */ let spectrogramSpinner;
     /** @type {HTMLDivElement|null} */ let waveformProgressIndicator;
     /** @type {HTMLDivElement|null} */ let spectrogramProgressIndicator;
+    /** @type {HTMLSpanElement|null} */ let waveformVadIndicator; // Indicator on waveform canvas
     // VAD Output
     /** @type {HTMLPreElement|null} */ let speechRegionsDisplay; // Still referenced even if hidden
 
@@ -73,6 +78,7 @@ AudioApp.uiManager = (function() {
         hiddenAudioFile = document.getElementById('hiddenAudioFile');
         fileNameDisplay = document.getElementById('fileNameDisplay');
         fileInfo = document.getElementById('fileInfo');
+        vadProgressContainer = document.getElementById('vadProgressContainer'); // Get progress bar
 
         // Playback
         playPauseButton = document.getElementById('playPause');
@@ -109,16 +115,19 @@ AudioApp.uiManager = (function() {
 
         // Visuals
         waveformCanvas = document.getElementById('waveformCanvas');
+        if (waveformCanvas) waveformCtx = waveformCanvas.getContext('2d'); // Get context
         spectrogramCanvas = document.getElementById('spectrogramCanvas');
+         if (spectrogramCanvas) spectrogramCtx = spectrogramCanvas.getContext('2d'); // Get context
         spectrogramSpinner = document.getElementById('spectrogramSpinner');
         waveformProgressIndicator = document.getElementById('waveformProgressIndicator');
         spectrogramProgressIndicator = document.getElementById('spectrogramProgressIndicator');
+        waveformVadIndicator = document.getElementById('waveformVadIndicator'); // Get waveform overlay
 
         // Speech Info (even if hidden, might be needed for debugging later)
         speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
 
-        // Simple check
-        if (!chooseFileButton || !hiddenAudioFile || !playPauseButton || !seekBar || !playbackSpeedControl ) {
+        // Simple check including new element
+        if (!chooseFileButton || !hiddenAudioFile || !playPauseButton || !seekBar || !playbackSpeedControl || !vadProgressContainer) {
              console.warn("UIManager: Could not find all required UI elements!");
         }
     }
@@ -164,24 +173,21 @@ AudioApp.uiManager = (function() {
      * @private
      */
     function setupEventListeners() {
-        // --- File Input (New Logic) ---
+        // File Input
         chooseFileButton?.addEventListener('click', () => {
-            hiddenAudioFile?.click(); // Trigger click on hidden input
+            hiddenAudioFile?.click();
         });
-
         hiddenAudioFile?.addEventListener('change', (e) => {
             const file = e.target.files?.[0];
             if (file) {
-                updateFileName(file.name); // Update display span
+                updateFileName(file.name);
                 dispatchUIEvent('audioapp:fileSelected', { file: file });
             } else {
-                updateFileName("No file chosen");
+                updateFileName(""); // Use empty string if no file chosen
             }
-            // Optional: Blur button after selection?
-            // chooseFileButton?.blur();
         });
 
-        // --- Seek Bar Input ---
+        // Seek Bar Input
         seekBar?.addEventListener('input', (e) => {
             const target = e.target;
             const fraction = parseFloat(target.value);
@@ -189,7 +195,6 @@ AudioApp.uiManager = (function() {
                 dispatchUIEvent('audioapp:seekBarInput', { fraction: fraction });
             }
         });
-
 
         // Playback Buttons
         playPauseButton?.addEventListener('click', () => dispatchUIEvent('audioapp:playPauseClicked'));
@@ -223,10 +228,10 @@ AudioApp.uiManager = (function() {
      * @param {string} eventName
      * @param {string} detailKey
      * @param {string} [suffix=''] - Suffix for the value display (e.g., 'x')
+     * @private
      */
     function setupSliderListeners(slider, valueDisplay, eventName, detailKey, suffix = '') {
         if (!slider || !valueDisplay) return;
-
         slider.addEventListener('input', () => {
             const value = parseFloat(slider.value);
             valueDisplay.textContent = value.toFixed(2) + suffix;
@@ -235,7 +240,7 @@ AudioApp.uiManager = (function() {
     }
 
      // --- Specific Event Handlers ---
-    /** Handles keydown. @param {KeyboardEvent} e @private */
+    /** Handles keydown for shortcuts. @param {KeyboardEvent} e @private */
      function handleKeyDown(e) {
          const target = e.target;
          // Ignore keydowns if focused on an input/textarea
@@ -246,18 +251,15 @@ AudioApp.uiManager = (function() {
          let handled = false;
          let eventKey = null;
          switch (e.code) {
-             case 'Space':
-                 eventKey = 'Space'; handled = true; break;
-             case 'ArrowLeft':
-                 eventKey = 'ArrowLeft'; handled = true; break;
-             case 'ArrowRight':
-                 eventKey = 'ArrowRight'; handled = true; break;
+             case 'Space': eventKey = 'Space'; handled = true; break;
+             case 'ArrowLeft': eventKey = 'ArrowLeft'; handled = true; break;
+             case 'ArrowRight': eventKey = 'ArrowRight'; handled = true; break;
          }
          if (eventKey) {
              dispatchUIEvent('audioapp:keyPressed', { key: eventKey });
          }
          if (handled) {
-             e.preventDefault(); // Prevent space scrolling, arrow key moving range inputs etc.
+             e.preventDefault(); // Prevent default actions like space scrolling
          }
      }
     /** Handles VAD slider input. @param {Event} e @private */
@@ -284,34 +286,35 @@ AudioApp.uiManager = (function() {
             const value = parseFloat(target.dataset.value);
             if (!isNaN(value)) {
                 sliderElement.value = String(value);
-                // Dispatch input event to trigger slider logic and event dispatch
                 sliderElement.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
     }
 
     // --- Helper to Dispatch Custom Events ---
-    /** Dispatches event. @param {string} eventName @param {object} [detail={}] @private */
+    /** Dispatches event on document. @param {string} eventName @param {object} [detail={}] @private */
     function dispatchUIEvent(eventName, detail = {}) {
-        // console.log(`UIManager: Dispatching ${eventName}`, detail); // Debug logging
         document.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
     }
 
     // --- Public Methods for Updating UI ---
 
     /**
-     * Resets UI elements to their initial state.
+     * Resets UI elements to their initial state (e.g., on file load or error).
      * @public
      */
     function resetUI() {
         console.log("UIManager: Resetting UI");
-        updateFileName("No file chosen"); // Reset file name display
+        updateFileName(""); // Clear file name
         setFileInfo("No file selected.");
         setPlayButtonState(false);
         updateTimeDisplay(0, 0);
         updateSeekBar(0); // Reset seek bar position
         setSpeechRegionsText("None");
-        updateVadDisplay(0.5, 0.35, true);
+        updateVadDisplay(0.5, 0.35, true); // Reset VAD display
+        showWaveformVadIndicator(false); // Hide VAD overlay
+        showVadProgress(false); // Hide VAD progress bar
+        if (vadProgressContainer) vadProgressContainer.innerHTML = ''; // Clear progress segments
 
         // Reset sliders to default values and update displays
         if (playbackSpeedControl) playbackSpeedControl.value = "1.0";
@@ -324,52 +327,79 @@ AudioApp.uiManager = (function() {
         if (gainValueDisplay) gainValueDisplay.textContent = "1.00x";
         if (jumpTimeInput) jumpTimeInput.value = "5";
 
+        // Disable controls that require loaded audio
         enablePlaybackControls(false);
-        enableSeekBar(false); // Disable seek bar initially
+        enableSeekBar(false);
         enableVadControls(false);
     }
 
     /**
      * Sets the text in the file name display span.
-     * @param {string} text
+     * @param {string} text - The file name or status text.
      * @public
      */
     function updateFileName(text) {
         if (fileNameDisplay) {
             fileNameDisplay.textContent = text;
+            fileNameDisplay.title = text; // Add tooltip for long names
         }
     }
 
-    /** Sets file info text. @param {string} text @public */
+    /**
+     * Sets the file info/status text paragraph.
+     * @param {string} text - The status message.
+     * @public
+     */
     function setFileInfo(text) {
-        if (fileInfo) fileInfo.textContent = text;
-    }
-    /** Sets play/pause button text. @param {boolean} isPlaying @public */
-    function setPlayButtonState(isPlaying) {
-        if (playPauseButton) playPauseButton.textContent = isPlaying ? 'Pause' : 'Play';
-    }
-    /** Updates time display. @param {number} currentTime @param {number} duration @public */
-    function updateTimeDisplay(currentTime, duration) {
-        if (timeDisplay) timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+        if (fileInfo) {
+            fileInfo.textContent = text;
+            fileInfo.title = text; // Add tooltip for potentially clipped text
+        }
     }
 
     /**
-     * Updates the seek bar's position.
+     * Sets the text of the play/pause button.
+     * @param {boolean} isPlaying - True if audio is currently playing.
+     * @public
+     */
+    function setPlayButtonState(isPlaying) {
+        if (playPauseButton) {
+            playPauseButton.textContent = isPlaying ? 'Pause' : 'Play';
+        }
+    }
+
+    /**
+     * Updates the time display (e.g., "0:15 / 1:30").
+     * @param {number} currentTime - The current playback time in seconds.
+     * @param {number} duration - The total audio duration in seconds.
+     * @public
+     */
+    function updateTimeDisplay(currentTime, duration) {
+        if (timeDisplay) {
+            timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+        }
+    }
+
+    /**
+     * Updates the visual position of the seek bar.
      * @param {number} fraction - Playback progress fraction (0.0 to 1.0).
      * @public
      */
     function updateSeekBar(fraction) {
         if (seekBar) {
-             // Ensure value is within range [0, 1]
              const clampedFraction = Math.max(0, Math.min(1, fraction));
-             // Only update if the value actually changes to avoid feedback loops
-             if (parseFloat(seekBar.value) !== clampedFraction) {
-                seekBar.value = String(clampedFraction);
+             // Only update if the value actually changes significantly to avoid feedback loops
+             if (Math.abs(parseFloat(seekBar.value) - clampedFraction) > 1e-6 ) {
+                 seekBar.value = String(clampedFraction);
              }
         }
     }
 
-    /** Sets speech regions text (in hidden pre element). @param {string | Array<{start: number, end: number}>} regionsOrText @public */
+    /**
+     * Sets the text content of the speech regions display element.
+     * @param {string | Array<{start: number, end: number}>} regionsOrText - Text or array of regions.
+     * @public
+     */
     function setSpeechRegionsText(regionsOrText) {
         if (!speechRegionsDisplay) return; // Element might be removed if never used
         if (typeof regionsOrText === 'string') {
@@ -387,11 +417,18 @@ AudioApp.uiManager = (function() {
         }
     }
 
-    /** Updates VAD displays. @param {number} positive @param {number} negative @param {boolean} [isNA=false] @public */
+    /**
+     * Updates the VAD threshold sliders and their value displays.
+     * @param {number} positive - The positive threshold value.
+     * @param {number} negative - The negative threshold value.
+     * @param {boolean} [isNA=false] - If true, displays "N/A" instead of values.
+     * @public
+     */
     function updateVadDisplay(positive, negative, isNA = false) {
         if (isNA) {
             if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = "N/A";
             if (vadNegativeThresholdValueDisplay) vadNegativeThresholdValueDisplay.textContent = "N/A";
+            // Reset sliders to default visually even if displaying N/A
             if (vadThresholdSlider) vadThresholdSlider.value = "0.5";
             if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.value = "0.35";
         } else {
@@ -402,7 +439,11 @@ AudioApp.uiManager = (function() {
         }
     }
 
-    /** Enables/disables playback controls. @param {boolean} enable @public */
+    /**
+     * Enables or disables main playback control buttons and sliders.
+     * @param {boolean} enable - True to enable, false to disable.
+     * @public
+     */
     function enablePlaybackControls(enable) {
         if (playPauseButton) playPauseButton.disabled = !enable;
         if (jumpBackButton) jumpBackButton.disabled = !enable;
@@ -410,53 +451,139 @@ AudioApp.uiManager = (function() {
         if (playbackSpeedControl) playbackSpeedControl.disabled = !enable;
         if (pitchControl) pitchControl.disabled = !enable;
         if (formantControl) formantControl.disabled = !enable;
-        // Gain is always enabled
+        // Note: Gain control is usually always enabled.
     }
 
     /**
-     * Enables/disables the seek bar.
-     * @param {boolean} enable
+     * Enables or disables the main seek bar.
+     * @param {boolean} enable - True to enable, false to disable.
      * @public
      */
      function enableSeekBar(enable) {
          if (seekBar) seekBar.disabled = !enable;
      }
 
-    /** Enables/disables VAD controls. @param {boolean} enable @public */
+    /**
+     * Enables or disables the VAD threshold sliders.
+     * @param {boolean} enable - True to enable, false to disable.
+     * @public
+     */
     function enableVadControls(enable) {
         if (vadThresholdSlider) vadThresholdSlider.disabled = !enable;
         if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.disabled = !enable;
     }
 
-    /** Gets jump time value. @returns {number} @public */
+    /**
+     * Gets the current jump time value from the input field.
+     * @returns {number} The jump time in seconds.
+     * @public
+     */
     function getJumpTime() {
-        return parseFloat(jumpTimeInput?.value) || 5;
+        return parseFloat(jumpTimeInput?.value) || 5; // Default to 5s if input is invalid
     }
 
-    /** Formats time. @param {number} sec @returns {string} @private */
+    /**
+     * Formats time in seconds to a "M:SS" string.
+     * @param {number} sec - Time in seconds.
+     * @returns {string} Formatted time string.
+     * @private
+     */
     function formatTime(sec) {
         if (isNaN(sec) || sec < 0) sec = 0;
         const minutes = Math.floor(sec / 60);
         const seconds = Math.floor(sec % 60);
-        return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
+        return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`; // Add leading zero to seconds if needed
     }
+
+    /**
+     * Shows or hides the VAD analysis indicator on the waveform canvas.
+     * @param {boolean} show - True to show, false to hide.
+     * @public
+     */
+    function showWaveformVadIndicator(show) {
+        if (waveformVadIndicator) {
+            waveformVadIndicator.style.display = show ? 'inline-block' : 'none';
+        }
+    }
+
+
+    // --- VAD Segmented Progress Bar Functions ---
+
+    /**
+     * Initializes the VAD progress bar by creating the segment elements.
+     * @param {number} totalSegments - The total number of segments to display.
+     * @public
+     */
+    function initVadProgress(totalSegments) {
+        if (!vadProgressContainer) return;
+        vadProgressContainer.innerHTML = ''; // Clear previous segments
+        const count = Math.max(0, Math.floor(totalSegments));
+        const fragment = document.createDocumentFragment(); // Use fragment for efficiency
+        for (let i = 0; i < count; i++) {
+            const segment = document.createElement('div');
+            segment.className = 'vad-progress-segment';
+            fragment.appendChild(segment);
+        }
+        vadProgressContainer.appendChild(fragment);
+    }
+
+    /**
+     * Updates the VAD progress bar to show a certain number of filled segments.
+     * @param {number} filledSegments - The number of segments that should appear filled.
+     * @public
+     */
+    function updateVadProgress(filledSegments) {
+        if (!vadProgressContainer) return;
+        const segments = vadProgressContainer.children;
+        const count = segments.length;
+        if (count === 0) return; // Avoid errors if not initialized
+        const filledCount = Math.max(0, Math.min(Math.floor(filledSegments), count)); // Clamp value
+
+        // Optimize by only changing classes if needed
+        for (let i = 0; i < count; i++) {
+            const segment = segments[i];
+            const shouldBeFilled = i < filledCount;
+            const isFilled = segment.classList.contains('filled');
+            if (shouldBeFilled && !isFilled) {
+                segment.classList.add('filled');
+            } else if (!shouldBeFilled && isFilled) {
+                segment.classList.remove('filled');
+            }
+        }
+    }
+
+    /**
+     * Shows or hides the VAD progress bar container.
+     * @param {boolean} show - True to show, false to hide.
+     * @public
+     */
+    function showVadProgress(show) {
+        if (vadProgressContainer) {
+            vadProgressContainer.style.display = show ? 'block' : 'none';
+        }
+    }
+
 
     // --- Public Interface ---
     return {
         init: init,
         resetUI: resetUI,
         setFileInfo: setFileInfo,
+        updateFileName: updateFileName, // Expose filename update
         setPlayButtonState: setPlayButtonState,
         updateTimeDisplay: updateTimeDisplay,
-        setSpeechRegionsText: setSpeechRegionsText, // Keep even if hidden, for debug
+        updateSeekBar: updateSeekBar,
+        setSpeechRegionsText: setSpeechRegionsText,
         updateVadDisplay: updateVadDisplay,
         enablePlaybackControls: enablePlaybackControls,
+        enableSeekBar: enableSeekBar,
         enableVadControls: enableVadControls,
         getJumpTime: getJumpTime,
-        // New exports:
-        updateSeekBar: updateSeekBar,
-        updateFileName: updateFileName,
-        enableSeekBar: enableSeekBar
+        showWaveformVadIndicator: showWaveformVadIndicator, // Keep overlay indicator function for now
+        // Expose VAD progress functions
+        initVadProgress: initVadProgress,
+        updateVadProgress: updateVadProgress,
+        showVadProgress: showVadProgress
     };
 })(); // End of uiManager IIFE
 // --- /vibe-player/js/uiManager.js ---

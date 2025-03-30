@@ -81,6 +81,42 @@ section h2, section h3 {
     text-overflow: ellipsis;
 }
 
+/* --- NEW: VAD Progress Bar Styles --- */
+.vad-progress-container {
+    width: 100%;
+    height: 18px; /* Height of the progress bar */
+    box-sizing: border-box;
+    /* Sunken border like a text input */
+    border: 1px solid;
+    border-color: grey #fff #fff grey;
+    box-shadow: inset 1px 1px #0a0a0a;
+    padding: 2px; /* Inner padding */
+    background-color: silver; /* Background if needed */
+    display: none; /* Hidden by default */
+    overflow: hidden; /* Prevent segments from overflowing */
+}
+.vad-progress-segment {
+    display: inline-block; /* Allows segments to sit side-by-side */
+    width: 8px; /* Width of each segment block */
+    height: 100%; /* Fill the container height */
+    background-color: silver; /* Default background (empty) */
+    border-left: 1px solid silver; /* Default border */
+    border-right: 1px solid silver; /* Default border */
+    box-sizing: border-box;
+    margin-right: 2px; /* Space between segments */
+}
+.vad-progress-segment:first-child {
+    margin-left: 0; /* No left margin for the first segment */
+}
+/* Style for filled segments */
+.vad-progress-segment.filled {
+    background-color: navy; /* Win9x progress bar blue */
+    /* Optional: Add slight inset effect */
+    border-left: 1px solid navy;
+    border-right: 1px solid navy;
+    /* Or use a border-image if a more complex pixel effect is desired */
+}
+
 
 /* --- Seek Bar Section --- */
 #playback-progress {
@@ -237,7 +273,6 @@ input[type=range] {
 #vad-tuning .slider-label-value span {
     margin-left: 6px;
     font-size: 15px;
-    /* font-family: inherit; */ /* Inherited via body */
 }
 #vad-tuning input[type=range] {
     margin: 4px 0 4px 0; /* Reduced margin */
@@ -255,7 +290,7 @@ input[type=range] {
     background-color: silver;
 }
 .canvas-container {
-    position: relative;
+    position: relative; /* Ensure container is positioned for absolute children */
 }
 .visualization h3 {
     margin: 0 0 4px 0; /* Reduced margin */
@@ -268,6 +303,23 @@ input[type=range] {
 .visualization h3 small {
     font-size: 15px;
     font-weight: normal;
+}
+/* Style for the overlay indicator on waveform */
+.vad-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.65);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 15px;
+    font-family: "Pixelated MS Sans Serif", Arial;
+    z-index: 10;
+    display: none; /* Hidden by default */
+    pointer-events: none;
+    white-space: nowrap;
 }
 canvas {
     display: block;

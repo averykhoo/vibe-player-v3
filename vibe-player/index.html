@@ -7,27 +7,27 @@
     <title>Vibe Player</title>
     <!-- Add 98.css -->
     <link rel="stylesheet" href="98.css"/>
-    <!-- Font link commented out as user has Tahoma -->
     <!-- Your custom styles (load after 98.css) -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<!-- <h1>Vibe Player</h1> -->
-
 <!-- === File Loading Section === -->
 <section id="file-loader">
     <h2>Load Audio File</h2>
-    <!-- Updated structure: Button, Name, Info all in one row -->
-    <div class="field-row" style="align-items: baseline;"> <!-- Use baseline alignment -->
+    <!-- Row for button, name, info -->
+    <div class="field-row" style="align-items: baseline;">
         <button id="chooseFileButton">Choose File...</button>
-        <!-- Initial text set to empty -->
         <span id="fileNameDisplay" style="margin-left: 5px; flex-shrink: 1; min-width: 80px;"></span>
-        <!-- Moved fileInfo paragraph inside the field-row -->
-        <p id="fileInfo" style="margin-left: 10px; flex-grow: 1; color: grey;"></p> <!-- Added style for grey text -->
+        <p id="fileInfo" style="margin-left: 10px; flex-grow: 1; color: grey;"></p>
     </div>
-    <!-- Hidden actual file input remains the same -->
+    <!-- Hidden actual file input -->
     <input type="file" id="hiddenAudioFile" accept="audio/*" style="display: none;">
+
+    <!-- NEW: VAD Progress Bar Container -->
+    <div id="vadProgressContainer" class="vad-progress-container" style="margin-top: 5px;">
+        <!-- Segments will be added here by JS -->
+    </div>
 </section>
 
 <!-- === Controls Section === -->
