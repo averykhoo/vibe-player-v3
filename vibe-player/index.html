@@ -18,15 +18,16 @@
 <!-- === File Loading Section === -->
 <section id="file-loader">
     <h2>Load Audio File</h2>
-    <!-- New structure for file input -->
-    <div class="field-row" style="align-items: center;"> <!-- Use field-row for alignment -->
+    <!-- Updated structure: Button, Name, Info all in one row -->
+    <div class="field-row" style="align-items: baseline;"> <!-- Use baseline alignment -->
         <button id="chooseFileButton">Choose File...</button>
-        <span id="fileNameDisplay" style="margin-left: 5px;">No file chosen</span>
+        <!-- Initial text set to empty -->
+        <span id="fileNameDisplay" style="margin-left: 5px; flex-shrink: 1; min-width: 80px;"></span>
+        <!-- Moved fileInfo paragraph inside the field-row -->
+        <p id="fileInfo" style="margin-left: 10px; flex-grow: 1; color: grey;"></p> <!-- Added style for grey text -->
     </div>
-    <!-- Hidden actual file input -->
+    <!-- Hidden actual file input remains the same -->
     <input type="file" id="hiddenAudioFile" accept="audio/*" style="display: none;">
-    <!-- Info text -->
-    <p id="fileInfo" style="margin-top: 5px;">No file selected.</p>
 </section>
 
 <!-- === Controls Section === -->

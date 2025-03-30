@@ -4,7 +4,8 @@
 body {
   font-family: "Pixelated MS Sans Serif", Arial;
   font-size: 15px;
-  margin: 15px;
+  /* Further reduced body margin */
+  margin: 8px;
   background-color: silver;
   color: #222;
   -webkit-font-smoothing: none;
@@ -19,57 +20,65 @@ body {
 /* Style H2 and H3 */
 h2, h3 {
   border-bottom: 1px solid grey;
-  padding-bottom: 3px;
-  margin-top: 1.2em;
-  margin-bottom: 0.7em;
+  padding-bottom: 1px; /* Reduced padding */
+  /* Reduced margins */
+  margin-top: 0.8em;
+  margin-bottom: 0.4em;
   font-weight: bold;
-  /* Make headers the same size as body text */
   font-size: 15px;
 }
 
-/* Remove specific H2/H3 size overrides */
-/*
-h2 {
-    font-size: 18px;
-}
-h3 {
-    font-size: 16px;
-}
-*/
-
 /* --- Layout Sections --- */
 section {
-  margin-bottom: 15px;
+  /* Reduced margin and padding */
+  margin-bottom: 8px;
   background: silver;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
-  padding: 12px;
+  padding: 6px 8px; /* Reduced vertical padding, keep horizontal */
 }
 
 section h2, section h3 {
     margin-top: 0;
-    margin-bottom: 0.6em;
+    margin-bottom: 0.4em; /* Reduced margin */
 }
 
 /* --- File Input --- */
 #hiddenAudioFile {
     display: none;
 }
+/* Adjust styles for inlined elements */
+#file-loader .field-row {
+    /* Align items vertically */
+    align-items: baseline; /* Changed from center */
+}
 #file-loader .field-row button {
     flex-shrink: 0;
     font-size: 15px;
+    min-height: 26px; /* Slightly reduced button height */
+    padding: 1px 10px; /* Adjusted padding */
 }
 #file-loader .field-row span#fileNameDisplay {
-    margin-left: 8px;
+    margin-left: 6px; /* Keep small left margin */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-grow: 1;
+    /* Allow shrinking, but maintain some width */
+    flex-shrink: 1;
+    min-width: 80px;
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.4; /* Adjusted line height */
 }
 #file-loader p#fileInfo {
-    margin-top: 6px;
+    /* Reset default paragraph margins */
+    margin: 0 0 0 10px; /* Only left margin */
+    /* Allow to take remaining space */
+    flex-grow: 1;
     font-size: 15px;
+    /* Make status text less prominent */
+    color: grey;
+    white-space: nowrap; /* Prevent wrapping */
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 
@@ -77,8 +86,8 @@ section h2, section h3 {
 #playback-progress {
     display: flex;
     align-items: center;
-    padding: 5px 0px;
-    margin-bottom: 8px;
+    padding: 2px 0px; /* Reduced padding */
+    margin-bottom: 4px; /* Reduced margin */
     background: none;
     box-shadow: none;
     border-image: none;
@@ -86,7 +95,7 @@ section h2, section h3 {
 }
 #playback-progress input[type=range]#seekBar {
     flex-grow: 1;
-    margin: 0 10px;
+    margin: 0 8px; /* Keep horizontal margin */
     height: auto;
     vertical-align: middle;
 }
@@ -104,32 +113,32 @@ section h2, section h3 {
 
 /* --- Controls Section --- */
 #controls button, #controls input[type=number] {
-  margin: 0 5px;
+  margin: 0 4px; /* Reduced margin */
   cursor: pointer;
   vertical-align: middle;
   font-size: 15px;
 }
 #controls button {
-    min-height: 28px;
-    padding: 2px 12px;
+    min-height: 26px; /* Match file button height */
+    padding: 1px 10px; /* Match file button padding */
 }
 #controls .control-group {
-    margin-bottom: 8px;
+    margin-bottom: 5px; /* Reduced margin */
 }
 #controls .control-group:last-child {
     margin-bottom: 0;
 }
 #controls .jump-controls {
-    margin-bottom: 15px;
-    margin-top: 12px;
+    margin-bottom: 8px; /* Reduced margin */
+    margin-top: 6px; /* Reduced margin */
     display: flex;
     align-items: center;
     justify-content: center;
 }
 #controls .jump-controls input[type=number] {
-    width: 60px;
-    height: 28px;
-    padding: 3px 4px;
+    width: 50px; /* Reduced width */
+    height: 26px; /* Match button height */
+    padding: 2px 3px; /* Adjusted padding */
     box-shadow: inset -1px -1px #fff,inset 1px 1px grey,inset -2px -2px #dfdfdf,inset 2px 2px #0a0a0a;
     border: none;
 }
@@ -138,17 +147,17 @@ section h2, section h3 {
 .horizontal-sliders {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 12px;
+    gap: 8px; /* Keep reduced gap */
+    margin-top: 6px;
     align-items: flex-start;
 }
 /* Individual slider units - Equal Width */
 .horizontal-sliders .slider-unit {
     flex: 1;
-    min-width: 200px;
+    min-width: 180px; /* Adjusted min-width */
     margin-bottom: 0;
-    /* Increase horizontal padding again */
-    padding: 10px 12px 1.8em 12px; /* INCREASED horizontal padding */
+    /* Increase horizontal padding, decrease bottom padding */
+    padding: 6px 15px 6px 15px; /* INCREASED horizontal to 15px, DECREASED bottom to 1.0em */
 }
 
 
@@ -161,29 +170,24 @@ section h2, section h3 {
     background-color: silver;
 }
 .slider-label-value {
-    margin-bottom: 6px;
-    /* Ensure label uses base font size */
+    margin-bottom: 2px;
     font-size: 15px;
 }
 .slider-label-value label {
-    margin-right: 5px;
+    margin-right: 4px;
     font-weight: bold;
     display: inline;
-    /* Ensure label size is explicitly set if needed */
     font-size: 15px;
 }
 .slider-label-value span {
-    /* Change font to inherit from body */
-    /* font-family: monospace; */
     display: inline;
     margin-left: 3px;
-    /* Ensure value size matches base */
     font-size: 15px;
 }
 input[type=range] {
     width: 100%;
     box-sizing: border-box;
-    margin: 10px 0 10px 0;
+    margin: 4px 0 4px 0;
     height: 21px;
     cursor: pointer;
     display: block;
@@ -192,17 +196,17 @@ input[type=range] {
 .slider-markers {
     position: relative;
     width: 100%;
-    height: 1.5em;
-    margin-top: 6px;
+    height: 1.3em; /* Keep this height */
+    margin-top: 2px;
 }
 .slider-markers span {
     position: absolute;
-    bottom: 0;
+    bottom: 0; /* Keep marker text aligned to the bottom of its container */
     color: #222;
     cursor: pointer;
     transform: translateX(-50%);
     white-space: nowrap;
-    font-size: 15px; /* Set marker font size to base */
+    font-size: 15px;
 }
 .slider-markers span:hover {
     color: #00f;
@@ -214,8 +218,7 @@ input[type=range] {
     margin-top: 0;
 }
 #vad-tuning .slider-unit {
-    /* Increase horizontal padding for VAD unit */
-    padding: 10px 12px 10px 12px; /* INCREASED horizontal padding */
+    padding: 6px 8px 6px 8px; /* Reduced vertical padding */
 }
 #vad-tuning .control-group {
     margin-bottom: 0;
@@ -225,49 +228,45 @@ input[type=range] {
      justify-content: flex-start;
      align-items: center;
      width: 100%;
-     margin-bottom: 6px;
-     /* Ensure font size is base */
+     margin-bottom: 2px; /* Reduced margin */
      font-size: 15px;
 }
 #vad-tuning .slider-label-value label {
-    /* Ensure font size is base */
     font-size: 15px;
 }
 #vad-tuning .slider-label-value span {
     margin-left: 6px;
-    /* Ensure font size is base */
     font-size: 15px;
-     /* Change font to inherit from body */
-    /* font-family: monospace; */
+    /* font-family: inherit; */ /* Inherited via body */
 }
 #vad-tuning input[type=range] {
-    margin: 10px 0 10px 0;
+    margin: 4px 0 4px 0; /* Reduced margin */
     height: 21px;
 }
 
 
 /* --- Visualizations Section --- */
 .visualization {
-    margin-bottom: 15px;
+    margin-bottom: 8px; /* Reduced margin */
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
-    padding: 8px;
+    padding: 4px 6px; /* Reduced padding */
     background-color: silver;
 }
 .canvas-container {
     position: relative;
 }
 .visualization h3 {
-    margin: 0 0 8px 0;
+    margin: 0 0 4px 0; /* Reduced margin */
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: none;
-    font-size: 15px; /* Ensure header matches base */
+    font-size: 15px;
 }
 .visualization h3 small {
-    font-size: 15px; /* Ensure small matches base */
+    font-size: 15px;
     font-weight: normal;
 }
 canvas {
@@ -306,18 +305,19 @@ canvas {
     font-weight: normal;
 }
 #speechRegionsDisplay {
-    white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-all; max-height: 120px; /* Reduced max height */ overflow-y: auto;
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-    padding: 4px 5px;
-    font-family: monospace; /* Keep monospace for this specific display */
+    padding: 2px 3px; /* Reduced padding */
+    font-family: monospace;
     font-size: 15px;
+    line-height: 1.2; /* Reduced line height */
 }
 
 
 /* --- Keybinds Table --- */
-#keybinds { margin-top: 15px; }
+#keybinds { margin-top: 8px; /* Reduced margin */ }
 #keybinds table {
     width: 100%; border-collapse: collapse;
     border: 2px groove transparent;
@@ -326,10 +326,9 @@ canvas {
     font-size: 15px;
 }
 #keybinds th, #keybinds td {
-    padding: 4px 6px;
+    padding: 2px 4px; /* Reduced padding */
     border-bottom: 1px solid silver;
     text-align: left;
-    /* Ensure explicit size */
     font-size: 15px;
 }
 #keybinds tr:last-child td {
@@ -339,15 +338,14 @@ canvas {
     background: silver;
     box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
     box-sizing: border-box; font-weight: normal;
-    padding: 3px 6px;
+    padding: 2px 4px; /* Reduced padding */
     border-bottom: 1px solid #0a0a0a;
-     /* Ensure explicit size */
     font-size: 15px;
 }
 
 /* --- Small Tag --- */
 small {
-  font-size: 15px; /* Ensure small tag matches base */
+  font-size: 15px;
 }
 
 /* /vibe-player/styles.css */
