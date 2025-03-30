@@ -13,14 +13,25 @@ This document outlines the principles and procedures for collaborating with an L
     *   **Reason:** Ensures user control over design/architecture, prevents wasted generation cycles, maintains focus.
     *   **Context:** When initiating any non-trivial change (code or documentation).
     *   **Action:** LLM first states understanding, outlines proposed changes (logic/content points only) & implications -> Discuss approach with user -> **Explicitly ask for confirmation** -> Only then generate the specific code/text block.
-*   **Sub-point: Focused Change Blocks**
-    *   **Reason:** Facilitates user's copy-paste workflow, isolates changes for testing, minimizes token usage for LLM generation.
-    *   **Context:** When providing generated code or text as part of the workflow.
-    *   **Action:** LLM provides **only one** logical block (single line diff, full function, section, etc.) per response. Keep blocks concise.
-*   **Sub-point: Multi-Step Change Tracking**
-    *   **Reason:** Provides clarity on progress during sequences of related changes.
-    *   **Context:** When a single logical change requires multiple LLM responses to implement fully.
-    *   **Action:** LLM uses a tracker (`Fixing X | Fixed: Y | To Be Fixed: Z`) at the start of responses *during* that sequence. Tracker is **dropped** once the sequence is confirmed complete by the user.
+*   **Sub-point: One Actionable Block Per Response**
+    *   **Reason:** Prevents excessively long responses, making it easier for the user to review, copy, paste, and test individual changes without excessive scrolling. Isolates changes.
+    *   **Context:** When delivering *any* generated output requiring user action (code block, documentation section, file content).
+    *   **Action:** LLM **must** provide only **one** distinct actionable block (e.g., one function replacement, one documentation section, one file) per response.
+*   **Sub-point: Sequenced Task Tracking & Execution**
+    *   **Reason:** Provides clarity on progress during complex tasks involving multiple steps or outputs. Ensures user control over the flow.
+    *   **Context:** When a single logical goal requires multiple LLM responses (e.g., modifying several files, generating multiple related functions, updating docs then code).
+    *   **Action:** LLM uses a Markdown list/checklist tracker at the start of the *first* response in the sequence. For each subsequent step:
+        1.  Update the tracker (e.g., check off completed items).
+        2.  Generate the **one** block for the *current* step.
+        3.  Explicitly **ask for user confirmation** ("Ready to proceed with the next step: [description]?") before generating the output for the next item in the sequence.
+        4.  **Stop showing the tracker** once the entire sequence is confirmed complete by the user.
+    *   **Example Tracker:**
+        ```markdown
+        Tracker:
+        - [x] Update function `calculateTotal` in `utils.js`
+        - [ ] Add documentation for `calculateTotal`
+        - [ ] Update `README.md` usage example
+        ```
 
 ### Principle 2: Clarity & Explicit Communication
 
@@ -31,7 +42,7 @@ This document outlines the principles and procedures for collaborating with an L
 *   **Sub-point: Explanation of Changes**
     *   **Reason:** Keeps the user informed of the rationale, especially regarding design choices or non-obvious logic. Aids user learning and architectural oversight.
     *   **Context:** When providing any generated code or text block.
-    *   **Action:** LLM briefly explains *what* the block does and *why* the specific approach was taken, especially if there were alternatives.
+    *   **Action:** LLM briefly explains *what* the block does and *why* the specific approach was taken (outside the code block itself), especially if there were alternatives.
 
 ### Principle 3: Maintainability & Consistency
 
@@ -54,9 +65,9 @@ This document outlines the principles and procedures for collaborating with an L
 
 ### Principle 4: Standardized Code Presentation
 
-*   **Reason:** Provides a consistent, predictable format for user review and integration. Balances granularity with ease of use for multiple changes.
+*   **Reason:** Provides a consistent, predictable format for user review and integration. Balances granularity with ease of use for multiple changes. Ensures clarity by separating code from explanation.
 *   **Context:** When delivering any code modification.
-*   **Action:** LLM uses the following formats *exclusively*, showing *only* the relevant code block:
+*   **Action:** LLM uses the following formats *exclusively*, showing *only* the relevant code block. **Code blocks must contain only the code itself (including necessary code comments) and no extra explanatory text or non-code annotations.** Explanations belong *outside* the code block.
     *   **Single Line:** Use diff format (`- before\n+ after`).
     *   **Function (1-2 per file):** Provide definition/skeleton (`function name(...) {...}`) in one block, then the complete updated function body (`function name(...) { ... full code ... }`) in a second block. Repeat for a second function if necessary in subsequent responses.
     *   **Section:** Provide the complete section from its start comment to its end comment/next section start.
@@ -95,7 +106,7 @@ This document outlines the principles and procedures for collaborating with an L
 
 ## Part 2: Project-Specific Guidelines (`vibe-player` Example)
 
-*(The following rules supplement or override the Global Principles specifically for the `vibe-player` project, defined by its context (e.g., location, constraints).)*
+*(The following rules supplement or override the Global Principles specifically for the `vibe-player` project, defined by its context (e.g., location, constraints). This section serves as an example for how to tailor the global guidelines.)*
 
 ### Project: Vibe Player (Located at `./vibe-player/` relative to these guidelines)
 
