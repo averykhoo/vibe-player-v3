@@ -2,60 +2,52 @@
 
 /* --- Global Styles --- */
 body {
-  /* font-family: sans-serif; */ /* Let 98.css handle base font */
+  /* Let 98.css handle base font */
   margin: 20px;
-  background-color: #f4f4f4; /* Keep a fallback background */
-  /* color: #333; */ /* Let 98.css handle base color */
+  background-color: silver; /* Match 98.css background */
+  color: #222; /* 98.css default text */
 }
 
-/* Apply 98.css body background and font if needed, or let it handle */
-body {
-    background-color: silver; /* Match 98.css background */
-}
-
-
-h1, h2, h3 {
-  /* Use default 98.css styling or keep simple border */
-  border-bottom: 1px solid #888; /* Adjust border color slightly */
-  padding-bottom: 5px;
+/* Style H2 and H3 to match 98.css aesthetic */
+h2, h3 {
+  border-bottom: 1px solid grey; /* Keep simple border */
+  padding-bottom: 3px; /* Fixed: Added semicolon */
   margin-top: 1.5em;
+  margin-bottom: 0.8em; /* Add some space below */
+  /* Apply 98.css font */
+  -webkit-font-smoothing: none;
+  font-family: "Pixelated MS Sans Serif", Arial;
+  font-weight: bold; /* Make titles bold */
 }
 
-h1 {
+h2 {
+    font-size: 14px; /* Smaller font size for H2 */
+}
+
+h3 {
+    font-size: 12px; /* Smaller font size for H3 */
+}
+
+
+/* Remove main H1 styling if H1 is removed */
+/* h1 {
     text-align: center;
     margin-bottom: 1.5em;
-    /* font will likely be overridden by 98.css body rule */
-}
+} */
 
 /* --- Layout Sections --- */
 /* Use 98.css window style for sections */
 section {
-  /* background-color: #fff; */ /* Replaced by 98.css .window */
-  /* padding: 15px; */ /* Padding comes from .window */
   margin-bottom: 20px;
-  /* border-radius: 5px; */ /* Remove border-radius */
-  /* box-shadow: 0 2px 4px rgba(0,0,0,0.1); */ /* Replaced by 98.css .window */
-
-  /* Add .window styles inline-ish for sections */
+  /* Add .window styles */
   background: silver;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
-  padding: 3px; /* Outer padding from .window */
-  /* Add inner padding if needed, similar to .window-body */
-  padding: 10px 15px 15px 15px; /* Combine outer/inner roughly */
-
+  padding: 15px; /* Keep original padding for inner content */
 }
 
-/* Add specific style for sections acting as window bodies */
-section > *:not(h2) {
-   /* Add margin similar to .window-body if needed */
-   /* margin: 8px; */ /* Maybe too much with section padding */
-}
-
-section h2 {
-    margin: -10px -15px 10px -15px; /* Adjust to fit padding */
-    padding: 5px 10px;
-    border-bottom: 1px solid grey; /* Match fieldset style */
-    background: silver; /* Consistent bg */
+/* Adjust section title margin within padding */
+section h2, section h3 {
+    margin-top: 0; /* Remove top margin for titles inside sections */
 }
 
 
@@ -63,17 +55,9 @@ section h2 {
 /* Let 98.css handle button styling */
 #controls button, #controls input[type=number] {
   margin: 0 5px;
-  /* padding: 8px 12px; */ /* 98.css handles padding */
-  /* border: 1px solid #ccc; */ /* 98.css handles border/shadow */
-  /* border-radius: 4px; */ /* 98.css handles corners */
   cursor: pointer;
   vertical-align: middle; /* Keep vertical alignment */
 }
-/* 98.css handles disabled */
-/* #controls button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-} */
 
 #controls .control-group {
     margin: 10px 0;
@@ -93,16 +77,12 @@ section h2 {
 .slider-unit {
     position: relative; /* Still needed for markers */
     margin-bottom: 15px;
-    /* Mimic 98.css fieldset or just keep simple border */
     padding: 10px 15px 1.5em 15px;
-    border: 1px solid #ddd;
-    border-radius: 0; /* No rounded corners */
-    background-color: silver; /* Match 98 theme */
-    /* box-shadow: inset 0 1px 2px rgba(0,0,0,0.05); */ /* Remove inset shadow */
-     /* Use 98.css sunken panel style */
+    /* Use 98.css sunken panel style */
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
+    background-color: silver; /* Ensure background matches */
 }
 
 
@@ -116,7 +96,6 @@ section h2 {
 
 .slider-label-value label {
     margin-right: 5px;
-    min-width: auto;
     font-weight: bold; /* Keep label bold */
     display: inline;
 }
@@ -127,23 +106,19 @@ section h2 {
     margin-left: 2px;
 }
 
-/* Styling for range input - Adapted for 98.css */
+/* Styling for range input - Let 98.css handle appearance */
 #controls input[type=range] {
     width: 100%;
     box-sizing: border-box;
     margin: 5px 0;
-    /* height: 8px; <-- REMOVED - Let 98.css handle height/appearance */
+    height: 8px;
     cursor: pointer;
     display: block;
-    /* Remove background/track/thumb styles that conflict */
-    /* appearance: none; */ /* 98.css handles appearance */
-    /* background: transparent; */ /* 98.css handles background */
 }
 
 
 /* --- Slider Tooltip --- */
-/* Removed .slider-tooltip rule */
-/* Removed .slider-tooltip::after rule */
+/* Tooltips are removed */
 
 
 /* --- Slider Markers --- */
@@ -157,7 +132,6 @@ section h2 {
 .slider-markers span {
     position: absolute;
     bottom: 0;
-    font-size: 0.8em; /* Keep smaller font */
     color: #222; /* Use 98.css default text color */
     cursor: pointer;
     transform: translateX(-50%);
@@ -169,19 +143,18 @@ section h2 {
 }
 
 .slider-markers span:hover {
-    color: #007bff; /* Keep hover effect */
+    color: #00f; /* 98.css link blue for hover */
 }
 
 /* --- Time Display --- */
 #timeDisplay {
   margin: 15px 0 5px 0;
-  font-weight: bold; /* Keep bold */
-  font-size: 14px; /* Keep font size */
   text-align: center;
    /* Use 98.css font */
   -webkit-font-smoothing: none;
   font-family: "Pixelated MS Sans Serif", Arial;
   font-size: 11px;
+  font-weight: normal; /* Normal weight for time */
 }
 
 /* --- Visualizations --- */
@@ -191,39 +164,56 @@ section h2 {
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
-    padding: 2px; /* Small padding inside border */
+    padding: 5px; /* Small padding inside border */
     background-color: silver; /* Match theme */
 }
+
 .canvas-container {
     position: relative;
 }
+/* Style visualization H3 */
 .visualization h3 {
-    margin: 5px 5px 10px 5px; /* Adjust margin */
-    font-size: 11px; /* Use 98.css font size */
+    margin: 0 0 10px 0; /* Adjust margin */
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: none; /* Remove extra border */
-    font-weight: bold;
-     /* Use 98.css font */
+    /* font settings inherited from h3 rule above */
+}
+/* Make small text inside H3 also use 98 font */
+.visualization h3 small {
     -webkit-font-smoothing: none;
     font-family: "Pixelated MS Sans Serif", Arial;
+    font-size: 10px;
+    font-weight: normal; /* Normal weight for small text */
 }
 canvas {
-    background-color: #fff; /* Keep canvas white */
-    /* border: 1px solid #ccc; */ /* Remove default border, use container border */
+    /* background-color: #fff; */ /* Default background is white */
     display: block;
     width: 100%;
     height: 120px;
     cursor: crosshair;
     box-sizing: border-box;
+    /* Add border around canvas for clarity */
+    border: 1px solid grey;
+    box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px grey;
 }
-#spectrogramCanvas { height: 200px; }
+
+/* Specific Waveform Canvas Style */
+#waveformCanvas {
+    background-color: #000; /* Black background */
+}
+
+#spectrogramCanvas {
+    height: 200px;
+    background-color: #fff; /* Keep spectrogram white background */
+}
+
 
 /* --- Progress Bar Overlay --- */
 .progress-bar { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; box-sizing: border-box; }
-#waveformProgressBar { height: 120px; }
-#spectrogramProgressBar { height: 200px; }
+#waveformProgressBar { height: 120px; /* Match canvas height */ }
+#spectrogramProgressBar { height: 200px; /* Match canvas height */ }
 .progress-indicator {
     position: absolute;
     top: 0;
@@ -232,12 +222,10 @@ canvas {
     width: 2px;
     background: rgba(255, 0, 0, 0.7); /* Keep bright red */
     pointer-events: none;
-    /* Add subtle shadow to make it stand out? */
-    /* box-shadow: 1px 0 0 rgba(0, 0, 0, 0.5); */
 }
 
 /* --- UI Elements --- */
-.spinner { display: none; font-size: 14px; color: #555; font-weight: normal; }
+.spinner { display: none; font-size: 11px; color: #222; font-weight: normal; font-family: "Pixelated MS Sans Serif", Arial; }
 #speechRegionsDisplay {
     white-space: pre-wrap;
     word-break: break-all;
@@ -249,6 +237,7 @@ canvas {
     background-color: #fff;
     padding: 3px 4px;
     font-family: monospace; /* Keep monospace */
+    font-size: 11px; /* Match 98.css font size */
 }
 
 
@@ -257,54 +246,53 @@ canvas {
 /* Style table using 98.css principles */
 #keybinds table {
     width: 100%;
-    border-collapse: collapse; /* 98css doesn't use collapse usually */
-    position: relative;
-    text-align: left;
-    white-space: nowrap;
+    border-collapse: collapse;
     /* Add sunken panel look */
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-}
-
-#keybinds th, #keybinds td {
-    /* border: 1px solid #ccc; */ /* Remove default border */
-    padding: 3px 6px; /* Adjust padding */
-    height: 17px; /* Match header height maybe */
-    border-bottom: 1px solid silver; /* Add subtle row separator */
-}
-#keybinds tr:last-child td {
-    border-bottom: none;
-}
-
-#keybinds th {
-    /* background: #f0f0f0; */ /* Use 98.css button look */
-    background: silver;
-    box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
-    box-sizing: border-box;
-    font-weight: normal; /* 98.css uses normal weight */
-    height: 17px;
-    padding: 0 6px;
-    border-bottom: 1px solid #0a0a0a; /* Darker border below header */
     /* Use 98.css font */
     -webkit-font-smoothing: none;
     font-family: "Pixelated MS Sans Serif", Arial;
     font-size: 11px;
 }
 
+#keybinds th, #keybinds td {
+    padding: 3px 6px; /* Adjust padding */
+    border-bottom: 1px solid silver; /* Add subtle row separator */
+    text-align: left; /* Ensure text aligns left */
+}
+#keybinds tr:last-child td {
+    border-bottom: none;
+}
+
+#keybinds th {
+    background: silver;
+    box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
+    box-sizing: border-box;
+    font-weight: normal; /* 98.css uses normal weight */
+    padding: 2px 6px; /* Adjust padding */
+    border-bottom: 1px solid #0a0a0a; /* Darker border below header */
+}
+
 /* --- Input File --- */
-/* Try to make the file input text align better */
 #file-loader input[type=file] {
-    /* 98.css handles button part */
-    /* Try adding some margin */
      margin-right: 5px;
 }
 #file-loader p#fileInfo {
-    margin-top: 5px; /* Add some space above file info text */
+    margin-top: 5px;
      /* Use 98.css font */
     -webkit-font-smoothing: none;
     font-family: "Pixelated MS Sans Serif", Arial;
     font-size: 11px;
+}
+
+/* --- Small Tag --- */
+/* Ensure small tag also uses 98 font */
+small {
+  -webkit-font-smoothing: none;
+  font-family: "Pixelated MS Sans Serif", Arial;
+  font-size: 10px; /* Slightly smaller */
 }
 
 /* /vibe-player/styles.css */

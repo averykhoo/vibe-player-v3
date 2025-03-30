@@ -6,13 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vibe Player</title>
     <!-- Add 98.css -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/98.css@0.1.20/dist/98.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/98.css@0.1.20/dist/98.css"/>
     <!-- Your custom styles (load after 98.css) -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<h1>Vibe Player</h1>
+<!-- <h1>Vibe Player</h1> -->
 
 <!-- === File Loading Section === -->
 <section id="file-loader">
@@ -38,32 +38,30 @@
     <!-- Speed Control Unit -->
     <div class="control-group slider-unit">
         <div class="slider-label-value">
-             <label for="playbackSpeed">Speed:</label>
-             <span id="speedValue">1.00x</span>
+            <label for="playbackSpeed">Speed:</label>
+            <span id="speedValue">1.00x</span>
         </div>
         <input type="range" id="playbackSpeed" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-        <!-- Tooltip Removed -->
         <div class="slider-markers" id="speedMarkers">
-             <span data-value="0.5">0.5x</span>
-             <span data-value="1.0">1.0x</span>
-             <span data-value="1.5">1.5x</span>
-             <span data-value="2.0">2.0x</span>
+            <span data-value="0.5">0.5x</span>
+            <span data-value="1.0">1.0x</span>
+            <span data-value="1.5">1.5x</span>
+            <span data-value="2.0">2.0x</span>
         </div>
     </div>
 
-     <!-- Pitch Control Unit -->
+    <!-- Pitch Control Unit -->
     <div class="control-group slider-unit">
-         <div class="slider-label-value">
-             <label for="pitchControl">Pitch:</label>
-             <span id="pitchValue">1.00x</span>
+        <div class="slider-label-value">
+            <label for="pitchControl">Pitch:</label>
+            <span id="pitchValue">1.00x</span>
         </div>
         <input type="range" id="pitchControl" min="0.25" max="2.0" value="1.0" step="0.01" disabled>
-        <!-- Tooltip Removed -->
         <div class="slider-markers" id="pitchMarkers">
-             <span data-value="0.5">0.5x</span>
-             <span data-value="1.0">1.0x</span>
-             <span data-value="1.5">1.5x</span>
-             <span data-value="2.0">2.0x</span>
+            <span data-value="0.5">0.5x</span>
+            <span data-value="1.0">1.0x</span>
+            <span data-value="1.5">1.5x</span>
+            <span data-value="2.0">2.0x</span>
         </div>
     </div>
 
@@ -86,18 +84,17 @@
 
     <!-- Gain Control Unit -->
     <div class="control-group slider-unit">
-         <div class="slider-label-value">
+        <div class="slider-label-value">
             <label for="gainControl">Gain:</label>
             <span id="gainValue">1.00x</span>
         </div>
         <input type="range" id="gainControl" min="1" max="5" value="1.0" step="0.01"> <!-- Gain enabled by default -->
-        <!-- Tooltip Removed -->
         <div class="slider-markers" id="gainMarkers">
-             <span data-value="1.0">1x</span>
-             <span data-value="2.0">2x</span>
-             <span data-value="3.0">3x</span>
-             <span data-value="4.0">4x</span>
-             <span data-value="5.0">5x</span>
+            <span data-value="1.0">1x</span>
+            <span data-value="2.0">2x</span>
+            <span data-value="3.0">3x</span>
+            <span data-value="4.0">4x</span>
+            <span data-value="5.0">5x</span>
         </div>
     </div>
 
@@ -106,29 +103,39 @@
 <!-- === VAD Tuning Section === -->
 <section id="vad-tuning">
     <h2>VAD Tuning (Silero)</h2>
-    <div class="control-group">
-        <label for="vadThreshold" title="Probability above which a frame is considered speech.">Positive:</label>
-        <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
-        <span id="vadThresholdValue">N/A</span>
-    </div>
-    <div class="control-group">
-        <label for="vadNegativeThreshold"
-               title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>
-        <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
-        <span id="vadNegativeThresholdValue">N/A</span>
-    </div>
-    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>
-</section>
 
-<!-- === Speech Info Section === -->
-<section id="speech-info">
-    <h2>Detected Speech Regions</h2>
-    <pre id="speechRegionsDisplay">None</pre>
+    <div class="control-group slider-unit">
+        <div class="control-group">
+            <div class="slider-label-value">
+                <label for="vadThreshold"
+                       title="Probability above which a frame is considered speech.">Positive:</label>
+                <span id="vadThresholdValue">N/A</span>
+            </div>
+            <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
+        </div>
+        <div class="control-group">
+            <div class="slider-label-value">
+                <label for="vadNegativeThreshold"
+                       title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>
+                <span id="vadNegativeThresholdValue">N/A</span>
+            </div>
+            <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
+        </div>
+    </div>
+
+    <!-- === Speech Info Section (used for debugging, now hidden) === -->
+    <!--
+    <small>Adjust thresholds to change speech detection sensitivity. Redraws waveform highlighting in real-time.</small>
+    <section id="speech-info">
+        <h3>Detected Speech Regions</h3>
+        <pre id="speechRegionsDisplay">None</pre>
+    </section>
+    -->
 </section>
 
 <!-- === Visualizations Section === -->
 <section class="visualization">
-    <h3>Waveform <small>(Speech in Orange)</small></h3>
+    <h3>Waveform <small>(Speech in Yellow)</small></h3>
     <div class="canvas-container">
         <canvas id="waveformCanvas"></canvas>
         <div id="waveformProgressBar" class="progress-bar">
