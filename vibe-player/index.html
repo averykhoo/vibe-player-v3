@@ -26,11 +26,6 @@
     </div>
     <!-- Hidden actual file input -->
     <input type="file" id="hiddenAudioFile" accept="audio/*" style="display: none;">
-
-    <!-- NEW: VAD Progress Bar using 98.css structure -->
-    <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container" style="margin-top: 5px;">
-        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0%;"></span>
-    </div>
 </section>
 
 <!-- === Controls Section === -->
@@ -107,7 +102,12 @@
 
 <!-- === VAD Tuning Section === -->
 <section id="vad-tuning">
-    <h2>VAD Tuning (Silero)</h2>
+    <h2>Voice Activity Detection (Silero)</h2>
+
+    <!-- NEW: VAD Progress Bar using 98.css structure -->
+    <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container" style="margin-top: 5px; margin-bottom: 5px;">
+        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0%;"></span>
+    </div>
 
     <!-- Corrected Structure: Both VAD controls inside one horizontal container -->
     <div class="horizontal-sliders">
@@ -115,7 +115,7 @@
             <div class="control-group">
                 <div class="slider-label-value">
                     <label for="vadThreshold"
-                           title="Probability above which a frame is considered speech.">Positive:</label>
+                           title="Probability above which a frame is considered speech.">Positive Threshold:</label>
                     <span id="vadThresholdValue">N/A</span>
                 </div>
                 <input type="range" id="vadThreshold" min="0.01" max="0.99" value="0.5" step="0.01" disabled>
@@ -125,7 +125,7 @@
              <div class="control-group">
                 <div class="slider-label-value">
                     <label for="vadNegativeThreshold"
-                           title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative:</label>
+                           title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative Threshold:</label>
                     <span id="vadNegativeThresholdValue">N/A</span>
                 </div>
                 <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
