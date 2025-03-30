@@ -43,43 +43,96 @@ section h2, section h3 {
 #hiddenAudioFile {
     display: none;
 }
+/* Row layout: Details+Progress | Button */
 #file-loader .field-row {
-    align-items: baseline;
+    display: flex;
+    align-items: flex-start; /* Align items to the top */
 }
-#file-loader .field-row button {
-    flex-shrink: 0;
+
+#file-loader .field-row button#chooseFileButton {
+    flex-shrink: 0; /* Prevent button from shrinking */
     font-size: 15px;
-    min-height: 26px;
+    min-height: 26px; /* Base height reference */
+    height: 26px; /* Explicit height */
     padding: 1px 10px;
+    line-height: normal; /* Reset line-height if needed */
+    box-sizing: border-box;
 }
-#file-loader .field-row span#fileNameDisplay {
-    margin-left: 6px;
+
+/* Wrapper for text and progress bar - positioned relative for overlay */
+#file-loader .file-details-wrapper {
+    position: relative; /* Context for absolute positioning of text */
+    flex-grow: 1; /* Take remaining space */
+    margin-left: 6px; /* Space after button */
+    min-width: 0; /* Prevent flexbox overflow issues */
+    /* Ensure wrapper aligns vertically with button */
+    height: 26px; /* Match button height */
+}
+
+/* Text elements overlaid on top */
+#file-loader .file-details-wrapper span#fileNameDisplay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%; /* Span the full height of the wrapper/bar */
+    width: 100%;
+    z-index: 2; /* Ensure text is above progress bar */
+    color: black; /* Black text for better visibility on empty/filled bar */
+    background: transparent;
+    pointer-events: none; /* Clicks pass through text */
+    box-sizing: border-box;
+    padding: 0 5px; /* Horizontal padding */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-shrink: 1;
-    min-width: 80px;
-    font-size: 15px;
-    line-height: 1.4;
-}
-#file-loader p#fileInfo {
-    margin: 0 0 0 10px;
-    flex-grow: 1;
-    font-size: 15px;
-    color: grey;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 15px; /* Match other UI text */
+    display: flex; /* Use flex to center text vertically */
+    align-items: center; /* Vertical centering */
+    line-height: 1; /* Prevent extra space from line-height */
+    text-shadow: 1px 1px 0 #fff; /* Optional: Add white shadow for better readability on dark bar */
 }
 
-/* --- REMOVED Old VAD Progress Bar Styles --- */
-/* (No rules here anymore) */
+#file-loader .file-details-wrapper p#fileInfo {
+    margin-block-start: calc((26px - 1em) / 2);
+    margin-inline-start: 0px;
+    z-index: 95; /* Behind the text */
+    color:white;
+}
 
-/* --- NEW: Style for 98.css VAD progress bar container --- */
+
+/* Style for the VAD progress bar container (behind text) */
 #vadProgressContainer {
-    margin-top: 5px; /* Add space above the progress bar */
-    display: block; /* Ensure it's always visible */
-    /* Height is determined by 98.css */
+    position: absolute; /* Position within the wrapper */
+    top: 0;
+    left: 0;
+    z-index: 10; /* Behind the text */
+    width: 100%;
+    height: 100%; /* Fill the wrapper height (26px) */
+    display: block; /* Always visible container */
+    box-sizing: border-box;
+    margin: 0;
+    /* Override 98.css default height for progress-indicator */
+    min-height: 26px; /* Ensure it respects container height */
+}
+#vadProgressBar {
+    z-index: 10; /* Behind the text */
+}
+/* Ensure inner bar behaves correctly */
+#vadProgressContainer .progress-indicator-bar {
+    height: 100%; /* Ensure inner bar fills container height */
+    /* Background color is navy by default from 98.css */
+}
+
+
+#file-loader .field-row button#chooseFileButton {
+    flex-shrink: 0; /* Prevent button from shrinking */
+    font-size: 15px;
+    min-height: 26px; /* Base height reference */
+    height: 26px; /* Explicit height */
+    padding: 1px 10px;
+    line-height: normal; /* Reset line-height if needed */
+    box-sizing: border-box;
+    /* margin-right: 6px; */ /* Add margin if needed */
 }
 
 

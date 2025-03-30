@@ -12,25 +12,26 @@
 </head>
 <body>
 
-<!-- === REMOVED Progress Indicator Example Section === -->
-
-
 <!-- === File Loading Section === -->
 <section id="file-loader">
     <h2>Load Audio File</h2>
-    <!-- Row for button, name, info -->
-    <div class="field-row" style="align-items: baseline;">
+    <!-- Row: Button | Details+Progress -->
+    <div class="field-row">
+        <!-- Button on the left -->
         <button id="chooseFileButton">Choose File...</button>
-        <span id="fileNameDisplay" style="margin-left: 5px; flex-shrink: 1; min-width: 80px;"></span>
-        <p id="fileInfo" style="margin-left: 10px; flex-grow: 1; color: grey;"></p>
+        <!-- Wrapper for details + progress (now on the right) -->
+        <div class="file-details-wrapper">
+            <!-- VAD Progress Bar (Solid) - Visual background -->
+            <div id="vadProgressContainer" class="progress-indicator vad-progress-indicator-container">
+                <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0%;"></span>
+            </div>
+            <!-- Text overlay -->
+            <span id="fileNameDisplay"></span>
+            <p id="fileInfo"></p> <!-- Kept in HTML, hidden via CSS -->
+        </div>
     </div>
     <!-- Hidden actual file input -->
     <input type="file" id="hiddenAudioFile" accept="audio/*" style="display: none;">
-
-    <!-- NEW: VAD Progress Bar using 98.css structure -->
-    <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container" style="margin-top: 5px;">
-        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0%;"></span>
-    </div>
 </section>
 
 <!-- === Controls Section === -->
