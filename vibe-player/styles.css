@@ -287,14 +287,36 @@ canvas {
 }
 
 
-/*!* --- Progress Bar Overlay --- *!*/
-/*.progress-bar { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; box-sizing: border-box; }*/
-/*#waveformProgressBar { height: 120px; }*/
-/*#spectrogramProgressBar { height: 200px; }*/
-/*.progress-indicator {*/
-/*    position: absolute; top: 0; bottom: 0; left: 0; width: 2px;*/
-/*    background: rgba(255, 0, 0, 0.7); pointer-events: none;*/
-/*}*/
+/* ---* --- Progress Bar Overlay --- */
+/* Container for the overlay elements */
+.progress-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    pointer-events: none; /* Allow clicks through */
+    box-sizing: border-box;
+}
+/* Match height to corresponding canvas */
+#waveformProgressBar { height: 120px; }
+#spectrogramProgressBar { height: 200px; }
+
+/* The actual red line indicator - uses the NEW class name */
+.playback-position-indicator {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0px; /* Position set by JS */
+    width: 2px; /* Width of the red line */
+    background: rgba(255, 0, 0, 0.7); /* Semi-transparent red */
+    pointer-events: none; /* Allow clicks through */
+    /* Reset styles inherited from 98.css if necessary */
+    height: 100%; /* Make sure it spans full height */
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
+    min-height: auto; /* Override 98.css min-height */
+}
 
 /* --- UI Elements --- */
 .spinner {
