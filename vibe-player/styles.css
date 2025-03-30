@@ -2,172 +2,237 @@
 
 /* --- Global Styles --- */
 body {
-  /* Let 98.css handle base font */
+  font-family: "Tahoma", sans-serif; /* Base Font */
   margin: 20px;
   background-color: silver; /* Match 98.css background */
   color: #222; /* 98.css default text */
+  font-size: 11px; /* Base size for Tahoma */
 }
 
-/* Style H2 and H3 to match 98.css aesthetic */
+/* Style H2 and H3 */
 h2, h3 {
-  border-bottom: 1px solid grey; /* Keep simple border */
-  padding-bottom: 3px; /* Fixed: Added semicolon */
+  border-bottom: 1px solid grey;
+  padding-bottom: 3px;
   margin-top: 1.5em;
-  margin-bottom: 0.8em; /* Add some space below */
-  /* Apply 98.css font */
-  -webkit-font-smoothing: none;
-  font-family: "Pixelated MS Sans Serif", Arial;
-  font-weight: bold; /* Make titles bold */
+  margin-bottom: 0.8em;
+  font-family: "Tahoma", sans-serif;
+  font-weight: bold;
 }
 
 h2 {
-    font-size: 14px; /* Smaller font size for H2 */
+    font-size: 14px; /* Slightly larger H2 */
 }
 
 h3 {
-    font-size: 12px; /* Smaller font size for H3 */
+    font-size: 12px; /* Slightly larger H3 */
 }
 
-
-/* Remove main H1 styling if H1 is removed */
-/* h1 {
-    text-align: center;
-    margin-bottom: 1.5em;
-} */
-
 /* --- Layout Sections --- */
-/* Use 98.css window style for sections */
 section {
   margin-bottom: 20px;
   /* Add .window styles */
   background: silver;
   box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #dfdfdf, inset -2px -2px grey, inset 2px 2px #fff;
-  padding: 15px; /* Keep original padding for inner content */
+  padding: 15px;
 }
 
-/* Adjust section title margin within padding */
+/* Adjust section title margin */
 section h2, section h3 {
     margin-top: 0; /* Remove top margin for titles inside sections */
 }
 
-
-/* --- Controls --- */
-/* Let 98.css handle button styling */
-#controls button, #controls input[type=number] {
-  margin: 0 5px;
-  cursor: pointer;
-  vertical-align: middle; /* Keep vertical alignment */
+/* --- File Input --- */
+/* Hide the actual file input */
+#hiddenAudioFile {
+    display: none;
 }
-
-#controls .control-group {
-    margin: 10px 0;
+/* Style the replacement button and span */
+#file-loader .field-row button {
+    flex-shrink: 0;
 }
-
-#controls .jump-controls {
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
+#file-loader .field-row span#fileNameDisplay {
+    margin-left: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1;
+    font-family: "Tahoma", sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
 }
-#controls .jump-controls input[type=number] {
-    width: 50px; /* Give jump time input a specific width */
-}
-
-
-/* --- Slider Units --- */
-.slider-unit {
-    position: relative; /* Still needed for markers */
-    margin-bottom: 15px;
-    padding: 10px 15px 1.5em 15px;
-    /* Use 98.css sunken panel style */
-    border: 2px groove transparent;
-    border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
-    box-sizing: border-box;
-    background-color: silver; /* Ensure background matches */
-}
-
-
-.slider-label-value {
-    margin-bottom: 5px;
-    /* Use 98.css font */
-     -webkit-font-smoothing: none;
-    font-family: "Pixelated MS Sans Serif", Arial;
+#file-loader p#fileInfo {
+    margin-top: 5px;
+    font-family: "Tahoma", sans-serif;
     font-size: 11px;
 }
 
-.slider-label-value label {
-    margin-right: 5px;
-    font-weight: bold; /* Keep label bold */
-    display: inline;
+
+/* --- Seek Bar Section --- */
+#playback-progress {
+    display: flex;
+    align-items: center;
+    padding: 5px 0px; /* Reduced padding as box is removed */
+    margin-bottom: 10px;
+    background: none;
+    box-shadow: none;
+    border-image: none;
+    border: none;
+}
+#playback-progress input[type=range]#seekBar {
+    flex-grow: 1;
+    margin: 0 15px;
+    height: auto;
+    vertical-align: middle;
+}
+#playback-progress #timeDisplay {
+    margin: 0;
+    flex-shrink: 0;
+    font-family: "Tahoma", sans-serif;
+    font-size: 11px;
+    font-weight: normal;
+}
+/* Visually hidden class for labels */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
+
+/* --- Controls Section --- */
+#controls button, #controls input[type=number] {
+  margin: 0 5px;
+  cursor: pointer;
+  vertical-align: middle;
+  font-family: "Tahoma", sans-serif;
+}
+
+#controls .control-group {
+    margin-bottom: 10px;
+}
+#controls .control-group:last-child {
+    margin-bottom: 0;
+}
+
+#controls .jump-controls {
+    margin-bottom: 20px; /* Space above jump controls */
+    margin-top: 10px; /* Space below sliders */
+    display: flex;
+    align-items: center;
+    justify-content: center; /* Center the jump controls */
+}
+#controls .jump-controls input[type=number] {
+    width: 50px;
+}
+
+/* Horizontal Slider Layout (Applies to Controls and VAD) */
+.horizontal-sliders {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 15px;
+    align-items: flex-start; /* ADDED: Prevent vertical stretching */
+}
+/* Individual slider units - Equal Width */
+.horizontal-sliders .slider-unit {
+    flex: 1; /* Grow equally */
+    min-width: 180px; /* Prevent becoming too narrow */
+    margin-bottom: 0;
+    padding: 10px 10px 1.5em 10px;
+}
+
+
+/* --- Slider Units Styling (General) --- */
+.slider-unit {
+    position: relative;
+    border: 2px groove transparent;
+    border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
+    box-sizing: border-box;
+    background-color: silver;
+}
+.slider-label-value {
+    margin-bottom: 5px;
+    font-family: "Tahoma", sans-serif;
+    font-size: 11px;
+}
+.slider-label-value label {
+    margin-right: 5px;
+    font-weight: bold;
+    display: inline;
+}
 .slider-label-value span {
-    font-family: monospace; /* Keep value monospace if desired */
+    font-family: monospace;
     display: inline;
     margin-left: 2px;
 }
-
 /* Styling for range input - Let 98.css handle appearance */
-#controls input[type=range] {
+input[type=range] { /* Apply to ALL range inputs */
     width: 100%;
     box-sizing: border-box;
     margin: 5px 0;
     height: 8px;
     cursor: pointer;
     display: block;
+    vertical-align: middle;
 }
-
-
-/* --- Slider Tooltip --- */
-/* Tooltips are removed */
-
-
 /* --- Slider Markers --- */
 .slider-markers {
     position: relative;
     width: 100%;
-    height: 1.5em; /* Keep height for spacing */
-    margin-top: 8px; /* Increase margin slightly from slider */
+    height: 1.5em;
+    margin-top: 8px;
 }
-
 .slider-markers span {
     position: absolute;
     bottom: 0;
-    color: #222; /* Use 98.css default text color */
+    color: #222;
     cursor: pointer;
     transform: translateX(-50%);
     white-space: nowrap;
-     /* Use 98.css font */
-    -webkit-font-smoothing: none;
-    font-family: "Pixelated MS Sans Serif", Arial;
-    font-size: 10px; /* Adjust font size */
+    font-family: "Tahoma", sans-serif;
+    font-size: 10px;
 }
-
 .slider-markers span:hover {
-    color: #00f; /* 98.css link blue for hover */
+    color: #00f;
 }
 
-/* --- Time Display --- */
-#timeDisplay {
-  margin: 15px 0 5px 0;
-  text-align: center;
-   /* Use 98.css font */
-  -webkit-font-smoothing: none;
-  font-family: "Pixelated MS Sans Serif", Arial;
-  font-size: 11px;
-  font-weight: normal; /* Normal weight for time */
+
+/* --- VAD Tuning Section --- */
+#vad-tuning .horizontal-sliders {
+    margin-top: 0; /* No extra top margin for VAD sliders */
+}
+#vad-tuning .slider-unit {
+    padding: 10px; /* Specific padding for VAD units if needed */
+}
+#vad-tuning .control-group { /* Targets inner divs */
+    margin-bottom: 0; /* No margin between label/value and slider */
+}
+#vad-tuning .slider-label-value {
+     display: flex;
+     justify-content: space-between;
+     width: 100%;
+     margin-bottom: 3px;
+}
+#vad-tuning input[type=range] {
+    margin-top: 0;
 }
 
-/* --- Visualizations --- */
+
+/* --- Visualizations Section --- */
 .visualization {
     margin-bottom: 20px;
-    /* Make visualization sections look like sunken panels */
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     box-sizing: border-box;
-    padding: 5px; /* Small padding inside border */
-    background-color: silver; /* Match theme */
+    padding: 5px;
+    background-color: silver;
 }
-
 .canvas-container {
     position: relative;
 }
@@ -177,33 +242,28 @@ section h2, section h3 {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: none; /* Remove extra border */
-    /* font settings inherited from h3 rule above */
+    border-bottom: none;
+    font-family: "Tahoma", sans-serif;
 }
-/* Make small text inside H3 also use 98 font */
+/* Make small text inside H3 also use correct font */
 .visualization h3 small {
-    -webkit-font-smoothing: none;
-    font-family: "Pixelated MS Sans Serif", Arial;
+    font-family: "Tahoma", sans-serif;
     font-size: 10px;
-    font-weight: normal; /* Normal weight for small text */
+    font-weight: normal;
 }
 canvas {
-    /* background-color: #fff; */ /* Default background is white */
     display: block;
     width: 100%;
     height: 120px;
     cursor: crosshair;
     box-sizing: border-box;
-    /* Add border around canvas for clarity */
     border: 1px solid grey;
     box-shadow: inset 1px 1px #dfdfdf, inset -1px -1px grey;
 }
-
 /* Specific Waveform Canvas Style */
 #waveformCanvas {
     background-color: #000; /* Black background */
 }
-
 #spectrogramCanvas {
     height: 200px;
     background-color: #fff; /* Keep spectrogram white background */
@@ -225,73 +285,53 @@ canvas {
 }
 
 /* --- UI Elements --- */
-.spinner { display: none; font-size: 11px; color: #222; font-weight: normal; font-family: "Pixelated MS Sans Serif", Arial; }
-#speechRegionsDisplay {
+.spinner { display: none; font-size: 11px; color: #222; font-weight: normal; font-family: "Tahoma", sans-serif; }
+#speechRegionsDisplay { /* Still styled even if hidden */
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 150px;
     overflow-y: auto;
-    /* Make look like sunken panel text area */
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
     padding: 3px 4px;
-    font-family: monospace; /* Keep monospace */
-    font-size: 11px; /* Match 98.css font size */
+    font-family: monospace;
+    font-size: 11px;
 }
 
 
 /* --- Keybinds Table --- */
 #keybinds { margin-top: 20px; }
-/* Style table using 98.css principles */
 #keybinds table {
     width: 100%;
     border-collapse: collapse;
-    /* Add sunken panel look */
     border: 2px groove transparent;
     border-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='5' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='gray' d='M0 0h4v1H0z'/%3E%3Cpath fill='gray' d='M0 0h1v4H0z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h2v1H1z'/%3E%3Cpath fill='%230a0a0a' d='M1 1h1v2H1z'/%3E%3Cpath fill='%23fff' d='M0 4h5v1H0z'/%3E%3Cpath fill='%23fff' d='M4 0h1v5H4z'/%3E%3Cpath fill='%23dfdfdf' d='M3 1h1v3H3z'/%3E%3Cpath fill='%23dfdfdf' d='M1 3h3v1H1z'/%3E%3C/svg%3E") 2;
     background-color: #fff;
-    /* Use 98.css font */
-    -webkit-font-smoothing: none;
-    font-family: "Pixelated MS Sans Serif", Arial;
+    font-family: "Tahoma", sans-serif;
     font-size: 11px;
 }
-
 #keybinds th, #keybinds td {
-    padding: 3px 6px; /* Adjust padding */
-    border-bottom: 1px solid silver; /* Add subtle row separator */
-    text-align: left; /* Ensure text aligns left */
+    padding: 3px 6px;
+    border-bottom: 1px solid silver;
+    text-align: left;
 }
 #keybinds tr:last-child td {
     border-bottom: none;
 }
-
 #keybinds th {
     background: silver;
     box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px grey, inset 2px 2px #dfdfdf;
     box-sizing: border-box;
-    font-weight: normal; /* 98.css uses normal weight */
-    padding: 2px 6px; /* Adjust padding */
-    border-bottom: 1px solid #0a0a0a; /* Darker border below header */
-}
-
-/* --- Input File --- */
-#file-loader input[type=file] {
-     margin-right: 5px;
-}
-#file-loader p#fileInfo {
-    margin-top: 5px;
-     /* Use 98.css font */
-    -webkit-font-smoothing: none;
-    font-family: "Pixelated MS Sans Serif", Arial;
-    font-size: 11px;
+    font-weight: normal;
+    padding: 2px 6px;
+    border-bottom: 1px solid #0a0a0a;
+    font-family: "Tahoma", sans-serif;
 }
 
 /* --- Small Tag --- */
-/* Ensure small tag also uses 98 font */
 small {
-  -webkit-font-smoothing: none;
-  font-family: "Pixelated MS Sans Serif", Arial;
+  font-family: "Tahoma", sans-serif;
   font-size: 10px; /* Slightly smaller */
 }
 
