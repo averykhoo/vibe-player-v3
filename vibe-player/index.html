@@ -106,7 +106,7 @@
 
     <!-- NEW: VAD Progress Bar using 98.css structure -->
     <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container" style="margin-top: 5px; margin-bottom: 5px;">
-        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0%;"></span>
+        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0;"></span>
     </div>
 
     <!-- Corrected Structure: Both VAD controls inside one horizontal container -->
@@ -193,11 +193,11 @@
 <script src="js/app.js"></script> <!-- Main App Orchestrator -->
 <!-- App Modules (Order can matter depending on dependencies) -->
 <script src="js/uiManager.js"></script>
-<script src="js/audioEngine.js"></script>
-<script src="js/sileroWrapper.js"></script> <!-- VAD: ONNX Wrapper -->
-<script src="js/sileroProcessor.js"></script> <!-- VAD: Frame Processor -->
-<script src="js/vadAnalyzer.js"></script> <!-- VAD: State & Recalculation -->
-<script src="js/visualizer.js"></script>
+<script src="js/player/audioEngine.js"></script>
+<script src="js/vad/sileroWrapper.js"></script> <!-- VAD: ONNX Wrapper -->
+<script src="js/vad/sileroProcessor.js"></script> <!-- VAD: Frame Processor -->
+<script src="js/vad/vadAnalyzer.js"></script> <!-- VAD: State & Recalculation -->
+<script src="js/visualizers/visualizer.js"></script>
 
 <!-- App Initialization -->
 <script>
