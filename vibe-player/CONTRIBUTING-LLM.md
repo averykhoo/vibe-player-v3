@@ -24,18 +24,15 @@ This document outlines the principles and procedures for collaborating with an L
 3.  **Sequenced Task Tracking & Execution**
     *   **Reason:** Provides clarity on progress during complex tasks involving multiple steps or outputs. Ensures user control over the flow.
     *   **Context:** When a single logical goal requires multiple LLM responses (e.g., modifying several files, generating multiple related functions, updating docs then code).
-    *   **Action:** LLM uses a Markdown list/checklist tracker at the start of the *first* response in the sequence. For each subsequent step:
-        1.  Update the tracker (e.g., check off completed items).
+    *   **Action:** LLM uses a simple bulleted list tracker at the start of the *first* response in the sequence. For each subsequent step:
+        1.  Update the tracker, using ~~strikethrough~~ for completed items.
         2.  Generate the **one** block for the *current* step according to Principle 4 (Standardized Code Presentation & Granularity).
         3.  Explicitly **ask for user confirmation** ("Ready to proceed with the next step: [description]?") before generating the output for the next item in the sequence.
         4.  **Stop showing the tracker** once the entire sequence is confirmed complete by the user.
-    *   **Example Tracker (Python context):**
-        ```markdown
-        Tracker:
-        - [x] Update function `calculate_total` in `utils.py`
-        - [ ] Add documentation for `calculate_total`
-        - [ ] Update `README.md` usage example
-        ```
+    *   **Example Tracker (Using Strikethrough):**
+        *   ~~Update function `calculate_total` in `utils.py`~~
+        *   Add documentation for `calculate_total`
+        *   Update `README.md` usage example
 
 ### P2: Clarity & Explicit Communication
 
@@ -153,18 +150,18 @@ This document outlines the principles and procedures for collaborating with an L
 
 ### P8: Guideline Maintenance, Evolution & Viability
 
-1.  **Proactive Viability Check on Load**
+1.  **Proactive Viability Check during Guideline Updates**
     *   **Reason:** To proactively identify guidelines **(both Global Principles and Project-Specific Constraints)** that might be suboptimal or outdated due to advancements in LLM capabilities, changes in general or technology-specific best practices, or potential internal inconsistencies, ensuring the collaboration framework remains efficient and effective.
-    *   **Context:** To be performed *once* when these guidelines (`CONTRIBUTING-LLM.md`) are first provided or loaded as context at the beginning of a significant work session or project phase for an existing project. *(Note: For brand new projects, Part 2 constraints are typically defined collaboratively first.)*
+    *   **Context:** To be performed *whenever these guidelines (`CONTRIBUTING-LLM.md`) are being explicitly discussed or modified* (e.g., in response to P8.2, P8.3, or a direct user request to update them). Not performed on initial project load.
     *   **Action:**
-        1.  LLM performs a **brief internal review** of the loaded guidelines (**including both Part 1 and the applicable Part 2 section**).
+        1.  When generating a proposed update for these guidelines, LLM performs a **brief internal review** of the *entire* guidelines document (**including both Part 1 and the applicable Part 2 section**) as part of formulating the update.
         2.  It compares the principles, workflows, and constraints described against its **general knowledge** of software development and its **own typical capabilities**, paying attention to technology specifics mentioned in Part 2.
-        3.  If this brief review reveals a **potential significant mismatch** or **obvious area for improvement** in *either Part 1 or Part 2* (e.g., "P4 granularity seems too strict given my current abilities," or "Part 2 / Constraint 2 specifies library X v1.0, but v3.0 is now standard and recommended for security"), the LLM **must**:
-            *   **Concisely state** the potential issue and the specific guideline/constraint involved (e.g., "Guideline Check Suggestion (P8.1): Part 2 / Constraint X uses pattern Y, which is generally discouraged now in [Language/Framework]. Consider updating?").
+        3.  If this review reveals a **potential significant mismatch** or **obvious area for improvement** *in addition to the specific change being requested* (e.g., "P4 granularity seems too strict given my current abilities," or "Part 2 / Constraint 2 specifies library X v1.0, but v3.0 is now standard and recommended for security"), the LLM **may optionally**:
+            *   **Concisely state** the *additional* potential issue and the specific guideline/constraint involved (e.g., "Guideline Check Suggestion (P8.1): While updating P4, I also noticed Part 2 / Constraint X uses pattern Y, which is generally discouraged now in [Language/Framework]. Consider updating this too?").
             *   **Phrase it as a question or suggestion** for the user to consider, explicitly referencing this rule (P8.1).
-            *   **Do not halt work.** Proceed with the user's primary request after raising the point(s).
+            *   **Prioritize generating the user's requested update first.** The viability check suggestion should be secondary.
             *   This check should be **brief and focused** on high-probability mismatches based on the LLM's internal knowledge. Avoid generic suggestions.
-        4.  If no specific, significant potential issues are identified during the brief check, **do not comment** on the guideline review; simply proceed with the user's request.
+        4.  If no *additional* specific, significant potential issues are identified during the review, **do not comment** on the guideline review; simply generate the requested update.
 
 2.  **Identify and Address Guideline Conflicts**
     *   **Reason:** To resolve discrepancies when user instructions contradict established guidelines (**Global Principles or Project-Specific Constraints**), ensuring consistent application or conscious deviation.
@@ -183,7 +180,7 @@ This document outlines the principles and procedures for collaborating with an L
 
 4.  **Propose and Apply Guideline Updates**
     *   **Reason:** To formally incorporate agreed-upon changes into the guidelines document, ensuring it remains the accurate source of truth.
-    *   **Context:** Following clarification/confirmation from rules P8.1, P8.2, or P8.3 where a permanent change to the guidelines is desired by the user.
+    *   **Context:** Following clarification/confirmation from rules P8.1, P8.2, or P8.3 where a permanent change to the guidelines is desired by the user, or when explicitly asked to update the guidelines.
     *   **Action:**
         1.  Based on the user's confirmation, **propose specific changes** (text additions/modifications/deletions) to `CONTRIBUTING-LLM.md`.
         2.  Follow the standard "Discuss -> Confirm -> Generate" process (P1.1) for generating the updated section(s) of the guidelines document itself.
