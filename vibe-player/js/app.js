@@ -13,21 +13,20 @@ var AudioApp = AudioApp || {}; // Create the main application namespace
 AudioApp = (function() {
     'use strict';
 
-    // --- Application State ---
-    /** @type {AudioBuffer|null} The currently loaded and decoded audio buffer. */
-    let currentAudioBuffer = null;
-    /** @type {VadResult|null} Results from the VAD analysis (see vadAnalyzer). Only populated after background VAD. */
-    let currentVadResults = null;
-    /** @type {File|null} The currently loaded audio file object. */
-    let currentFile = null;
-    /** @type {boolean} Flag indicating if the Silero VAD model is loaded and ready. */
-    let vadModelReady = false;
-    /** @type {boolean} Flag indicating if the AudioWorklet processor is loaded and ready for playback commands. */
-    let workletPlaybackReady = false;
-    /** @type {boolean} Flag indicating if the background VAD task is currently running. */
-    let isVadProcessing = false;
+    // === Module Dependencies ===
+    // Assuming other modules (uiManager, audioEngine, visualizers, VAD modules, constants, utils)
+    // are loaded and attached to AudioApp before init() is called.
+    // We'll access them via the AudioApp namespace.
 
-    // --- Main Thread Playback Time State (for accurate UI updates) ---
+    // --- Application State ---
+    /** @type {AudioBuffer|null} */ let currentAudioBuffer = null;
+    /** @type {VadResult|null} */ let currentVadResults = null;
+    /** @type {File|null} */ let currentFile = null;
+    /** @type {boolean} */ let vadModelReady = false; // VAD model itself
+    /** @type {boolean} */ let workletPlaybackReady = false; // Audio engine ready for playback
+    /** @type {boolean} */ let isVadProcessing = false; // If VAD analysis task is running
+
+    // --- Main Thread Playback Time State ---
     /** @type {number|null} */ let playbackStartTimeContext = null;
     /** @type {number} */ let playbackStartSourceTime = 0.0;
     /** @type {boolean} */ let isActuallyPlaying = false;
@@ -38,9 +37,21 @@ AudioApp = (function() {
     /** @public */
     function init() {
         console.log("AudioApp: Initializing...");
+
+        // Check for critical module dependencies
+        if (!AudioApp.uiManager || !AudioApp.audioEngine || !AudioApp.waveformVisualizer || !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.Constants || !AudioApp.Utils) {
+             console.error("AudioApp: CRITICAL - One or more required modules/constants/utils not found on AudioApp namespace! Check script loading order.");
+             // Optionally display a user-facing error
+             AudioApp.uiManager?.setFileInfo("Initialization Error: Missing modules. Check console.");
+             return;
+        }
+
+        // Initialize modules
         AudioApp.uiManager.init();
         AudioApp.audioEngine.init();
-        AudioApp.visualizer.init();
+        AudioApp.waveformVisualizer.init(); // Init new waveform visualizer
+        AudioApp.spectrogramVisualizer.init(); // Init new spectrogram visualizer
+        // VAD modules don't have explicit init functions currently
         setupAppEventListeners();
         console.log("AudioApp: Initialized. Waiting for file...");
     }
@@ -61,10 +72,9 @@ AudioApp = (function() {
         document.addEventListener('audioapp:keyPressed', handleKeyPress);
         // AudioEngine -> App
         document.addEventListener('audioapp:audioLoaded', handleAudioLoaded);
-        // document.addEventListener('audioapp:resamplingComplete', handleResamplingComplete); // REMOVED Listener
         document.addEventListener('audioapp:workletReady', handleWorkletReady);
         document.addEventListener('audioapp:decodingError', handleAudioError);
-        document.addEventListener('audioapp:resamplingError', handleAudioError); // Keep for VAD background task
+        document.addEventListener('audioapp:resamplingError', handleAudioError);
         document.addEventListener('audioapp:playbackError', handleAudioError);
         document.addEventListener('audioapp:engineError', handleAudioError);
         document.addEventListener('audioapp:playbackEnded', handlePlaybackEnded);
@@ -79,506 +89,342 @@ AudioApp = (function() {
 
     /** @param {CustomEvent<{file: File}>} e @private */
     async function handleFileSelected(e) {
-        const file = e.detail.file;
-        if (!file) return;
-
+        const file = e.detail.file; if (!file) return;
         currentFile = file;
         console.log("App: File selected -", file.name);
 
-        // Reset state for the new file
+        // Reset state
         stopUIUpdateLoop();
-        isActuallyPlaying = false;
-        isVadProcessing = false; // Reset VAD processing flag
-        playbackStartTimeContext = null;
-        playbackStartSourceTime = 0.0;
-        currentSpeedForUpdate = 1.0;
-        currentAudioBuffer = null;
-        // currentPcm16k = null; // No longer stored globally in app.js
-        currentVadResults = null;
-        workletPlaybackReady = false;
+        isActuallyPlaying = false; isVadProcessing = false;
+        playbackStartTimeContext = null; playbackStartSourceTime = 0.0;
+        currentSpeedForUpdate = 1.0; currentAudioBuffer = null;
+        currentVadResults = null; workletPlaybackReady = false;
 
-        // Reset UI (including VAD progress bar and controls)
+        // Reset UI & Visuals
         AudioApp.uiManager.resetUI();
         AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`);
-        AudioApp.visualizer.clearVisuals();
-        AudioApp.visualizer.showSpinner(true); // Show main spinner initially
+        AudioApp.waveformVisualizer.clearVisuals(); // Use specific visualizer
+        AudioApp.spectrogramVisualizer.clearVisuals(); // Use specific visualizer
+        AudioApp.spectrogramVisualizer.showSpinner(true); // Show spectrogram spinner
 
-        try {
-            // Start processing pipeline in AudioEngine (now only decode + worklet setup)
-            await AudioApp.audioEngine.loadAndProcessFile(file);
-        } catch (error) {
-            // Handle errors during the initial loading phase
+        try { await AudioApp.audioEngine.loadAndProcessFile(file); }
+        catch (error) {
             console.error("App: Error initiating file processing -", error);
             AudioApp.uiManager.setFileInfo(`Error loading: ${error.message}`);
-            AudioApp.uiManager.resetUI(); // Ensure UI is fully reset on error
-            AudioApp.visualizer.showSpinner(false);
-            stopUIUpdateLoop(); // Ensure loop is stopped on error
+            AudioApp.uiManager.resetUI();
+            AudioApp.spectrogramVisualizer.showSpinner(false); // Hide spinner on error
+            stopUIUpdateLoop();
         }
     }
 
     /**
-     * Handles audio decoding completion.
-     * Stores buffer, updates UI, draws initial visuals, hides spinner, starts background VAD.
+     * Handles audio decoding completion. Stores buffer, draws initial visuals, starts background VAD.
      * @param {CustomEvent<{audioBuffer: AudioBuffer}>} e @private
      */
     async function handleAudioLoaded(e) {
         currentAudioBuffer = e.detail.audioBuffer;
         console.log(`App: Audio decoded (${currentAudioBuffer.duration.toFixed(2)}s)`);
 
-        // Update UI time/seek bar state
+        // Update UI time/seek state
         AudioApp.uiManager.updateTimeDisplay(0, currentAudioBuffer.duration);
         AudioApp.uiManager.updateSeekBar(0);
-        AudioApp.visualizer.updateProgressIndicator(0, currentAudioBuffer.duration);
-        playbackStartSourceTime = 0.0; // Reset source time tracking
+        AudioApp.waveformVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration); // Use specific visualizer
+        AudioApp.spectrogramVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration); // Use specific visualizer
+        playbackStartSourceTime = 0.0;
 
-        // Draw initial visuals (waveform in gray, spectrogram)
-        console.log("App: Drawing initial visuals...");
-        await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, []); // Pass empty regions
+        // Draw initial waveform (gray)
+        console.log("App: Drawing initial waveform...");
+        // Pass empty array [] for speechRegions to trigger loading color
+        await AudioApp.waveformVisualizer.computeAndDrawWaveform(currentAudioBuffer, []);
 
-        // Hide the main loading spinner *now*
-        AudioApp.visualizer.showSpinner(false);
-        console.log("App: Initial visuals drawn, spinner hidden.");
+        // Draw spectrogram (shows spinner internally)
+        console.log("App: Starting spectrogram computation/drawing...");
+        // No need to hide spinner here, spectrogramVisualizer handles it
+        await AudioApp.spectrogramVisualizer.computeAndDrawSpectrogram(currentAudioBuffer);
 
-        // Update file info (intermediate state before worklet/VAD)
+        console.log("App: Initial visuals initiated.");
         AudioApp.uiManager.setFileInfo(`Processing VAD: ${currentFile ? currentFile.name : 'Unknown File'}`);
 
-        // Trigger background VAD processing - DO NOT AWAIT
+        // Trigger background VAD processing
         console.log("App: Starting background VAD processing...");
         runVadInBackground(currentAudioBuffer); // Fire and forget
     }
 
-    /**
-     * Handles completion of AudioWorklet setup.
-     * Enables playback controls.
-     * @param {CustomEvent} e @private
-     */
+    /** @param {CustomEvent} e @private */
     function handleWorkletReady(e) {
         console.log("App: AudioWorklet processor is ready.");
         workletPlaybackReady = true;
         AudioApp.uiManager.enablePlaybackControls(true);
         AudioApp.uiManager.enableSeekBar(true);
-        // Spinner should already be hidden by handleAudioLoaded
-        // Update file info to final "Ready" state
+        // Spectrogram spinner is handled by spectrogramVisualizer
         AudioApp.uiManager.setFileInfo(`Ready: ${currentFile ? currentFile.name : 'Unknown File'}`);
     }
 
     /**
-     * Runs VAD analysis in the background without blocking the main thread.
-     * Handles resampling, VAD model init, analysis with progress, and UI updates upon completion.
-     * @param {AudioBuffer} audioBuffer - The audio buffer to analyze.
+     * Runs VAD analysis in the background. Handles resampling, analysis, and UI updates.
+     * @param {AudioBuffer} audioBuffer
      * @private
      */
      async function runVadInBackground(audioBuffer) {
-        if (!audioBuffer) return;
-        if (isVadProcessing) {
-            console.warn("App: VAD processing already in progress. Skipping new request.");
-            return;
+        if (!audioBuffer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.audioEngine || !AudioApp.uiManager || !AudioApp.waveformVisualizer) {
+             console.error("App (VAD Task): Missing dependencies for VAD task.");
+             isVadProcessing = false; // Ensure flag is reset
+             return;
         }
+        if (isVadProcessing) { console.warn("App: VAD processing already running."); return; }
         isVadProcessing = true;
-        let pcm16k = null;
-        let vadSucceeded = false;
+        let pcm16k = null; let vadSucceeded = false;
 
         try {
-            // 1. Initialize VAD Model (if needed)
+            // 1. Init VAD Model
             if (!vadModelReady) {
-                console.log("App (VAD Task): Attempting to create/load VAD model...");
-                vadModelReady = await AudioApp.sileroWrapper.create(16000);
-                if (!vadModelReady) {
-                    throw new Error("Failed to create Silero VAD model.");
-                }
-                console.log("App (VAD Task): VAD model created successfully.");
+                console.log("App (VAD Task): Creating/loading VAD model...");
+                vadModelReady = await AudioApp.sileroWrapper.create(AudioApp.Constants.VAD_SAMPLE_RATE); // Use Constant
+                if (!vadModelReady) throw new Error("Failed to create Silero VAD model.");
+                console.log("App (VAD Task): VAD model ready.");
             }
 
-            // 2. Show VAD Progress Bar
+            // 2. Show VAD Progress UI
             AudioApp.uiManager.showVadProgress(true);
             AudioApp.uiManager.updateVadProgress(0);
 
             // 3. Resample Audio
-            console.log("App (VAD Task): Resampling audio for VAD...");
+            console.log("App (VAD Task): Resampling audio...");
             pcm16k = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
-             // Handle empty input after resampling
             if (!pcm16k || pcm16k.length === 0) {
-                console.log("App (VAD Task): No audio data after resampling.");
+                 console.log("App (VAD Task): No audio data after resampling.");
                  AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)");
-                 AudioApp.uiManager.updateVadProgress(100); // Show completed even if empty
+                 AudioApp.uiManager.updateVadProgress(100);
                  AudioApp.uiManager.enableVadControls(false);
-                 isVadProcessing = false;
-                 return; // Exit early if no data
+                 isVadProcessing = false; return;
             }
-
 
             // 4. Perform VAD Analysis
             console.log("App (VAD Task): Starting VAD analysis...");
-            const vadProgressCallback = (progress) => {
-                 if (progress.totalFrames > 0) {
-                     const percentage = (progress.processedFrames / progress.totalFrames) * 100;
-                     AudioApp.uiManager.updateVadProgress(percentage);
-                 } else {
-                     AudioApp.uiManager.updateVadProgress(0);
-                 }
+            const vadProgressCallback = (progress) => { /* ... progress update logic ... */
+                 if (!AudioApp.uiManager) return;
+                 if (progress.totalFrames > 0) { const percentage = (progress.processedFrames / progress.totalFrames) * 100; AudioApp.uiManager.updateVadProgress(percentage); }
+                 else { AudioApp.uiManager.updateVadProgress(0); }
             };
-
-            const analysisOptions = {
-                 onProgress: vadProgressCallback,
-                 frameSamples: AudioApp.vadAnalyzer.getFrameSamples() // Use default or last known
-            };
-            currentVadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, analysisOptions); // Throws on error
+            const analysisOptions = { onProgress: vadProgressCallback }; // frameSamples uses default in vadAnalyzer
+            currentVadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, analysisOptions); // Use VAD module
 
             // 5. Update UI on Success
             const speechRegions = currentVadResults.regions || [];
             console.log(`App (VAD Task): VAD analysis complete. Found ${speechRegions.length} regions.`);
             AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
             AudioApp.uiManager.setSpeechRegionsText(speechRegions);
-            AudioApp.uiManager.enableVadControls(true); // Enable sliders now
-            AudioApp.visualizer.redrawWaveformHighlight(audioBuffer, speechRegions); // Update waveform color
-            AudioApp.uiManager.updateVadProgress(100); // Ensure 100% on success
+            AudioApp.uiManager.enableVadControls(true);
+            AudioApp.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions); // Use specific visualizer
+            AudioApp.uiManager.updateVadProgress(100);
             vadSucceeded = true;
 
         } catch (error) {
-            // 6. Handle Errors during VAD Task
+            // 6. Handle Errors
             console.error("App (VAD Task): Error during background VAD processing -", error);
-            const errorType = error.message.includes("resampling") ? "Resampling Error"
-                              : error.message.includes("VAD") ? "VAD Error"
-                              : "Processing Error";
+            const errorType = error.message.includes("resampling") ? "Resampling Error" : error.message.includes("VAD") ? "VAD Error" : "Processing Error";
             AudioApp.uiManager.setSpeechRegionsText(`${errorType}: ${error.message}`);
-            AudioApp.uiManager.enableVadControls(false); // Keep VAD controls disabled
-            AudioApp.uiManager.updateVadProgress(0); // Reset progress bar on error
-            currentVadResults = null; // Clear any partial results
-
+            AudioApp.uiManager.enableVadControls(false);
+            AudioApp.uiManager.updateVadProgress(0);
+            currentVadResults = null;
         } finally {
-            // 7. Cleanup VAD Task State
+            // 7. Cleanup Task State
             isVadProcessing = false;
-            // Optionally hide progress bar after a delay or keep it visible? Keeping visible for now.
-            // if (vadSucceeded) {
-            //     setTimeout(() => AudioApp.uiManager.showVadProgress(false), 2000);
-            // } else {
-            //     AudioApp.uiManager.showVadProgress(false); // Hide immediately on error
-            // }
         }
     }
-
-
-    // Removed handleResamplingComplete function entirely
 
     /** @param {CustomEvent<{type?: string, error: Error}>} e @private */
     function handleAudioError(e) {
         const errorType = e.detail.type || 'Unknown';
         const errorMessage = e.detail.error ? e.detail.error.message : 'An unknown error occurred';
         console.error(`App: Audio Error - Type: ${errorType}, Message: ${errorMessage}`, e.detail.error);
-
-        // Stop playback and UI updates
         stopUIUpdateLoop();
-
-        // Reset UI to initial state
         AudioApp.uiManager.setFileInfo(`Error (${errorType}): ${errorMessage.substring(0, 100)}`);
-        AudioApp.uiManager.resetUI(); // Resets sliders, buttons, VAD progress etc.
-        AudioApp.visualizer.clearVisuals();
-        AudioApp.visualizer.showSpinner(false);
-
+        AudioApp.uiManager.resetUI();
+        AudioApp.waveformVisualizer?.clearVisuals(); // Use optional chaining
+        AudioApp.spectrogramVisualizer?.clearVisuals();
+        AudioApp.spectrogramVisualizer?.showSpinner(false);
         // Clear internal state
-        currentAudioBuffer = null;
-        // currentPcm16k = null; // No longer stored
-        currentVadResults = null;
-        currentFile = null;
-        workletPlaybackReady = false;
-        isActuallyPlaying = false;
-        isVadProcessing = false;
-        playbackStartTimeContext = null;
-        playbackStartSourceTime = 0.0;
-        currentSpeedForUpdate = 1.0;
+        currentAudioBuffer = null; currentVadResults = null; currentFile = null;
+        workletPlaybackReady = false; isActuallyPlaying = false; isVadProcessing = false;
+        playbackStartTimeContext = null; playbackStartSourceTime = 0.0; currentSpeedForUpdate = 1.0;
     }
+
+    // --- Playback/Seek/Parameter Handlers (Largely Unchanged, verify AudioEngine calls) ---
 
     /** @private */
     function handlePlayPause() {
-        if (!workletPlaybackReady) { console.warn("App: Play/Pause ignored - Worklet not ready."); return; }
+        if (!workletPlaybackReady || !AudioApp.audioEngine) { console.warn("App: Play/Pause ignored - Engine/Worklet not ready."); return; }
         const audioCtx = AudioApp.audioEngine.getAudioContext();
         if (!audioCtx) { console.error("App: Cannot play/pause, AudioContext not available."); return; }
-
-        const aboutToPlay = !isActuallyPlaying; // Check *before* toggling engine
-        AudioApp.audioEngine.togglePlayPause(); // Tell engine to toggle
-
-        // Adjust main thread time tracking state *after* telling engine
+        const aboutToPlay = !isActuallyPlaying;
+        AudioApp.audioEngine.togglePlayPause();
         if (aboutToPlay) {
-            // If we are starting playback, sync times and start UI loop
-             const engineTime = AudioApp.audioEngine.getCurrentTime();
-             playbackStartSourceTime = engineTime.currentTime; // Sync source time
-             playbackStartTimeContext = audioCtx.currentTime; // Record context time NOW
+            const engineTime = AudioApp.audioEngine.getCurrentTime();
+            playbackStartSourceTime = engineTime.currentTime;
+            playbackStartTimeContext = audioCtx.currentTime;
             startUIUpdateLoop();
         } else {
-            // If we are stopping playback, stop UI loop and clear context time
-            stopUIUpdateLoop();
-            playbackStartTimeContext = null; // Clear context time
+            stopUIUpdateLoop(); playbackStartTimeContext = null;
         }
-        // UI button state update will happen based on 'playbackStateChanged' event from engine
     }
 
     /** @param {CustomEvent<{seconds: number}>} e @private */
     function handleJump(e) {
-        if (!workletPlaybackReady || !currentAudioBuffer) return;
-        const audioCtx = AudioApp.audioEngine.getAudioContext();
-        if (!audioCtx) return;
-        const duration = currentAudioBuffer.duration;
-        if (isNaN(duration) || duration <= 0) return;
-
-        const currentTime = calculateEstimatedSourceTime(); // Get current estimated time
-        const targetTime = Math.max(0, Math.min(currentTime + e.detail.seconds, duration)); // Calculate target
-
-        AudioApp.audioEngine.seek(targetTime); // Tell engine to seek
-
-        // Update main thread time tracking immediately
+        if (!workletPlaybackReady || !currentAudioBuffer || !AudioApp.audioEngine) return;
+        const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) return;
+        const duration = currentAudioBuffer.duration; if (isNaN(duration) || duration <= 0) return;
+        const currentTime = calculateEstimatedSourceTime();
+        const targetTime = Math.max(0, Math.min(currentTime + e.detail.seconds, duration));
+        AudioApp.audioEngine.seek(targetTime);
         playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) {
-            // If playing, reset context start time relative to the new source time
-            playbackStartTimeContext = audioCtx.currentTime;
-        } else {
-            // If paused, update UI directly, context time remains null
-            playbackStartTimeContext = null;
-            updateUIWithTime(targetTime); // Manually update UI while paused
-        }
+        if (isActuallyPlaying) { playbackStartTimeContext = audioCtx.currentTime; }
+        else { playbackStartTimeContext = null; updateUIWithTime(targetTime); }
     }
 
     /** @param {CustomEvent<{fraction: number}>} e @private */
     function handleSeek(e) {
-        if (!workletPlaybackReady || !currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0) return;
-        const audioCtx = AudioApp.audioEngine.getAudioContext();
-        if (!audioCtx) return;
-
-        const targetTime = e.detail.fraction * currentAudioBuffer.duration; // Calculate target
-        AudioApp.audioEngine.seek(targetTime); // Tell engine to seek
-
-        // Update main thread time tracking immediately
+        if (!workletPlaybackReady || !currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0 || !AudioApp.audioEngine) return;
+        const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) return;
+        const targetTime = e.detail.fraction * currentAudioBuffer.duration;
+        AudioApp.audioEngine.seek(targetTime);
         playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) {
-            // If playing, reset context start time relative to the new source time
-            playbackStartTimeContext = audioCtx.currentTime;
-        } else {
-             // If paused, update UI directly, context time remains null
-             playbackStartTimeContext = null;
-            updateUIWithTime(targetTime); // Manually update UI while paused
-        }
+        if (isActuallyPlaying) { playbackStartTimeContext = audioCtx.currentTime; }
+        else { playbackStartTimeContext = null; updateUIWithTime(targetTime); }
     }
-
-    // SeekBar 'input' event triggers handleSeek
-    const handleSeekBarInput = handleSeek;
+    const handleSeekBarInput = handleSeek; // Alias remains
 
     /** @param {CustomEvent<{speed: number}>} e @private */
-    function handleSpeedChange(e) {
-        AudioApp.audioEngine.setSpeed(e.detail.speed);
-        // Speed change effect on time is handled by 'internalSpeedChanged' event
-    }
-
-    /** @param {CustomEvent<{speed: number}>} e @private */
-    function handleInternalSpeedChange(e) {
-        const newSpeed = e.detail.speed;
-        console.log(`App: Internal speed updated to ${newSpeed.toFixed(2)}x`);
-
-        const oldSpeed = currentSpeedForUpdate;
-        currentSpeedForUpdate = newSpeed; // Update speed used for UI calculation
-
-        const audioCtx = AudioApp.audioEngine.getAudioContext();
-        // If playing, recalculate base times to prevent jump in UI display
-        if (isActuallyPlaying && playbackStartTimeContext !== null && audioCtx) {
-            // Calculate where we *were* just before the speed change
-            const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
-            const elapsedSourceTime = elapsedContextTime * oldSpeed; // Use OLD speed
-            const previousSourceTime = playbackStartSourceTime + elapsedSourceTime;
-
-            // Set the new base source time to where we were
-            playbackStartSourceTime = previousSourceTime;
-            // Reset the context start time to NOW
-            playbackStartTimeContext = audioCtx.currentTime;
-        }
-    }
-
+    function handleSpeedChange(e) { AudioApp.audioEngine?.setSpeed(e.detail.speed); }
     /** @param {CustomEvent<{pitch: number}>} e @private */
-    function handlePitchChange(e) { AudioApp.audioEngine.setPitch(e.detail.pitch); }
+    function handlePitchChange(e) { AudioApp.audioEngine?.setPitch(e.detail.pitch); }
     /** @param {CustomEvent<{gain: number}>} e @private */
-    function handleGainChange(e) { AudioApp.audioEngine.setGain(e.detail.gain); }
+    function handleGainChange(e) { AudioApp.audioEngine?.setGain(e.detail.gain); }
 
-    /**
-     * Handles VAD threshold slider changes *after* VAD has completed.
-     * @param {CustomEvent<{type: string, value: number}>} e @private
-     */
-    function handleThresholdChange(e) {
-        // Only allow changes if VAD has run successfully and isn't currently processing
-        if (!currentVadResults || isVadProcessing) return;
-        const { type, value } = e.detail;
-        // Delegate threshold update and recalculation to vadAnalyzer
-        const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value);
-        // Update UI displays based on the recalculated regions
-        AudioApp.uiManager.setSpeechRegionsText(newRegions);
-        // Redraw waveform highlights only
-        if(currentAudioBuffer) {
-             AudioApp.visualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
+     /** @param {CustomEvent<{speed: number}>} e @private */
+    function handleInternalSpeedChange(e) {
+        const newSpeed = e.detail.speed; console.log(`App: Internal speed updated to ${newSpeed.toFixed(2)}x`);
+        const oldSpeed = currentSpeedForUpdate; currentSpeedForUpdate = newSpeed;
+        const audioCtx = AudioApp.audioEngine?.getAudioContext();
+        if (isActuallyPlaying && playbackStartTimeContext !== null && audioCtx) {
+            const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
+            const elapsedSourceTime = elapsedContextTime * oldSpeed;
+            const previousSourceTime = playbackStartSourceTime + elapsedSourceTime;
+            playbackStartSourceTime = previousSourceTime; playbackStartTimeContext = audioCtx.currentTime;
         }
+    }
+
+    /** @param {CustomEvent<{type: string, value: number}>} e @private */
+    function handleThresholdChange(e) {
+        if (!currentVadResults || isVadProcessing || !AudioApp.vadAnalyzer || !AudioApp.waveformVisualizer) return;
+        const { type, value } = e.detail;
+        const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value); // Use VAD module
+        AudioApp.uiManager.setSpeechRegionsText(newRegions);
+        if(currentAudioBuffer) { AudioApp.waveformVisualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions); } // Use waveform visualizer
     }
 
     /** @private */
     function handlePlaybackEnded() {
         console.log("App: Playback ended event received.");
-        isActuallyPlaying = false;
-        stopUIUpdateLoop();
-        playbackStartTimeContext = null;
-        // Ensure UI shows the exact end time
-        if (currentAudioBuffer) {
-            updateUIWithTime(currentAudioBuffer.duration);
-        }
-        AudioApp.uiManager.setPlayButtonState(false); // Update button state
+        isActuallyPlaying = false; stopUIUpdateLoop(); playbackStartTimeContext = null;
+        if (currentAudioBuffer) { updateUIWithTime(currentAudioBuffer.duration); }
+        AudioApp.uiManager.setPlayButtonState(false);
     }
 
     /** @param {CustomEvent<{isPlaying: boolean}>} e @private */
      function handlePlaybackStateChange(e) {
-        const workletIsPlaying = e.detail.isPlaying;
-        console.log(`App: Playback state confirmed by worklet: ${workletIsPlaying}`);
-
-        // Sync internal state ONLY if it differs from worklet confirmation
+        const workletIsPlaying = e.detail.isPlaying; console.log(`App: Playback state confirmed by worklet: ${workletIsPlaying}`);
         if (isActuallyPlaying !== workletIsPlaying) {
-            console.log(`App: Discrepancy detected. Syncing internal state to ${workletIsPlaying}.`);
-            isActuallyPlaying = workletIsPlaying; // Sync internal state
-            AudioApp.uiManager.setPlayButtonState(isActuallyPlaying); // Update button
-        } else {
-            // If state already matches, just ensure button is correct
-            AudioApp.uiManager.setPlayButtonState(isActuallyPlaying);
-        }
-
-        const audioCtx = AudioApp.audioEngine.getAudioContext();
+            console.log(`App: Syncing internal state to ${workletIsPlaying}.`);
+            isActuallyPlaying = workletIsPlaying; AudioApp.uiManager.setPlayButtonState(isActuallyPlaying);
+        } else { AudioApp.uiManager.setPlayButtonState(isActuallyPlaying); }
+        const audioCtx = AudioApp.audioEngine?.getAudioContext();
         if (isActuallyPlaying) {
-            // If starting to play (or confirming play state)
             if (playbackStartTimeContext === null && audioCtx) {
-                // If context time wasn't set (e.g., play started right after load/seek), set it now
                 console.log("App: Playback active, ensuring context start time is set.");
                 const engineTime = AudioApp.audioEngine.getCurrentTime();
-                playbackStartSourceTime = engineTime.currentTime; // Sync source time
-                playbackStartTimeContext = audioCtx.currentTime; // Set context time
+                playbackStartSourceTime = engineTime.currentTime; playbackStartTimeContext = audioCtx.currentTime;
             }
-            startUIUpdateLoop(); // Ensure UI loop is running
+            startUIUpdateLoop();
         } else {
-            // If stopping play (or confirming stopped state)
-            stopUIUpdateLoop(); // Stop UI loop
-            playbackStartTimeContext = null; // Clear context time
-            // Update UI one last time with the engine's final reported time
-            const engineTime = AudioApp.audioEngine.getCurrentTime();
+            stopUIUpdateLoop(); playbackStartTimeContext = null;
+            const engineTime = AudioApp.audioEngine?.getCurrentTime() || { currentTime: playbackStartSourceTime }; // Fallback if engine missing
             updateUIWithTime(engineTime.currentTime);
         }
     }
 
     /** @param {CustomEvent<{key: string}>} e @private */
     function handleKeyPress(e) {
-        if (!workletPlaybackReady) return; // Ignore if not ready
-        const key = e.detail.key;
-        const jumpTimeValue = AudioApp.uiManager.getJumpTime();
-
+        if (!workletPlaybackReady) return;
+        const key = e.detail.key; const jumpTimeValue = AudioApp.uiManager.getJumpTime();
         switch (key) {
-            case 'Space':
-                handlePlayPause();
-                break;
-            case 'ArrowLeft':
-                handleJump({ detail: { seconds: -jumpTimeValue } });
-                break;
-            case 'ArrowRight':
-                handleJump({ detail: { seconds: jumpTimeValue } });
-                break;
+            case 'Space': handlePlayPause(); break;
+            case 'ArrowLeft': handleJump({ detail: { seconds: -jumpTimeValue } }); break;
+            case 'ArrowRight': handleJump({ detail: { seconds: jumpTimeValue } }); break;
         }
     }
 
     /** @private */
     function handleWindowResize() {
-        // Get current regions from the analyzer (even if VAD is still processing, it might have partial/old results)
         const regions = AudioApp.vadAnalyzer ? AudioApp.vadAnalyzer.getCurrentRegions() : [];
-        AudioApp.visualizer.resizeAndRedraw(currentAudioBuffer, regions);
+        // Resize both visualizers
+        AudioApp.waveformVisualizer?.resizeAndRedraw(currentAudioBuffer, regions); // Use waveform visualizer
+        AudioApp.spectrogramVisualizer?.resizeAndRedraw(currentAudioBuffer); // Use spectrogram visualizer (doesn't need regions)
     }
 
     /** @private */
     function handleBeforeUnload() {
         console.log("App: Unloading - Cleaning up...");
         stopUIUpdateLoop();
-        AudioApp.audioEngine.cleanup(); // Clean up Web Audio resources
+        AudioApp.audioEngine?.cleanup();
     }
 
     // --- Main Thread Time Calculation & UI Update ---
-    /** @private */
-    function startUIUpdateLoop() {
-        if (rAFUpdateHandle === null) {
-            // console.log("App: Starting UI update loop (rAF)."); // Less verbose
-            rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime);
-        }
-    }
 
     /** @private */
-    function stopUIUpdateLoop() {
-        if (rAFUpdateHandle !== null) {
-            // console.log("App: Stopping UI update loop (rAF)."); // Less verbose
-            cancelAnimationFrame(rAFUpdateHandle);
-            rAFUpdateHandle = null;
-        }
-    }
+    function startUIUpdateLoop() { /* ... unchanged ... */ if (rAFUpdateHandle === null) { rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime); } }
+    /** @private */
+    function stopUIUpdateLoop() { /* ... unchanged ... */ if (rAFUpdateHandle !== null) { cancelAnimationFrame(rAFUpdateHandle); rAFUpdateHandle = null; } }
 
-    /**
-     * Calculates the estimated current source time based on AudioContext time.
-     * @private
-     * @returns {number} The estimated current time in seconds within the audio source.
-     */
+    /** @private @returns {number} */
     function calculateEstimatedSourceTime() {
-        const audioCtx = AudioApp.audioEngine.getAudioContext();
+        const audioCtx = AudioApp.audioEngine?.getAudioContext();
         const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0;
-
-        // If not playing, or state is inconsistent, return the last known time from the engine
         if (!isActuallyPlaying || playbackStartTimeContext === null || !audioCtx || !currentAudioBuffer || duration <= 0 || currentSpeedForUpdate <= 0) {
-            const engineTime = AudioApp.audioEngine.getCurrentTime();
+            const engineTime = AudioApp.audioEngine?.getCurrentTime() || { currentTime: playbackStartSourceTime };
             return engineTime.currentTime;
         }
-
-        // Calculate elapsed time based on context and speed
         const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
         const elapsedSourceTime = elapsedContextTime * currentSpeedForUpdate;
         let estimatedCurrentSourceTime = playbackStartSourceTime + elapsedSourceTime;
-
-        // Clamp to valid duration range
-        estimatedCurrentSourceTime = Math.max(0, Math.min(estimatedCurrentSourceTime, duration));
-        return estimatedCurrentSourceTime;
+        return Math.max(0, Math.min(estimatedCurrentSourceTime, duration));
     }
 
-    /**
-     * Updates the time display, seek bar, and visualization progress indicator.
-     * @param {number} time - The current source time to display.
-     * @private
-     */
+    /** @private @param {number} time */
     function updateUIWithTime(time) {
         const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0;
-        if (isNaN(duration) || duration <= 0) return; // Avoid updates if duration invalid
-
+        if (isNaN(duration) || duration <= 0) return;
         const clampedTime = Math.max(0, Math.min(time, duration));
-        const fraction = duration > 0 ? clampedTime / duration : 0; // Avoid division by zero
-
+        const fraction = duration > 0 ? clampedTime / duration : 0;
         // Update UI elements
         AudioApp.uiManager.updateTimeDisplay(clampedTime, duration);
-        AudioApp.uiManager.updateSeekBar(fraction); // uiManager handles check to prevent loops
-        AudioApp.visualizer.updateProgressIndicator(clampedTime, duration);
+        AudioApp.uiManager.updateSeekBar(fraction);
+        // Update BOTH visualizer progress indicators
+        AudioApp.waveformVisualizer?.updateProgressIndicator(clampedTime, duration);
+        AudioApp.spectrogramVisualizer?.updateProgressIndicator(clampedTime, duration);
     }
 
-    /**
-     * The main UI update loop function, called via requestAnimationFrame.
-     * @param {DOMHighResTimeStamp} timestamp - The timestamp provided by rAF.
-     * @private
-     */
+    /** @private @param {DOMHighResTimeStamp} timestamp */
     function updateUIBasedOnContextTime(timestamp) {
-        if (!isActuallyPlaying) {
-            rAFUpdateHandle = null; // Ensure handle is cleared if stopped externally
-            return; // Stop the loop if not playing
-        }
-
+        if (!isActuallyPlaying) { rAFUpdateHandle = null; return; }
         const estimatedTime = calculateEstimatedSourceTime();
         updateUIWithTime(estimatedTime);
-
-        // Request the next frame
         rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime);
     }
-
 
     // --- Public Interface ---
     return {
         init: init
-        // Other methods are private or event handlers
     };
 })(); // End of AudioApp IIFE
 // --- /vibe-player/js/app.js ---

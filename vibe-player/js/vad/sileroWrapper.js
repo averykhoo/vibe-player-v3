@@ -1,21 +1,19 @@
-// --- /vibe-player/js/sileroWrapper.js ---
+// --- /vibe-player/js/vad/sileroWrapper.js --- // Updated Path
 // Wraps the ONNX Runtime session for the Silero VAD model.
 // Manages ONNX session creation, state tensors, and inference calls.
 
 var AudioApp = AudioApp || {}; // Ensure namespace exists
 
 // Design Decision: Use IIFE, pass the global `ort` object dependency.
-// This makes the dependency explicit and allows for easier testing/mocking if needed.
 AudioApp.sileroWrapper = (function(globalOrt) {
     'use strict';
 
     // Check if ONNX Runtime is loaded
     if (!globalOrt) {
         console.error("SileroWrapper: CRITICAL - ONNX Runtime (ort) object not found on window!");
-        // Return a non-functional public interface
-        return {
-            /** @returns {Promise<boolean>} */ create: () => Promise.resolve(false),
-            /** @returns {Promise<number>} */ process: () => Promise.reject(new Error("ONNX Runtime not available")),
+        return { // Return a non-functional public interface
+            create: () => Promise.resolve(false),
+            process: () => Promise.reject(new Error("ONNX Runtime not available")),
             reset_state: () => { console.error("ONNX Runtime not available"); },
             isAvailable: false
         };
@@ -43,6 +41,7 @@ AudioApp.sileroWrapper = (function(globalOrt) {
      * Creates and loads the Silero VAD ONNX InferenceSession if it doesn't already exist.
      * Configures ONNX Runtime Web options, especially WASM paths.
      * Idempotent: Safe to call multiple times; will only create the session once.
+     * Resets internal state (h, c) upon successful creation or if session already exists.
      * @param {number} sampleRate - The required sample rate (must match model, e.g., 16000).
      * @param {string} [uri='./model/silero_vad.onnx'] - Path to the ONNX model file, relative to the HTML file.
      * @returns {Promise<boolean>} - True if session exists or was created successfully, false otherwise.
@@ -50,31 +49,25 @@ AudioApp.sileroWrapper = (function(globalOrt) {
      */
     async function create(sampleRate, uri = './model/silero_vad.onnx') {
         // --- Idempotency Check ---
-        // Design Decision: If the session object already exists, assume it was created successfully before.
-        // Don't try to recreate it, just return true. Optionally reset state for the new run.
         if (session) {
-            console.log("SileroWrapper: Session already exists.");
-            // Ensure state is reset for potentially new audio, even if session exists
-            // This is important if loading multiple files without page refresh.
+            console.log("SileroWrapper: Session already exists. Resetting state.");
             try {
-                reset_state();
+                reset_state(); // Ensure state is reset for potentially new audio
             } catch (e) {
                 console.warn("SileroWrapper: Error resetting state for existing session:", e);
-                // Proceed anyway, but state might be stale if tensor creation failed
             }
             return true; // Session already created
         }
         // --- End Idempotency Check ---
 
-        // Design Decision: Default path assumes model is in 'model/' relative to index.html.
+        // Configure ONNX Runtime options
         const opt = {
             executionProviders: ["wasm"], // Use WebAssembly backend
-            logSeverityLevel: 3, // 0:V, 1:I, 2:W, 3:E, 4:F - Reduce console noise
-            logVerbosityLevel: 3, // Default is 0
+            logSeverityLevel: 3, // 0:V, 1:I, 2:W, 3:E, 4:F
+            logVerbosityLevel: 3,
             // CRITICAL: Configure WASM options
             wasm: {
-                // Provide the path where the .wasm files (ort-wasm.wasm, etc.) are located,
-                // relative to the main HTML file.
+                // Provide the path where the .wasm files are located relative to index.html
                 wasmPaths: 'lib/' // Assumes .wasm files are in the /lib/ folder
             }
         };
@@ -83,22 +76,22 @@ AudioApp.sileroWrapper = (function(globalOrt) {
             console.log(`SileroWrapper: Creating ONNX InferenceSession from ${uri}...`);
             console.log("SileroWrapper: Using options:", opt);
             // --- Session Creation ---
-            // Assign the created session to the module's 'session' variable.
             session = await globalOrt.InferenceSession.create(uri, opt);
             // --- End Session Creation ---
 
             // Create the sample rate tensor (int64 requires BigInt)
+            // This tensor is reused for all process() calls.
             sampleRateTensor = new globalOrt.Tensor("int64", [BigInt(sampleRate)]);
 
-            reset_state(); // Initialize state tensors immediately after session creation.
+            // Initialize state tensors immediately after session creation.
+            reset_state();
 
             console.log("SileroWrapper: ONNX session created successfully.");
             return true; // Indicate success
         } catch (e) {
             console.error("SileroWrapper: Failed to create ONNX InferenceSession:", e);
-            // Log potential WASM loading issues
             if (e.message.includes("WebAssembly") || e.message.includes(".wasm")) {
-                console.error("SileroWrapper: Hint - Check if WASM files (e.g., ort-wasm.wasm) are present in the 'lib/' folder and served correctly.");
+                console.error("SileroWrapper: Hint - Check if ONNX WASM files (e.g., ort-wasm.wasm) are present in the 'lib/' folder and served correctly.");
             }
             session = null; // Ensure session is null on failure
             return false; // Indicate failure
@@ -110,92 +103,91 @@ AudioApp.sileroWrapper = (function(globalOrt) {
      * Should be called before processing a new audio file or segment.
      * Safe to call even if session creation failed (will just log error if ort is missing).
      * @public
+     * @throws {Error} If ONNX Runtime `ort.Tensor` constructor is unavailable.
      */
     function reset_state() {
-        if (!globalOrt) {
-            console.error("SileroWrapper: Cannot reset state - ONNX Runtime not available.");
-            return;
+        if (!globalOrt?.Tensor) { // Check if Tensor constructor exists
+            console.error("SileroWrapper: Cannot reset state - ONNX Runtime Tensor constructor not available.");
+            // Set states to null to prevent errors in process()
+            state_c = null;
+            state_h = null;
+            throw new Error("ONNX Runtime Tensor constructor not available.");
         }
-        // Create zero-filled Float32Arrays and wrap them in Tensors.
-        // This ensures state_c and state_h are valid Tensor objects (or null if ort is missing)
-        state_c = new globalOrt.Tensor("float32", new Float32Array(stateSize).fill(0), stateDims);
-        state_h = new globalOrt.Tensor("float32", new Float32Array(stateSize).fill(0), stateDims);
-        // console.log("SileroWrapper: Model state tensors reset."); // Keep console less noisy
+        try {
+            // Create zero-filled Float32Arrays and wrap them in Tensors.
+            state_c = new globalOrt.Tensor("float32", new Float32Array(stateSize).fill(0), stateDims);
+            state_h = new globalOrt.Tensor("float32", new Float32Array(stateSize).fill(0), stateDims);
+            // console.log("SileroWrapper: Model state tensors reset."); // Keep console less noisy
+        } catch (tensorError) {
+             console.error("SileroWrapper: Error creating state tensors:", tensorError);
+             state_c = null; // Ensure states are null on error
+             state_h = null;
+             throw tensorError; // Re-throw
+        }
     }
 
     /**
      * Processes a single audio frame through the loaded VAD model.
-     * Requires `create()` to have been called successfully first (checked via `session` variable).
+     * Requires `create()` to have been called successfully first.
      * Updates the internal state tensors (h, c) for the next frame.
-     * @param {Float32Array} audioFrame - The audio data for one frame (e.g., 1536 samples).
+     * @param {Float32Array} audioFrame - The audio data for one frame (e.g., 1536 samples). Must be Float32Array.
      * @returns {Promise<number>} - The VAD probability score (typically 0.0 to 1.0) for the frame.
-     * @throws {Error} If the session is not initialized or inference fails.
+     * @throws {Error} If the session is not initialized, state is missing, input is invalid, or inference fails.
      * @public
      */
     async function process(audioFrame) {
         // --- Pre-conditions Check ---
-        // This check now correctly identifies if `create` failed or was never called,
-        // or if state tensors failed to initialize.
         if (!session || !state_c || !state_h || !sampleRateTensor) {
-            throw new Error("SileroWrapper: VAD session not initialized or state missing. Call create() first.");
+            throw new Error("SileroWrapper: VAD session/state not initialized. Call create() first.");
+        }
+        if (!(audioFrame instanceof Float32Array)) {
+             // Input validation - model expects Float32Array
+             throw new Error(`SileroWrapper: Input audioFrame must be a Float32Array, received ${typeof audioFrame}`);
         }
         // --- End Pre-conditions Check ---
 
-        // Ensure input is Float32Array (model expects this)
-        if (!(audioFrame instanceof Float32Array)) {
-             console.warn("SileroWrapper: Input audioFrame is not Float32Array. Attempting conversion.");
-             try {
-                 audioFrame = new Float32Array(audioFrame);
-             } catch (convError) {
-                 throw new Error(`SileroWrapper: Failed to convert audioFrame to Float32Array. ${convError.message}`);
-             }
-        }
-
         try {
-            // Create input tensor for the audio frame. Shape [batch_size, num_samples].
+            // Create input tensor for the audio frame. Shape [batch_size = 1, num_samples].
             const inputTensor = new globalOrt.Tensor("float32", audioFrame, [1, audioFrame.length]);
 
-            // Prepare the 'feeds' object mapping input names (expected by model) to tensors.
+            // Prepare the 'feeds' object mapping input names expected by the Silero model to tensors.
+            // These names ('input', 'h', 'c', 'sr') must match the model's definition.
             const feeds = {
                 input: inputTensor,
                 h: state_h,       // Previous state h
                 c: state_c,       // Previous state c
-                sr: sampleRateTensor // Sample rate tensor
+                sr: sampleRateTensor // Sample rate tensor (created once in create())
             };
 
-            // Run inference
+            // Run inference using the session
             const outputMap = await session.run(feeds);
 
             // IMPORTANT: Update the internal state tensors with the new states returned by the model.
-            // The model outputs are typically named 'hn' and 'cn'.
+            // The model outputs are typically named 'hn' and 'cn'. Check if they exist.
             if (outputMap.hn && outputMap.cn) {
-                state_h = outputMap.hn;
-                state_c = outputMap.cn;
+                state_h = outputMap.hn; // Update state_h for the next call
+                state_c = outputMap.cn; // Update state_c for the next call
             } else {
-                 // If state names differ, log a warning. User might need to check model outputs.
                  console.warn("SileroWrapper: Model did not return outputs named 'hn' and 'cn'. State will not be updated correctly for subsequent frames.");
-                 // Should this throw? For now, just warn. Processing might still yield 'output'.
+                 // Consider throwing an error here if state update is critical for model function? For now, just warn.
             }
 
-
             // Extract the primary VAD probability output. Assume it's named 'output'.
-            if (outputMap.output && outputMap.output.data) {
-                // The output is usually a tensor with a single value.
-                return outputMap.output.data[0];
+            // The output is usually a tensor containing a single float value.
+            if (outputMap.output && outputMap.output.data && typeof outputMap.output.data[0] === 'number') {
+                return outputMap.output.data[0]; // Return the probability score
             } else {
-                 // If the output name is different, throw an error. User needs to inspect the model.
-                 console.error("SileroWrapper: Model output map:", outputMap);
-                 throw new Error("SileroWrapper: Expected output tensor named 'output' not found in model results.");
+                 console.error("SileroWrapper: Model output map:", outputMap); // Log the actual output for debugging
+                 throw new Error("SileroWrapper: Expected output tensor named 'output' with numeric data not found in model results.");
             }
         } catch (e) {
             console.error("SileroWrapper: ONNX session run failed:", e);
-            // Consider resetting state on error? Maybe not, let the caller decide.
+            // Don't reset state here, let the caller handle recovery if needed.
             throw e; // Re-throw the error for the caller (sileroProcessor) to handle.
         }
     }
 
     // --- Public Interface ---
-    // Design Decision: Expose necessary functions for VAD processing.
     return {
         create: create,
         process: process,
@@ -204,3 +196,4 @@ AudioApp.sileroWrapper = (function(globalOrt) {
     };
 
 })(window.ort); // Pass the global 'ort' object provided by ort.min.js
+// --- /vibe-player/js/vad/sileroWrapper.js --- // Updated Path

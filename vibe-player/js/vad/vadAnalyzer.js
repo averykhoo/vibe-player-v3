@@ -1,4 +1,4 @@
-// --- /vibe-player/js/vadAnalyzer.js ---
+// --- /vibe-player/js/vad/vadAnalyzer.js --- // Updated Path
 // Manages VAD state (analysis results, current thresholds) and uses SileroProcessor
 // to perform analysis and recalculations. Acts as a bridge between app controller and processor.
 
@@ -8,33 +8,38 @@ var AudioApp = AudioApp || {}; // Ensure namespace exists
 AudioApp.vadAnalyzer = (function(processor) {
     'use strict';
 
+    // === Module Dependencies ===
+    // Assuming AudioApp.Constants is loaded before this file.
+    const Constants = AudioApp.Constants;
+
     // Check if the required processor module is available
      if (!processor) {
         console.error("VadAnalyzer: CRITICAL - AudioApp.sileroProcessor is not available!");
-        // Return a non-functional public interface
-        return {
-            /** @returns {Promise<object>} */ analyze: () => Promise.reject(new Error("VAD Processor not available")),
-            /** @returns {Array} */ recalculate: () => [],
-            /** @returns {Array} */ getCurrentRegions: () => [],
-            /** @returns {Array} */ handleThresholdUpdate: () => []
+        return { // Return a non-functional public interface
+            analyze: () => Promise.reject(new Error("VAD Processor not available")),
+            recalculate: () => [], getCurrentRegions: () => [], handleThresholdUpdate: () => [], getFrameSamples: () => Constants?.DEFAULT_VAD_FRAME_SAMPLES || 1536
         };
     }
+     // Check if Constants module is loaded
+     if (!Constants) {
+          console.error("VadAnalyzer: CRITICAL - AudioApp.Constants not available!");
+          // Provide fallback for getFrameSamples if Constants missing
+           return {
+               analyze: () => Promise.reject(new Error("Constants not available")),
+               recalculate: () => [], getCurrentRegions: () => [], handleThresholdUpdate: () => [], getFrameSamples: () => 1536 // Fallback value
+          };
+     }
 
     // --- Module State ---
-    /**
-     * Stores the complete results from the last successful VAD analysis.
-     * @type {VadResult|null}
-     * @see {AudioApp.sileroProcessor.analyzeAudio} typedef for VadResult structure.
-     */
+    /** @type {VadResult|null} */
     let currentVadResults = null;
-
-    /** @type {number} The currently active positive speech threshold. */
+    /** @type {number} */
     let currentPositiveThreshold = 0.5; // Default
-    /** @type {number} The currently active negative speech threshold. */
+    /** @type {number} */
     let currentNegativeThreshold = 0.35; // Default
-     /** @type {number} Default frame size in samples (can be overridden). */
-     const DEFAULT_FRAME_SAMPLES = 1536;
 
+    // --- Default Frame Size Constant REMOVED - Use AudioApp.Constants ---
+    // const DEFAULT_FRAME_SAMPLES = 1536; // Use Constants.DEFAULT_VAD_FRAME_SAMPLES
 
     // --- Public Methods ---
 
@@ -44,47 +49,38 @@ AudioApp.vadAnalyzer = (function(processor) {
      * @param {Float32Array} pcm16k - The 16kHz mono audio data.
      * @param {object} [options={}] - Configuration options.
      * @param {function({processedFrames: number, totalFrames: number}): void} [options.onProgress] - Optional callback for progress updates.
-     * @param {number} [options.frameSamples] - Optional override for frame size.
+     * @param {number} [options.frameSamples] - Optional override for frame size. Defaults to Constants.DEFAULT_VAD_FRAME_SAMPLES.
      * @returns {Promise<VadResult>} The full VAD results object from the processor.
      * @throws {Error} If the analysis in the processor fails.
      * @public
      */
     async function analyze(pcm16k, options = {}) {
-        // Reset internal state before starting analysis for a new file
         currentVadResults = null;
-        // Reset thresholds to defaults - they will be updated based on analysis results
         currentPositiveThreshold = 0.5;
         currentNegativeThreshold = 0.35;
 
-        // Extract onProgress callback and frameSamples from options if provided
-        const onProgressCallback = options.onProgress; // Extract the callback
+        const onProgressCallback = options.onProgress;
         const frameSamplesOverride = options.frameSamples;
 
-        // Define initial options for the processor, passing along the callback and potential override
         const processorOptions = {
-             positiveSpeechThreshold: currentPositiveThreshold, // Pass current defaults
+             positiveSpeechThreshold: currentPositiveThreshold,
              negativeSpeechThreshold: currentNegativeThreshold,
-             frameSamples: frameSamplesOverride || DEFAULT_FRAME_SAMPLES, // Use override or default
-             onProgress: onProgressCallback // Pass the callback function along to the processor
-            // redemptionFrames: 7 // Can be passed from app config if needed
+             frameSamples: frameSamplesOverride || Constants.DEFAULT_VAD_FRAME_SAMPLES, // Use Constant default
+             onProgress: onProgressCallback
         };
 
         console.log("VadAnalyzer: Starting analysis via processor...");
         try {
-            // Delegate the core analysis to the sileroProcessor module, passing options
-            const results = await processor.analyzeAudio(pcm16k, processorOptions);
-
-            // Store the results and update current thresholds based on what was actually used
+            const results = await processor.analyzeAudio(pcm16k, processorOptions); // Delegate to processor
             currentVadResults = results;
             currentPositiveThreshold = results.initialPositiveThreshold;
             currentNegativeThreshold = results.initialNegativeThreshold;
-
             console.log("VadAnalyzer: Analysis successful.");
-            return currentVadResults; // Return the comprehensive results object
+            return currentVadResults;
         } catch (error) {
             console.error("VadAnalyzer: Analysis failed -", error);
-            currentVadResults = null; // Ensure state is cleared on failure
-            throw error; // Re-throw for the app controller to handle UI/state
+            currentVadResults = null;
+            throw error;
         }
     }
 
@@ -99,19 +95,11 @@ AudioApp.vadAnalyzer = (function(processor) {
      function handleThresholdUpdate(type, value) {
         if (!currentVadResults) {
             console.warn("VadAnalyzer: Cannot handle threshold update - no VAD results available.");
-            return []; // No analysis has been run yet
+            return [];
         }
-
-        // Update the relevant internal threshold state
-        if (type === 'positive') {
-            currentPositiveThreshold = value;
-        } else if (type === 'negative') {
-            currentNegativeThreshold = value;
-        } else {
-             console.warn(`VadAnalyzer: Unknown threshold type '${type}'`);
-             return currentVadResults.regions || []; // Return existing regions if type is invalid
-        }
-
+        if (type === 'positive') { currentPositiveThreshold = value; }
+        else if (type === 'negative') { currentNegativeThreshold = value; }
+        else { console.warn(`VadAnalyzer: Unknown threshold type '${type}'`); return currentVadResults.regions || []; }
         // Trigger recalculation using the updated internal thresholds
         return recalculate();
     }
@@ -129,23 +117,19 @@ AudioApp.vadAnalyzer = (function(processor) {
             console.warn("VadAnalyzer: Cannot recalculate - VAD results or probabilities missing.");
             return [];
         }
-
         // Prepare options using current state for the processor's recalculate function
         const optionsForRecalc = {
             frameSamples: currentVadResults.frameSamples,
-            sampleRate: currentVadResults.sampleRate,
+            sampleRate: currentVadResults.sampleRate, // Use sample rate from results (should be VAD_SAMPLE_RATE)
             positiveSpeechThreshold: currentPositiveThreshold, // Use current state
             negativeSpeechThreshold: currentNegativeThreshold, // Use current state
             redemptionFrames: currentVadResults.redemptionFrames
         };
-
         // Delegate the actual calculation
         const newRegions = processor.recalculateSpeechRegions(currentVadResults.probabilities, optionsForRecalc);
-
         // Update the stored regions within the main results object
         currentVadResults.regions = newRegions;
-
-        return newRegions; // Return the newly calculated regions
+        return newRegions;
     }
 
     /**
@@ -154,22 +138,22 @@ AudioApp.vadAnalyzer = (function(processor) {
      * @public
      */
     function getCurrentRegions() {
-        // Provide easy access to the current regions for other modules (like Visualizer)
         return currentVadResults ? (currentVadResults.regions || []) : [];
     }
 
     /**
      * Gets the frame size used in the last successful analysis.
      * Needed by app.js to calculate total frames for the progress bar.
-     * @returns {number} The frame size in samples, or a default value if no analysis done.
+     * Returns Constants.DEFAULT_VAD_FRAME_SAMPLES if no analysis done yet.
+     * @returns {number} The frame size in samples.
      * @public
      */
     function getFrameSamples() {
-        return currentVadResults ? currentVadResults.frameSamples : DEFAULT_FRAME_SAMPLES;
+        // Use frameSamples from results if available, otherwise use the Constant default
+        return currentVadResults ? currentVadResults.frameSamples : Constants.DEFAULT_VAD_FRAME_SAMPLES;
     }
 
     // --- Public Interface ---
-    // Expose methods needed by app.js to manage VAD processing and results.
     return {
         analyze: analyze,
         recalculate: recalculate,
@@ -179,4 +163,4 @@ AudioApp.vadAnalyzer = (function(processor) {
     };
 
 })(AudioApp.sileroProcessor); // Pass the processor module as a dependency
-// --- /vibe-player/js/vadAnalyzer.js ---
+// --- /vibe-player/js/vad/vadAnalyzer.js --- // Updated Path

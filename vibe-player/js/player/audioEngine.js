@@ -1,4 +1,4 @@
-// --- /vibe-player/js/audioEngine.js ---
+// --- /vibe-player/js/player/audioEngine.js --- // Updated Path
 // Manages Web Audio API, AudioWorklet loading/communication, decoding, resampling, and playback control.
 // Uses Rubberband WASM via an AudioWorkletProcessor for time-stretching and pitch/formant shifting.
 
@@ -24,11 +24,11 @@ AudioApp.audioEngine = (function() {
     /** @type {ArrayBuffer|null} */ let wasmBinary = null;
     /** @type {string|null} */ let loaderScriptText = null;
 
-    // --- Constants ---
-    /** @const {string} */ const PROCESSOR_SCRIPT_URL = 'js/rubberbandProcessor.js';
-    /** @const {string} */ const PROCESSOR_NAME = 'rubberband-processor';
-    /** @const {string} */ const WASM_BINARY_URL = 'lib/rubberband.wasm';
-    /** @const {string} */ const LOADER_SCRIPT_URL = 'lib/rubberband-loader.js';
+    // --- Constants REMOVED - Now use AudioApp.Constants ---
+    // const PROCESSOR_SCRIPT_URL = 'js/player/rubberbandProcessor.js'; // REMOVED
+    // const PROCESSOR_NAME = 'rubberband-processor'; // REMOVED
+    // const WASM_BINARY_URL = 'lib/rubberband.wasm'; // REMOVED
+    // const LOADER_SCRIPT_URL = 'lib/rubberband-loader.js'; // REMOVED
 
     // --- Initialization ---
 
@@ -82,21 +82,27 @@ AudioApp.audioEngine = (function() {
 
     /**
      * Fetches WASM resources (binary and loader script).
+     * Uses paths from AudioApp.Constants.
      * @private
      * @returns {Promise<void>}
      */
     async function preFetchWorkletResources() {
         console.log("AudioEngine: Pre-fetching WASM resources...");
         try {
+            // Ensure Constants module is loaded
+            if (!AudioApp.Constants) {
+                throw new Error("AudioApp.Constants not found.");
+            }
+
             // Fetch WASM binary
-            const wasmResponse = await fetch(WASM_BINARY_URL);
-            if (!wasmResponse.ok) throw new Error(`Fetch failed ${wasmResponse.status} for ${WASM_BINARY_URL}`);
+            const wasmResponse = await fetch(AudioApp.Constants.WASM_BINARY_URL); // Use Constant
+            if (!wasmResponse.ok) throw new Error(`Fetch failed ${wasmResponse.status} for ${AudioApp.Constants.WASM_BINARY_URL}`);
             wasmBinary = await wasmResponse.arrayBuffer();
             console.log(`AudioEngine: Fetched WASM binary (${wasmBinary.byteLength} bytes).`);
 
             // Fetch loader script text
-            const loaderResponse = await fetch(LOADER_SCRIPT_URL);
-            if (!loaderResponse.ok) throw new Error(`Fetch failed ${loaderResponse.status} for ${LOADER_SCRIPT_URL}`);
+            const loaderResponse = await fetch(AudioApp.Constants.LOADER_SCRIPT_URL); // Use Constant
+            if (!loaderResponse.ok) throw new Error(`Fetch failed ${loaderResponse.status} for ${AudioApp.Constants.LOADER_SCRIPT_URL}`);
             loaderScriptText = await loaderResponse.text();
             console.log(`AudioEngine: Fetched Loader Script text (${loaderScriptText.length} chars).`);
         } catch (fetchError) {
@@ -150,10 +156,6 @@ AudioApp.audioEngine = (function() {
             dispatchEngineEvent('audioapp:audioLoaded', { audioBuffer: currentDecodedBuffer });
 
             // --- Resampling REMOVED from this pipeline ---
-            // console.log("AudioEngine: Resampling audio for VAD..."); // REMOVED
-            // const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(currentDecodedBuffer); // REMOVED
-            // console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz`); // REMOVED
-            // dispatchEngineEvent('audioapp:resamplingComplete', { pcmData: pcm16k }); // REMOVED
 
             // Setup AudioWorklet
             if (!wasmBinary || !loaderScriptText) {
@@ -167,7 +169,6 @@ AudioApp.audioEngine = (function() {
             currentDecodedBuffer = null; // Clear buffer on error
             // Determine specific error type for event dispatch
             const errorType = error.message.includes("decodeAudioData") ? 'decodingError'
-                              // : error.message.includes("resampling") ? 'resamplingError' // Resampling error less likely here now
                               : error.message.includes("Worklet") ? 'workletError'
                               : 'loadError';
             dispatchEngineEvent(`audioapp:${errorType}`, { error: error });
@@ -178,13 +179,18 @@ AudioApp.audioEngine = (function() {
 
     /**
      * Resamples an AudioBuffer to 16kHz mono Float32Array using OfflineAudioContext.
+     * Uses VAD_SAMPLE_RATE from AudioApp.Constants.
      * @param {AudioBuffer} audioBuffer - The original decoded audio buffer.
      * @returns {Promise<Float32Array>} A promise resolving to the resampled PCM data.
      * @throws {Error} If resampling fails or OfflineAudioContext cannot be created.
      * @private
      */
     function convertAudioBufferTo16kHzMonoFloat32(audioBuffer) {
-        const targetSampleRate = 16000;
+        // Ensure Constants module is loaded
+        if (!AudioApp.Constants) {
+            return Promise.reject(new Error("AudioApp.Constants not found for resampling."));
+        }
+        const targetSampleRate = AudioApp.Constants.VAD_SAMPLE_RATE; // Use Constant
         const targetLength = Math.ceil(audioBuffer.duration * targetSampleRate);
 
         // Handle zero-length audio gracefully
@@ -218,7 +224,7 @@ AudioApp.audioEngine = (function() {
         }
     }
 
-    /**
+     /**
      * Public wrapper to resample an AudioBuffer to 16kHz mono Float32Array.
      * Calls the internal resampling logic.
      * @param {AudioBuffer} audioBuffer - The original decoded audio buffer.
@@ -280,6 +286,7 @@ AudioApp.audioEngine = (function() {
     /**
      * Adds the AudioWorklet module, creates the AudioWorkletNode, connects it,
      * and sends initial configuration and audio data to the processor.
+     * Uses paths/names from AudioApp.Constants.
      * @param {AudioBuffer} decodedBuffer - The decoded audio buffer to send to the worklet.
      * @private
      * @returns {Promise<void>} Resolves when the worklet node is set up and data sent.
@@ -287,17 +294,17 @@ AudioApp.audioEngine = (function() {
      */
     async function setupAndStartWorklet(decodedBuffer) {
         // Verify all necessary components are available
-        if (!audioCtx || !decodedBuffer || !wasmBinary || !loaderScriptText || !gainNode) {
-            throw new Error("Cannot setup worklet - prerequisites missing.");
+        if (!audioCtx || !decodedBuffer || !wasmBinary || !loaderScriptText || !gainNode || !AudioApp.Constants) {
+            throw new Error("Cannot setup worklet - prerequisites missing (context, buffer, wasm, gain, constants).");
         }
 
         // Ensure any previous worklet is cleaned up first
         await cleanupCurrentWorklet();
 
         try {
-            // Add the processor script as a module
-            console.log(`[AudioEngine] Adding AudioWorklet module: ${PROCESSOR_SCRIPT_URL}`);
-            await audioCtx.audioWorklet.addModule(PROCESSOR_SCRIPT_URL);
+            // Add the processor script as a module using path from Constants
+            console.log(`[AudioEngine] Adding AudioWorklet module: ${AudioApp.Constants.PROCESSOR_SCRIPT_URL}`);
+            await audioCtx.audioWorklet.addModule(AudioApp.Constants.PROCESSOR_SCRIPT_URL); // Use Constant
             console.log("[AudioEngine] AudioWorklet module added.");
 
             // Prepare WASM data for transfer (create a copy)
@@ -314,8 +321,8 @@ AudioApp.audioEngine = (function() {
             const transferListWasm = [wasmBinaryTransfer]; // Mark binary for transfer
 
             console.log("[AudioEngine] Creating AudioWorkletNode with options:", processorOpts);
-            // Create the AudioWorkletNode
-            workletNode = new AudioWorkletNode(audioCtx, PROCESSOR_NAME, {
+            // Create the AudioWorkletNode using name from Constants
+            workletNode = new AudioWorkletNode(audioCtx, AudioApp.Constants.PROCESSOR_NAME, { // Use Constant
                 numberOfInputs: 0, // No audio input from other nodes
                 numberOfOutputs: 1, // One audio output
                 outputChannelCount: [decodedBuffer.numberOfChannels], // Match source channel count
@@ -544,7 +551,7 @@ AudioApp.audioEngine = (function() {
      */
     function setPitch(pitch) {
         // Clamp pitch scale to a reasonable range
-        const scale = Math.max(0.5, Math.min(parseFloat(pitch) || 1.0, 2.0));
+        const scale = Math.max(0.25, Math.min(parseFloat(pitch) || 1.0, 2.0)); // Adjusted min to 0.25 to match slider
         // Only send message if the scale changes
         if (currentPitchScale !== scale) {
             currentPitchScale = scale;
@@ -585,7 +592,7 @@ AudioApp.audioEngine = (function() {
             return;
         }
         // Clamp gain value
-        const value = Math.max(0.0, Math.min(parseFloat(gain) || 1.0, 5.0));
+        const value = Math.max(0.0, Math.min(parseFloat(gain) || 1.0, 5.0)); // Range 0 to 5
         // Use setTargetAtTime for a smooth transition (avoids clicks)
         // The third parameter is the time constant for the exponential change
         gainNode.gain.setTargetAtTime(value, audioCtx.currentTime, 0.015);
@@ -664,7 +671,7 @@ AudioApp.audioEngine = (function() {
     return {
         init: init,
         loadAndProcessFile: loadAndProcessFile,
-        resampleTo16kMono: resampleTo16kMono, // <-- ADDED
+        resampleTo16kMono: resampleTo16kMono, // Keep exposed
         togglePlayPause: togglePlayPause,
         jumpBy: jumpBy,
         seek: seek,
@@ -678,4 +685,4 @@ AudioApp.audioEngine = (function() {
         // Internal state like currentPlaybackSpeed is not exposed directly
     };
 })();
-// --- /vibe-player/js/audioEngine.js ---
+// --- /vibe-player/js/player/audioEngine.js --- // Updated Path
