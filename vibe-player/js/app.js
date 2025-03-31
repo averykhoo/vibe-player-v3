@@ -14,31 +14,41 @@ AudioApp = (function() {
     'use strict';
 
     // === Module Dependencies ===
-    // Assuming other modules (uiManager, audioEngine, visualizers, VAD modules, constants, utils)
-    // are loaded and attached to AudioApp before init() is called.
-    // We'll access them via the AudioApp namespace.
+    // Assuming other modules are loaded and attached to AudioApp
+    const Utils = AudioApp.Utils; // Now using Utils
 
     // --- Application State ---
-    /** @type {AudioBuffer|null} */ let currentAudioBuffer = null;
-    /** @type {VadResult|null} */ let currentVadResults = null;
-    /** @type {File|null} */ let currentFile = null;
-    /** @type {boolean} */ let vadModelReady = false; // VAD model itself
-    /** @type {boolean} */ let workletPlaybackReady = false; // Audio engine ready for playback
-    /** @type {boolean} */ let isVadProcessing = false; // If VAD analysis task is running
+    /** @type {AudioBuffer|null} The currently loaded and decoded audio buffer. */
+    let currentAudioBuffer = null;
+    /** @type {VadResult|null} Results from the VAD analysis (see vadAnalyzer). Only populated after background VAD. */
+    let currentVadResults = null;
+    /** @type {File|null} The currently loaded audio file object. */
+    let currentFile = null;
+    /** @type {boolean} Flag indicating if the Silero VAD model is loaded and ready. */
+    let vadModelReady = false;
+    /** @type {boolean} Flag indicating if the AudioWorklet processor is loaded and ready for playback commands. */
+    let workletPlaybackReady = false;
+    /** @type {boolean} Flag indicating if the background VAD task is currently running. */
+    let isVadProcessing = false;
 
-    // --- Main Thread Playback Time State ---
-    /** @type {number|null} */ let playbackStartTimeContext = null;
-    /** @type {number} */ let playbackStartSourceTime = 0.0;
-    /** @type {boolean} */ let isActuallyPlaying = false;
-    /** @type {number|null} */ let rAFUpdateHandle = null;
-    /** @type {number} */ let currentSpeedForUpdate = 1.0;
+    // --- Main Thread Playback Time State (Preserved) ---
+    /** @type {number|null} AudioContext time when playback/seek started */ let playbackStartTimeContext = null;
+    /** @type {number} Source time (in seconds) when playback/seek started */ let playbackStartSourceTime = 0.0;
+    /** @type {boolean} */ let isActuallyPlaying = false; // Tracks confirmed playback state
+    /** @type {number|null} */ let rAFUpdateHandle = null; // requestAnimationFrame handle
+    /** @type {number} Playback speed used for main thread time estimation */ let currentSpeedForUpdate = 1.0;
+
+    // --- Debounced Function (NEW) ---
+    /** @type {Function|null} Debounced function for engine synchronization after speed change. */
+    let debouncedSyncEngine = null;
+    const SYNC_DEBOUNCE_WAIT_MS = 300; // Wait 300ms after last speed change before syncing
 
     // --- Initialization ---
     /** @public */
     function init() {
         console.log("AudioApp: Initializing...");
 
-        // Check for critical module dependencies
+        // Check for critical module dependencies (including Utils)
         if (!AudioApp.uiManager || !AudioApp.audioEngine || !AudioApp.waveformVisualizer || !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.Constants || !AudioApp.Utils) {
              console.error("AudioApp: CRITICAL - One or more required modules/constants/utils not found on AudioApp namespace! Check script loading order.");
              // Optionally display a user-facing error
@@ -46,11 +56,14 @@ AudioApp = (function() {
              return;
         }
 
+        // Create debounced function instance using AudioApp.Utils directly (CORRECTED)
+        debouncedSyncEngine = AudioApp.Utils.debounce(syncEngineToEstimatedTime, SYNC_DEBOUNCE_WAIT_MS);
+
         // Initialize modules
         AudioApp.uiManager.init();
         AudioApp.audioEngine.init();
-        AudioApp.waveformVisualizer.init(); // Init new waveform visualizer
-        AudioApp.spectrogramVisualizer.init(); // Init new spectrogram visualizer
+        AudioApp.waveformVisualizer.init();
+        AudioApp.spectrogramVisualizer.init();
         // VAD modules don't have explicit init functions currently
         setupAppEventListeners();
         console.log("AudioApp: Initialized. Waiting for file...");
@@ -79,7 +92,7 @@ AudioApp = (function() {
         document.addEventListener('audioapp:engineError', handleAudioError);
         document.addEventListener('audioapp:playbackEnded', handlePlaybackEnded);
         document.addEventListener('audioapp:playbackStateChanged', handlePlaybackStateChange);
-        document.addEventListener('audioapp:internalSpeedChanged', handleInternalSpeedChange); // RESTORED Listener
+        document.addEventListener('audioapp:internalSpeedChanged', handleInternalSpeedChange);
         // Window Events
         window.addEventListener('resize', handleWindowResize);
         window.addEventListener('beforeunload', handleBeforeUnload);
@@ -332,12 +345,67 @@ AudioApp = (function() {
     }
     const handleSeekBarInput = handleSeek; // Alias remains
 
-    /** @param {CustomEvent<{speed: number}>} e @private */
-    function handleSpeedChange(e) { AudioApp.audioEngine?.setSpeed(e.detail.speed); }
+    /**
+     * Handles the 'input' event from the speed slider (via uiManager).
+     * Sends the new speed target to the audio engine immediately.
+     * Calls the debounced synchronization function.
+     * @param {CustomEvent<{speed: number}>} e @private
+     */
+    function handleSpeedChange(e) { // Preserved Debounce Logic
+        if (!debouncedSyncEngine) {
+             console.warn("App: Debounced sync function not ready for speed change.");
+             // Still update the engine speed even if debounce isn't ready
+             AudioApp.audioEngine?.setSpeed(e.detail.speed);
+             return;
+         }
+        // Send speed update immediately to engine
+        AudioApp.audioEngine?.setSpeed(e.detail.speed);
+        // Trigger the debounced sync function (resets timer on each input)
+        debouncedSyncEngine();
+    }
+
+    // handleSpeedChangeEnd REMOVED (Logic moved to debouncedSyncEngine call)
+
     /** @param {CustomEvent<{pitch: number}>} e @private */
     function handlePitchChange(e) { AudioApp.audioEngine?.setPitch(e.detail.pitch); }
     /** @param {CustomEvent<{gain: number}>} e @private */
     function handleGainChange(e) { AudioApp.audioEngine?.setGain(e.detail.gain); }
+
+    /**
+     * Performs the actual seek operation to synchronize the engine
+     * after a short delay following speed slider changes.
+     * This function is intended to be called via the debounced wrapper.
+     * @private
+     */
+    function syncEngineToEstimatedTime() { // NEW function
+        if (!workletPlaybackReady || !currentAudioBuffer || !AudioApp.audioEngine) {
+            console.log("App (Debounced Sync): Skipping sync - not ready or no buffer.");
+            return;
+        }
+        const audioCtx = AudioApp.audioEngine.getAudioContext();
+        if (!audioCtx) {
+            console.log("App (Debounced Sync): Skipping sync - no AudioContext.");
+            return;
+        }
+
+        // Calculate the precise time based on main thread estimation NOW
+        const targetTime = calculateEstimatedSourceTime();
+        console.log(`App: Debounced sync executing. Seeking engine to estimated time: ${targetTime.toFixed(3)}.`);
+
+        // Seek the engine to this exact spot
+        AudioApp.audioEngine.seek(targetTime);
+
+        // Update main thread state immediately to reflect the seek target
+        playbackStartSourceTime = targetTime;
+        if (isActuallyPlaying) { // If playing, reset context start time too
+             playbackStartTimeContext = audioCtx.currentTime;
+        } else { // If paused, ensure context time is null and update UI
+            playbackStartTimeContext = null;
+             // Update UI immediately since rAF loop isn't running
+            updateUIWithTime(targetTime);
+        }
+    }
+
 
     /**
      * Handles the internal speed change confirmed by the engine.
