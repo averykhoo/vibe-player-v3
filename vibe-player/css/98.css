@@ -81,9 +81,12 @@ button.default:not(:disabled):active,input[type=reset].default:not(:disabled):ac
     box-shadow: inset 2px 2px #0a0a0a,inset -1px -1px #0a0a0a,inset -2px -2px #fff,inset 3px 3px grey,inset -3px -3px #dfdfdf
 }
 
-@media (not(hover)) {
-    button:not(:disabled):hover,input[type=reset]:not(:disabled):hover,input[type=submit]:not(:disabled):hover {
-        box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px grey
+/* Apply hover styles ONLY on devices that support hover */
+@media (hover: hover) {
+    button:not(:disabled):hover,
+    input[type=reset]:not(:disabled):hover,
+    input[type=submit]:not(:disabled):hover {
+        box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px grey;
     }
 }
 
