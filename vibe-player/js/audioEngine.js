@@ -110,7 +110,8 @@ AudioApp.audioEngine = (function() {
     // --- Loading, Decoding, Resampling Pipeline ---
 
     /**
-     * Loads the selected audio file, decodes it, resamples for VAD, and sets up the AudioWorklet.
+     * Loads the selected audio file, decodes it, and sets up the AudioWorklet.
+     * Resampling for VAD is now handled separately by the caller (app.js).
      * @param {File} file - The audio file selected by the user.
      * @returns {Promise<void>} Resolves when setup is complete or rejects on error.
      * @throws {Error} If any critical step fails (context creation, decoding, worklet setup).
@@ -145,13 +146,14 @@ AudioApp.audioEngine = (function() {
             console.log("AudioEngine: Decoding audio data...");
             currentDecodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
             console.log(`AudioEngine: Decoded ${currentDecodedBuffer.duration.toFixed(2)}s @ ${currentDecodedBuffer.sampleRate}Hz`);
+            // Dispatch event immediately after decoding
             dispatchEngineEvent('audioapp:audioLoaded', { audioBuffer: currentDecodedBuffer });
 
-            // Resample for VAD (16kHz mono)
-            console.log("AudioEngine: Resampling audio for VAD...");
-            const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(currentDecodedBuffer);
-            console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz`);
-            dispatchEngineEvent('audioapp:resamplingComplete', { pcmData: pcm16k });
+            // --- Resampling REMOVED from this pipeline ---
+            // console.log("AudioEngine: Resampling audio for VAD..."); // REMOVED
+            // const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(currentDecodedBuffer); // REMOVED
+            // console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz`); // REMOVED
+            // dispatchEngineEvent('audioapp:resamplingComplete', { pcmData: pcm16k }); // REMOVED
 
             // Setup AudioWorklet
             if (!wasmBinary || !loaderScriptText) {
@@ -161,11 +163,11 @@ AudioApp.audioEngine = (function() {
 
         } catch (error) {
             // Catch errors during the loading pipeline
-            console.error("AudioEngine: Error during load/decode/resample/worklet setup:", error);
+            console.error("AudioEngine: Error during load/decode/worklet setup:", error);
             currentDecodedBuffer = null; // Clear buffer on error
             // Determine specific error type for event dispatch
             const errorType = error.message.includes("decodeAudioData") ? 'decodingError'
-                              : error.message.includes("resampling") ? 'resamplingError'
+                              // : error.message.includes("resampling") ? 'resamplingError' // Resampling error less likely here now
                               : error.message.includes("Worklet") ? 'workletError'
                               : 'loadError';
             dispatchEngineEvent(`audioapp:${errorType}`, { error: error });
@@ -213,6 +215,29 @@ AudioApp.audioEngine = (function() {
             // Catch potential errors creating the OfflineAudioContext
             console.error("AudioEngine: OfflineContext creation error:", offlineCtxError);
             return Promise.reject(new Error(`OfflineContext creation failed: ${offlineCtxError.message}`));
+        }
+    }
+
+    /**
+     * Public wrapper to resample an AudioBuffer to 16kHz mono Float32Array.
+     * Calls the internal resampling logic.
+     * @param {AudioBuffer} audioBuffer - The original decoded audio buffer.
+     * @returns {Promise<Float32Array>} A promise resolving to the resampled PCM data.
+     * @throws {Error} If resampling fails or OfflineAudioContext cannot be created.
+     * @public
+     */
+    async function resampleTo16kMono(audioBuffer) {
+        console.log("AudioEngine: Resampling audio to 16kHz mono...");
+        // Delegate to the existing private function
+        try {
+             const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(audioBuffer);
+             console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz`);
+             return pcm16k;
+        } catch(error) {
+             console.error("AudioEngine: Error during public resampling call:", error);
+             // Dispatch a specific resampling error event if needed by app.js
+             dispatchEngineEvent('audioapp:resamplingError', { error: error });
+             throw error; // Re-throw for the caller (app.js background task)
         }
     }
 
@@ -639,6 +664,7 @@ AudioApp.audioEngine = (function() {
     return {
         init: init,
         loadAndProcessFile: loadAndProcessFile,
+        resampleTo16kMono: resampleTo16kMono, // <-- ADDED
         togglePlayPause: togglePlayPause,
         jumpBy: jumpBy,
         seek: seek,

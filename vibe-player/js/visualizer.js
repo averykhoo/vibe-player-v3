@@ -53,8 +53,10 @@ AudioApp.visualizer = (function(globalFFT) {
     const SHORT_HOP_DIVISOR = 8;
     /** @const {boolean} Whether to center the FFT windows conceptually for padding */
     const CENTER_WINDOWS = true;
-    /** @const {string} Waveform default color (Viridis Green ~0.7) */
-    const WAVEFORM_COLOR_DEFAULT = '#26828E';
+    /** @const {string} Waveform initial/loading color */
+    const WAVEFORM_COLOR_LOADING = '#888888'; // Light Gray
+    /** @const {string} Waveform default/non-speech color */
+    const WAVEFORM_COLOR_DEFAULT = '#26828E'; // Teal (Original Default)
     /** @const {string} Waveform speech highlight color (Viridis Yellow ~1.0) */
     const WAVEFORM_COLOR_SPEECH = '#FDE725';
 
@@ -176,15 +178,30 @@ AudioApp.visualizer = (function(globalFFT) {
     }
 
     /**
-     * Redraws waveform highlighting without full recompute.
-     * @param {AudioBuffer} audioBuffer
-     * @param {Array<{start: number, end: number}>} speechRegions
+     * Redraws waveform highlighting without full recompute of other visuals.
+     * Recomputes waveform data for current size and redraws with speech highlights.
+     * @param {AudioBuffer|null} audioBuffer - The current audio buffer.
+     * @param {Array<{start: number, end: number}>} speechRegions - The calculated speech regions.
      * @public
      */
     function redrawWaveformHighlight(audioBuffer, speechRegions) {
-         if (!audioBuffer || !waveformCtx || !waveformCanvas) return;
+         if (!audioBuffer) {
+             console.warn("Visualizer: Cannot redraw highlight, AudioBuffer missing.");
+             return;
+         }
+         if (!waveformCanvas || !waveformCtx) {
+              console.warn("Visualizer: Cannot redraw highlight, Waveform canvas/context missing.");
+              return;
+         }
          const width = waveformCanvas.width; // Get current width
+         if (width <= 0) {
+             console.warn("Visualizer: Cannot redraw highlight, Waveform canvas width is zero.");
+             return;
+         }
+         console.log("Visualizer: Redrawing waveform highlights...");
+         // Recompute waveform data for the current canvas width
          const waveformData = computeWaveformData(audioBuffer, width);
+         // Call drawWaveform with the new regions. It will now use default+speech colors.
          drawWaveform(waveformData, waveformCanvas, waveformCtx, speechRegions, audioBuffer.duration, width);
     }
 
@@ -373,21 +390,20 @@ AudioApp.visualizer = (function(globalFFT) {
     // --- Drawing Helper Functions ---
 
     /**
-     * Draws the waveform, highlighting speech regions with new colors.
+     * Draws the waveform, highlighting speech regions with specific colors.
+     * Uses WAVEFORM_COLOR_LOADING if speechRegions is empty/null.
      * @param {Array<{min: number, max: number}>} waveformData - Min/max pairs per pixel.
      * @param {HTMLCanvasElement} canvas - The target canvas element.
      * @param {CanvasRenderingContext2D} ctx - The canvas context.
-     * @param {Array<{start: number, end: number}>} speechRegions - Array of speech time regions.
+     * @param {Array<{start: number, end: number}>|null|undefined} speechRegions - Array of speech time regions, or null/empty for initial draw.
      * @param {number} audioDuration - Total duration of the audio in seconds.
      * @param {number} width - The current width of the canvas.
      * @private
      */
      function drawWaveform(waveformData, canvas, ctx, speechRegions, audioDuration, width) {
-        // // Check if context exists - now passed as arg
-        // const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const { height } = canvas; // Use height from canvas element
+        const { height } = canvas;
         ctx.clearRect(0, 0, width, height);
 
         if (!waveformData || waveformData.length === 0 || !audioDuration || audioDuration <= 0) {
@@ -403,8 +419,12 @@ AudioApp.visualizer = (function(globalFFT) {
         const scale = halfHeight * WAVEFORM_HEIGHT_SCALE;
         const pixelsPerSecond = width / audioDuration;
 
-        // Convert speech time regions to pixel regions
-        const speechPixelRegions = (speechRegions || []).map(r => ({
+        // Determine if we are doing the initial draw (no regions yet)
+        const initialDraw = !speechRegions || speechRegions.length === 0;
+        const defaultColor = initialDraw ? WAVEFORM_COLOR_LOADING : WAVEFORM_COLOR_DEFAULT;
+
+        // Convert speech time regions to pixel regions only if needed
+        const speechPixelRegions = initialDraw ? [] : (speechRegions || []).map(r => ({
             startPx: r.start * pixelsPerSecond,
             endPx: r.end * pixelsPerSecond
         }));
@@ -412,22 +432,24 @@ AudioApp.visualizer = (function(globalFFT) {
         // Calculate pixel width - MUST use the width used for computation
         const pixelWidth = width / dataLen;
 
-        // --- Draw Default Waveform (Green) ---
-        ctx.fillStyle = WAVEFORM_COLOR_DEFAULT; // Use green
+        // --- Draw Default/Loading Waveform Color ---
+        ctx.fillStyle = defaultColor;
         ctx.beginPath();
         for (let i = 0; i < dataLen; i++) {
-            const x = i * pixelWidth; // Position based on computed width
+            const x = i * pixelWidth;
             const currentPixelEnd = x + pixelWidth;
 
-            // Check if this pixel column is OUTSIDE any speech region
+            // Check if this pixel column is OUTSIDE any speech region (if we have regions)
             let isOutsideSpeech = true;
-            for (const region of speechPixelRegions) {
-                // A pixel is inside if its start is before the region end AND its end is after the region start
-                if (x < region.endPx && currentPixelEnd > region.startPx) {
-                    isOutsideSpeech = false;
-                    break;
+            if (!initialDraw) {
+                for (const region of speechPixelRegions) {
+                    // A pixel is inside if its start is before the region end AND its end is after the region start
+                    if (x < region.endPx && currentPixelEnd > region.startPx) {
+                        isOutsideSpeech = false;
+                        break;
+                    }
                 }
-            }
+            } // else: if initialDraw, isOutsideSpeech remains true
 
             if (isOutsideSpeech) {
                 const { min, max } = waveformData[i];
@@ -438,32 +460,34 @@ AudioApp.visualizer = (function(globalFFT) {
                 ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
             }
         }
-        ctx.fill(); // Fill all non-speech parts green
+        ctx.fill(); // Fill all non-speech (or all if initialDraw) parts
 
-        // --- Draw Speech Highlights (Yellow) ---
-        ctx.fillStyle = WAVEFORM_COLOR_SPEECH; // Use yellow
-        ctx.beginPath();
-        for (let i = 0; i < dataLen; i++) {
-            const x = i * pixelWidth;
-            const currentPixelEnd = x + pixelWidth;
+        // --- Draw Speech Highlights (Yellow) - Only if NOT initialDraw ---
+        if (!initialDraw) {
+            ctx.fillStyle = WAVEFORM_COLOR_SPEECH; // Use yellow
+            ctx.beginPath();
+            for (let i = 0; i < dataLen; i++) {
+                const x = i * pixelWidth;
+                const currentPixelEnd = x + pixelWidth;
 
-            // Check if this pixel column is INSIDE any speech region
-            let isInsideSpeech = false;
-            for (const region of speechPixelRegions) {
-                if (x < region.endPx && currentPixelEnd > region.startPx) {
-                    isInsideSpeech = true;
-                    break;
+                // Check if this pixel column is INSIDE any speech region
+                let isInsideSpeech = false;
+                for (const region of speechPixelRegions) {
+                    if (x < region.endPx && currentPixelEnd > region.startPx) {
+                        isInsideSpeech = true;
+                        break;
+                    }
+                }
+
+                if (isInsideSpeech) {
+                    const { min, max } = waveformData[i];
+                    const y1 = halfHeight - max * scale;
+                    const y2 = halfHeight - min * scale;
+                    ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
                 }
             }
-
-            if (isInsideSpeech) {
-                const { min, max } = waveformData[i];
-                const y1 = halfHeight - max * scale;
-                const y2 = halfHeight - min * scale;
-                ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
-            }
+            ctx.fill(); // Fill all speech parts yellow
         }
-        ctx.fill(); // Fill all speech parts yellow
     }
 
     /**
@@ -739,7 +763,7 @@ AudioApp.visualizer = (function(globalFFT) {
     return {
         init: init,
         computeAndDrawVisuals: computeAndDrawVisuals,
-        redrawWaveformHighlight: redrawWaveformHighlight,
+        redrawWaveformHighlight: redrawWaveformHighlight, // <-- ADDED
         resizeAndRedraw: resizeAndRedraw,
         updateProgressIndicator: updateProgressIndicator,
         clearVisuals: clearVisuals,

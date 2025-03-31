@@ -95,7 +95,7 @@ This document outlines the principles and procedures for collaborating with an L
             *   **Condition:** Only one line is added, deleted, or modified.
             *   **Format:** Use diff format (`- before\n+ after`).
         2.  **Function Replacement (Two-Step for Confirmation - Fallback 1):**
-            *   **Condition:** Changes involve multiple lines *but are confined entirely within a single function*.
+            *   **Condition:** Changes involve multiple lines *but are confined entirely within a single function*. **This includes modifying only one function block.**
             *   **Format:**
                 *   **Step 1 (Boundary Confirmation):** Provide the function's signature/declaration line and its final closing brace/line, with an indicator for the omitted content. Ask for confirmation that this is the correct function and scope to replace.
                     *   *Example (Python):*
@@ -111,12 +111,12 @@ This document outlines the principles and procedures for collaborating with an L
                        return total
                     ```
             *   **Reason for Two Steps:** Allows user to easily verify the exact start and end points for replacement in their editor before receiving the full code block.
-        3.  **Section Replacement (Fallback 2):**
-            *   **Condition:** Changes span multiple lines across adjacent functions *within the same logical section* (bounded by section comments like `# --- Section Name ---`), or involve structural changes within that section but outside specific functions. This applies *only if* changes are too broad for individual function replacements but clearly localized to one section.
+        3.  **Section Replacement (Fallback 2 - Less Common):**
+            *   **Condition:** Changes span multiple lines across adjacent functions *strictly within the same logical section* (bounded by section comments like `# --- Section Name ---`), or involve structural changes within that section but outside specific functions. **This applies *only if* changes affect exactly two distinct logical blocks (e.g., two adjacent functions) within the same marked section.**
             *   **Format:** Provide the complete section from its starting marker comment up to (but not including) the starting marker comment of the *next* logical section, or to the section's explicit end marker if used.
-        4.  **Entire File Replacement (Last Resort):**
-            *   **Condition:** Changes are widespread across multiple, non-adjacent sections; significantly alter the file's overall structure; involve numerous scattered edits making section/function replacement impractical; or are required for initial file creation or a complete rewrite requested by the user (potentially during the Refactor phase).
-            *   **Format:** Provide the complete file content, bracketed by File Identification Comments (see P3.4). **Explicitly state why this format is necessary** (e.g., "Generating full file due to widespread changes during refactoring."). **Avoid this format for localized changes.**
+        4.  **Entire File Replacement (Fallback 3 - More Common):**
+            *   **Condition:** Changes affect **more than two distinct logical blocks** within the file (e.g., modifying two functions and the export list, adding a new function and modifying an existing one, etc.); OR changes are widespread across multiple, non-adjacent sections; OR significantly alter the file's overall structure; OR involve numerous scattered edits making section/function replacement impractical; OR are required for initial file creation or a complete rewrite requested by the user.
+            *   **Format:** Provide the complete file content, bracketed by File Identification Comments (see P3.4). **Explicitly state why this format is necessary** (e.g., "Generating full file due to changes in functions X and Y, and the module export list."). **Avoid this format for strictly localized changes covered by formats 1 or 2.**
 
 ### P5: Phased Lifecycle for Significant Changes
 

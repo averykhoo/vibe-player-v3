@@ -16,9 +16,7 @@ AudioApp = (function() {
     // --- Application State ---
     /** @type {AudioBuffer|null} The currently loaded and decoded audio buffer. */
     let currentAudioBuffer = null;
-    /** @type {Float32Array|null} The 16kHz mono PCM data for VAD analysis. */
-    let currentPcm16k = null;
-    /** @type {VadResult|null} Results from the VAD analysis (see vadAnalyzer). */
+    /** @type {VadResult|null} Results from the VAD analysis (see vadAnalyzer). Only populated after background VAD. */
     let currentVadResults = null;
     /** @type {File|null} The currently loaded audio file object. */
     let currentFile = null;
@@ -26,6 +24,8 @@ AudioApp = (function() {
     let vadModelReady = false;
     /** @type {boolean} Flag indicating if the AudioWorklet processor is loaded and ready for playback commands. */
     let workletPlaybackReady = false;
+    /** @type {boolean} Flag indicating if the background VAD task is currently running. */
+    let isVadProcessing = false;
 
     // --- Main Thread Playback Time State (for accurate UI updates) ---
     /** @type {number|null} */ let playbackStartTimeContext = null;
@@ -33,8 +33,6 @@ AudioApp = (function() {
     /** @type {boolean} */ let isActuallyPlaying = false;
     /** @type {number|null} */ let rAFUpdateHandle = null;
     /** @type {number} */ let currentSpeedForUpdate = 1.0;
-
-    // VAD_PROGRESS_BAR_SEGMENTS constant is removed
 
     // --- Initialization ---
     /** @public */
@@ -58,16 +56,15 @@ AudioApp = (function() {
         document.addEventListener('audioapp:seekBarInput', handleSeekBarInput);
         document.addEventListener('audioapp:speedChanged', handleSpeedChange);
         document.addEventListener('audioapp:pitchChanged', handlePitchChange);
-        // document.addEventListener('audioapp:formantChanged', handleFormantChange); // Keep commented
         document.addEventListener('audioapp:gainChanged', handleGainChange);
         document.addEventListener('audioapp:thresholdChanged', handleThresholdChange);
         document.addEventListener('audioapp:keyPressed', handleKeyPress);
         // AudioEngine -> App
         document.addEventListener('audioapp:audioLoaded', handleAudioLoaded);
-        document.addEventListener('audioapp:resamplingComplete', handleResamplingComplete);
+        // document.addEventListener('audioapp:resamplingComplete', handleResamplingComplete); // REMOVED Listener
         document.addEventListener('audioapp:workletReady', handleWorkletReady);
         document.addEventListener('audioapp:decodingError', handleAudioError);
-        document.addEventListener('audioapp:resamplingError', handleAudioError);
+        document.addEventListener('audioapp:resamplingError', handleAudioError); // Keep for VAD background task
         document.addEventListener('audioapp:playbackError', handleAudioError);
         document.addEventListener('audioapp:engineError', handleAudioError);
         document.addEventListener('audioapp:playbackEnded', handlePlaybackEnded);
@@ -91,22 +88,23 @@ AudioApp = (function() {
         // Reset state for the new file
         stopUIUpdateLoop();
         isActuallyPlaying = false;
+        isVadProcessing = false; // Reset VAD processing flag
         playbackStartTimeContext = null;
         playbackStartSourceTime = 0.0;
         currentSpeedForUpdate = 1.0;
         currentAudioBuffer = null;
-        currentPcm16k = null;
+        // currentPcm16k = null; // No longer stored globally in app.js
         currentVadResults = null;
-        workletPlaybackReady = false; // Reset worklet state as well
+        workletPlaybackReady = false;
 
-        // Reset UI (including VAD progress bar)
+        // Reset UI (including VAD progress bar and controls)
         AudioApp.uiManager.resetUI();
         AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`);
         AudioApp.visualizer.clearVisuals();
-        AudioApp.visualizer.showSpinner(true);
+        AudioApp.visualizer.showSpinner(true); // Show main spinner initially
 
         try {
-            // Start processing pipeline in AudioEngine
+            // Start processing pipeline in AudioEngine (now only decode + worklet setup)
             await AudioApp.audioEngine.loadAndProcessFile(file);
         } catch (error) {
             // Handle errors during the initial loading phase
@@ -118,137 +116,149 @@ AudioApp = (function() {
         }
     }
 
-    /** @param {CustomEvent<{audioBuffer: AudioBuffer}>} e @private */
-    function handleAudioLoaded(e) {
+    /**
+     * Handles audio decoding completion.
+     * Stores buffer, updates UI, draws initial visuals, hides spinner, starts background VAD.
+     * @param {CustomEvent<{audioBuffer: AudioBuffer}>} e @private
+     */
+    async function handleAudioLoaded(e) {
         currentAudioBuffer = e.detail.audioBuffer;
         console.log(`App: Audio decoded (${currentAudioBuffer.duration.toFixed(2)}s)`);
+
+        // Update UI time/seek bar state
         AudioApp.uiManager.updateTimeDisplay(0, currentAudioBuffer.duration);
         AudioApp.uiManager.updateSeekBar(0);
         AudioApp.visualizer.updateProgressIndicator(0, currentAudioBuffer.duration);
         playbackStartSourceTime = 0.0; // Reset source time tracking
+
+        // Draw initial visuals (waveform in gray, spectrogram)
+        console.log("App: Drawing initial visuals...");
+        await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, []); // Pass empty regions
+
+        // Hide the main loading spinner *now*
+        AudioApp.visualizer.showSpinner(false);
+        console.log("App: Initial visuals drawn, spinner hidden.");
+
+        // Update file info (intermediate state before worklet/VAD)
+        AudioApp.uiManager.setFileInfo(`Processing VAD: ${currentFile ? currentFile.name : 'Unknown File'}`);
+
+        // Trigger background VAD processing - DO NOT AWAIT
+        console.log("App: Starting background VAD processing...");
+        runVadInBackground(currentAudioBuffer); // Fire and forget
     }
 
-    /** @param {CustomEvent<{pcmData: Float32Array}>} e @private */
-    async function handleResamplingComplete(e) {
-        currentPcm16k = e.detail.pcmData;
-        console.log(`App: Audio resampled (${currentPcm16k.length} samples @ 16kHz)`);
-
-        // --- VAD Model Initialization ---
-        let vadCreationSuccess = vadModelReady;
-        if (!vadModelReady) {
-            console.log("App: Attempting to create/load VAD model...");
-            try {
-                vadCreationSuccess = await AudioApp.sileroWrapper.create(16000);
-                if (vadCreationSuccess) {
-                    vadModelReady = true;
-                    console.log("App: VAD model created successfully.");
-                } else {
-                    console.error("App: Failed to create VAD model.");
-                    AudioApp.uiManager.setSpeechRegionsText("VAD Model Error");
-                    AudioApp.uiManager.enableVadControls(false);
-                }
-            } catch (creationError) {
-                console.error("App: VAD model creation error:", creationError);
-                vadCreationSuccess = false;
-                AudioApp.uiManager.setSpeechRegionsText(`VAD Load Error: ${creationError.message}`);
-                AudioApp.uiManager.enableVadControls(false);
-            }
-        }
-
-        // --- VAD Analysis & Progress ---
-        let speechRegionsForVisualizer = [];
-        if (vadCreationSuccess && currentPcm16k && currentPcm16k.length > 0) {
-            console.log("App: Starting VAD analysis...");
-
-            // --- Setup and Show Progress Bar ---
-            AudioApp.uiManager.showVadProgress(true); // Ensure container is visible
-            AudioApp.uiManager.updateVadProgress(0); // Reset bar to 0% initially
-
-            // Define the progress callback function to update UI
-            const vadProgressCallback = (progress) => {
-                if (progress.totalFrames > 0) {
-                    // Calculate percentage (0-100)
-                    const percentage = (progress.processedFrames / progress.totalFrames) * 100;
-                    // *** ADDED LOGGING ***
-                    // console.log('[App] vadProgressCallback: calculated percentage:', percentage.toFixed(1));
-                    // Call uiManager to update the bar width
-                    AudioApp.uiManager.updateVadProgress(percentage);
-                } else {
-                    // *** ADDED LOGGING (for else case) ***
-                    console.log('[App] vadProgressCallback: calculated percentage: 0 (no total frames)');
-                    AudioApp.uiManager.updateVadProgress(0); // Show 0% if no frames
-                }
-            };
-            // --- End Progress Bar Setup ---
-
-            try {
-                // Get frame size for accurate calculation if needed elsewhere,
-                // but analyzer uses its default or the one from results if available.
-                const frameSamples = AudioApp.vadAnalyzer.getFrameSamples();
-
-                // Prepare options for analyzer, including the callback
-                const analysisOptions = {
-                    onProgress: vadProgressCallback,
-                    frameSamples: frameSamples // Pass frame size used for analysis
-                };
-
-                // Start analysis via the analyzer, passing the options
-                currentVadResults = await AudioApp.vadAnalyzer.analyze(currentPcm16k, analysisOptions);
-
-                speechRegionsForVisualizer = currentVadResults.regions || [];
-                console.log(`App: VAD analysis complete. Found ${speechRegionsForVisualizer.length} regions.`);
-                AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
-                AudioApp.uiManager.setSpeechRegionsText(speechRegionsForVisualizer);
-                AudioApp.uiManager.enableVadControls(true);
-            } catch (analysisError) {
-                console.error("App: VAD Analysis failed -", analysisError);
-                AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${analysisError.message}`);
-                AudioApp.uiManager.enableVadControls(false);
-                speechRegionsForVisualizer = [];
-                AudioApp.uiManager.updateVadProgress(0); // Reset progress on error
-            } finally {
-                // Ensure progress bar shows 100% on completion (success or handled error)
-                // unless it was reset above due to error
-                if (speechRegionsForVisualizer !== null) { // Check if reset didn't happen
-                     // *** ADDED LOGGING (for finally block) ***
-                     console.log('[App] vadProgressCallback: forcing 100% in finally block');
-                    AudioApp.uiManager.updateVadProgress(100);
-                }
-                // Do NOT hide the progress bar container here, as per requirement
-            }
-        } else {
-             // Handle cases where VAD didn't run
-             if (!vadCreationSuccess) { AudioApp.uiManager.setSpeechRegionsText("VAD Model Error"); }
-             else if (!currentPcm16k || currentPcm16k.length === 0) { AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)"); }
-             else { AudioApp.uiManager.setSpeechRegionsText("VAD skipped"); }
-             AudioApp.uiManager.enableVadControls(false);
-             AudioApp.uiManager.updateVadProgress(0); // Reset progress if skipped
-             // Do NOT hide the container
-             speechRegionsForVisualizer = [];
-        }
-
-        // --- Trigger Visualizations ---
-        if (currentAudioBuffer) {
-            console.log("App: Computing/drawing visuals...");
-            // Pass the calculated speech regions to the visualizer
-            await AudioApp.visualizer.computeAndDrawVisuals(currentAudioBuffer, speechRegionsForVisualizer);
-        }
-
-        // Hide general spinner only if worklet is already ready (otherwise wait for worklet)
-        if (workletPlaybackReady) { AudioApp.visualizer.showSpinner(false); }
-    }
-
-    // handleVadProgress function removed
-
-    /** @param {CustomEvent} e @private */
+    /**
+     * Handles completion of AudioWorklet setup.
+     * Enables playback controls.
+     * @param {CustomEvent} e @private
+     */
     function handleWorkletReady(e) {
         console.log("App: AudioWorklet processor is ready.");
         workletPlaybackReady = true;
         AudioApp.uiManager.enablePlaybackControls(true);
         AudioApp.uiManager.enableSeekBar(true);
-        AudioApp.visualizer.showSpinner(false); // Now safe to hide spinner
+        // Spinner should already be hidden by handleAudioLoaded
+        // Update file info to final "Ready" state
         AudioApp.uiManager.setFileInfo(`Ready: ${currentFile ? currentFile.name : 'Unknown File'}`);
     }
+
+    /**
+     * Runs VAD analysis in the background without blocking the main thread.
+     * Handles resampling, VAD model init, analysis with progress, and UI updates upon completion.
+     * @param {AudioBuffer} audioBuffer - The audio buffer to analyze.
+     * @private
+     */
+     async function runVadInBackground(audioBuffer) {
+        if (!audioBuffer) return;
+        if (isVadProcessing) {
+            console.warn("App: VAD processing already in progress. Skipping new request.");
+            return;
+        }
+        isVadProcessing = true;
+        let pcm16k = null;
+        let vadSucceeded = false;
+
+        try {
+            // 1. Initialize VAD Model (if needed)
+            if (!vadModelReady) {
+                console.log("App (VAD Task): Attempting to create/load VAD model...");
+                vadModelReady = await AudioApp.sileroWrapper.create(16000);
+                if (!vadModelReady) {
+                    throw new Error("Failed to create Silero VAD model.");
+                }
+                console.log("App (VAD Task): VAD model created successfully.");
+            }
+
+            // 2. Show VAD Progress Bar
+            AudioApp.uiManager.showVadProgress(true);
+            AudioApp.uiManager.updateVadProgress(0);
+
+            // 3. Resample Audio
+            console.log("App (VAD Task): Resampling audio for VAD...");
+            pcm16k = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+             // Handle empty input after resampling
+            if (!pcm16k || pcm16k.length === 0) {
+                console.log("App (VAD Task): No audio data after resampling.");
+                 AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)");
+                 AudioApp.uiManager.updateVadProgress(100); // Show completed even if empty
+                 AudioApp.uiManager.enableVadControls(false);
+                 isVadProcessing = false;
+                 return; // Exit early if no data
+            }
+
+
+            // 4. Perform VAD Analysis
+            console.log("App (VAD Task): Starting VAD analysis...");
+            const vadProgressCallback = (progress) => {
+                 if (progress.totalFrames > 0) {
+                     const percentage = (progress.processedFrames / progress.totalFrames) * 100;
+                     AudioApp.uiManager.updateVadProgress(percentage);
+                 } else {
+                     AudioApp.uiManager.updateVadProgress(0);
+                 }
+            };
+
+            const analysisOptions = {
+                 onProgress: vadProgressCallback,
+                 frameSamples: AudioApp.vadAnalyzer.getFrameSamples() // Use default or last known
+            };
+            currentVadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, analysisOptions); // Throws on error
+
+            // 5. Update UI on Success
+            const speechRegions = currentVadResults.regions || [];
+            console.log(`App (VAD Task): VAD analysis complete. Found ${speechRegions.length} regions.`);
+            AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
+            AudioApp.uiManager.setSpeechRegionsText(speechRegions);
+            AudioApp.uiManager.enableVadControls(true); // Enable sliders now
+            AudioApp.visualizer.redrawWaveformHighlight(audioBuffer, speechRegions); // Update waveform color
+            AudioApp.uiManager.updateVadProgress(100); // Ensure 100% on success
+            vadSucceeded = true;
+
+        } catch (error) {
+            // 6. Handle Errors during VAD Task
+            console.error("App (VAD Task): Error during background VAD processing -", error);
+            const errorType = error.message.includes("resampling") ? "Resampling Error"
+                              : error.message.includes("VAD") ? "VAD Error"
+                              : "Processing Error";
+            AudioApp.uiManager.setSpeechRegionsText(`${errorType}: ${error.message}`);
+            AudioApp.uiManager.enableVadControls(false); // Keep VAD controls disabled
+            AudioApp.uiManager.updateVadProgress(0); // Reset progress bar on error
+            currentVadResults = null; // Clear any partial results
+
+        } finally {
+            // 7. Cleanup VAD Task State
+            isVadProcessing = false;
+            // Optionally hide progress bar after a delay or keep it visible? Keeping visible for now.
+            // if (vadSucceeded) {
+            //     setTimeout(() => AudioApp.uiManager.showVadProgress(false), 2000);
+            // } else {
+            //     AudioApp.uiManager.showVadProgress(false); // Hide immediately on error
+            // }
+        }
+    }
+
+
+    // Removed handleResamplingComplete function entirely
 
     /** @param {CustomEvent<{type?: string, error: Error}>} e @private */
     function handleAudioError(e) {
@@ -267,11 +277,12 @@ AudioApp = (function() {
 
         // Clear internal state
         currentAudioBuffer = null;
-        currentPcm16k = null;
+        // currentPcm16k = null; // No longer stored
         currentVadResults = null;
         currentFile = null;
         workletPlaybackReady = false;
         isActuallyPlaying = false;
+        isVadProcessing = false;
         playbackStartTimeContext = null;
         playbackStartSourceTime = 0.0;
         currentSpeedForUpdate = 1.0;
@@ -381,20 +392,25 @@ AudioApp = (function() {
 
     /** @param {CustomEvent<{pitch: number}>} e @private */
     function handlePitchChange(e) { AudioApp.audioEngine.setPitch(e.detail.pitch); }
-    /** @param {CustomEvent<{formant: number}>} e @private */
-    // function handleFormantChange(e) { AudioApp.audioEngine.setFormant(e.detail.formant); } // Keep commented
     /** @param {CustomEvent<{gain: number}>} e @private */
     function handleGainChange(e) { AudioApp.audioEngine.setGain(e.detail.gain); }
 
-    /** @param {CustomEvent<{type: string, value: number}>} e @private */
+    /**
+     * Handles VAD threshold slider changes *after* VAD has completed.
+     * @param {CustomEvent<{type: string, value: number}>} e @private
+     */
     function handleThresholdChange(e) {
-        if (!currentVadResults || !currentAudioBuffer) return;
+        // Only allow changes if VAD has run successfully and isn't currently processing
+        if (!currentVadResults || isVadProcessing) return;
         const { type, value } = e.detail;
         // Delegate threshold update and recalculation to vadAnalyzer
         const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value);
         // Update UI displays based on the recalculated regions
         AudioApp.uiManager.setSpeechRegionsText(newRegions);
-        AudioApp.visualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
+        // Redraw waveform highlights only
+        if(currentAudioBuffer) {
+             AudioApp.visualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
+        }
     }
 
     /** @private */
@@ -467,7 +483,7 @@ AudioApp = (function() {
 
     /** @private */
     function handleWindowResize() {
-        // Get current regions from the analyzer
+        // Get current regions from the analyzer (even if VAD is still processing, it might have partial/old results)
         const regions = AudioApp.vadAnalyzer ? AudioApp.vadAnalyzer.getCurrentRegions() : [];
         AudioApp.visualizer.resizeAndRedraw(currentAudioBuffer, regions);
     }
@@ -532,7 +548,7 @@ AudioApp = (function() {
         if (isNaN(duration) || duration <= 0) return; // Avoid updates if duration invalid
 
         const clampedTime = Math.max(0, Math.min(time, duration));
-        const fraction = clampedTime / duration;
+        const fraction = duration > 0 ? clampedTime / duration : 0; // Avoid division by zero
 
         // Update UI elements
         AudioApp.uiManager.updateTimeDisplay(clampedTime, duration);
