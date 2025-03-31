@@ -82,7 +82,7 @@ button.default:not(:disabled):active,input[type=reset].default:not(:disabled):ac
 }
 
 /* Apply hover styles ONLY on devices that support hover */
-@media (hover: hover) {
+@media (hover: none) {
     button:not(:disabled):hover,
     input[type=reset]:not(:disabled):hover,
     input[type=submit]:not(:disabled):hover {
