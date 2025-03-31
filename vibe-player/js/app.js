@@ -79,7 +79,7 @@ AudioApp = (function() {
         document.addEventListener('audioapp:engineError', handleAudioError);
         document.addEventListener('audioapp:playbackEnded', handlePlaybackEnded);
         document.addEventListener('audioapp:playbackStateChanged', handlePlaybackStateChange);
-        document.addEventListener('audioapp:internalSpeedChanged', handleInternalSpeedChange);
+        document.addEventListener('audioapp:internalSpeedChanged', handleInternalSpeedChange); // RESTORED Listener
         // Window Events
         window.addEventListener('resize', handleWindowResize);
         window.addEventListener('beforeunload', handleBeforeUnload);
@@ -110,10 +110,8 @@ AudioApp = (function() {
         try { await AudioApp.audioEngine.loadAndProcessFile(file); }
         catch (error) {
             console.error("App: Error initiating file processing -", error);
-            AudioApp.uiManager.setFileInfo(`Error loading: ${error.message}`);
-            AudioApp.uiManager.resetUI();
-            AudioApp.spectrogramVisualizer.showSpinner(false); // Hide spinner on error
-            stopUIUpdateLoop();
+            AudioApp.uiManager.setFileInfo(`Error loading: ${error.message}`); AudioApp.uiManager.resetUI();
+            AudioApp.spectrogramVisualizer.showSpinner(false); stopUIUpdateLoop();
         }
     }
 
@@ -250,23 +248,47 @@ AudioApp = (function() {
         playbackStartTimeContext = null; playbackStartSourceTime = 0.0; currentSpeedForUpdate = 1.0;
     }
 
-    // --- Playback/Seek/Parameter Handlers (Largely Unchanged, verify AudioEngine calls) ---
-
-    /** @private */
+    /**
+     * Handles play/pause button clicks.
+     * If pausing, calculates the current estimated time and seeks the engine
+     * to that exact position *before* telling the engine to pause.
+     * Also updates the main thread state and UI immediately on pause.
+     * @private
+     */
     function handlePlayPause() {
         if (!workletPlaybackReady || !AudioApp.audioEngine) { console.warn("App: Play/Pause ignored - Engine/Worklet not ready."); return; }
-        const audioCtx = AudioApp.audioEngine.getAudioContext();
-        if (!audioCtx) { console.error("App: Cannot play/pause, AudioContext not available."); return; }
+        const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) { console.error("App: Cannot play/pause, AudioContext not available."); return; }
+
         const aboutToPlay = !isActuallyPlaying;
-        AudioApp.audioEngine.togglePlayPause();
-        if (aboutToPlay) {
-            const engineTime = AudioApp.audioEngine.getCurrentTime();
-            playbackStartSourceTime = engineTime.currentTime;
-            playbackStartTimeContext = audioCtx.currentTime;
-            startUIUpdateLoop();
-        } else {
-            stopUIUpdateLoop(); playbackStartTimeContext = null;
+
+        // --- Corrected Pause Logic ---
+        if (!aboutToPlay) {
+            // Calculate the precise time based on main thread estimation *now*
+            const finalEstimatedTime = calculateEstimatedSourceTime();
+            console.log(`App: Pausing requested. Seeking engine to estimated time: ${finalEstimatedTime.toFixed(3)} before pausing.`);
+
+            // Seek the engine to this exact spot *before* sending the pause command
+            AudioApp.audioEngine.seek(finalEstimatedTime);
+
+            // Update main thread state immediately to reflect the seek target
+            // This ensures consistency even before the worklet confirms the pause state
+            playbackStartSourceTime = finalEstimatedTime; // Set the source time base to the calculated pause time
+            playbackStartTimeContext = null; // Clear context time as we are stopping
+
+            // Stop the UI loop immediately
+            stopUIUpdateLoop();
+
+            // Update UI immediately to the precise pause time
+            updateUIWithTime(finalEstimatedTime);
         }
+        // --- End Corrected Pause Logic ---
+
+        // Tell engine to toggle its internal state (play or pause)
+        // The engine will eventually dispatch 'playbackStateChanged' to confirm
+        AudioApp.audioEngine.togglePlayPause();
+
+        // If starting playback, main thread time markers and UI loop
+        // will be set/started in handlePlaybackStateChange when the engine confirms it's playing.
     }
 
     /** @param {CustomEvent<{seconds: number}>} e @private */
@@ -274,23 +296,39 @@ AudioApp = (function() {
         if (!workletPlaybackReady || !currentAudioBuffer || !AudioApp.audioEngine) return;
         const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) return;
         const duration = currentAudioBuffer.duration; if (isNaN(duration) || duration <= 0) return;
+
+        // Use main thread calculation for current time
         const currentTime = calculateEstimatedSourceTime();
         const targetTime = Math.max(0, Math.min(currentTime + e.detail.seconds, duration));
-        AudioApp.audioEngine.seek(targetTime);
-        playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) { playbackStartTimeContext = audioCtx.currentTime; }
-        else { playbackStartTimeContext = null; updateUIWithTime(targetTime); }
+
+        AudioApp.audioEngine.seek(targetTime); // Tell engine to seek
+
+        // Update main thread time tracking immediately
+        playbackStartSourceTime = targetTime; // Update the base source time
+        if (isActuallyPlaying) { // If playing, reset context start time relative to the new source time
+            playbackStartTimeContext = audioCtx.currentTime;
+        } else { // If paused, update UI directly, context time remains null
+             playbackStartTimeContext = null;
+            updateUIWithTime(targetTime); // Manually update UI while paused
+        }
     }
 
     /** @param {CustomEvent<{fraction: number}>} e @private */
     function handleSeek(e) {
         if (!workletPlaybackReady || !currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0 || !AudioApp.audioEngine) return;
         const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) return;
-        const targetTime = e.detail.fraction * currentAudioBuffer.duration;
-        AudioApp.audioEngine.seek(targetTime);
-        playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) { playbackStartTimeContext = audioCtx.currentTime; }
-        else { playbackStartTimeContext = null; updateUIWithTime(targetTime); }
+
+        const targetTime = e.detail.fraction * currentAudioBuffer.duration; // Calculate target
+        AudioApp.audioEngine.seek(targetTime); // Tell engine to seek
+
+        // Update main thread time tracking immediately
+        playbackStartSourceTime = targetTime; // Update the base source time
+        if (isActuallyPlaying) { // If playing, reset context start time relative to the new source time
+            playbackStartTimeContext = audioCtx.currentTime;
+        } else { // If paused, update UI directly, context time remains null
+             playbackStartTimeContext = null;
+            updateUIWithTime(targetTime); // Manually update UI while paused
+        }
     }
     const handleSeekBarInput = handleSeek; // Alias remains
 
@@ -301,16 +339,31 @@ AudioApp = (function() {
     /** @param {CustomEvent<{gain: number}>} e @private */
     function handleGainChange(e) { AudioApp.audioEngine?.setGain(e.detail.gain); }
 
-     /** @param {CustomEvent<{speed: number}>} e @private */
-    function handleInternalSpeedChange(e) {
-        const newSpeed = e.detail.speed; console.log(`App: Internal speed updated to ${newSpeed.toFixed(2)}x`);
-        const oldSpeed = currentSpeedForUpdate; currentSpeedForUpdate = newSpeed;
-        const audioCtx = AudioApp.audioEngine?.getAudioContext();
+    /**
+     * Handles the internal speed change confirmed by the engine.
+     * Updates the main thread's time tracking base to prevent UI jumps.
+     * @param {CustomEvent<{speed: number}>} e @private
+     */
+    function handleInternalSpeedChange(e) { // RESTORED function
+        const newSpeed = e.detail.speed;
+        console.log(`App: Internal speed updated by engine to ${newSpeed.toFixed(2)}x`);
+
+        const oldSpeed = currentSpeedForUpdate;
+        currentSpeedForUpdate = newSpeed; // Update speed used for UI calculation
+
+        const audioCtx = AudioApp.audioEngine.getAudioContext();
+        // If playing, recalculate base times to prevent jump in UI display
         if (isActuallyPlaying && playbackStartTimeContext !== null && audioCtx) {
+            // Calculate where we *were* just before the speed change event was processed
             const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
-            const elapsedSourceTime = elapsedContextTime * oldSpeed;
+            const elapsedSourceTime = elapsedContextTime * oldSpeed; // Use OLD speed
             const previousSourceTime = playbackStartSourceTime + elapsedSourceTime;
-            playbackStartSourceTime = previousSourceTime; playbackStartTimeContext = audioCtx.currentTime;
+
+            // Set the new base source time to where we were
+            playbackStartSourceTime = previousSourceTime;
+            // Reset the context start time to NOW
+            playbackStartTimeContext = audioCtx.currentTime;
+            console.log(`App: Adjusted time tracking base for speed change. New base source time: ${playbackStartSourceTime.toFixed(3)}`);
         }
     }
 
@@ -327,100 +380,119 @@ AudioApp = (function() {
     function handlePlaybackEnded() {
         console.log("App: Playback ended event received.");
         isActuallyPlaying = false; stopUIUpdateLoop(); playbackStartTimeContext = null;
-        if (currentAudioBuffer) { updateUIWithTime(currentAudioBuffer.duration); }
+        if (currentAudioBuffer) { // Ensure UI shows exact end time
+             playbackStartSourceTime = currentAudioBuffer.duration; // Set base time to end
+             updateUIWithTime(currentAudioBuffer.duration);
+        }
         AudioApp.uiManager.setPlayButtonState(false);
     }
 
-    /** @param {CustomEvent<{isPlaying: boolean}>} e @private */
+    /**
+     * Handles playback state confirmation from the worklet.
+     * Manages UI loop state and sets initial time base when starting.
+     * No longer performs seek-on-pause sync here (handled in handlePlayPause).
+     * @param {CustomEvent<{isPlaying: boolean}>} e @private
+     */
      function handlePlaybackStateChange(e) {
-        const workletIsPlaying = e.detail.isPlaying; console.log(`App: Playback state confirmed by worklet: ${workletIsPlaying}`);
-        if (isActuallyPlaying !== workletIsPlaying) {
-            console.log(`App: Syncing internal state to ${workletIsPlaying}.`);
-            isActuallyPlaying = workletIsPlaying; AudioApp.uiManager.setPlayButtonState(isActuallyPlaying);
-        } else { AudioApp.uiManager.setPlayButtonState(isActuallyPlaying); }
-        const audioCtx = AudioApp.audioEngine?.getAudioContext();
+        const workletIsPlaying = e.detail.isPlaying;
+        console.log(`App: Playback state confirmed by worklet: ${workletIsPlaying}`);
+
+        const wasPlaying = isActuallyPlaying; // Store previous state
+        isActuallyPlaying = workletIsPlaying; // Update internal state
+
+        AudioApp.uiManager.setPlayButtonState(isActuallyPlaying); // Update button
+
         if (isActuallyPlaying) {
-            if (playbackStartTimeContext === null && audioCtx) {
-                console.log("App: Playback active, ensuring context start time is set.");
-                const engineTime = AudioApp.audioEngine.getCurrentTime();
-                playbackStartSourceTime = engineTime.currentTime; playbackStartTimeContext = audioCtx.currentTime;
+            // --- Starting Playback ---
+            const audioCtx = AudioApp.audioEngine?.getAudioContext();
+            // If transitioning from not playing to playing, reset time base
+            if (wasPlaying === false && audioCtx) {
+                 // Get the current time from the engine (which might have been set by seek)
+                 const engineTime = AudioApp.audioEngine.getCurrentTime();
+                 playbackStartSourceTime = engineTime.currentTime;
+                 playbackStartTimeContext = audioCtx.currentTime; // Mark context time NOW
+                 console.log(`App: Playback confirmed started/resumed. Setting time base: src=${playbackStartSourceTime.toFixed(3)}, ctx=${playbackStartTimeContext.toFixed(3)}`);
+                 // Ensure UI reflects this starting time immediately
+                 updateUIWithTime(playbackStartSourceTime);
             }
-            startUIUpdateLoop();
+            startUIUpdateLoop(); // Ensure UI loop is running
         } else {
-            stopUIUpdateLoop(); playbackStartTimeContext = null;
-            const engineTime = AudioApp.audioEngine?.getCurrentTime() || { currentTime: playbackStartSourceTime }; // Fallback if engine missing
-            updateUIWithTime(engineTime.currentTime);
+            // --- Stopping Playback ---
+            stopUIUpdateLoop(); // Stop UI loop
+            playbackStartTimeContext = null; // Clear context time marker
+
+            // UI time and engine sync were already handled in handlePlayPause
+            // Just ensure the state is consistent
+            console.log(`App: Playback confirmed stopped/paused. Base source time: ${playbackStartSourceTime.toFixed(3)}`);
         }
     }
 
     /** @param {CustomEvent<{key: string}>} e @private */
-    function handleKeyPress(e) {
-        if (!workletPlaybackReady) return;
-        const key = e.detail.key; const jumpTimeValue = AudioApp.uiManager.getJumpTime();
-        switch (key) {
-            case 'Space': handlePlayPause(); break;
-            case 'ArrowLeft': handleJump({ detail: { seconds: -jumpTimeValue } }); break;
-            case 'ArrowRight': handleJump({ detail: { seconds: jumpTimeValue } }); break;
-        }
-    }
+    function handleKeyPress(e) { /* ... unchanged ... */ if (!workletPlaybackReady) return; const key = e.detail.key; const jumpTimeValue = AudioApp.uiManager.getJumpTime(); switch (key) { case 'Space': handlePlayPause(); break; case 'ArrowLeft': handleJump({ detail: { seconds: -jumpTimeValue } }); break; case 'ArrowRight': handleJump({ detail: { seconds: jumpTimeValue } }); break; } }
+    /** @private */
+    function handleWindowResize() { /* ... unchanged ... */ const regions = AudioApp.vadAnalyzer ? AudioApp.vadAnalyzer.getCurrentRegions() : []; AudioApp.waveformVisualizer?.resizeAndRedraw(currentAudioBuffer, regions); AudioApp.spectrogramVisualizer?.resizeAndRedraw(currentAudioBuffer); }
+    /** @private */
+    function handleBeforeUnload() { /* ... unchanged ... */ console.log("App: Unloading..."); stopUIUpdateLoop(); AudioApp.audioEngine?.cleanup(); }
+
+    // --- Main Thread Time Calculation & UI Update (RESTORED / MODIFIED) ---
 
     /** @private */
-    function handleWindowResize() {
-        const regions = AudioApp.vadAnalyzer ? AudioApp.vadAnalyzer.getCurrentRegions() : [];
-        // Resize both visualizers
-        AudioApp.waveformVisualizer?.resizeAndRedraw(currentAudioBuffer, regions); // Use waveform visualizer
-        AudioApp.spectrogramVisualizer?.resizeAndRedraw(currentAudioBuffer); // Use spectrogram visualizer (doesn't need regions)
-    }
-
+    function startUIUpdateLoop() { if (rAFUpdateHandle === null) { rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime); } } // Use context time function
     /** @private */
-    function handleBeforeUnload() {
-        console.log("App: Unloading - Cleaning up...");
-        stopUIUpdateLoop();
-        AudioApp.audioEngine?.cleanup();
-    }
+    function stopUIUpdateLoop() { if (rAFUpdateHandle !== null) { cancelAnimationFrame(rAFUpdateHandle); rAFUpdateHandle = null; } }
 
-    // --- Main Thread Time Calculation & UI Update ---
-
-    /** @private */
-    function startUIUpdateLoop() { /* ... unchanged ... */ if (rAFUpdateHandle === null) { rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime); } }
-    /** @private */
-    function stopUIUpdateLoop() { /* ... unchanged ... */ if (rAFUpdateHandle !== null) { cancelAnimationFrame(rAFUpdateHandle); rAFUpdateHandle = null; } }
-
-    /** @private @returns {number} */
-    function calculateEstimatedSourceTime() {
+    /**
+     * Calculates the estimated current source time based on AudioContext time. RESTORED.
+     * @private
+     * @returns {number} The estimated current time in seconds within the audio source.
+     */
+    function calculateEstimatedSourceTime() { // RESTORED function
         const audioCtx = AudioApp.audioEngine?.getAudioContext();
         const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0;
-        if (!isActuallyPlaying || playbackStartTimeContext === null || !audioCtx || !currentAudioBuffer || duration <= 0 || currentSpeedForUpdate <= 0) {
-            const engineTime = AudioApp.audioEngine?.getCurrentTime() || { currentTime: playbackStartSourceTime };
-            return engineTime.currentTime;
+
+        // If not playing, return the base source time (set by play/seek/pause)
+        if (!isActuallyPlaying || playbackStartTimeContext === null || !audioCtx || !currentAudioBuffer || duration <= 0) {
+            return playbackStartSourceTime;
         }
+         // If speed is zero or negative, time doesn't advance.
+         if (currentSpeedForUpdate <= 0) {
+              return playbackStartSourceTime;
+         }
+
+        // Calculate elapsed time based on context and speed
         const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
         const elapsedSourceTime = elapsedContextTime * currentSpeedForUpdate;
         let estimatedCurrentSourceTime = playbackStartSourceTime + elapsedSourceTime;
-        return Math.max(0, Math.min(estimatedCurrentSourceTime, duration));
+
+        // Clamp to valid duration range
+        estimatedCurrentSourceTime = Math.max(0, Math.min(estimatedCurrentSourceTime, duration));
+        return estimatedCurrentSourceTime;
     }
 
-    /** @private @param {number} time */
-    function updateUIWithTime(time) {
-        const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0;
-        if (isNaN(duration) || duration <= 0) return;
-        const clampedTime = Math.max(0, Math.min(time, duration));
-        const fraction = duration > 0 ? clampedTime / duration : 0;
-        // Update UI elements
-        AudioApp.uiManager.updateTimeDisplay(clampedTime, duration);
-        AudioApp.uiManager.updateSeekBar(fraction);
-        // Update BOTH visualizer progress indicators
-        AudioApp.waveformVisualizer?.updateProgressIndicator(clampedTime, duration);
-        AudioApp.spectrogramVisualizer?.updateProgressIndicator(clampedTime, duration);
-    }
+    /**
+     * Updates the time display, seek bar, and visualization progress indicator.
+     * @param {number} time - The current source time to display.
+     * @private
+     */
+    function updateUIWithTime(time) { /* ... unchanged ... */ const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0; if (isNaN(duration)) return; const clampedTime = Math.max(0, Math.min(time, duration)); const fraction = duration > 0 ? clampedTime / duration : 0; AudioApp.uiManager.updateTimeDisplay(clampedTime, duration); AudioApp.uiManager.updateSeekBar(fraction); AudioApp.waveformVisualizer?.updateProgressIndicator(clampedTime, duration); AudioApp.spectrogramVisualizer?.updateProgressIndicator(clampedTime, duration); }
 
-    /** @private @param {DOMHighResTimeStamp} timestamp */
-    function updateUIBasedOnContextTime(timestamp) {
-        if (!isActuallyPlaying) { rAFUpdateHandle = null; return; }
+    /**
+     * The main UI update loop function, called via requestAnimationFrame.
+     * Uses main thread calculation (AudioContext time) for estimation.
+     * @param {DOMHighResTimeStamp} timestamp - The timestamp provided by rAF.
+     * @private
+     */
+    function updateUIBasedOnContextTime(timestamp) { // Renamed back
+        if (!isActuallyPlaying) { rAFUpdateHandle = null; return; } // Stop loop if not playing
+
+        // Calculate time based on main thread context time and speed
         const estimatedTime = calculateEstimatedSourceTime();
         updateUIWithTime(estimatedTime);
+
+        // Request the next frame
         rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime);
     }
+
 
     // --- Public Interface ---
     return {
