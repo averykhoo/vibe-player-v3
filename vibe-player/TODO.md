@@ -5,7 +5,6 @@ This file tracks potential improvements, features, and known issues requiring fu
 
 ## Bugs / Issues
 
-*   **[BUG] Playback Indicator Desync:** The red line indicator on waveform/spectrogram desyncs (runs ahead) when parameters (like speed/pitch) are changed during playback. Pausing causes it to jump further ahead. Needs investigation into the time calculation logic in `app.js` (`calculateEstimatedSourceTime`, `handleInternalSpeedChange`, `handlePlaybackStateChange`) and interaction with `audioEngine` time updates.
 *   **[INVESTIGATE] Formant Shift:** The formant shift feature provided by Rubberband WASM is currently non-functional (no audible effect despite parameter being set). Requires deeper investigation into Rubberband flags, potential WASM build issues, or alternative approaches if the library feature is fundamentally broken in this context.
 
 ## Potential Enhancements / Features
@@ -18,6 +17,10 @@ This file tracks potential improvements, features, and known issues requiring fu
 *   **State Management Module (`audioPlayerState.js`):** Consider creating a dedicated module to manage playback-related state (`isPlaying`, `currentTime`, speed/pitch targets) currently spread between `app.js` and `audioEngine.js`. This could improve separation of concerns if the application grows more complex.
 *   **Parameter Smoothing:** Investigate if parameter changes (speed, pitch) sent to Rubberband could benefit from smoother transitions (if supported by the library/worklet) to avoid abrupt audio changes.
 *   **Preset Management:** Allow saving/loading sets of Speed/Pitch/Gain/VAD settings.
+* Windows 98 sounds on click etc
+* Hide VAD tuning or add a graph to show the probs, start and stop thresholds, and color that too but faded?
+* more player controls? maybe up and down to change speed by 0.25? enter also to play/pause? make the keybinds modifiable? and savable in local storage? and a reset button too if so
+* add a 'back to start' button near play/pause and a 'reset' button to controls / vad controls
 
 ## Code Health / Refactoring Ideas
 
