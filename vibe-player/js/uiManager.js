@@ -176,7 +176,10 @@ AudioApp.uiManager = (function() {
             } else {
                 // Optionally provide feedback if URL is empty
                 console.warn("UIManager: Load URL button clicked, but URL is empty.");
-                if (audioUrlInput) audioUrlInput.focus();
+                if (audioUrlInput) {
+                    audioUrlInput.focus();
+                    setUrlInputStyle('error'); // Indicate error state
+                }
             }
         });
 
@@ -189,9 +192,23 @@ AudioApp.uiManager = (function() {
                     dispatchUIEvent('audioapp:urlSelected', { url: audioUrl });
                 } else {
                     console.warn("UIManager: Enter pressed in URL input, but URL is empty.");
-                    if (audioUrlInput) audioUrlInput.focus();
+                    if (audioUrlInput) {
+                        audioUrlInput.focus();
+                        setUrlInputStyle('error'); // Indicate error state
+                    }
                 }
             }
+        });
+
+        audioUrlInput?.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                unfocusUrlInput();
+            }
+        });
+
+        audioUrlInput?.addEventListener('input', () => {
+            setUrlInputStyle('default'); // Reset to default on any input
         });
 
         seekBar?.addEventListener('input', (e) => {
@@ -270,6 +287,27 @@ AudioApp.uiManager = (function() {
         }
     }
 
+    /**
+     * Sets the value of the audio URL input field.
+     * @public
+     * @param {string} text The text to set as the value.
+     */
+    function setAudioUrlInputValue(text) {
+        if (audioUrlInput) {
+            audioUrlInput.value = text;
+        }
+    }
+
+    /**
+     * Removes focus from the audio URL input field.
+     * @public
+     */
+    function unfocusUrlInput() {
+        if (audioUrlInput) {
+            audioUrlInput.blur();
+        }
+    }
+
     /** @private */
     function dispatchUIEvent(eventName, detail = {}) {
         document.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
@@ -280,6 +318,33 @@ AudioApp.uiManager = (function() {
     function setUrlLoadingError(message) {
         if (urlLoadingErrorDisplay) {
             urlLoadingErrorDisplay.textContent = message;
+        }
+    }
+
+    /**
+     * Sets the visual style of the URL input field.
+     * @public
+     * @param {'success' | 'error' | 'file' | 'default'} styleType
+     */
+    function setUrlInputStyle(styleType) {
+        if (!audioUrlInput) return;
+
+        audioUrlInput.classList.remove('url-style-success', 'url-style-error', 'url-style-file', 'url-style-default');
+
+        switch (styleType) {
+            case 'success':
+                audioUrlInput.classList.add('url-style-success');
+                break;
+            case 'error':
+                audioUrlInput.classList.add('url-style-error');
+                break;
+            case 'file': // For when a file is chosen, to distinguish from URL loading
+                audioUrlInput.classList.add('url-style-file');
+                break;
+            case 'default':
+            default:
+                audioUrlInput.classList.add('url-style-default');
+                break;
         }
     }
 
@@ -296,6 +361,8 @@ AudioApp.uiManager = (function() {
         showVadProgress(false); // Hide VAD bar
         updateVadProgress(0);   // Reset VAD bar width
         if (urlLoadingErrorDisplay) urlLoadingErrorDisplay.textContent = ""; // Clear URL error
+        setAudioUrlInputValue(""); // Clear URL input text
+        setUrlInputStyle('default'); // Reset URL input style
 
         // Reset sliders
         if (playbackSpeedControl) playbackSpeedControl.value = "1.0"; if (speedValueDisplay) speedValueDisplay.textContent = "1.00x";
@@ -416,7 +483,10 @@ AudioApp.uiManager = (function() {
         getJumpTime: getJumpTime,
         updateVadProgress: updateVadProgress,
         showVadProgress: showVadProgress,
-        setUrlLoadingError: setUrlLoadingError
+        setUrlLoadingError: setUrlLoadingError,
+        setUrlInputStyle: setUrlInputStyle,
+        unfocusUrlInput: unfocusUrlInput,
+        setAudioUrlInputValue: setAudioUrlInputValue
     };
 })();
 // --- /vibe-player/js/uiManager.js ---

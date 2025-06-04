@@ -72,6 +72,27 @@ section h2, section h3 {
     text-overflow: ellipsis;
 }
 
+/* --- URL Input Styling --- */
+#audioUrlInput.url-style-default {
+    color: black;
+    background-color: white;
+}
+
+#audioUrlInput.url-style-success {
+    color: blue;
+    background-color: white;
+}
+
+#audioUrlInput.url-style-error {
+    color: red;
+    background-color: white;
+}
+
+#audioUrlInput.url-style-file {
+    color: dimgray;
+    background-color: white;
+}
+
 /* --- REMOVED Old VAD Progress Bar Styles --- */
 /* (No rules here anymore) */
 

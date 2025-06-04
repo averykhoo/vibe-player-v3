@@ -61,6 +61,11 @@ AudioApp = (function() {
 
         // Initialize modules
         AudioApp.uiManager.init();
+        setTimeout(() => {
+            if (AudioApp.uiManager && typeof AudioApp.uiManager.unfocusUrlInput === 'function') {
+                AudioApp.uiManager.unfocusUrlInput();
+            }
+        }, 100); // 100ms delay to ensure UI is ready
         AudioApp.audioEngine.init();
         AudioApp.waveformVisualizer.init();
         AudioApp.spectrogramVisualizer.init();
@@ -107,6 +112,13 @@ AudioApp = (function() {
         currentFile = file;
         console.log("App: File selected -", file.name);
 
+        if (AudioApp.uiManager && typeof AudioApp.uiManager.setAudioUrlInputValue === 'function') {
+            AudioApp.uiManager.setAudioUrlInputValue('file:///' + file.name);
+        }
+        if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
+            AudioApp.uiManager.setUrlInputStyle('file');
+        }
+
         // Reset state
         stopUIUpdateLoop();
         isActuallyPlaying = false; isVadProcessing = false;
@@ -140,6 +152,9 @@ AudioApp = (function() {
         }
         console.log("App: URL selected -", url);
         AudioApp.uiManager.setUrlLoadingError(""); // Clear previous URL errors
+        if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
+            AudioApp.uiManager.setUrlInputStyle('default');
+        }
 
         // Attempt to derive a filename from the URL
         let filename = "loaded_from_url";
@@ -194,9 +209,15 @@ AudioApp = (function() {
             currentFile = newFileObject; // Store the new File object
 
             await AudioApp.audioEngine.loadAndProcessFile(newFileObject);
+            if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
+                AudioApp.uiManager.setUrlInputStyle('success');
+            }
 
         } catch (error) {
             console.error("App: Error fetching or processing URL -", error);
+            if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
+                AudioApp.uiManager.setUrlInputStyle('error');
+            }
             AudioApp.uiManager.resetUI(); // Call this first
 
             AudioApp.uiManager.updateFileName(filename); // Then update filename
