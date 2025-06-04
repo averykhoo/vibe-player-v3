@@ -14,6 +14,8 @@ AudioApp.uiManager = (function() {
     // File/Info
     /** @type {HTMLButtonElement|null} */ let chooseFileButton;
     /** @type {HTMLInputElement|null} */ let hiddenAudioFile;
+    /** @type {HTMLInputElement|null} */ let audioUrlInput; // New
+    /** @type {HTMLButtonElement|null} */ let loadUrlButton; // New
     /** @type {HTMLSpanElement|null} */ let fileNameDisplay;
     /** @type {HTMLParagraphElement|null} */ let fileInfo;
     /** @type {HTMLDivElement|null} */ let vadProgressContainer;
@@ -78,6 +80,8 @@ AudioApp.uiManager = (function() {
         // File Handling
         chooseFileButton = document.getElementById('chooseFileButton');
         hiddenAudioFile = document.getElementById('hiddenAudioFile');
+        audioUrlInput = document.getElementById('audioUrlInput'); // New
+        loadUrlButton = document.getElementById('loadUrlButton'); // New
         fileNameDisplay = document.getElementById('fileNameDisplay');
         fileInfo = document.getElementById('fileInfo');
         vadProgressContainer = document.getElementById('vadProgressContainer');
@@ -159,6 +163,21 @@ AudioApp.uiManager = (function() {
             if (file) { updateFileName(file.name); dispatchUIEvent('audioapp:fileSelected', { file: file }); }
             else { updateFileName(""); }
         });
+
+        loadUrlButton?.addEventListener('click', () => {
+            const audioUrl = audioUrlInput?.value.trim();
+            if (audioUrl) {
+                dispatchUIEvent('audioapp:urlSelected', { url: audioUrl });
+                // Optionally clear the input:
+                // if (audioUrlInput) audioUrlInput.value = "";
+                // updateFileName(audioUrl); // Or display URL as filename
+            } else {
+                // Optionally provide feedback if URL is empty
+                console.warn("UIManager: Load URL button clicked, but URL is empty.");
+                if (audioUrlInput) audioUrlInput.focus();
+            }
+        });
+
         seekBar?.addEventListener('input', (e) => {
             const target = /** @type {HTMLInputElement} */ (e.target);
             const fraction = parseFloat(target.value);

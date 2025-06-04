@@ -74,6 +74,7 @@ AudioApp = (function() {
     function setupAppEventListeners() {
         // UI -> App
         document.addEventListener('audioapp:fileSelected', handleFileSelected);
+        document.addEventListener('audioapp:urlSelected', handleUrlSelected); // New listener
         document.addEventListener('audioapp:playPauseClicked', handlePlayPause);
         document.addEventListener('audioapp:jumpClicked', handleJump);
         document.addEventListener('audioapp:seekRequested', handleSeek);
@@ -125,6 +126,83 @@ AudioApp = (function() {
             console.error("App: Error initiating file processing -", error);
             AudioApp.uiManager.setFileInfo(`Error loading: ${error.message}`); AudioApp.uiManager.resetUI();
             AudioApp.spectrogramVisualizer.showSpinner(false); stopUIUpdateLoop();
+        }
+    }
+
+
+    /** @param {CustomEvent<{url: string}>} e @private */
+    async function handleUrlSelected(e) {
+        const url = e.detail.url;
+        if (!url) {
+            console.warn("App: URL selected event received, but URL is empty.");
+            AudioApp.uiManager.setFileInfo("Error: No URL provided.");
+            return;
+        }
+        console.log("App: URL selected -", url);
+
+        // Attempt to derive a filename from the URL
+        let filename = "loaded_from_url";
+        try {
+            const urlPath = new URL(url).pathname;
+            const lastSegment = urlPath.substring(urlPath.lastIndexOf('/') + 1);
+            if (lastSegment) {
+                filename = decodeURIComponent(lastSegment);
+            }
+        } catch (urlError) {
+            console.warn("App: Could not parse URL to extract filename, using default.", urlError);
+            filename = url; // Fallback to using the full URL if parsing fails or no path segment
+        }
+
+        // Update UI to show the URL is being loaded
+        AudioApp.uiManager.updateFileName(filename); // Show derived filename or full URL
+
+        // Reset state (similar to handleFileSelected)
+        stopUIUpdateLoop();
+        isActuallyPlaying = false; isVadProcessing = false;
+        playbackStartTimeContext = null; playbackStartSourceTime = 0.0;
+        currentSpeedForUpdate = 1.0; currentAudioBuffer = null;
+        currentVadResults = null; workletPlaybackReady = false;
+        currentFile = null; // Clear previous file object
+
+        // Reset UI & Visuals
+        AudioApp.uiManager.resetUI(); // Resets most things, including file name if we want that behaviour
+        AudioApp.uiManager.updateFileName(filename); // Re-apply filename after resetUI
+        AudioApp.uiManager.setFileInfo(`Loading from URL: ${filename}...`);
+        AudioApp.waveformVisualizer.clearVisuals();
+        AudioApp.spectrogramVisualizer.clearVisuals();
+        AudioApp.spectrogramVisualizer.showSpinner(true);
+
+        try {
+            AudioApp.uiManager.setFileInfo(`Fetching: ${filename}...`);
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            AudioApp.uiManager.setFileInfo(`Processing: ${filename}...`);
+
+            // Determine MIME type from URL extension if possible, otherwise default
+            let mimeType = 'audio/*';
+            const extension = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
+            if (extension === 'mp3') mimeType = 'audio/mpeg';
+            else if (extension === 'wav') mimeType = 'audio/wav';
+            else if (extension === 'ogg') mimeType = 'audio/ogg';
+            // Add more types as needed
+
+            const newFileObject = new File([arrayBuffer], filename, { type: mimeType });
+            currentFile = newFileObject; // Store the new File object
+
+            await AudioApp.audioEngine.loadAndProcessFile(newFileObject);
+
+        } catch (error) {
+            console.error("App: Error fetching or processing URL -", error);
+            AudioApp.uiManager.setFileInfo(`Error loading URL: ${error.message.substring(0,150)}`);
+            AudioApp.uiManager.resetUI(); // Ensure UI is reset on error
+            AudioApp.uiManager.updateFileName(filename); // Keep the filename displayed
+            AudioApp.spectrogramVisualizer.showSpinner(false);
+            stopUIUpdateLoop();
+            // Clear potentially problematic state
+            currentFile = null;
         }
     }
 
