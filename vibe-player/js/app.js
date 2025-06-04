@@ -139,6 +139,7 @@ AudioApp = (function() {
             return;
         }
         console.log("App: URL selected -", url);
+        AudioApp.uiManager.setUrlLoadingError(""); // Clear previous URL errors
 
         // Attempt to derive a filename from the URL
         let filename = "loaded_from_url";
@@ -196,12 +197,14 @@ AudioApp = (function() {
 
         } catch (error) {
             console.error("App: Error fetching or processing URL -", error);
-            AudioApp.uiManager.setFileInfo(`Error loading URL: ${error.message.substring(0,150)}`);
-            AudioApp.uiManager.resetUI(); // Ensure UI is reset on error
-            AudioApp.uiManager.updateFileName(filename); // Keep the filename displayed
+            AudioApp.uiManager.resetUI(); // Call this first
+
+            AudioApp.uiManager.updateFileName(filename); // Then update filename
+            AudioApp.uiManager.setUrlLoadingError(`Error: Could not load audio from the provided URL. Please verify the URL and try again. (${error.message.substring(0,100)})`); // Then set specific error
+            AudioApp.uiManager.setFileInfo("Failed to load audio from URL."); // Then set general file info
+
             AudioApp.spectrogramVisualizer.showSpinner(false);
             stopUIUpdateLoop();
-            // Clear potentially problematic state
             currentFile = null;
         }
     }

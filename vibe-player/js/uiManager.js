@@ -16,6 +16,7 @@ AudioApp.uiManager = (function() {
     /** @type {HTMLInputElement|null} */ let hiddenAudioFile;
     /** @type {HTMLInputElement|null} */ let audioUrlInput; // New
     /** @type {HTMLButtonElement|null} */ let loadUrlButton; // New
+    /** @type {HTMLSpanElement|null} */ let urlLoadingErrorDisplay; // New
     /** @type {HTMLSpanElement|null} */ let fileNameDisplay;
     /** @type {HTMLParagraphElement|null} */ let fileInfo;
     /** @type {HTMLDivElement|null} */ let vadProgressContainer;
@@ -82,6 +83,7 @@ AudioApp.uiManager = (function() {
         hiddenAudioFile = document.getElementById('hiddenAudioFile');
         audioUrlInput = document.getElementById('audioUrlInput'); // New
         loadUrlButton = document.getElementById('loadUrlButton'); // New
+        urlLoadingErrorDisplay = document.getElementById('urlLoadingErrorDisplay'); // New
         fileNameDisplay = document.getElementById('fileNameDisplay');
         fileInfo = document.getElementById('fileInfo');
         vadProgressContainer = document.getElementById('vadProgressContainer');
@@ -178,6 +180,20 @@ AudioApp.uiManager = (function() {
             }
         });
 
+        audioUrlInput?.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                // Prevent the default form submission behavior if the input is in a form
+                event.preventDefault();
+                const audioUrl = audioUrlInput?.value.trim();
+                if (audioUrl) {
+                    dispatchUIEvent('audioapp:urlSelected', { url: audioUrl });
+                } else {
+                    console.warn("UIManager: Enter pressed in URL input, but URL is empty.");
+                    if (audioUrlInput) audioUrlInput.focus();
+                }
+            }
+        });
+
         seekBar?.addEventListener('input', (e) => {
             const target = /** @type {HTMLInputElement} */ (e.target);
             const fraction = parseFloat(target.value);
@@ -260,6 +276,13 @@ AudioApp.uiManager = (function() {
     }
 
     // --- Public Methods for Updating UI ---
+    /** @public @param {string} message */
+    function setUrlLoadingError(message) {
+        if (urlLoadingErrorDisplay) {
+            urlLoadingErrorDisplay.textContent = message;
+        }
+    }
+
     /** @public */
     function resetUI() {
         console.log("UIManager: Resetting UI");
@@ -272,6 +295,7 @@ AudioApp.uiManager = (function() {
         updateVadDisplay(0.5, 0.35, true); // Reset VAD sliders to N/A
         showVadProgress(false); // Hide VAD bar
         updateVadProgress(0);   // Reset VAD bar width
+        if (urlLoadingErrorDisplay) urlLoadingErrorDisplay.textContent = ""; // Clear URL error
 
         // Reset sliders
         if (playbackSpeedControl) playbackSpeedControl.value = "1.0"; if (speedValueDisplay) speedValueDisplay.textContent = "1.00x";
@@ -391,7 +415,8 @@ AudioApp.uiManager = (function() {
         enableVadControls: enableVadControls,
         getJumpTime: getJumpTime,
         updateVadProgress: updateVadProgress,
-        showVadProgress: showVadProgress
+        showVadProgress: showVadProgress,
+        setUrlLoadingError: setUrlLoadingError
     };
 })();
 // --- /vibe-player/js/uiManager.js ---
