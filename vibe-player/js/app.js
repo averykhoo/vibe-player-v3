@@ -130,6 +130,8 @@ AudioApp = (function() {
 
         // Reset UI & Visuals
         AudioApp.uiManager.resetUI();
+        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
         AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`);
         AudioApp.waveformVisualizer.clearVisuals(); // Use specific visualizer
         AudioApp.spectrogramVisualizer.clearVisuals(); // Use specific visualizer
@@ -190,6 +192,8 @@ AudioApp = (function() {
 
         // Reset UI & Visuals
         AudioApp.uiManager.resetUI(); // Resets most things, including file name if we want that behaviour
+        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle); // currentUrlStyle is 'default' here
         AudioApp.uiManager.updateFileName(filename); // Re-apply filename after resetUI
         AudioApp.uiManager.setFileInfo(`Loading from URL: ${filename}...`);
         AudioApp.waveformVisualizer.clearVisuals();
