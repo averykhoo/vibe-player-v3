@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="css/98.css"/>
     <!-- Your custom styles (load after 98.css) -->
     <link rel="stylesheet" href="css/styles.css">
+    <script src="js/sparkles.js"></script>
 </head>
 <body>
 
@@ -91,7 +92,8 @@
     <div class="control-group jump-controls">
         <button id="playPause" disabled>Play</button>
         <button id="jumpBack" disabled>◀◀ Back</button>
-        <input type="number" id="jumpTime" value="5" min="1" step="1" title="Seconds to jump"> seconds <!-- Changed 's' to 'seconds' -->
+        <input type="number" id="jumpTime" value="5" min="1" step="1" title="Seconds to jump"> seconds
+        <!-- Changed 's' to 'seconds' -->
         <button id="jumpForward" disabled>Forward ▶▶</button>
     </div>
 
@@ -109,8 +111,10 @@
     <h2>Voice Activity Detection (Silero)</h2>
 
     <!-- NEW: VAD Progress Bar using 98.css structure -->
-    <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container" style="margin-top: 5px; margin-bottom: 5px;">
-        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0;"></span> <!-- Corrected width attribute -->
+    <div id="vadProgressContainer" class="progress-indicator segmented vad-progress-indicator-container"
+         style="margin-top: 5px; margin-bottom: 5px;">
+        <span id="vadProgressBar" class="progress-indicator-bar" style="width: 0;"></span>
+        <!-- Corrected width attribute -->
     </div>
 
     <!-- Corrected Structure: Both VAD controls inside one horizontal container -->
@@ -126,10 +130,11 @@
             </div>
         </div>
         <div class="control-group slider-unit"> <!-- Unit for Negative -->
-             <div class="control-group">
+            <div class="control-group">
                 <div class="slider-label-value">
                     <label for="vadNegativeThreshold"
-                           title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative Threshold:</label>
+                           title="Probability below which non-speech frames trigger ending the segment (after redemption).">Negative
+                        Threshold:</label>
                     <span id="vadNegativeThresholdValue">N/A</span>
                 </div>
                 <input type="range" id="vadNegativeThreshold" min="0.01" max="0.99" value="0.35" step="0.01" disabled>
@@ -226,6 +231,45 @@
             const fileInfo = document.getElementById('fileInfo');
             if (fileInfo) fileInfo.textContent = "Fatal Error: Application failed to load. Check console.";
         }
+    });
+</script>
+
+<!-- Sparkle when the filename is double-clicked -->
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        // 1) Wire up dblclick → toggle sparkle
+        const fileSpan = document.getElementById("file-loader");
+        if (fileSpan) {
+
+            // Desktop: dblclick still works
+            fileSpan.addEventListener("dblclick", () => {
+                sparkle(); // calling with no args toggles on/off
+            });
+
+            // Mobile: look for two quick taps
+            let lastTapTime = 0;
+            fileSpan.addEventListener("touchend", (evt) => {
+                const now = Date.now();
+                if (now - lastTapTime < 200) {
+                    // It's a double‐tap – toggle sparkle and prevent the “ghost click”
+                    sparkle();
+                    evt.preventDefault();
+                    lastTapTime = 0;
+                } else {
+                    // First tap – just record the timestamp, but do NOT preventDefault
+                    lastTapTime = now;
+                }
+                // (No preventDefault() here on the first tap, so buttons inside can still receive single clicks)
+            });
+        }
+
+        // 2) If today is April 1st, automatically enable on page load
+        const today = new Date();
+        if (today.getMonth() === 3 && today.getDate() === 1) {
+            // Month is zero-based: 3 = April
+            sparkle(true);
+        }
+        ;
     });
 </script>
 
