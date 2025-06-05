@@ -93,6 +93,11 @@ section h2, section h3 {
     background-color: white;
 }
 
+.url-input.url-style-modified {
+    color: black;
+    background-color: #ffffff; /* Assuming a white background like default */
+}
+
 /* --- REMOVED Old VAD Progress Bar Styles --- */
 /* (No rules here anymore) */
 

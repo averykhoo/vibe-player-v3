@@ -20,6 +20,10 @@ AudioApp = (function() {
     // --- Application State ---
     /** @type {AudioBuffer|null} The currently loaded and decoded audio buffer. */
     let currentAudioBuffer = null;
+    /** @type {string|null} The URL to display in the input field. */
+    let currentDisplayUrl = null;
+    /** @type {string} The style to apply to the URL input field. */
+    let currentUrlStyle = 'default';
     /** @type {VadResult|null} Results from the VAD analysis (see vadAnalyzer). Only populated after background VAD. */
     let currentVadResults = null;
     /** @type {File|null} The currently loaded audio file object. */
@@ -110,14 +114,11 @@ AudioApp = (function() {
     async function handleFileSelected(e) {
         const file = e.detail.file; if (!file) return;
         currentFile = file;
+        currentDisplayUrl = 'file:///' + file.name;
+        currentUrlStyle = 'file';
+        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
         console.log("App: File selected -", file.name);
-
-        if (AudioApp.uiManager && typeof AudioApp.uiManager.setAudioUrlInputValue === 'function') {
-            AudioApp.uiManager.setAudioUrlInputValue('file:///' + file.name);
-        }
-        if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
-            AudioApp.uiManager.setUrlInputStyle('file');
-        }
 
         // Reset state
         stopUIUpdateLoop();
@@ -145,16 +146,22 @@ AudioApp = (function() {
     /** @param {CustomEvent<{url: string}>} e @private */
     async function handleUrlSelected(e) {
         const url = e.detail.url;
+        currentDisplayUrl = url;
+        currentUrlStyle = 'default'; // Represents "loading" or "modified before load"
+        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
         if (!url) {
             console.warn("App: URL selected event received, but URL is empty.");
             AudioApp.uiManager.setFileInfo("Error: No URL provided.");
+            // Potentially set error style for URL input if it was briefly shown
+            currentUrlStyle = 'error';
+            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
             return;
         }
         console.log("App: URL selected -", url);
         AudioApp.uiManager.setUrlLoadingError(""); // Clear previous URL errors
-        if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
-            AudioApp.uiManager.setUrlInputStyle('default');
-        }
+        // The style is already 'default' from above, so no need to set it again here explicitly
+        // unless a specific condition requires it.
 
         // Attempt to derive a filename from the URL
         let filename = "loaded_from_url";
@@ -209,16 +216,19 @@ AudioApp = (function() {
             currentFile = newFileObject; // Store the new File object
 
             await AudioApp.audioEngine.loadAndProcessFile(newFileObject);
-            if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
-                AudioApp.uiManager.setUrlInputStyle('success');
-            }
+            // currentDisplayUrl is already set to the remote URL
+            currentUrlStyle = 'success';
+            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+            // Ensure the input value is still the remote URL after potential background processing
+            AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
 
         } catch (error) {
             console.error("App: Error fetching or processing URL -", error);
-            if (AudioApp.uiManager && typeof AudioApp.uiManager.setUrlInputStyle === 'function') {
-                AudioApp.uiManager.setUrlInputStyle('error');
-            }
             AudioApp.uiManager.resetUI(); // Call this first
+
+            currentUrlStyle = 'error';
+            AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl); // Set the URL to the one that failed
+            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle); // Set style to error
 
             AudioApp.uiManager.updateFileName(filename); // Then update filename
             AudioApp.uiManager.setUrlLoadingError(`Error: Could not load audio from the provided URL. Please verify the URL and try again. (${error.message.substring(0,100)})`); // Then set specific error
@@ -261,6 +271,13 @@ AudioApp = (function() {
         // Trigger background VAD processing
         console.log("App: Starting background VAD processing...");
         runVadInBackground(currentAudioBuffer); // Fire and forget
+
+        // If a file was loaded (not a URL), and we have display URL info, ensure it's shown.
+        // This primarily ensures that if resetUI was called during processing, the file URL is restored.
+        if (currentFile && currentDisplayUrl && currentUrlStyle === 'file') {
+            AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+        }
     }
 
     /** @param {CustomEvent} e @private */
@@ -271,6 +288,7 @@ AudioApp = (function() {
         AudioApp.uiManager.enableSeekBar(true);
         // Spectrogram spinner is handled by spectrogramVisualizer
         AudioApp.uiManager.setFileInfo(`Ready: ${currentFile ? currentFile.name : 'Unknown File'}`);
+        AudioApp.uiManager.unfocusUrlInput();
     }
 
     /**

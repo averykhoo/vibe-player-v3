@@ -208,7 +208,22 @@ AudioApp.uiManager = (function() {
         });
 
         audioUrlInput?.addEventListener('input', () => {
-            setUrlInputStyle('default'); // Reset to default on any input
+            if (!audioUrlInput) return; // Guard
+            const currentStyles = audioUrlInput.classList;
+
+            if (currentStyles.contains('url-style-success') || currentStyles.contains('url-style-file')) {
+                // If it was successfully loaded (file or URL) and user types, mark as modified
+                setUrlInputStyle('modified');
+            } else if (currentStyles.contains('url-style-error')) {
+                // If it was an error and user types, revert to default input style as it's a new attempt
+                setUrlInputStyle('default');
+            } else if (currentStyles.contains('url-style-default')) {
+                // If it's default (e.g. after resetUI or initial empty state) and user types, mark as modified
+                setUrlInputStyle('modified');
+            }
+            // If it's already 'modified', further input will re-trigger this listener,
+            // but since none of the conditions for 'success', 'file', or 'error' will be met,
+            // and it's not 'default', it will effectively remain 'modified' without needing an explicit else.
         });
 
         seekBar?.addEventListener('input', (e) => {
@@ -329,7 +344,7 @@ AudioApp.uiManager = (function() {
     function setUrlInputStyle(styleType) {
         if (!audioUrlInput) return;
 
-        audioUrlInput.classList.remove('url-style-success', 'url-style-error', 'url-style-file', 'url-style-default');
+        audioUrlInput.classList.remove('url-style-success', 'url-style-error', 'url-style-file', 'url-style-default', 'url-style-modified');
 
         switch (styleType) {
             case 'success':
@@ -340,6 +355,9 @@ AudioApp.uiManager = (function() {
                 break;
             case 'file': // For when a file is chosen, to distinguish from URL loading
                 audioUrlInput.classList.add('url-style-file');
+                break;
+            case 'modified':
+                audioUrlInput.classList.add('url-style-modified');
                 break;
             case 'default':
             default:
