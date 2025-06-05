@@ -41,6 +41,7 @@ AudioApp = (function() {
     /** @type {boolean} */ let isActuallyPlaying = false; // Tracks confirmed playback state
     /** @type {number|null} */ let rAFUpdateHandle = null; // requestAnimationFrame handle
     /** @type {number} Playback speed used for main thread time estimation */ let currentSpeedForUpdate = 1.0;
+    let playbackNaturallyEnded = false;
 
     // --- Debounced Function (NEW) ---
     /** @type {Function|null} Debounced function for engine synchronization after speed change. */
@@ -122,7 +123,7 @@ AudioApp = (function() {
 
         // Reset state
         stopUIUpdateLoop();
-        isActuallyPlaying = false; isVadProcessing = false;
+        isActuallyPlaying = false; playbackNaturallyEnded = false; isVadProcessing = false;
         playbackStartTimeContext = null; playbackStartSourceTime = 0.0;
         currentSpeedForUpdate = 1.0; currentAudioBuffer = null;
         currentVadResults = null; workletPlaybackReady = false;
@@ -181,7 +182,7 @@ AudioApp = (function() {
 
         // Reset state (similar to handleFileSelected)
         stopUIUpdateLoop();
-        isActuallyPlaying = false; isVadProcessing = false;
+        isActuallyPlaying = false; playbackNaturallyEnded = false; isVadProcessing = false;
         playbackStartTimeContext = null; playbackStartSourceTime = 0.0;
         currentSpeedForUpdate = 1.0; currentAudioBuffer = null;
         currentVadResults = null; workletPlaybackReady = false;
@@ -396,6 +397,7 @@ AudioApp = (function() {
 
         // --- Corrected Pause Logic ---
         if (!aboutToPlay) {
+            playbackNaturallyEnded = false;
             // Calculate the precise time based on main thread estimation *now*
             const finalEstimatedTime = calculateEstimatedSourceTime();
             console.log(`App: Pausing requested. Seeking engine to estimated time: ${finalEstimatedTime.toFixed(3)} before pausing.`);
@@ -426,6 +428,7 @@ AudioApp = (function() {
 
     /** @param {CustomEvent<{seconds: number}>} e @private */
     function handleJump(e) {
+        playbackNaturallyEnded = false;
         if (!workletPlaybackReady || !currentAudioBuffer || !AudioApp.audioEngine) return;
         const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) return;
         const duration = currentAudioBuffer.duration; if (isNaN(duration) || duration <= 0) return;
@@ -448,6 +451,7 @@ AudioApp = (function() {
 
     /** @param {CustomEvent<{fraction: number}>} e @private */
     function handleSeek(e) {
+        playbackNaturallyEnded = false;
         if (!workletPlaybackReady || !currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0 || !AudioApp.audioEngine) return;
         const audioCtx = AudioApp.audioEngine.getAudioContext(); if (!audioCtx) return;
 
@@ -572,6 +576,7 @@ AudioApp = (function() {
              playbackStartSourceTime = currentAudioBuffer.duration; // Set base time to end
              updateUIWithTime(currentAudioBuffer.duration);
         }
+        playbackNaturallyEnded = true;
         AudioApp.uiManager.setPlayButtonState(false);
     }
 
@@ -595,13 +600,22 @@ AudioApp = (function() {
             const audioCtx = AudioApp.audioEngine?.getAudioContext();
             // If transitioning from not playing to playing, reset time base
             if (wasPlaying === false && audioCtx) {
-                 // Get the current time from the engine (which might have been set by seek)
-                 const engineTime = AudioApp.audioEngine.getCurrentTime();
-                 playbackStartSourceTime = engineTime.currentTime;
-                 playbackStartTimeContext = audioCtx.currentTime; // Mark context time NOW
-                 console.log(`App: Playback confirmed started/resumed. Setting time base: src=${playbackStartSourceTime.toFixed(3)}, ctx=${playbackStartTimeContext.toFixed(3)}`);
-                 // Ensure UI reflects this starting time immediately
-                 updateUIWithTime(playbackStartSourceTime);
+                if (playbackNaturallyEnded && currentAudioBuffer) { // Ensure buffer exists for duration
+                    playbackStartSourceTime = 0;
+                    playbackNaturallyEnded = false; // Reset the flag
+                    playbackStartTimeContext = audioCtx.currentTime;
+                    console.log("App: Playback started from beginning due to playbackNaturallyEnded flag.");
+                    // Ensure UI reflects this starting time immediately
+                    updateUIWithTime(playbackStartSourceTime);
+                } else {
+                    // This is the existing logic
+                    const engineTime = AudioApp.audioEngine.getCurrentTime();
+                    playbackStartSourceTime = engineTime.currentTime;
+                    playbackStartTimeContext = audioCtx.currentTime; // Mark context time NOW
+                    console.log(`App: Playback confirmed started/resumed. Setting time base: src=${playbackStartSourceTime.toFixed(3)}, ctx=${playbackStartTimeContext.toFixed(3)}`);
+                    // Ensure UI reflects this starting time immediately
+                    updateUIWithTime(playbackStartSourceTime);
+                }
             }
             startUIUpdateLoop(); // Ensure UI loop is running
         } else {
