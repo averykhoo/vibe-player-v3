@@ -29,7 +29,7 @@ AudioApp.Constants = (function() {
     const SPEC_NORMAL_FFT_SIZE = 8192;
     const SPEC_SHORT_FFT_SIZE = 2048;
     const SPEC_SHORT_FILE_FFT_THRESHOLD_S = 10.0; // Use short FFT for files shorter than this
-    const SPEC_MAX_FREQ = 12000; // Max frequency (Hz) to display
+    const SPEC_MAX_FREQ = 8000; // Max frequency (Hz) to display
     const SPEC_FIXED_WIDTH = 2048; // Internal calculation width (slices)
     const SPEC_SHORT_FILE_HOP_THRESHOLD_S = 5.0; // Use smaller hop for files shorter than this
     const SPEC_NORMAL_HOP_DIVISOR = 4; // Hop size = fftSize / N (75% overlap)
