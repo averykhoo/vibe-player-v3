@@ -34,6 +34,8 @@ AudioApp = (function() {
     let workletPlaybackReady = false;
     /** @type {boolean} Flag indicating if the background VAD task is currently running. */
     let isVadProcessing = false;
+    /** @type {number} Counter for drag enter/leave events. */
+    let dragCounter = 0;
 
     // --- Main Thread Playback Time State (Preserved) ---
     /** @type {number|null} AudioContext time when playback/seek started */ let playbackStartTimeContext = null;
@@ -107,10 +109,83 @@ AudioApp = (function() {
         // Window Events
         window.addEventListener('resize', handleWindowResize);
         window.addEventListener('beforeunload', handleBeforeUnload);
+
+        // Drag and Drop Listeners
+        window.addEventListener('dragenter', handleDragEnter);
+        window.addEventListener('dragover', handleDragOver);
+        window.addEventListener('dragleave', handleDragLeave);
+        window.addEventListener('drop', handleDrop);
     }
 
     // --- Event Handler Functions ---
 
+    // --- Drag and Drop Event Handlers ---
+    /** @param {DragEvent} event @private */
+    function handleDragEnter(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter++;
+        // Show drop zone only on the first enter
+        if (dragCounter === 1 && event.dataTransfer?.items) {
+            // Check if any item is a file
+            let filePresent = false;
+            for (let i = 0; i < event.dataTransfer.items.length; i++) {
+                if (event.dataTransfer.items[i].kind === 'file') {
+                    filePresent = true;
+                    break;
+                }
+            }
+            if (filePresent && event.dataTransfer.files.length > 0) {
+                AudioApp.uiManager.showDropZone(event.dataTransfer.files[0]);
+            } else {
+                // If no file is part of the drag (e.g., dragging text), don't show drop zone
+                // or show a different message. For now, just don't show.
+            }
+        }
+    }
+
+    /** @param {DragEvent} event @private */
+    function handleDragOver(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'copy'; // Show copy cursor
+    }
+
+    /** @param {DragEvent} event @private */
+    function handleDragLeave(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter--;
+        // Hide drop zone only when the counter reaches 0
+        if (dragCounter === 0) {
+            AudioApp.uiManager.hideDropZone();
+        }
+    }
+
+    /** @param {DragEvent} event @private */
+    function handleDrop(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        AudioApp.uiManager.hideDropZone();
+        dragCounter = 0;
+
+        const files = event.dataTransfer.files;
+        if (files.length > 0) {
+            const file = files[0];
+            // Optional: Check file type
+            if (file.type.startsWith('audio/')) {
+                console.log("App: File dropped -", file.name);
+                // Dispatch the existing fileSelected event to reuse the loading pathway
+                document.dispatchEvent(new CustomEvent('audioapp:fileSelected', { detail: { file: file } }));
+            } else {
+                console.warn("App: Invalid file type dropped -", file.name, file.type);
+                AudioApp.uiManager.setFileInfo("Invalid file type. Please drop an audio file.");
+                // Optionally, display this error for a few seconds then clear, or let next action clear it.
+            }
+        }
+    }
+
+    // --- Other Event Handler Functions ---
     /** @param {CustomEvent<{file: File}>} e @private */
     async function handleFileSelected(e) {
         const file = e.detail.file; if (!file) return;

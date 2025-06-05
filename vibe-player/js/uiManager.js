@@ -22,6 +22,10 @@ AudioApp.uiManager = (function() {
     /** @type {HTMLDivElement|null} */ let vadProgressContainer;
     /** @type {HTMLSpanElement|null} */ let vadProgressBar;
 
+    // Drop Zone
+    /** @type {HTMLDivElement|null} */ let dropZoneOverlay;
+    /** @type {HTMLDivElement|null} */ let dropZoneMessage;
+
     // Buttons
     /** @type {HTMLButtonElement|null} */ let playPauseButton;
     /** @type {HTMLButtonElement|null} */ let jumpBackButton;
@@ -88,6 +92,10 @@ AudioApp.uiManager = (function() {
         fileInfo = document.getElementById('fileInfo');
         vadProgressContainer = document.getElementById('vadProgressContainer');
         vadProgressBar = document.getElementById('vadProgressBar');
+
+        // Drop Zone
+        dropZoneOverlay = document.getElementById('dropZoneOverlay');
+        dropZoneMessage = document.getElementById('dropZoneMessage');
 
         // Playback
         playPauseButton = document.getElementById('playPause');
@@ -484,6 +492,33 @@ AudioApp.uiManager = (function() {
         vadProgressContainer.style.display = show ? 'block' : 'none'; // Simple show/hide
     }
 
+    // --- Drop Zone Management ---
+    /**
+     * Shows the drop zone overlay with file information.
+     * @public
+     * @param {File} file The file being dragged over.
+     */
+    function showDropZone(file) {
+        if (dropZoneOverlay && dropZoneMessage) {
+            dropZoneOverlay.style.display = 'flex'; // Or 'block'
+            // Utils.formatBytes is not available, display size in bytes.
+            dropZoneMessage.textContent = `File: ${file.name}, Size: ${file.size} bytes`;
+            document.body.classList.add('blurred-background');
+        }
+    }
+
+    /**
+     * Hides the drop zone overlay.
+     * @public
+     */
+    function hideDropZone() {
+        if (dropZoneOverlay && dropZoneMessage) {
+            dropZoneOverlay.style.display = 'none';
+            dropZoneMessage.textContent = '';
+            document.body.classList.remove('blurred-background');
+        }
+    }
+
     // --- Public Interface ---
     return {
         init: init,
@@ -504,7 +539,9 @@ AudioApp.uiManager = (function() {
         setUrlLoadingError: setUrlLoadingError,
         setUrlInputStyle: setUrlInputStyle,
         unfocusUrlInput: unfocusUrlInput,
-        setAudioUrlInputValue: setAudioUrlInputValue
+        setAudioUrlInputValue: setAudioUrlInputValue,
+        showDropZone: showDropZone,
+        hideDropZone: hideDropZone
     };
 })();
 // --- /vibe-player/js/uiManager.js ---

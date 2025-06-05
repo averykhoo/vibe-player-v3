@@ -396,4 +396,37 @@ small {
   font-size: 15px;
 }
 
+/* --- Drop Zone Overlay Styles --- */
+#dropZoneOverlay {
+    display: none; /* Initially hidden, shown by JS */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.75); /* Semi-transparent black */
+    z-index: 10000; /* High z-index to be on top */
+    /* Flexbox for centering the message */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Text styling for the overlay content */
+    color: white;
+    font-size: 1.5em;
+    text-align: center;
+}
+
+#dropZoneMessage {
+    padding: 20px;
+    background-color: rgba(0, 0, 0, 0.5); /* Darker, slightly transparent background for the message box */
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3); /* Optional: some shadow for the message box */
+}
+
+/* Class to apply blur/grayscale effect to the background content */
+.blurred-background {
+    filter: blur(4px) grayscale(50%);
+    /* transition: filter 0.3s ease-out; */ /* Optional: smooth transition for the filter effect */
+}
+
 /* /vibe-player/styles.css */
