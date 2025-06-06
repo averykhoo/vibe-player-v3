@@ -2,195 +2,207 @@
 // Performs VAD analysis frame-by-frame using the SileroWrapper.
 // Encapsulates the logic for iterating through audio data and calculating speech regions.
 
-var AudioApp = AudioApp || {}; // Ensure namespace exists
+/** @namespace AudioApp */
+var AudioApp = AudioApp || {};
 
-// Design Decision: Use IIFE, pass the Silero wrapper module as a dependency.
+/**
+ * @namespace AudioApp.sileroProcessor
+ * @description Processes audio data using the Silero VAD model via a wrapper.
+ * Provides functions to analyze audio for speech regions and recalculate them with different thresholds.
+ * @param {AudioApp.sileroWrapper} wrapper - The Silero VAD wrapper module.
+ */
 AudioApp.sileroProcessor = (function(wrapper) {
     'use strict';
 
-    // === Module Dependencies ===
-    // Assuming AudioApp.Constants and AudioApp.Utils are loaded before this file.
+    /**
+     * @private
+     * @type {AudioApp.Constants} Reference to the Constants module.
+     */
     const Constants = AudioApp.Constants;
+    /**
+     * @private
+     * @type {AudioApp.Utils} Reference to the Utils module.
+     */
     const Utils = AudioApp.Utils;
 
-    // Check if the required wrapper module is available
-    if (!wrapper || !wrapper.isAvailable) {
-        console.error("SileroProcessor: CRITICAL - AudioApp.sileroWrapper is not available!");
-        return { // Return a non-functional public interface
+    if (!wrapper || typeof wrapper.isAvailable !== 'function' || !wrapper.isAvailable()) {
+        console.error("SileroProcessor: CRITICAL - AudioApp.sileroWrapper is not available or not functional!");
+        /** @type {SileroProcessorPublicInterface} */
+        const nonFunctionalInterface = {
              analyzeAudio: () => Promise.reject(new Error("Silero VAD Wrapper not available")),
-             recalculateSpeechRegions: () => []
+             recalculateSpeechRegions: () => {
+                console.error("SileroProcessor: Cannot recalculate, VAD wrapper not available.");
+                return [];
+            }
         };
+        return nonFunctionalInterface;
     }
-    // Check if required dependencies are loaded
     if (!Constants) {
          console.error("SileroProcessor: CRITICAL - AudioApp.Constants not available!");
-         return { analyzeAudio: () => Promise.reject(new Error("Constants not available")), recalculateSpeechRegions: () => [] };
+         /** @type {SileroProcessorPublicInterface} */
+         const errorInterface = { analyzeAudio: () => Promise.reject(new Error("Constants not available")), recalculateSpeechRegions: () => [] };
+         return errorInterface;
     }
      if (!Utils) {
           console.error("SileroProcessor: CRITICAL - AudioApp.Utils not available!");
-          return { analyzeAudio: () => Promise.reject(new Error("Utils not available")), recalculateSpeechRegions: () => [] };
+          /** @type {SileroProcessorPublicInterface} */
+          const errorInterface = { analyzeAudio: () => Promise.reject(new Error("Utils not available")), recalculateSpeechRegions: () => [] };
+          return errorInterface;
      }
 
-    // --- Constants REMOVED - Use AudioApp.Constants ---
-    // const VAD_SAMPLE_RATE = 16000; // Use Constants.VAD_SAMPLE_RATE
-    // const PROGRESS_REPORT_INTERVAL_FRAMES = 20; // Use Constants.VAD_PROGRESS_REPORT_INTERVAL
-    // const YIELD_INTERVAL_FRAMES = 5; // Use Constants.VAD_YIELD_INTERVAL
-
-    // --- Helper Function REMOVED - Use AudioApp.Utils ---
-    // async function yieldToMainThread() { ... } // Use Utils.yieldToMainThread
-
-    // --- Core Analysis Function ---
+    /**
+     * @typedef {object} VadRegion
+     * @property {number} start - Start time of the speech region in seconds.
+     * @property {number} end - End time of the speech region in seconds.
+     */
 
     /**
-     * Analyzes 16kHz mono PCM data for speech regions using the Silero VAD model via the wrapper.
-     * Returns initial speech regions and the raw probabilities for each frame.
-     * Calls an optional onProgress callback during processing and yields periodically.
-     * @param {Float32Array} pcmData - The 16kHz mono Float32Array audio data.
-     * @param {object} [options={}] - VAD parameters and callback.
-     * @param {number} [options.frameSamples=Constants.DEFAULT_VAD_FRAME_SAMPLES] - Samples per VAD frame.
-     * @param {number} [options.positiveSpeechThreshold=0.5] - Probability threshold to start or continue speech.
-     * @param {number} [options.negativeSpeechThreshold] - Probability threshold to consider stopping speech (defaults to positive - 0.15).
-     * @param {number} [options.redemptionFrames=7] - Consecutive frames below negative threshold needed to end a speech segment.
-     * @param {string} [options.modelPath='./model/silero_vad.onnx'] - Path to model (passed to wrapper if needed).
-     * @param {function({processedFrames: number, totalFrames: number}): void} [options.onProgress] - Optional callback for progress updates.
-     * @returns {Promise<VadResult>} A promise resolving to the VAD results object.
+     * @typedef {object} VadAnalysisOptions
+     * @property {number} [frameSamples=AudioApp.Constants.DEFAULT_VAD_FRAME_SAMPLES] - Number of samples per VAD frame.
+     * @property {number} [positiveSpeechThreshold=0.5] - Probability threshold to start or continue a speech segment.
+     * @property {number} [negativeSpeechThreshold] - Probability threshold to consider stopping speech. Defaults to `positiveSpeechThreshold - 0.15`.
+     * @property {number} [redemptionFrames=7] - Number of consecutive frames below `negativeSpeechThreshold` needed to end a speech segment.
+     * @property {string} [modelPath] - Path to the ONNX VAD model (typically handled by the wrapper).
+     * @property {function({processedFrames: number, totalFrames: number}): void} [onProgress] - Optional callback for progress updates.
+     */
+
+    /**
      * @typedef {object} VadResult
-     * @property {Array<{start: number, end: number}>} regions - Initial calculated speech regions.
+     * @property {VadRegion[]} regions - Array of detected speech regions.
      * @property {Float32Array} probabilities - Raw probability for each processed frame.
-     * @property {number} frameSamples - Frame size used in analysis.
-     * @property {number} sampleRate - Sample rate used (should be Constants.VAD_SAMPLE_RATE).
-     * @property {number} initialPositiveThreshold - Positive threshold used for initial calculation.
-     * @property {number} initialNegativeThreshold - Negative threshold used for initial calculation.
-     * @property {number} redemptionFrames - Redemption frames value used.
-     * @throws {Error} If analysis fails (e.g., wrapper error, invalid input).
+     * @property {number} frameSamples - Frame size (in samples) used in the analysis.
+     * @property {number} sampleRate - Sample rate of the audio data used (should be `AudioApp.Constants.VAD_SAMPLE_RATE`).
+     * @property {number} initialPositiveThreshold - The positive speech threshold used for this result.
+     * @property {number} initialNegativeThreshold - The negative speech threshold used for this result.
+     * @property {number} redemptionFrames - The number of redemption frames used for this result.
+     */
+
+    /**
+     * Analyzes 16kHz mono PCM audio data for speech regions using the Silero VAD model.
      * @public
+     * @async
+     * @param {Float32Array} pcmData - The 16kHz mono Float32Array audio data.
+     * @param {VadAnalysisOptions} [options={}] - VAD parameters and callback.
+     * @returns {Promise<VadResult>} A promise resolving to the VAD results.
+     * @throws {Error} If analysis fails (e.g., wrapper error, invalid input data).
      */
     async function analyzeAudio(pcmData, options = {}) {
-        // --- Validate Input ---
         if (!(pcmData instanceof Float32Array)) {
             console.warn("SileroProcessor: VAD input data is not Float32Array. Attempting conversion.");
             try { pcmData = new Float32Array(pcmData); }
-            catch (e) { console.error("SileroProcessor: Failed to convert VAD input data to Float32Array.", e); throw new Error("VAD input data must be a Float32Array or convertible."); }
+            catch (e) {
+                const err = /** @type {Error} */ (e);
+                console.error("SileroProcessor: Failed to convert VAD input data to Float32Array.", err);
+                throw new Error(`VAD input data must be a Float32Array or convertible: ${err.message}`);
+            }
         }
 
-        // --- VAD Parameters ---
-        const frameSamples = options.frameSamples || Constants.DEFAULT_VAD_FRAME_SAMPLES; // Use Constant default
+        const frameSamples = options.frameSamples || Constants.DEFAULT_VAD_FRAME_SAMPLES;
         const positiveThreshold = options.positiveSpeechThreshold !== undefined ? options.positiveSpeechThreshold : 0.5;
         const negativeThreshold = options.negativeSpeechThreshold !== undefined ? options.negativeSpeechThreshold : Math.max(0.01, positiveThreshold - 0.15);
         const redemptionFrames = options.redemptionFrames !== undefined ? options.redemptionFrames : 7;
         const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
 
          if (!pcmData || pcmData.length === 0 || frameSamples <= 0) {
-             console.log("SileroProcessor: No audio data or invalid frame size provided to analyze.");
+             console.log("SileroProcessor: No audio data or invalid frame size for VAD analysis.");
+             // Ensure onProgress is called even for empty data, to complete any UI state
              setTimeout(() => onProgress({ processedFrames: 0, totalFrames: 0 }), 0);
-             return {
+             /** @type {VadResult} */
+             const emptyResult = {
                  regions: [], probabilities: new Float32Array(),
-                 frameSamples: frameSamples, sampleRate: Constants.VAD_SAMPLE_RATE, // Use Constant
-                 initialPositiveThreshold: positiveThreshold,
-                 initialNegativeThreshold: negativeThreshold,
+                 frameSamples: frameSamples, sampleRate: Constants.VAD_SAMPLE_RATE,
+                 initialPositiveThreshold: positiveThreshold, initialNegativeThreshold: negativeThreshold,
                  redemptionFrames: redemptionFrames
              };
+             return emptyResult;
          }
 
-        // --- Ensure Silero Model is Ready & Reset State ---
         try { wrapper.reset_state(); }
-        catch (e) { console.error("SileroProcessor: Error resetting VAD state via wrapper:", e); throw new Error(`Failed to reset Silero VAD state: ${e.message}`); }
+        catch (e) {
+            const err = /** @type {Error} */ (e);
+            console.error("SileroProcessor: Error resetting VAD state via wrapper:", err);
+            throw new Error(`Failed to reset Silero VAD state: ${err.message}`);
+        }
 
-        // --- Process Audio Frames ---
-        const allProbabilities = [];
+        /** @type {number[]} */ const allProbabilities = [];
         const totalFrames = Math.floor(pcmData.length / frameSamples);
         let processedFrames = 0;
-
-        console.log(`SileroProcessor: Analyzing ${pcmData.length} samples (${totalFrames} frames) with frame size ${frameSamples}...`);
         const startTime = performance.now();
 
         try {
             for (let i = 0; (i + frameSamples) <= pcmData.length; i += frameSamples) {
                 const frame = pcmData.slice(i, i + frameSamples);
-                const probability = await wrapper.process(frame); // Inference
+                const probability = await wrapper.process(frame);
                 allProbabilities.push(probability);
                 processedFrames++;
 
-                // --- Report Progress Periodically ---
-                if (processedFrames === 1 || processedFrames === totalFrames || (processedFrames % Constants.VAD_PROGRESS_REPORT_INTERVAL === 0)) { // Use Constant
+                if (processedFrames === 1 || processedFrames === totalFrames || (processedFrames % Constants.VAD_PROGRESS_REPORT_INTERVAL === 0)) {
                      onProgress({ processedFrames, totalFrames });
                 }
-
-                // --- Force Yield Periodically ---
-                if (processedFrames % Constants.VAD_YIELD_INTERVAL === 0 && processedFrames < totalFrames) { // Use Constant
-                     await Utils.yieldToMainThread(); // Use Utils
+                if (processedFrames % Constants.VAD_YIELD_INTERVAL === 0 && processedFrames < totalFrames) {
+                     await Utils.yieldToMainThread();
                 }
             }
         } catch (e) {
-            const endTime = performance.now();
-            console.error(`SileroProcessor: Error during frame processing after ${((endTime - startTime)/1000).toFixed(2)}s:`, e);
-            const progressData = { processedFrames, totalFrames };
-             setTimeout(() => onProgress(progressData), 0);
-            throw new Error(`VAD inference failed: ${e.message}`);
+            const err = /** @type {Error} */ (e);
+            console.error(`SileroProcessor: Error during VAD frame processing after ${((performance.now() - startTime)/1000).toFixed(2)}s:`, err);
+             setTimeout(() => onProgress({ processedFrames, totalFrames }), 0); // Final progress update on error
+            throw new Error(`VAD inference failed: ${err.message}`);
         }
+        console.log(`SileroProcessor: VAD analysis of ${totalFrames} frames took ${((performance.now() - startTime)/1000).toFixed(2)}s.`);
+        setTimeout(() => onProgress({ processedFrames, totalFrames }), 0); // Ensure final progress is reported
 
-        const endTime = performance.now();
-        console.log(`SileroProcessor: VAD analysis took ${((endTime - startTime)/1000).toFixed(2)}s.`);
-
-        const finalProgressData = { processedFrames, totalFrames };
-         setTimeout(() => onProgress(finalProgressData), 0);
-        if (processedFrames !== totalFrames) { console.warn(`[SileroProcessor] Loop finished but processedFrames (${processedFrames}) != totalFrames (${totalFrames}).`); }
-
-        // --- Calculate Initial Regions ---
         const probabilities = new Float32Array(allProbabilities);
         const initialRegions = recalculateSpeechRegions(probabilities, {
-            frameSamples: frameSamples,
-            sampleRate: Constants.VAD_SAMPLE_RATE, // Use Constant
-            positiveSpeechThreshold: positiveThreshold,
-            negativeSpeechThreshold: negativeThreshold,
-            redemptionFrames: redemptionFrames
+            frameSamples, sampleRate: Constants.VAD_SAMPLE_RATE,
+            positiveSpeechThreshold: positiveThreshold, negativeSpeechThreshold: negativeThreshold,
+            redemptionFrames
         });
-
         console.log(`SileroProcessor: Initially detected ${initialRegions.length} speech regions.`);
 
-        // --- Return Comprehensive Results ---
-        return {
-            regions: initialRegions,
-            probabilities: probabilities,
-            frameSamples: frameSamples,
-            sampleRate: Constants.VAD_SAMPLE_RATE, // Use Constant
-            initialPositiveThreshold: positiveThreshold,
-            initialNegativeThreshold: negativeThreshold,
-            redemptionFrames: redemptionFrames
+        /** @type {VadResult} */
+        const result = {
+            regions: initialRegions, probabilities, frameSamples,
+            sampleRate: Constants.VAD_SAMPLE_RATE,
+            initialPositiveThreshold: positiveThreshold, initialNegativeThreshold: negativeThreshold,
+            redemptionFrames
         };
+        return result;
     }
 
-
-    // --- Region Recalculation Function ---
+    /**
+     * @typedef {object} RecalculateOptions
+     * @property {number} frameSamples - Samples per frame used during original analysis.
+     * @property {number} sampleRate - Sample rate used (should be `AudioApp.Constants.VAD_SAMPLE_RATE`).
+     * @property {number} positiveSpeechThreshold - Current positive threshold (e.g., from UI slider).
+     * @property {number} negativeSpeechThreshold - Current negative threshold.
+     * @property {number} redemptionFrames - Redemption frames value used.
+     */
 
     /**
-     * Recalculates speech regions based on stored probabilities and potentially new thresholds.
-     * This function is FAST as it only iterates through probabilities, not the audio or model.
-     * @param {Float32Array} probabilities - The stored probabilities for each frame from `analyzeAudio`.
-     * @param {object} options - Contains current threshold and VAD parameters.
-     * @param {number} options.frameSamples - Samples per frame used during original analysis.
-     * @param {number} options.sampleRate - Sample rate used (should be Constants.VAD_SAMPLE_RATE).
-     * @param {number} options.positiveSpeechThreshold - Current positive threshold (e.g., from slider).
-     * @param {number} options.negativeSpeechThreshold - Current negative threshold.
-     * @param {number} options.redemptionFrames - Redemption frames value used.
-     * @returns {Array<{start: number, end: number}>} - Newly calculated speech regions.
+     * Recalculates speech regions from stored probabilities using potentially new thresholds.
+     * Does not re-run the VAD model; operates only on the probability array.
      * @public
+     * @param {Float32Array} probabilities - Probabilities for each frame from `analyzeAudio`.
+     * @param {RecalculateOptions} options - Parameters for recalculation.
+     * @returns {VadRegion[]} Newly calculated speech regions.
      */
     function recalculateSpeechRegions(probabilities, options) {
         const { frameSamples, sampleRate, positiveSpeechThreshold, negativeSpeechThreshold, redemptionFrames } = options;
 
-        // Validate sampleRate consistency
          if (sampleRate !== Constants.VAD_SAMPLE_RATE) {
-            console.warn(`SileroProcessor: Recalculating with sample rate ${sampleRate} which differs from expected constant ${Constants.VAD_SAMPLE_RATE}`);
+            console.warn(`SileroProcessor: Recalculating speech regions with sample rate ${sampleRate}, which differs from the expected VAD constant ${Constants.VAD_SAMPLE_RATE}. This may lead to incorrect timing if frameSamples is based on the original rate.`);
         }
-
-        if (!probabilities || probabilities.length === 0 || !frameSamples || !sampleRate || positiveSpeechThreshold === undefined || negativeSpeechThreshold === undefined || redemptionFrames === undefined) {
-             console.warn("SileroProcessor: Invalid arguments for recalculateSpeechRegions.", {probabilities: !!probabilities, frameSamples, sampleRate, positiveSpeechThreshold, negativeSpeechThreshold, redemptionFrames});
+        if (!probabilities || probabilities.length === 0 || !frameSamples || !sampleRate ||
+            positiveSpeechThreshold === undefined || negativeSpeechThreshold === undefined || redemptionFrames === undefined) {
+             console.warn("SileroProcessor: Invalid arguments for recalculateSpeechRegions. Returning empty array.", options);
             return [];
         }
 
-        const newRegions = [];
-        let inSpeech = false; let regionStart = 0.0; let redemptionCounter = 0;
+        /** @type {VadRegion[]} */ const newRegions = [];
+        let inSpeech = false;
+        let regionStart = 0.0;
+        let redemptionCounter = 0;
 
         for (let i = 0; i < probabilities.length; i++) {
             const probability = probabilities[i];
@@ -198,33 +210,41 @@ AudioApp.sileroProcessor = (function(wrapper) {
 
             if (probability >= positiveSpeechThreshold) {
                 if (!inSpeech) { inSpeech = true; regionStart = frameStartTime; }
-                redemptionCounter = 0;
-            } else if (inSpeech) {
+                redemptionCounter = 0; // Reset redemption if speech detected
+            } else if (inSpeech) { // Only apply redemption logic if we were in speech
                 if (probability < negativeSpeechThreshold) {
                     redemptionCounter++;
                     if (redemptionCounter >= redemptionFrames) {
-                        const triggerFrameIndex = i - redemptionFrames + 1;
+                        // End of speech segment detected
+                        const triggerFrameIndex = i - redemptionFrames + 1; // Frame that triggered end
                         const actualEnd = (triggerFrameIndex * frameSamples) / sampleRate;
-                        const finalEnd = Math.max(regionStart, actualEnd);
+                        const finalEnd = Math.max(regionStart, actualEnd); // Ensure end is not before start
                         newRegions.push({ start: regionStart, end: finalEnd });
                         inSpeech = false; redemptionCounter = 0;
                     }
-                } else { redemptionCounter = 0; } // Reset if between thresholds
+                } else { // Probability is between negative and positive thresholds
+                    redemptionCounter = 0; // Reset redemption if not strictly below negative threshold
+                }
             }
         }
-        // Finalize if speech continued to the end
-        if (inSpeech) {
+        if (inSpeech) { // If speech segment was active at the end of probabilities
             const finalEnd = (probabilities.length * frameSamples) / sampleRate;
             newRegions.push({ start: regionStart, end: finalEnd });
         }
         return newRegions;
     }
 
-    // --- Public Interface ---
+    /**
+     * @typedef {Object} SileroProcessorPublicInterface
+     * @property {function(Float32Array, VadAnalysisOptions=): Promise<VadResult>} analyzeAudio
+     * @property {function(Float32Array, RecalculateOptions): VadRegion[]} recalculateSpeechRegions
+     */
+
+    /** @type {SileroProcessorPublicInterface} */
     return {
         analyzeAudio: analyzeAudio,
         recalculateSpeechRegions: recalculateSpeechRegions
     };
 
-})(AudioApp.sileroWrapper); // Pass the Silero wrapper module as a dependency
+})(AudioApp.sileroWrapper);
 // --- /vibe-player/js/vad/sileroProcessor.js --- // Updated Path

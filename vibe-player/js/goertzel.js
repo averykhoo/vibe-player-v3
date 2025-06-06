@@ -2,22 +2,32 @@
 // Pure JavaScript Goertzel Algorithm Implementation for Vibe Player
 // Attaches GoertzelFilter to AudioApp.
 
+/** @namespace AudioApp */
 var AudioApp = AudioApp || {}; // Ensure AudioApp namespace exists
 
+/**
+ * @module GoertzelModule
+ * @description Provides GoertzelFilter, DTMFParser, CallProgressToneParser classes and related constants.
+ */
 const GoertzelModule = (function() {
     'use strict';
 
     // --- DTMF Constants ---
-    const DTMF_SAMPLE_RATE = 16000; // Standard sample rate for DTMF processing
-    const DTMF_BLOCK_SIZE = 410;   // Common block size for 16kHz sample rate (205 * 2)
-    // Relative magnitude threshold: dominant tone must be X times stronger than others in its group
-    const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0; // Example: Dominant tone must be 2x stronger
-    // Absolute magnitude threshold: minimum energy for a tone to be considered
-    const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 4e2;   // Needs tuning based on input levels and N
+    /** @type {number} Standard sample rate for DTMF processing (Hz). */
+    const DTMF_SAMPLE_RATE = 16000;
+    /** @type {number} Common block size for 16kHz sample rate (samples). */
+    const DTMF_BLOCK_SIZE = 410;
+    /** @type {number} Relative magnitude threshold factor: dominant tone must be X times stronger than others in its group. */
+    const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0;
+    /** @type {number} Absolute magnitude threshold: minimum energy for a tone to be considered. */
+    const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 4e2;
 
-    const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941]; // Hz
-    const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633]; // Hz (including A,B,C,D for completeness)
+    /** @type {number[]} Low frequency group for DTMF (Hz). */
+    const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941];
+    /** @type {number[]} High frequency group for DTMF (Hz), including A,B,C,D. */
+    const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633];
 
+    /** @type {Object<string, string>} Maps DTMF frequency pairs to characters. Key: "lowFreq,highFreq". */
     const DTMF_CHARACTERS = {
         "697,1209": "1", "697,1336": "2", "697,1477": "3", "697,1633": "A",
         "770,1209": "4", "770,1336": "5", "770,1477": "6", "770,1633": "B",
@@ -26,38 +36,49 @@ const GoertzelModule = (function() {
     };
 
     // --- Call Progress Tone Frequencies (Hz) ---
+    /** @type {number[]} Frequencies for Dial Tone. */
     const CPT_FREQ_DIAL_TONE = [350, 440];
+    /** @type {number[]} Frequencies for Busy Signal. */
     const CPT_FREQ_BUSY_SIGNAL = [480, 620];
-    const CPT_FREQ_REORDER_TONE = [480, 620]; // Same as Busy
+    /** @type {number[]} Frequencies for Reorder Tone (same as Busy). */
+    const CPT_FREQ_REORDER_TONE = [480, 620];
+    /** @type {number[]} Frequencies for Ringback Tone. */
     const CPT_FREQ_RINGBACK_TONE = [440, 480];
+    /** @type {number[]} Frequencies for Off-Hook Warning Tone. */
     const CPT_FREQ_OFF_HOOK_WARNING = [1400, 2060, 2450, 2600];
+    /** @type {number[]} Frequencies for Call Waiting Tone. */
     const CPT_FREQ_CALL_WAITING_TONE = [440];
 
     // --- Call Progress Tone Cadences (ms ON, ms OFF) ---
+    /** @typedef {{on: number, off: number}} CadenceSpec */
+    /** @type {CadenceSpec} Cadence for Busy Signal. */
     const CPT_CADENCE_BUSY_SIGNAL = { on: 500, off: 500 };
+    /** @type {CadenceSpec} Cadence for Reorder Tone. */
     const CPT_CADENCE_REORDER_TONE = { on: 250, off: 250 };
+    /** @type {CadenceSpec} Cadence for Ringback Tone. */
     const CPT_CADENCE_RINGBACK_TONE = { on: 2000, off: 4000 };
+    /** @type {CadenceSpec} Cadence for Call Waiting Tone. */
     const CPT_CADENCE_CALL_WAITING_TONE = { on: 300, off: 9700 }; // Approximate
 
     // --- Call Progress Tone Parser Constants ---
+    /** @type {number} Default sample rate for CPT parser (Hz). */
     const CPT_DEFAULT_SAMPLE_RATE = DTMF_SAMPLE_RATE;
+    /** @type {number} Default block size for CPT parser (samples). */
     const CPT_DEFAULT_BLOCK_SIZE = DTMF_BLOCK_SIZE;
-    const CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD = 2e2; // Needs tuning
-    const CPT_DEFAULT_RELATIVE_THRESHOLD_FACTOR = 1.5;   // Needs tuning
-    const CPT_CADENCE_TOLERANCE_PERCENT = 0.25; // +/- 25% tolerance for cadence timing
-    const CPT_MIN_CYCLE_CONFIRMATION = 1.5; // Require 1.5 cycles for cadenced tones (ON-OFF-ON)
+    /** @type {number} Default absolute magnitude threshold for CPT parser. */
+    const CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD = 2e2;
+    /** @type {number} Default relative magnitude threshold factor for CPT parser. */
+    const CPT_DEFAULT_RELATIVE_THRESHOLD_FACTOR = 1.5;
+    /** @type {number} Tolerance (percentage) for CPT cadence timing. */
+    const CPT_CADENCE_TOLERANCE_PERCENT = 0.25;
+    /** @type {number} Minimum number of cycles for confirming a cadenced CPT. */
+    const CPT_MIN_CYCLE_CONFIRMATION = 1.5;
+
 
     /**
-     * Implements the Goertzel algorithm to detect the magnitude of a specific frequency
-     * in a block of audio samples.
-        "697,1209": "1", "697,1336": "2", "697,1477": "3", "697,1633": "A",
-        "770,1209": "4", "770,1336": "5", "770,1477": "6", "770,1633": "B",
-        "852,1209": "7", "852,1336": "8", "852,1477": "9", "852,1633": "C",
-        "941,1209": "*", "941,1336": "0", "941,1477": "#", "941,1633": "D"
-    };
-
-    /**
-     * Implements the Goertzel algorithm to detect the magnitude of a specific frequency
+     * @class GoertzelFilter
+     * @memberof AudioApp
+     * @description Implements the Goertzel algorithm to detect the magnitude of a specific frequency
      * in a block of audio samples.
      */
     class GoertzelFilter {
@@ -66,10 +87,16 @@ const GoertzelModule = (function() {
          * @param {number} targetFrequency - The specific frequency (in Hz) this filter will detect.
          * @param {number} sampleRate - The sample rate (in Hz) of the audio signal.
          * @param {number} N - The block size (number of samples) for one analysis window.
+         *                   Coefficients are calculated based on this N.
+         */
+         * @param {number} targetFrequency - The specific frequency (in Hz) this filter will detect.
+         * @param {number} sampleRate - The sample rate (in Hz) of the audio signal.
+         * @param {number} N - The block size (number of samples) for one analysis window.
          *                   Coefficients are calculated based on this N, and for the most
          *                   straightforward interpretation of getMagnitudeSquared(), exactly
          *                   N samples should be processed after a reset.
          */
+        constructor(targetFrequency, sampleRate, N) {
         constructor(targetFrequency, sampleRate, N) {
             if (N <= 0) {
                 throw new Error("GoertzelFilter: Block size N must be positive.");
@@ -82,25 +109,35 @@ const GoertzelModule = (function() {
                 console.warn("GoertzelFilter: Target frequency is very low or near/above Nyquist frequency. Results may be suboptimal.");
             }
 
+            /** @type {number} The target frequency for this filter instance. */
             this.targetFrequency = targetFrequency;
+            /** @type {number} The sample rate assumed by this filter instance. */
             this.sampleRate = sampleRate;
-            this.N = N; // Store N for reference, though it's primarily used for coefficient calculation
+            /** @type {number} The block size (N) used for coefficient calculation. */
+            this.N = N;
 
             // Precompute coefficients
-            // k is the normalized frequency, effectively the DFT bin index we're targeting
+            /** @private @type {number} Normalized frequency (DFT bin index). */
             const k = Math.floor(0.5 + (this.N * this.targetFrequency) / this.sampleRate);
+            /** @private @type {number} Angular frequency. */
             this.omega = (2 * Math.PI * k) / this.N;
+            /** @private @type {number} Cosine of omega. */
             this.cosine = Math.cos(this.omega);
+            /** @private @type {number} Sine of omega. */
             this.sine = Math.sin(this.omega);
+            /** @private @type {number} Filter coefficient (2 * cos(omega)). */
             this.coeff = 2 * this.cosine;
 
-            this.q1 = 0; // Represents s[n-1] state variable
-            this.q2 = 0; // Represents s[n-2] state variable
+            /** @private @type {number} Represents s[n-1] state variable. */
+            this.q1 = 0;
+            /** @private @type {number} Represents s[n-2] state variable. */
+            this.q2 = 0;
         }
 
         /**
          * Resets the internal state of the filter (q1 and q2).
          * Call this before processing a new independent block of N samples.
+         * @public
          */
         reset() {
             this.q1 = 0;
@@ -110,6 +147,7 @@ const GoertzelModule = (function() {
         /**
          * Processes a single audio sample through the filter.
          * This updates the internal state variables q1 and q2.
+         * @public
          * @param {number} sample - The audio sample value.
          */
         processSample(sample) {
@@ -121,9 +159,7 @@ const GoertzelModule = (function() {
         /**
          * Processes a block (array or Float32Array) of audio samples.
          * Each sample in the block is run through processSample.
-         * For the most direct interpretation of getMagnitudeSquared(), this block
-         * should contain exactly N samples (where N is from the constructor),
-         * and reset() should have been called before processing this block.
+         * @public
          * @param {number[] | Float32Array} samples - The block of audio samples.
          */
         processBlock(samples) {
@@ -137,106 +173,113 @@ const GoertzelModule = (function() {
 
         /**
          * Calculates the squared magnitude of the target frequency component.
-         * This formula is most directly interpretable as the magnitude of the k-th DFT coefficient
-         * if exactly N samples (where N was used to calculate k and omega in the constructor)
-         * have been processed since the last call to reset().
-         *
-         * The value is proportional to the power of the signal at the target frequency.
+         * This value is proportional to the power of the signal at the target frequency.
          * It does not reset the filter's internal state.
+         * @public
          * @returns {number} The squared magnitude.
          */
         getMagnitudeSquared() {
-            // Formula for the squared magnitude of the DFT coefficient X(k)
-            // after N samples have been processed by the IIR filter stage:
-            // |X(k)|^2 = q1^2 + q2^2 - (2 * cos(omega)) * q1 * q2
-            //           = q1^2 + q2^2 - coeff * q1 * q2
-            //
-            // Alternatively, using real and imaginary parts:
-            // Real part of X(k) = q1 - q2 * cos(omega)
-            // Imaginary part of X(k) = q2 * sin(omega)  (for W_N^{-k} convention in DFT def.)
-            // Magnitude^2 = Real^2 + Imag^2
             const realPart = this.q1 - this.q2 * this.cosine;
             const imagPart = this.q2 * this.sine;
-
             return realPart * realPart + imagPart * imagPart;
         }
     }
 
+    /**
+     * @class DTMFParser
+     * @memberof AudioApp
+     * @description Parses DTMF tones from audio blocks using Goertzel filters.
+     */
     class DTMFParser {
+        /**
+         * Creates an instance of DTMFParser.
+         * @param {number} [sampleRate=DTMF_SAMPLE_RATE] - Sample rate of the audio.
+         * @param {number} [blockSize=DTMF_BLOCK_SIZE] - Size of audio blocks to process.
+         * @param {number} [threshold=DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD] - Absolute magnitude threshold for tone detection.
+         * @param {number} [relativeThresholdFactor=DTMF_RELATIVE_THRESHOLD_FACTOR] - Relative threshold factor for distinguishing tones.
+         */
         constructor(sampleRate = DTMF_SAMPLE_RATE, blockSize = DTMF_BLOCK_SIZE, threshold = DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD, relativeThresholdFactor = DTMF_RELATIVE_THRESHOLD_FACTOR) {
+            /** @type {number} Sample rate in Hz. */
             this.sampleRate = sampleRate;
+            /** @type {number} Block size in samples. */
             this.blockSize = blockSize;
+            /** @type {number} Absolute magnitude detection threshold. */
             this.threshold = threshold;
+            /** @type {number} Relative magnitude threshold factor. */
             this.relativeThresholdFactor = relativeThresholdFactor;
 
+            /** @private @type {AudioApp.GoertzelFilter[]} Filters for low DTMF frequencies. */
             this.lowGroupFilters = DTMF_FREQUENCIES_LOW.map(freq =>
-                new AudioApp.GoertzelFilter(freq, this.sampleRate, this.blockSize)
+                new GoertzelFilter(freq, this.sampleRate, this.blockSize) // Changed: Use GoertzelFilter directly
             );
+            /** @private @type {AudioApp.GoertzelFilter[]} Filters for high DTMF frequencies. */
             this.highGroupFilters = DTMF_FREQUENCIES_HIGH.map(freq =>
-                new AudioApp.GoertzelFilter(freq, this.sampleRate, this.blockSize)
+                new GoertzelFilter(freq, this.sampleRate, this.blockSize) // Changed: Use GoertzelFilter directly
             );
+            /** @private @type {number} Counter for processed blocks (for debugging/logging). */
             this.processedBlocksCounter = 0;
         }
 
+        /**
+         * Processes a block of audio data to detect a DTMF tone.
+         * @public
+         * @param {Float32Array | number[]} audioBlock - The audio data to process. Must match blockSize.
+         * @returns {string | null} The detected DTMF character ('0'-'9', '*', '#', 'A'-'D'), or null if no tone is detected.
+         */
         processAudioBlock(audioBlock) {
             this.processedBlocksCounter++;
             if (audioBlock.length !== this.blockSize) {
                 // console.warn(`DTMFParser: Audio block length (${audioBlock.length}) does not match expected block size (${this.blockSize}). Results may be inaccurate.`);
-                // For now, we'll proceed, but in a real scenario, buffering/windowing would be needed.
             }
 
-            let maxLowMag = -1, detectedLowFreq = -1, totalLowMag = 0;
-            const lowMagnitudes = {};
+            /** @type {number} */ let maxLowMag = -1;
+            /** @type {number} */ let detectedLowFreq = -1;
+            /** @type {Object<number, number>} */ const lowMagnitudes = {};
 
             this.lowGroupFilters.forEach(filter => {
                 filter.reset();
                 filter.processBlock(audioBlock);
                 const magSq = filter.getMagnitudeSquared();
                 lowMagnitudes[filter.targetFrequency] = magSq;
-                totalLowMag += magSq;
                 if (magSq > maxLowMag) {
                     maxLowMag = magSq;
                     detectedLowFreq = filter.targetFrequency;
                 }
             });
 
-            let maxHighMag = -1, detectedHighFreq = -1, totalHighMag = 0;
-            const highMagnitudes = {};
+            /** @type {number} */ let maxHighMag = -1;
+            /** @type {number} */ let detectedHighFreq = -1;
+            /** @type {Object<number, number>} */ const highMagnitudes = {};
 
             this.highGroupFilters.forEach(filter => {
                 filter.reset();
                 filter.processBlock(audioBlock);
                 const magSq = filter.getMagnitudeSquared();
                 highMagnitudes[filter.targetFrequency] = magSq;
-                totalHighMag += magSq;
                 if (magSq > maxHighMag) {
                     maxHighMag = magSq;
                     detectedHighFreq = filter.targetFrequency;
                 }
             });
 
-            // console.log(`DTMF Raw Detect: Block Time: ${(this.processedBlocksCounter !== undefined ? this.processedBlocksCounter * this.blockSize / this.sampleRate : 'N/A').toFixed(3)}s, Low Freq: ${detectedLowFreq} (MagSq: ${maxLowMag.toExponential(2)}), High Freq: ${detectedHighFreq} (MagSq: ${maxHighMag.toExponential(2)})`);
-            // Check absolute threshold
             if (maxLowMag < this.threshold || maxHighMag < this.threshold) {
-                return null; // Below absolute threshold
+                return null;
             }
 
-            // Check relative threshold for low group
-            for (const freq in lowMagnitudes) {
-                if (parseInt(freq) !== detectedLowFreq) {
+            for (const freqStr in lowMagnitudes) {
+                const freq = parseInt(freqStr);
+                if (freq !== detectedLowFreq) {
                     if (lowMagnitudes[freq] * this.relativeThresholdFactor > maxLowMag) {
-                        // console.log(`DTMF rejected: Low freq ${detectedLowFreq} not dominant enough over ${freq}`);
-                        return null; // Detected low frequency is not dominant enough
+                        return null;
                     }
                 }
             }
 
-            // Check relative threshold for high group
-            for (const freq in highMagnitudes) {
-                if (parseInt(freq) !== detectedHighFreq) {
+            for (const freqStr in highMagnitudes) {
+                const freq = parseInt(freqStr);
+                if (freq !== detectedHighFreq) {
                     if (highMagnitudes[freq] * this.relativeThresholdFactor > maxHighMag) {
-                        // console.log(`DTMF rejected: High freq ${detectedHighFreq} not dominant enough over ${freq}`);
-                        return null; // Detected high frequency is not dominant enough
+                        return null;
                     }
                 }
             }
@@ -244,44 +287,77 @@ const GoertzelModule = (function() {
             const dtmfKey = `${detectedLowFreq},${detectedHighFreq}`;
             const detectedChar = DTMF_CHARACTERS[dtmfKey];
 
-            if (detectedChar) {
-                // console.log(`DTMF Detected: ${detectedChar} (Low: ${detectedLowFreq}Hz, High: ${detectedHighFreq}Hz, LowMag: ${maxLowMag.toExponential(2)}, HighMag: ${maxHighMag.toExponential(2)})`);
-                return detectedChar;
-            }
-
-            return null;
+            return detectedChar || null;
         }
     }
 
+    /**
+     * @typedef {Object} CadenceState
+     * @property {CadenceSpec} spec - The ON/OFF duration specification.
+     * @property {number[]} frequencies - The frequencies that constitute the tone.
+     * @property {'ON' | 'OFF'} phase - Current phase of the cadence ('ON' or 'OFF').
+     * @property {number} timerBlocks - Number of blocks spent in the current phase.
+     * @property {number} cyclesDetected - Number of full ON/OFF cycles detected.
+     * @property {any[]} history - Optional history for complex pattern matching.
+     * @property {number} onBlocksTarget - Target number of blocks for the ON phase.
+     * @property {number} offBlocksTarget - Target number of blocks for the OFF phase.
+     */
+
+    /**
+     * @typedef {Object} ContinuousToneState
+     * @property {number[]} requiredFreqs - Frequencies that must be present.
+     * @property {number} presentBlocks - Number of consecutive blocks the tone has been present.
+     * @property {number} neededBlocks - Number of consecutive blocks needed to confirm the tone.
+     */
+
+    /**
+     * @class CallProgressToneParser
+     * @memberof AudioApp
+     * @description Parses call progress tones (e.g., busy, ringback) from audio blocks.
+     */
     class CallProgressToneParser {
+        /**
+         * Creates an instance of CallProgressToneParser.
+         * @param {number} [sampleRate=CPT_DEFAULT_SAMPLE_RATE] - Sample rate of the audio.
+         * @param {number} [blockSize=CPT_DEFAULT_BLOCK_SIZE] - Size of audio blocks to process.
+         * @param {number} [absoluteMagnitudeThreshold=CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD] - Absolute magnitude threshold.
+         * @param {number} [relativeThresholdFactor=CPT_DEFAULT_RELATIVE_THRESHOLD_FACTOR] - Relative threshold factor.
+         */
         constructor(
             sampleRate = CPT_DEFAULT_SAMPLE_RATE,
             blockSize = CPT_DEFAULT_BLOCK_SIZE,
             absoluteMagnitudeThreshold = CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD,
             relativeThresholdFactor = CPT_DEFAULT_RELATIVE_THRESHOLD_FACTOR
         ) {
+            /** @type {number} Sample rate in Hz. */
             this.sampleRate = sampleRate;
+            /** @type {number} Block size in samples. */
             this.blockSize = blockSize;
+            /** @type {number} Absolute magnitude detection threshold. */
             this.absoluteMagnitudeThreshold = absoluteMagnitudeThreshold;
-            this.relativeThresholdFactor = relativeThresholdFactor; // Used for multi-frequency tones
+            /** @type {number} Relative magnitude threshold factor for multi-frequency tones. */
+            this.relativeThresholdFactor = relativeThresholdFactor;
 
+            /** @type {number} Duration of one audio block in milliseconds. */
             this.blockDurationMs = (this.blockSize / this.sampleRate) * 1000;
 
-            // Collect all unique frequencies used by CPTs
+            /** @private @type {Set<number>} Unique frequencies used by CPTs. */
             const allCptFrequencies = new Set([
-                ...CPT_FREQ_DIAL_TONE,
-                ...CPT_FREQ_BUSY_SIGNAL, // Reorder is same as Busy
-                ...CPT_FREQ_RINGBACK_TONE,
-                ...CPT_FREQ_OFF_HOOK_WARNING,
+                ...CPT_FREQ_DIAL_TONE, ...CPT_FREQ_BUSY_SIGNAL,
+                ...CPT_FREQ_RINGBACK_TONE, ...CPT_FREQ_OFF_HOOK_WARNING,
                 ...CPT_FREQ_CALL_WAITING_TONE
             ]);
 
+            /** @private @type {Object<number, AudioApp.GoertzelFilter>} Goertzel filters for each CPT frequency. */
             this.filters = {};
             allCptFrequencies.forEach(freq => {
-                this.filters[freq] = new GoertzelFilter(freq, this.sampleRate, this.blockSize);
+                this.filters[freq] = new GoertzelFilter(freq, this.sampleRate, this.blockSize); // Changed: Use GoertzelFilter directly
             });
 
-            // State for cadenced tones
+            /**
+             * @private
+             * @type {Object<string, CadenceState>} State for cadenced tones.
+             */
             this.cadenceStates = {
                 Busy: this._initCadenceState(CPT_CADENCE_BUSY_SIGNAL, CPT_FREQ_BUSY_SIGNAL),
                 Reorder: this._initCadenceState(CPT_CADENCE_REORDER_TONE, CPT_FREQ_REORDER_TONE),
@@ -289,112 +365,132 @@ const GoertzelModule = (function() {
                 CallWaiting: this._initCadenceState(CPT_CADENCE_CALL_WAITING_TONE, CPT_FREQ_CALL_WAITING_TONE),
             };
 
-            // State for continuous tones (to detect presence over a few blocks for stability)
+            /**
+             * @private
+             * @type {Object<string, ContinuousToneState>} State for continuous tones.
+             */
             this.continuousToneStates = {
-                DialTone: { requiredFreqs: CPT_FREQ_DIAL_TONE, presentBlocks: 0, neededBlocks: 2 }, // Need 2 blocks of presence
+                DialTone: { requiredFreqs: CPT_FREQ_DIAL_TONE, presentBlocks: 0, neededBlocks: 2 },
                 OffHookWarning: { requiredFreqs: CPT_FREQ_OFF_HOOK_WARNING, presentBlocks: 0, neededBlocks: 2 }
             };
         }
 
+        /**
+         * Initializes the state object for a cadenced tone.
+         * @private
+         * @param {CadenceSpec} cadenceSpec - The ON/OFF duration specification.
+         * @param {number[]} frequencies - The frequencies that constitute the tone.
+         * @returns {CadenceState} The initialized state object.
+         */
         _initCadenceState(cadenceSpec, frequencies) {
             return {
                 spec: cadenceSpec,
                 frequencies: frequencies,
-                phase: 'OFF', // Initial phase
-                timerBlocks: 0, // Blocks spent in current phase
+                phase: 'OFF',
+                timerBlocks: 0,
                 cyclesDetected: 0,
-                history: [], // Optional: for more complex pattern matching
+                history: [],
                 onBlocksTarget: Math.round(cadenceSpec.on / this.blockDurationMs),
                 offBlocksTarget: Math.round(cadenceSpec.off / this.blockDurationMs),
             };
         }
 
+        /**
+         * Checks if a single frequency is present based on its magnitude.
+         * @private
+         * @param {number} freq - The frequency to check.
+         * @param {Object<number, number>} magnitudes - Object mapping frequencies to their magnitudes.
+         * @returns {boolean} True if the frequency is considered present.
+         */
         _checkFrequencyPresence(freq, magnitudes) {
             return magnitudes[freq] >= this.absoluteMagnitudeThreshold;
         }
 
+        /**
+         * Checks if multiple required frequencies are present.
+         * @private
+         * @param {number[]} requiredFreqs - Array of frequencies that should be present.
+         * @param {Object<number, number>} magnitudes - Object mapping frequencies to their magnitudes.
+         * @param {boolean} [allowSingleComponent=false] - If true, allows detection if at least one component of a multi-frequency tone is present.
+         * @returns {boolean} True if the required frequencies are considered present according to the criteria.
+         */
         _checkMultiFrequencyPresence(requiredFreqs, magnitudes, allowSingleComponent = false) {
             let detectedCount = 0;
             for (const freq of requiredFreqs) {
                 if (magnitudes[freq] && magnitudes[freq] >= this.absoluteMagnitudeThreshold) {
                     detectedCount++;
                 } else {
-                    if (!allowSingleComponent && requiredFreqs.length > 1) return false; // Strict: all must be present
+                    if (!allowSingleComponent && requiredFreqs.length > 1) return false;
                 }
             }
-            // For single frequency tones, detectedCount must be 1.
-            // For multi-frequency, if allowSingleComponent is true, at least one. Otherwise, all.
             if (requiredFreqs.length === 1) return detectedCount === 1;
             return allowSingleComponent ? detectedCount > 0 : detectedCount === requiredFreqs.length;
         }
 
-
+        /**
+         * Updates the cadence state for a given tone based on current activity.
+         * @private
+         * @param {string} toneName - The name of the tone (key in this.cadenceStates).
+         * @param {boolean} isToneActiveNow - Whether the tone's frequencies are currently detected.
+         * @returns {boolean} True if the cadence for this tone is confirmed.
+         */
         _updateCadenceState(toneName, isToneActiveNow) {
             const state = this.cadenceStates[toneName];
             const toleranceOn = Math.ceil(state.onBlocksTarget * CPT_CADENCE_TOLERANCE_PERCENT);
             const toleranceOff = Math.ceil(state.offBlocksTarget * CPT_CADENCE_TOLERANCE_PERCENT);
 
             if (isToneActiveNow) {
-                if (state.phase === 'OFF') { // Transition OFF -> ON
-                    // Check if previous OFF phase was within tolerance
-                    if (state.timerBlocks >= state.offBlocksTarget - toleranceOff || state.cyclesDetected === 0) { // Allow first cycle's OFF to be short
-                        state.cyclesDetected += 0.5; // Half cycle (OFF part) completed
+                if (state.phase === 'OFF') {
+                    if (state.timerBlocks >= state.offBlocksTarget - toleranceOff || state.cyclesDetected === 0) {
+                        state.cyclesDetected += 0.5;
                     } else {
-                        // Off period was too short, reset cycle count
                         state.cyclesDetected = 0;
                     }
                     state.phase = 'ON';
                     state.timerBlocks = 0;
                 }
                 state.timerBlocks++;
-            } else { // Tone is not active
-                if (state.phase === 'ON') { // Transition ON -> OFF
-                    // Check if previous ON phase was within tolerance
+            } else {
+                if (state.phase === 'ON') {
                     if (state.timerBlocks >= state.onBlocksTarget - toleranceOn) {
-                        state.cyclesDetected += 0.5; // Half cycle (ON part) completed
+                        state.cyclesDetected += 0.5;
                     } else {
-                        // On period was too short, reset cycle count
                         state.cyclesDetected = 0;
                     }
                     state.phase = 'OFF';
                     state.timerBlocks = 0;
                 }
                 state.timerBlocks++;
-                 // If it stays OFF for too long (beyond one full cycle's OFF period + tolerance), reset.
                 if (state.timerBlocks > state.offBlocksTarget + toleranceOff && state.cyclesDetected < CPT_MIN_CYCLE_CONFIRMATION) {
-                    state.cyclesDetected = 0; // Reset if stuck in OFF for too long without confirmation
+                    state.cyclesDetected = 0;
                 }
             }
-
-            if (state.cyclesDetected >= CPT_MIN_CYCLE_CONFIRMATION) {
-                return true; // Cadence confirmed
-            }
-            return false;
+            return state.cyclesDetected >= CPT_MIN_CYCLE_CONFIRMATION;
         }
 
-
+        /**
+         * Processes a block of audio data to detect call progress tones.
+         * @public
+         * @param {Float32Array | number[]} audioBlock - The audio data to process. Must match blockSize.
+         * @returns {string | null} The name of the detected CPT (e.g., "Dial Tone", "Busy Signal"), or null if no tone is confirmed.
+         */
         processAudioBlock(audioBlock) {
             if (audioBlock.length !== this.blockSize) {
                 console.warn(`CallProgressToneParser: Audio block length (${audioBlock.length}) does not match expected block size (${this.blockSize}).`);
                 return null;
             }
 
-            const magnitudes = {};
+            /** @type {Object<number, number>} */ const magnitudes = {};
             for (const freq in this.filters) {
                 this.filters[freq].reset();
                 this.filters[freq].processBlock(audioBlock);
                 magnitudes[freq] = this.filters[freq].getMagnitudeSquared();
             }
 
-            // 1. Check for continuous tones first (Dial Tone, Off-Hook)
-            // These are usually steady and don't have complex cadences.
-
-            // Dial Tone Check
             const dialTonePresent = this._checkMultiFrequencyPresence(CPT_FREQ_DIAL_TONE, magnitudes);
             if (dialTonePresent) {
                 this.continuousToneStates.DialTone.presentBlocks++;
                 if (this.continuousToneStates.DialTone.presentBlocks >= this.continuousToneStates.DialTone.neededBlocks) {
-                     // Reset other cadence states to prevent false positives if dial tone is strong
                     for (const tone in this.cadenceStates) this.cadenceStates[tone].cyclesDetected = 0;
                     return "Dial Tone";
                 }
@@ -402,71 +498,79 @@ const GoertzelModule = (function() {
                 this.continuousToneStates.DialTone.presentBlocks = 0;
             }
 
-            // Off-Hook Warning Check (Quad-tone, often very loud and overriding)
-            // This one is tricky due to multiple frequencies.
-            // A simpler check: if *any* of its unique high frequencies are very strong, it might be it.
-            // For now, strict check:
             const offHookPresent = this._checkMultiFrequencyPresence(CPT_FREQ_OFF_HOOK_WARNING, magnitudes);
             if (offHookPresent) {
                 this.continuousToneStates.OffHookWarning.presentBlocks++;
                  if (this.continuousToneStates.OffHookWarning.presentBlocks >= this.continuousToneStates.OffHookWarning.neededBlocks) {
-                    // Reset other cadence states
                     for (const tone in this.cadenceStates) this.cadenceStates[tone].cyclesDetected = 0;
                     return "Off-Hook Warning";
                 }
             } else {
                  this.continuousToneStates.OffHookWarning.presentBlocks = 0;
             }
-            // If a continuous tone is strongly detected, we might not want to check cadenced ones immediately.
+
             if (this.continuousToneStates.DialTone.presentBlocks >= this.continuousToneStates.DialTone.neededBlocks ||
                 this.continuousToneStates.OffHookWarning.presentBlocks >= this.continuousToneStates.OffHookWarning.neededBlocks) {
-                // Potentially return early if we are sure about a continuous tone.
-                // For now, let cadence checks proceed but they might be reset if continuous tone is confirmed next block.
+                // Return early if a continuous tone is confirmed
             }
 
-
-            // 2. Update and check cadenced tones
-            // Busy Signal
             const busyToneActive = this._checkMultiFrequencyPresence(CPT_FREQ_BUSY_SIGNAL, magnitudes);
             if (this._updateCadenceState('Busy', busyToneActive)) {
                 return "Busy Signal";
             }
 
-            // Reorder Tone (shares frequencies with Busy, but different cadence)
-            const reorderToneActive = this._checkMultiFrequencyPresence(CPT_FREQ_REORDER_TONE, magnitudes); // Same freqs as busy
+            const reorderToneActive = this._checkMultiFrequencyPresence(CPT_FREQ_REORDER_TONE, magnitudes);
             if (this._updateCadenceState('Reorder', reorderToneActive)) {
-                // If Busy was also progressing, Reorder cadence is shorter, so it might confirm first.
-                // Add logic if specific priority is needed, though distinct cadences should differentiate.
                 return "Fast Busy / Reorder Tone";
             }
 
-            // Ringback Tone
             const ringbackToneActive = this._checkMultiFrequencyPresence(CPT_FREQ_RINGBACK_TONE, magnitudes);
             if (this._updateCadenceState('Ringback', ringbackToneActive)) {
                 return "Ringback Tone";
             }
 
-            // Call Waiting Tone (single frequency, distinct long cadence)
-            // Call waiting tone allows its single frequency to be present, or not.
-            // The _checkMultiFrequencyPresence with allowSingleComponent = true for single freq tones is fine.
             const callWaitingToneActive = this._checkMultiFrequencyPresence(CPT_FREQ_CALL_WAITING_TONE, magnitudes, true);
             if (this._updateCadenceState('CallWaiting', callWaitingToneActive)) {
                 return "Call Waiting Tone";
             }
 
-            return null; // No tone detected in this block
+            return null;
         }
     }
 
+    /**
+     * @typedef {Object} GoertzelModuleReturn
+     * @property {typeof GoertzelFilter} GoertzelFilter
+     * @property {typeof DTMFParser} DTMFParser
+     * @property {typeof CallProgressToneParser} CallProgressToneParser
+     * @property {number} DTMF_SAMPLE_RATE
+     * @property {number} DTMF_BLOCK_SIZE
+     * @property {number[]} CPT_FREQ_DIAL_TONE
+     * @property {number[]} CPT_FREQ_BUSY_SIGNAL
+     * @property {number[]} CPT_FREQ_REORDER_TONE
+     * @property {number[]} CPT_FREQ_RINGBACK_TONE
+     * @property {number[]} CPT_FREQ_OFF_HOOK_WARNING
+     * @property {number[]} CPT_FREQ_CALL_WAITING_TONE
+     * @property {CadenceSpec} CPT_CADENCE_BUSY_SIGNAL
+     * @property {CadenceSpec} CPT_CADENCE_REORDER_TONE
+     * @property {CadenceSpec} CPT_CADENCE_RINGBACK_TONE
+     * @property {CadenceSpec} CPT_CADENCE_CALL_WAITING_TONE
+     * @property {number} CPT_DEFAULT_SAMPLE_RATE
+     * @property {number} CPT_DEFAULT_BLOCK_SIZE
+     * @property {number} CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD
+     * @property {number} CPT_DEFAULT_RELATIVE_THRESHOLD_FACTOR
+     * @property {number} CPT_CADENCE_TOLERANCE_PERCENT
+     * @property {number} CPT_MIN_CYCLE_CONFIRMATION
+     */
+
+    /** @type {GoertzelModuleReturn} */
     return {
         GoertzelFilter: GoertzelFilter,
         DTMFParser: DTMFParser,
-        CallProgressToneParser: CallProgressToneParser, // Expose the new class
-        // Expose constants for external use if needed
+        CallProgressToneParser: CallProgressToneParser,
         DTMF_SAMPLE_RATE: DTMF_SAMPLE_RATE,
         DTMF_BLOCK_SIZE: DTMF_BLOCK_SIZE,
 
-        // Call Progress Tone Constants
         CPT_FREQ_DIAL_TONE: CPT_FREQ_DIAL_TONE,
         CPT_FREQ_BUSY_SIGNAL: CPT_FREQ_BUSY_SIGNAL,
         CPT_FREQ_REORDER_TONE: CPT_FREQ_REORDER_TONE,
@@ -478,7 +582,6 @@ const GoertzelModule = (function() {
         CPT_CADENCE_RINGBACK_TONE: CPT_CADENCE_RINGBACK_TONE,
         CPT_CADENCE_CALL_WAITING_TONE: CPT_CADENCE_CALL_WAITING_TONE,
 
-        // CPT Parser specific constants
         CPT_DEFAULT_SAMPLE_RATE: CPT_DEFAULT_SAMPLE_RATE,
         CPT_DEFAULT_BLOCK_SIZE: CPT_DEFAULT_BLOCK_SIZE,
         CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD: CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD,
@@ -488,16 +591,39 @@ const GoertzelModule = (function() {
     };
 })();
 
+/** @type {typeof GoertzelModule.GoertzelFilter} */
 AudioApp.GoertzelFilter = GoertzelModule.GoertzelFilter;
+/** @type {typeof GoertzelModule.DTMFParser} */
 AudioApp.DTMFParser = GoertzelModule.DTMFParser;
-AudioApp.CallProgressToneParser = GoertzelModule.CallProgressToneParser; // Attach new class
+/** @type {typeof GoertzelModule.CallProgressToneParser} */
+AudioApp.CallProgressToneParser = GoertzelModule.CallProgressToneParser;
 
-// Make constants available on DTMFParser (or a dedicated constants object)
+/** @type {number} Standard sample rate for DTMF processing (Hz). */
 AudioApp.DTMFParser.DTMF_SAMPLE_RATE = GoertzelModule.DTMF_SAMPLE_RATE;
+/** @type {number} Common block size for DTMF processing (samples). */
 AudioApp.DTMFParser.DTMF_BLOCK_SIZE = GoertzelModule.DTMF_BLOCK_SIZE;
 
-// Expose Call Progress Tone constants on AudioApp for wider use if needed
-AudioApp.CPT_CONSTANTS = { // This should also include the new parser-specific constants
+/**
+ * @namespace AudioApp.CPT_CONSTANTS
+ * @description Constants related to Call Progress Tones.
+ * @property {number[]} CPT_FREQ_DIAL_TONE
+ * @property {number[]} CPT_FREQ_BUSY_SIGNAL
+ * @property {number[]} CPT_FREQ_REORDER_TONE
+ * @property {number[]} CPT_FREQ_RINGBACK_TONE
+ * @property {number[]} CPT_FREQ_OFF_HOOK_WARNING
+ * @property {number[]} CPT_FREQ_CALL_WAITING_TONE
+ * @property {CadenceSpec} CPT_CADENCE_BUSY_SIGNAL
+ * @property {CadenceSpec} CPT_CADENCE_REORDER_TONE
+ * @property {CadenceSpec} CPT_CADENCE_RINGBACK_TONE
+ * @property {CadenceSpec} CPT_CADENCE_CALL_WAITING_TONE
+ * @property {number} CPT_DEFAULT_SAMPLE_RATE
+ * @property {number} CPT_DEFAULT_BLOCK_SIZE
+ * @property {number} CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD
+ * @property {number} CPT_DEFAULT_RELATIVE_THRESHOLD_FACTOR
+ * @property {number} CPT_CADENCE_TOLERANCE_PERCENT
+ * @property {number} CPT_MIN_CYCLE_CONFIRMATION
+ */
+AudioApp.CPT_CONSTANTS = {
     CPT_FREQ_DIAL_TONE: GoertzelModule.CPT_FREQ_DIAL_TONE,
     CPT_FREQ_BUSY_SIGNAL: GoertzelModule.CPT_FREQ_BUSY_SIGNAL,
     CPT_FREQ_REORDER_TONE: GoertzelModule.CPT_FREQ_REORDER_TONE,
@@ -509,7 +635,6 @@ AudioApp.CPT_CONSTANTS = { // This should also include the new parser-specific c
     CPT_CADENCE_RINGBACK_TONE: GoertzelModule.CPT_CADENCE_RINGBACK_TONE,
     CPT_CADENCE_CALL_WAITING_TONE: GoertzelModule.CPT_CADENCE_CALL_WAITING_TONE,
 
-    // Add CPT Parser specific constants to AudioApp.CPT_CONSTANTS
     CPT_DEFAULT_SAMPLE_RATE: GoertzelModule.CPT_DEFAULT_SAMPLE_RATE,
     CPT_DEFAULT_BLOCK_SIZE: GoertzelModule.CPT_DEFAULT_BLOCK_SIZE,
     CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD: GoertzelModule.CPT_DEFAULT_ABSOLUTE_MAGNITUDE_THRESHOLD,

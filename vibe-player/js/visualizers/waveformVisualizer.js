@@ -1,26 +1,39 @@
 // --- /vibe-player/js/visualizers/waveformVisualizer.js ---
 // Handles drawing the Waveform visualization to a canvas element.
 
-var AudioApp = AudioApp || {}; // Ensure namespace exists
+/** @namespace AudioApp */
+var AudioApp = AudioApp || {};
 
+/**
+ * @namespace AudioApp.waveformVisualizer
+ * @description Manages the rendering of the audio waveform, including highlighting speech regions
+ * and displaying a playback progress indicator.
+ */
 AudioApp.waveformVisualizer = (function() {
     'use strict';
 
-    // === Module Dependencies ===
-    // Assuming AudioApp.Constants and AudioApp.Utils are loaded before this file.
+    /**
+     * @private
+     * @type {AudioApp.Constants} Reference to the Constants module.
+     */
     const Constants = AudioApp.Constants;
+    /**
+     * @private
+     * @type {AudioApp.Utils} Reference to the Utils module (not directly used in this snippet but assumed available if needed).
+     */
     const Utils = AudioApp.Utils;
 
-    // === DOM Element References ===
-    /** @type {HTMLCanvasElement|null} */ let waveformCanvas;
-    /** @type {CanvasRenderingContext2D|null} */ let waveformCtx;
-    /** @type {HTMLDivElement|null} */ let waveformProgressIndicator;
+    /** @type {HTMLCanvasElement|null} The canvas element for the waveform. */
+    let waveformCanvas = null;
+    /** @type {CanvasRenderingContext2D|null} The 2D rendering context of the waveform canvas. */
+    let waveformCtx = null;
+    /** @type {HTMLDivElement|null} The element used to indicate playback progress on the waveform. */
+    let waveformProgressIndicator = null;
 
-    // === Initialization ===
 
     /**
-     * Initializes the Waveform Visualizer module.
-     * Gets canvas references and adds event listeners.
+     * Initializes the Waveform Visualizer.
+     * Retrieves DOM elements and sets up event listeners.
      * @public
      */
     function init() {
@@ -29,135 +42,130 @@ AudioApp.waveformVisualizer = (function() {
         if (waveformCanvas) {
             waveformCanvas.addEventListener('click', handleCanvasClick);
         } else {
-            console.warn("WaveformVisualizer: Waveform canvas not found.");
+            console.warn("WaveformVisualizer: Waveform canvas element not found during init.");
         }
         console.log("WaveformVisualizer: Initialized.");
     }
 
     /**
-     * Gets references to waveform canvas elements and context.
+     * Assigns DOM elements to module-level variables.
      * @private
      */
     function assignDOMElements() {
-        waveformCanvas = document.getElementById('waveformCanvas');
-        waveformProgressIndicator = document.getElementById('waveformProgressIndicator');
+        waveformCanvas = /** @type {HTMLCanvasElement|null} */ (document.getElementById('waveformCanvas'));
+        waveformProgressIndicator = /** @type {HTMLDivElement|null} */ (document.getElementById('waveformProgressIndicator'));
         if (waveformCanvas) {
             waveformCtx = waveformCanvas.getContext('2d');
+        } else {
+            console.error("WaveformVisualizer: Could not find 'waveformCanvas' element.");
+        }
+        if (!waveformProgressIndicator) {
+            console.warn("WaveformVisualizer: Could not find 'waveformProgressIndicator' element.");
         }
     }
 
-    // === Event Handlers ===
 
     /**
-     * Handles click events on the waveform canvas for seeking.
-     * Dispatches 'audioapp:seekRequested'.
-     * @param {MouseEvent} e - The click event.
+     * Handles click events on the waveform canvas, dispatching a seek request.
      * @private
+     * @param {MouseEvent} e - The MouseEvent from the click.
      */
     function handleCanvasClick(e) {
         if (!waveformCanvas) return;
         const rect = waveformCanvas.getBoundingClientRect();
-        if (!rect || rect.width <= 0) return;
+        if (!rect || rect.width <= 0) return; // Avoid division by zero if canvas has no width
         const clickXRelative = e.clientX - rect.left;
-        const fraction = Math.max(0, Math.min(1, clickXRelative / rect.width));
+        const fraction = Math.max(0, Math.min(1, clickXRelative / rect.width)); // Clamp fraction to [0, 1]
         document.dispatchEvent(new CustomEvent('audioapp:seekRequested', { detail: { fraction: fraction } }));
     }
 
-    // === Core Drawing & Computation ===
 
     /**
-     * Computes and draws the waveform for the given audio buffer.
-     * Uses loading color if speechRegions is empty/null.
-     * @param {AudioBuffer} audioBuffer - The original, decoded audio buffer.
-     * @param {Array<{start: number, end: number}>|null|undefined} speechRegions - Speech regions, or null/empty for initial draw.
-     * @returns {Promise<void>} Resolves when drawing is complete (drawing is synchronous here).
+     * @typedef {object} SpeechRegion
+     * @property {number} start - Start time of the speech region in seconds.
+     * @property {number} end - End time of the speech region in seconds.
+     */
+
+    /**
+     * Computes waveform data from an AudioBuffer and draws it on the canvas.
+     * Highlights speech regions if provided.
      * @public
+     * @async
+     * @param {AudioBuffer} audioBuffer - The audio data to visualize.
+     * @param {SpeechRegion[]|null|undefined} speechRegions - Optional array of speech regions to highlight.
+     * If null or empty, the waveform is drawn with a loading/default color.
+     * @returns {Promise<void>} Resolves when the waveform has been drawn.
      */
     async function computeAndDrawWaveform(audioBuffer, speechRegions) {
-        if (!audioBuffer) { console.warn("WaveformVisualizer: AudioBuffer missing."); return; }
-        if (!waveformCtx || !waveformCanvas) { console.warn("WaveformVisualizer: Canvas context/element missing."); return; }
+        if (!audioBuffer) { console.warn("WaveformVisualizer: computeAndDrawWaveform called with no AudioBuffer."); return; }
+        if (!waveformCtx || !waveformCanvas) { console.warn("WaveformVisualizer: Canvas context/element missing for drawing."); return; }
 
-        // Resize canvas before drawing to ensure correct dimensions
-        resizeCanvasInternal();
+        resizeCanvasInternal(); // Ensure canvas dimensions are up-to-date
         const width = waveformCanvas.width;
 
-        console.time("Waveform compute");
         const waveformData = computeWaveformData(audioBuffer, width);
-        console.timeEnd("Waveform compute");
-
-        console.time("Waveform draw");
         drawWaveform(waveformData, waveformCanvas, waveformCtx, speechRegions, audioBuffer.duration, width);
-        console.timeEnd("Waveform draw");
-
-        // Reset progress indicator position after drawing
-        updateProgressIndicator(0, audioBuffer.duration);
+        updateProgressIndicator(0, audioBuffer.duration); // Reset progress indicator
     }
 
     /**
-     * Redraws waveform highlighting without full recompute of other visuals.
-     * Recomputes waveform data for current size and redraws with speech highlights.
-     * @param {AudioBuffer|null} audioBuffer - The current audio buffer.
-     * @param {Array<{start: number, end: number}>} speechRegions - The calculated speech regions.
+     * Redraws the waveform, primarily to update speech region highlighting.
+     * Recomputes waveform data based on the current canvas size.
      * @public
+     * @param {AudioBuffer|null} audioBuffer - The current audio buffer.
+     * @param {SpeechRegion[]} speechRegions - The speech regions to highlight.
      */
     function redrawWaveformHighlight(audioBuffer, speechRegions) {
-         if (!audioBuffer) {
-             console.warn("WaveformVisualizer: Cannot redraw highlight, AudioBuffer missing.");
-             return;
-         }
-         if (!waveformCanvas || !waveformCtx) {
-              console.warn("WaveformVisualizer: Cannot redraw highlight, Waveform canvas/context missing.");
-              return;
-         }
-         const width = waveformCanvas.width; // Get current width
-         if (width <= 0) {
-             console.warn("WaveformVisualizer: Cannot redraw highlight, Waveform canvas width is zero.");
-             return;
-         }
-         console.log("WaveformVisualizer: Redrawing waveform highlights...");
-         // Recompute waveform data for the current canvas width
+         if (!audioBuffer) { console.warn("WaveformVisualizer: Cannot redraw highlight, AudioBuffer missing."); return; }
+         if (!waveformCanvas || !waveformCtx) { console.warn("WaveformVisualizer: Cannot redraw highlight, canvas/context missing."); return; }
+         const width = waveformCanvas.width;
+         if (width <= 0) { console.warn("WaveformVisualizer: Cannot redraw highlight, canvas width is zero or invalid."); return; }
+
          const waveformData = computeWaveformData(audioBuffer, width);
-         // Call drawWaveform with the new regions. It will now use default+speech colors.
          drawWaveform(waveformData, waveformCanvas, waveformCtx, speechRegions, audioBuffer.duration, width);
     }
 
-    // --- Computation Helper Functions ---
 
     /**
-     * Computes simplified waveform data (min/max pairs per pixel column).
-     * @param {AudioBuffer} buffer
-     * @param {number} targetWidth
-     * @returns {Array<{min: number, max: number}>}
+     * @typedef {object} WaveformMinMax
+     * @property {number} min - Minimum sample value in the segment.
+     * @property {number} max - Maximum sample value in the segment.
+     */
+
+    /**
+     * Computes simplified waveform data (min/max pairs for each pixel column).
      * @private
+     * @param {AudioBuffer} buffer - The audio buffer to process.
+     * @param {number} targetWidth - The target width in pixels for the waveform display.
+     * @returns {WaveformMinMax[]} An array of min/max objects, one for each pixel column.
      */
     function computeWaveformData(buffer, targetWidth) {
-        if (!buffer || !buffer.getChannelData || targetWidth <= 0) return [];
+        if (!buffer?.getChannelData || targetWidth <= 0) return [];
         const channelCount = buffer.numberOfChannels;
         const bufferLength = buffer.length;
         if (bufferLength === 0) return [];
 
-        // --- Get Mono Data ---
+        /** @type {Float32Array} */
         let sourceData;
         if (channelCount === 1) {
             sourceData = buffer.getChannelData(0);
-        } else {
-            sourceData = new Float32Array(bufferLength).fill(0);
+        } else { // Mix down to mono if multi-channel
+            sourceData = new Float32Array(bufferLength);
             for (let ch = 0; ch < channelCount; ch++) {
-                const channelData = buffer.getChannelData(ch);
+                const chData = buffer.getChannelData(ch);
                 for (let i = 0; i < bufferLength; i++) {
-                    sourceData[i] += channelData[i];
+                    sourceData[i] += chData[i];
                 }
             }
-            for (let i = 0; i < bufferLength; i++) { sourceData[i] /= channelCount; } // Average
+            for (let i = 0; i < bufferLength; i++) { sourceData[i] /= channelCount; }
         }
 
-        // --- Compute Min/Max per Pixel ---
         const samplesPerPixel = Math.max(1, Math.floor(bufferLength / targetWidth));
+        /** @type {WaveformMinMax[]} */
         const waveform = [];
         for (let i = 0; i < targetWidth; i++) {
             const start = Math.floor(i * samplesPerPixel);
             const end = Math.min(start + samplesPerPixel, bufferLength);
-
             if (start >= end) { waveform.push({min: 0, max: 0}); continue; }
 
             let min = 1.0, max = -1.0;
@@ -171,49 +179,43 @@ AudioApp.waveformVisualizer = (function() {
         return waveform;
     }
 
-    // --- Drawing Helper Functions ---
 
     /**
-     * Draws the waveform, highlighting speech regions with specific colors.
-     * Uses WAVEFORM_COLOR_LOADING from Constants if speechRegions is empty/null.
-     * @param {Array<{min: number, max: number}>} waveformData - Min/max pairs per pixel.
-     * @param {HTMLCanvasElement} canvas - The target canvas element.
-     * @param {CanvasRenderingContext2D} ctx - The canvas context.
-     * @param {Array<{start: number, end: number}>|null|undefined} speechRegions - Array of speech time regions.
+     * Draws the computed waveform data onto the canvas.
+     * Highlights speech regions using specific colors defined in `AudioApp.Constants`.
+     * @private
+     * @param {WaveformMinMax[]} waveformData - Array of min/max values per pixel column.
+     * @param {HTMLCanvasElement} canvas - The canvas element to draw on.
+     * @param {CanvasRenderingContext2D} ctx - The 2D rendering context of the canvas.
+     * @param {SpeechRegion[]|null|undefined} speechRegions - Array of speech time regions to highlight.
      * @param {number} audioDuration - Total duration of the audio in seconds.
      * @param {number} width - The current width of the canvas.
-     * @private
      */
      function drawWaveform(waveformData, canvas, ctx, speechRegions, audioDuration, width) {
-        if (!ctx || !Constants) return; // Need context and constants
+        if (!ctx || !Constants) { console.error("WaveformVisualizer: Missing context or Constants for drawing."); return; }
 
         const { height } = canvas;
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#000'; // Explicitly set black background
-        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height); // Background
 
         if (!waveformData || waveformData.length === 0 || !audioDuration || audioDuration <= 0) {
             ctx.fillStyle = '#888'; ctx.textAlign = 'center'; ctx.font = '12px sans-serif';
-            ctx.fillText("No waveform data", width / 2, height / 2);
+            ctx.fillText("No waveform data available", width / 2, height / 2);
             return;
         }
 
         const dataLen = waveformData.length;
         const halfHeight = height / 2;
-        const scale = halfHeight * Constants.WAVEFORM_HEIGHT_SCALE; // Use constant
+        const scale = halfHeight * Constants.WAVEFORM_HEIGHT_SCALE;
         const pixelsPerSecond = width / audioDuration;
-
         const initialDraw = !speechRegions || speechRegions.length === 0;
-        const defaultColor = initialDraw ? Constants.WAVEFORM_COLOR_LOADING : Constants.WAVEFORM_COLOR_DEFAULT; // Use constants
-
+        const defaultColor = initialDraw ? Constants.WAVEFORM_COLOR_LOADING : Constants.WAVEFORM_COLOR_DEFAULT;
         const speechPixelRegions = initialDraw ? [] : (speechRegions || []).map(r => ({
-            startPx: r.start * pixelsPerSecond,
-            endPx: r.end * pixelsPerSecond
+            startPx: r.start * pixelsPerSecond, endPx: r.end * pixelsPerSecond
         }));
+        const pixelWidth = width / dataLen; // Width of each bar in the waveform
 
-        const pixelWidth = width / dataLen;
-
-        // --- Draw Default/Loading Waveform Color ---
+        // Draw non-speech/loading parts
         ctx.fillStyle = defaultColor;
         ctx.beginPath();
         for (let i = 0; i < dataLen; i++) {
@@ -222,35 +224,31 @@ AudioApp.waveformVisualizer = (function() {
             let isOutsideSpeech = true;
             if (!initialDraw) {
                 for (const region of speechPixelRegions) {
-                    if (x < region.endPx && currentPixelEnd > region.startPx) {
-                        isOutsideSpeech = false; break;
-                    }
+                    if (x < region.endPx && currentPixelEnd > region.startPx) { isOutsideSpeech = false; break; }
                 }
             }
             if (isOutsideSpeech) {
                 const { min, max } = waveformData[i];
-                const y1 = halfHeight - max * scale; const y2 = halfHeight - min * scale;
-                ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
+                const y1 = halfHeight - (max * scale); const y2 = halfHeight - (min * scale);
+                ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1)); // Ensure rect has at least 1px height
             }
         }
         ctx.fill();
 
-        // --- Draw Speech Highlights (Yellow) ---
+        // Draw speech highlights
         if (!initialDraw) {
-            ctx.fillStyle = Constants.WAVEFORM_COLOR_SPEECH; // Use constant
+            ctx.fillStyle = Constants.WAVEFORM_COLOR_SPEECH;
             ctx.beginPath();
             for (let i = 0; i < dataLen; i++) {
                 const x = i * pixelWidth;
                 const currentPixelEnd = x + pixelWidth;
                 let isInsideSpeech = false;
                 for (const region of speechPixelRegions) {
-                    if (x < region.endPx && currentPixelEnd > region.startPx) {
-                        isInsideSpeech = true; break;
-                    }
+                    if (x < region.endPx && currentPixelEnd > region.startPx) { isInsideSpeech = true; break; }
                 }
                 if (isInsideSpeech) {
                     const { min, max } = waveformData[i];
-                    const y1 = halfHeight - max * scale; const y2 = halfHeight - min * scale;
+                    const y1 = halfHeight - (max * scale); const y2 = halfHeight - (min * scale);
                     ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
                 }
             }
@@ -258,60 +256,52 @@ AudioApp.waveformVisualizer = (function() {
         }
     }
 
-    // --- UI Update Methods ---
 
     /**
-     * Updates the position of the progress indicator overlay.
-     * @param {number} currentTime - The current playback time in seconds.
-     * @param {number} duration - The total audio duration in seconds.
+     * Updates the position of the playback progress indicator on the waveform.
      * @public
+     * @param {number} currentTime - The current playback time in seconds.
+     * @param {number} duration - The total duration of the audio in seconds.
      */
     function updateProgressIndicator(currentTime, duration) {
         if (!waveformCanvas || !waveformProgressIndicator) return;
         if (isNaN(duration) || duration <= 0) {
-            waveformProgressIndicator.style.left = "0px";
-            return;
+            waveformProgressIndicator.style.left = "0px"; return;
         }
         const fraction = Math.max(0, Math.min(1, currentTime / duration));
         const waveformWidth = waveformCanvas.clientWidth;
-        if (waveformWidth > 0) {
-            waveformProgressIndicator.style.left = (fraction * waveformWidth) + "px";
-        } else {
-            waveformProgressIndicator.style.left = "0px"; // Fallback
-        }
+        waveformProgressIndicator.style.left = waveformWidth > 0 ? `${fraction * waveformWidth}px` : "0px";
     }
 
     /**
-     * Clears the waveform visualization canvas.
+     * Clears the waveform canvas and resets the progress indicator.
      * @public
      */
     function clearVisuals() {
         console.log("WaveformVisualizer: Clearing visuals.");
         if (waveformCtx && waveformCanvas) {
             waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
-             // Optionally draw black background on clear
-             waveformCtx.fillStyle = '#000';
-             waveformCtx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+            waveformCtx.fillStyle = '#000'; // Explicitly set black background
+            waveformCtx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
         }
-        // Reset progress indicator
-        updateProgressIndicator(0, 1);
+        updateProgressIndicator(0, 1); // Reset progress indicator
     }
 
     /**
-     * Resizes canvas to match its displayed size. Internal use.
-     * @returns {boolean} True if the canvas was actually resized.
+     * Resizes the canvas element to match its CSS-defined display size.
+     * This is important for ensuring crisp rendering.
      * @private
+     * @returns {boolean} True if the canvas was resized, false otherwise.
      */
     function resizeCanvasInternal() {
         if (!waveformCanvas) return false;
         const { width, height } = waveformCanvas.getBoundingClientRect();
-        const roundedWidth = Math.max(10, Math.round(width));
+        const roundedWidth = Math.max(10, Math.round(width)); // Ensure minimum size
         const roundedHeight = Math.max(10, Math.round(height));
         if (waveformCanvas.width !== roundedWidth || waveformCanvas.height !== roundedHeight) {
             waveformCanvas.width = roundedWidth;
             waveformCanvas.height = roundedHeight;
-             // Redraw black background after resize
-             if(waveformCtx) {
+             if(waveformCtx) { // Redraw background if context exists
                   waveformCtx.fillStyle = '#000';
                   waveformCtx.fillRect(0, 0, roundedWidth, roundedHeight);
              }
@@ -321,25 +311,35 @@ AudioApp.waveformVisualizer = (function() {
     }
 
     /**
-     * Handles window resize: adjusts canvas dimensions and redraws waveform.
-     * @param {AudioBuffer | null} audioBuffer - The current audio buffer (needed for redraw).
-     * @param {Array<{start: number, end: number}> | null} speechRegions - Current speech regions.
+     * Handles window resize events. Adjusts canvas dimensions and redraws the waveform
+     * using the provided audio buffer and speech regions.
      * @public
+     * @param {AudioBuffer|null} audioBuffer - The current audio buffer.
+     * @param {SpeechRegion[]|null} speechRegions - Current speech regions to highlight.
      */
     function resizeAndRedraw(audioBuffer, speechRegions) {
         const wasResized = resizeCanvasInternal();
         if (wasResized && audioBuffer) {
-            console.log("WaveformVisualizer: Redrawing waveform after resize.");
-            redrawWaveformHighlight(audioBuffer, speechRegions || []); // Use redrawHighlight which handles data recompute
+            redrawWaveformHighlight(audioBuffer, speechRegions || []);
         } else if (wasResized) {
-            clearVisuals(); // Clear if resized but no buffer
+            clearVisuals(); // Clear if resized but no audio buffer to redraw
         }
-        // Always update progress indicator after resize
+        // Always update progress indicator, as its position depends on clientWidth
         const { currentTime = 0, duration = 0 } = AudioApp.audioEngine?.getCurrentTime() || {};
         updateProgressIndicator(currentTime, duration || (audioBuffer ? audioBuffer.duration : 0));
     }
 
-    // === Public Interface ===
+    /**
+     * @typedef {Object} WaveformVisualizerPublicInterface
+     * @property {function(): void} init
+     * @property {function(AudioBuffer, SpeechRegion[]|null|undefined): Promise<void>} computeAndDrawWaveform
+     * @property {function(AudioBuffer|null, SpeechRegion[]): void} redrawWaveformHighlight
+     * @property {function(AudioBuffer|null, SpeechRegion[]|null): void} resizeAndRedraw
+     * @property {function(number, number): void} updateProgressIndicator
+     * @property {function(): void} clearVisuals
+     */
+
+    /** @type {WaveformVisualizerPublicInterface} */
     return {
         init: init,
         computeAndDrawWaveform: computeAndDrawWaveform,
@@ -349,5 +349,5 @@ AudioApp.waveformVisualizer = (function() {
         clearVisuals: clearVisuals
     };
 
-})(); // End of AudioApp.waveformVisualizer IIFE
+})();
 // --- /vibe-player/js/visualizers/waveformVisualizer.js ---

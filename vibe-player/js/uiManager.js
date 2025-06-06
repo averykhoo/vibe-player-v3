@@ -1,77 +1,114 @@
 // --- /vibe-player/js/uiManager.js ---
 // Handles DOM manipulation, UI event listeners, and dispatches UI events.
 
+/** @namespace AudioApp */
 var AudioApp = AudioApp || {}; // Ensure namespace exists
 
+/**
+ * @namespace AudioApp.uiManager
+ * @description Manages UI elements, interactions, and events for the Vibe Player.
+ */
 AudioApp.uiManager = (function() {
     'use strict';
 
     // === Module Dependencies ===
-    // Assuming AudioApp.Utils is loaded before this file.
+    /**
+     * @private
+     * @type {AudioApp.Utils} Reference to the Utils module.
+     */
     const Utils = AudioApp.Utils;
 
     // --- DOM Element References ---
     // File/Info
-    /** @type {HTMLButtonElement|null} */ let chooseFileButton;
-    /** @type {HTMLInputElement|null} */ let hiddenAudioFile;
-    /** @type {HTMLInputElement|null} */ let audioUrlInput; // New
-    /** @type {HTMLButtonElement|null} */ let loadUrlButton; // New
-    /** @type {HTMLSpanElement|null} */ let urlLoadingErrorDisplay; // New
-    /** @type {HTMLSpanElement|null} */ let fileNameDisplay;
-    /** @type {HTMLParagraphElement|null} */ let fileInfo;
-    /** @type {HTMLDivElement|null} */ let vadProgressContainer;
-    /** @type {HTMLSpanElement|null} */ let vadProgressBar;
-    /** @type {HTMLDivElement|null} */ let dtmfDisplay; // Existing DTMF display
-    /** @type {HTMLDivElement|null} */ let cptDisplayElement; // New CPT display
+    /** @type {HTMLButtonElement|null} Button to trigger file selection. */
+    let chooseFileButton = null;
+    /** @type {HTMLInputElement|null} Hidden input element for file selection. */
+    let hiddenAudioFile = null;
+    /** @type {HTMLInputElement|null} Input element for audio URL. */
+    let audioUrlInput = null;
+    /** @type {HTMLButtonElement|null} Button to load audio from URL. */
+    let loadUrlButton = null;
+    /** @type {HTMLSpanElement|null} Span to display URL loading errors. */
+    let urlLoadingErrorDisplay = null;
+    /** @type {HTMLSpanElement|null} Span to display the current file name. */
+    let fileNameDisplay = null;
+    /** @type {HTMLParagraphElement|null} Paragraph to display file information or status messages. */
+    let fileInfo = null;
+    /** @type {HTMLDivElement|null} Container for the VAD progress bar. */
+    let vadProgressContainer = null;
+    /** @type {HTMLSpanElement|null} The VAD progress bar element itself. */
+    let vadProgressBar = null;
+    /** @type {HTMLDivElement|null} Div to display detected DTMF tones. */
+    let dtmfDisplay = null;
+    /** @type {HTMLDivElement|null} Div to display detected Call Progress Tones. */
+    let cptDisplayElement = null;
 
     // Drop Zone
-    /** @type {HTMLDivElement|null} */ let dropZoneOverlay;
-    /** @type {HTMLDivElement|null} */ let dropZoneMessage;
+    /** @type {HTMLDivElement|null} Overlay for drag-and-drop functionality. */
+    let dropZoneOverlay = null;
+    /** @type {HTMLDivElement|null} Message displayed within the drop zone. */
+    let dropZoneMessage = null;
 
     // Buttons
-    /** @type {HTMLButtonElement|null} */ let playPauseButton;
-    /** @type {HTMLButtonElement|null} */ let jumpBackButton;
-    /** @type {HTMLButtonElement|null} */ let jumpForwardButton;
-    /** @type {HTMLInputElement|null} */ let jumpTimeInput;
-    // Time & Seek
-    /** @type {HTMLDivElement|null} */ let timeDisplay;
-    /** @type {HTMLInputElement|null} */ let seekBar;
-    // Sliders & Displays & Markers
-    /** @type {HTMLInputElement|null} */ let playbackSpeedControl;
-    /** @type {HTMLSpanElement|null} */ let speedValueDisplay;
-    /** @type {HTMLDivElement|null} */ let speedMarkers;
-    /** @type {HTMLInputElement|null} */ let pitchControl;
-    /** @type {HTMLSpanElement|null} */ let pitchValueDisplay;
-    /** @type {HTMLDivElement|null} */ let pitchMarkers;
-    /** @type {HTMLInputElement|null} */ let formantControl; // Keep reference if needed later
-    /** @type {HTMLSpanElement|null} */ let formantValueDisplay; // Keep reference if needed later
-    /** @type {HTMLDivElement|null} */ let formantMarkers; // Keep reference if needed later
-    /** @type {HTMLInputElement|null} */ let gainControl;
-    /** @type {HTMLSpanElement|null} */ let gainValueDisplay;
-    /** @type {HTMLDivElement|null} */ let gainMarkers;
-    /** @type {HTMLInputElement|null} */ let vadThresholdSlider;
-    /** @type {HTMLSpanElement|null} */ let vadThresholdValueDisplay;
-    /** @type {HTMLInputElement|null} */ let vadNegativeThresholdSlider;
-    /** @type {HTMLSpanElement|null} */ let vadNegativeThresholdValueDisplay;
-    // Visuals (Removed direct canvas refs - only need progress indicator refs if managed here, but they are managed by visualizers now)
-    // /** @type {HTMLCanvasElement|null} */ let waveformCanvas;
-    // /** @type {CanvasRenderingContext2D|null} */ let waveformCtx;
-    // /** @type {HTMLCanvasElement|null} */ let spectrogramCanvas;
-    // /** @type {CanvasRenderingContext2D|null} */ let spectrogramCtx;
-    // /** @type {HTMLSpanElement|null} */ let spectrogramSpinner;
-    // /** @type {HTMLDivElement|null} */ let waveformProgressIndicator;
-    // /** @type {HTMLDivElement|null} */ let spectrogramProgressIndicator;
-    // VAD Output
-    /** @type {HTMLPreElement|null} */ let speechRegionsDisplay;
+    /** @type {HTMLButtonElement|null} Button to play or pause audio. */
+    let playPauseButton = null;
+    /** @type {HTMLButtonElement|null} Button to jump backward in audio. */
+    let jumpBackButton = null;
+    /** @type {HTMLButtonElement|null} Button to jump forward in audio. */
+    let jumpForwardButton = null;
+    /** @type {HTMLInputElement|null} Input for specifying jump time in seconds. */
+    let jumpTimeInput = null;
 
-    // --- Initialization ---
-    /** @public */
+    // Time & Seek
+    /** @type {HTMLDivElement|null} Div to display current time and duration. */
+    let timeDisplay = null;
+    /** @type {HTMLInputElement|null} Seek bar (slider) for audio playback. */
+    let seekBar = null;
+
+    // Sliders & Displays & Markers
+    /** @type {HTMLInputElement|null} Slider for playback speed control. */
+    let playbackSpeedControl = null;
+    /** @type {HTMLSpanElement|null} Span to display current playback speed value. */
+    let speedValueDisplay = null;
+    /** @type {HTMLDivElement|null} Container for speed slider markers. */
+    let speedMarkers = null;
+    /** @type {HTMLInputElement|null} Slider for pitch control. */
+    let pitchControl = null;
+    /** @type {HTMLSpanElement|null} Span to display current pitch value. */
+    let pitchValueDisplay = null;
+    /** @type {HTMLDivElement|null} Container for pitch slider markers. */
+    let pitchMarkers = null;
+    // Formant controls are referenced but not actively used in current logic, kept for potential future use.
+    /** @type {HTMLInputElement|null} */ let formantControl = null;
+    /** @type {HTMLSpanElement|null} */ let formantValueDisplay = null;
+    /** @type {HTMLDivElement|null} */ let formantMarkers = null;
+    /** @type {HTMLInputElement|null} Slider for gain (volume) control. */
+    let gainControl = null;
+    /** @type {HTMLSpanElement|null} Span to display current gain value. */
+    let gainValueDisplay = null;
+    /** @type {HTMLDivElement|null} Container for gain slider markers. */
+    let gainMarkers = null;
+    /** @type {HTMLInputElement|null} Slider for VAD positive threshold. */
+    let vadThresholdSlider = null;
+    /** @type {HTMLSpanElement|null} Span to display current VAD positive threshold value. */
+    let vadThresholdValueDisplay = null;
+    /** @type {HTMLInputElement|null} Slider for VAD negative threshold. */
+    let vadNegativeThresholdSlider = null;
+    /** @type {HTMLSpanElement|null} Span to display current VAD negative threshold value. */
+    let vadNegativeThresholdValueDisplay = null;
+
+    // VAD Output
+    /** @type {HTMLPreElement|null} Element to display detected speech regions. */
+    let speechRegionsDisplay = null;
+
+    /**
+     * Initializes the UI Manager. Assigns DOM elements, sets up event listeners, and resets the UI.
+     * @public
+     */
     function init() {
         console.log("UIManager: Initializing...");
-        // Ensure Utils is loaded
         if (!Utils) {
-            console.error("UIManager: CRITICAL - AudioApp.Utils not found!");
-            // Optionally disable UI or show error
+            console.error("UIManager: CRITICAL - AudioApp.Utils not found! UI might not function correctly.");
             return;
         }
         assignDOMElements();
@@ -81,82 +118,75 @@ AudioApp.uiManager = (function() {
         console.log("UIManager: Initialized.");
     }
 
-    // --- DOM Element IDs (Conceptual - for reference) ---
+    /**
+     * @private
+     * @const {Object<string, string>}
+     * @description Conceptual mapping of functional names to DOM element IDs.
+     */
     const DOM_ELEMENT_IDS = {
-        // ... (other IDs if listed centrally, though this pattern isn't strictly used in this file yet)
-        DTMF_DISPLAY: 'dtmfDisplay', // Assuming this is the ID for dtmfDisplay
-        CPT_DISPLAY: 'cpt-display-content' // New ID for CPT display
+        DTMF_DISPLAY: 'dtmfDisplay',
+        CPT_DISPLAY: 'cpt-display-content'
     };
 
-    // --- DOM Element Assignment ---
-    /** @private */
+    /**
+     * Assigns DOM elements to module-level variables.
+     * @private
+     */
     function assignDOMElements() {
-        // File Handling
-        chooseFileButton = document.getElementById('chooseFileButton');
-        hiddenAudioFile = document.getElementById('hiddenAudioFile');
-        audioUrlInput = document.getElementById('audioUrlInput'); // New
-        loadUrlButton = document.getElementById('loadUrlButton'); // New
-        urlLoadingErrorDisplay = document.getElementById('urlLoadingErrorDisplay'); // New
-        fileNameDisplay = document.getElementById('fileNameDisplay');
-        fileInfo = document.getElementById('fileInfo');
-        vadProgressContainer = document.getElementById('vadProgressContainer');
-        vadProgressBar = document.getElementById('vadProgressBar');
+        chooseFileButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('chooseFileButton'));
+        hiddenAudioFile = /** @type {HTMLInputElement|null} */ (document.getElementById('hiddenAudioFile'));
+        audioUrlInput = /** @type {HTMLInputElement|null} */ (document.getElementById('audioUrlInput'));
+        loadUrlButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('loadUrlButton'));
+        urlLoadingErrorDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('urlLoadingErrorDisplay'));
+        fileNameDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('fileNameDisplay'));
+        fileInfo = /** @type {HTMLParagraphElement|null} */ (document.getElementById('fileInfo'));
+        vadProgressContainer = /** @type {HTMLDivElement|null} */ (document.getElementById('vadProgressContainer'));
+        vadProgressBar = /** @type {HTMLSpanElement|null} */ (document.getElementById('vadProgressBar'));
 
-        // Drop Zone
-        dropZoneOverlay = document.getElementById('dropZoneOverlay');
-        dropZoneMessage = document.getElementById('dropZoneMessage');
+        dropZoneOverlay = /** @type {HTMLDivElement|null} */ (document.getElementById('dropZoneOverlay'));
+        dropZoneMessage = /** @type {HTMLDivElement|null} */ (document.getElementById('dropZoneMessage'));
 
-        // Playback
-        playPauseButton = document.getElementById('playPause');
-        jumpBackButton = document.getElementById('jumpBack');
-        jumpForwardButton = document.getElementById('jumpForward');
-        jumpTimeInput = document.getElementById('jumpTime');
+        playPauseButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('playPause'));
+        jumpBackButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('jumpBack'));
+        jumpForwardButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('jumpForward'));
+        jumpTimeInput = /** @type {HTMLInputElement|null} */ (document.getElementById('jumpTime'));
 
-        // Seek & Time
-        seekBar = document.getElementById('seekBar');
-        timeDisplay = document.getElementById('timeDisplay');
+        seekBar = /** @type {HTMLInputElement|null} */ (document.getElementById('seekBar'));
+        timeDisplay = /** @type {HTMLDivElement|null} */ (document.getElementById('timeDisplay'));
 
-        // Slider groups
-        playbackSpeedControl = document.getElementById('playbackSpeed');
-        speedValueDisplay = document.getElementById('speedValue');
-        speedMarkers = document.getElementById('speedMarkers');
-        pitchControl = document.getElementById('pitchControl');
-        pitchValueDisplay = document.getElementById('pitchValue');
-        pitchMarkers = document.getElementById('pitchMarkers');
-        gainControl = document.getElementById('gainControl');
-        gainValueDisplay = document.getElementById('gainValue');
-        gainMarkers = document.getElementById('gainMarkers');
+        playbackSpeedControl = /** @type {HTMLInputElement|null} */ (document.getElementById('playbackSpeed'));
+        speedValueDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('speedValue'));
+        speedMarkers = /** @type {HTMLDivElement|null} */ (document.getElementById('speedMarkers'));
+        pitchControl = /** @type {HTMLInputElement|null} */ (document.getElementById('pitchControl'));
+        pitchValueDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('pitchValue'));
+        pitchMarkers = /** @type {HTMLDivElement|null} */ (document.getElementById('pitchMarkers'));
+        gainControl = /** @type {HTMLInputElement|null} */ (document.getElementById('gainControl'));
+        gainValueDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('gainValue'));
+        gainMarkers = /** @type {HTMLDivElement|null} */ (document.getElementById('gainMarkers'));
 
-        // VAD sliders
-        vadThresholdSlider = document.getElementById('vadThreshold');
-        vadThresholdValueDisplay = document.getElementById('vadThresholdValue');
-        vadNegativeThresholdSlider = document.getElementById('vadNegativeThreshold');
-        vadNegativeThresholdValueDisplay = document.getElementById('vadNegativeThresholdValue');
+        vadThresholdSlider = /** @type {HTMLInputElement|null} */ (document.getElementById('vadThreshold'));
+        vadThresholdValueDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('vadThresholdValue'));
+        vadNegativeThresholdSlider = /** @type {HTMLInputElement|null} */ (document.getElementById('vadNegativeThreshold'));
+        vadNegativeThresholdValueDisplay = /** @type {HTMLSpanElement|null} */ (document.getElementById('vadNegativeThresholdValue'));
 
-        // Visuals - Removed canvas/context refs
-        // waveformCanvas = document.getElementById('waveformCanvas');
-        // if (waveformCanvas) waveformCtx = waveformCanvas.getContext('2d');
-        // spectrogramCanvas = document.getElementById('spectrogramCanvas');
-        //  if (spectrogramCanvas) spectrogramCtx = spectrogramCanvas.getContext('2d');
-        // spectrogramSpinner = document.getElementById('spectrogramSpinner'); // Spinner ref moved to spectrogramVisualizer
-        // waveformProgressIndicator = document.getElementById('waveformProgressIndicator'); // Managed by waveformVisualizer
-        // spectrogramProgressIndicator = document.getElementById('spectrogramProgressIndicator'); // Managed by spectrogramVisualizer
+        speechRegionsDisplay = /** @type {HTMLPreElement|null} */ (document.getElementById('speechRegionsDisplay'));
+        dtmfDisplay = /** @type {HTMLDivElement|null} */ (document.getElementById(DOM_ELEMENT_IDS.DTMF_DISPLAY));
+        cptDisplayElement = /** @type {HTMLDivElement|null} */ (document.getElementById(DOM_ELEMENT_IDS.CPT_DISPLAY));
 
-        // Speech Info
-        speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
-        dtmfDisplay = document.getElementById(DOM_ELEMENT_IDS.DTMF_DISPLAY); // Use conceptual ID
-        cptDisplayElement = document.getElementById(DOM_ELEMENT_IDS.CPT_DISPLAY); // Cache new element
-
-        // Check essential elements
-        if (!vadProgressContainer || !vadProgressBar ) { console.warn("UIManager: Could not find VAD progress bar elements!"); }
-        if (!chooseFileButton || !hiddenAudioFile || !playPauseButton || !seekBar || !playbackSpeedControl) { console.warn("UIManager: Could not find all required UI elements!"); }
-        if (!dtmfDisplay) { console.warn("UIManager: Could not find DTMF display element!"); }
-        if (!cptDisplayElement) { console.warn("UIManager: Could not find CPT display element (ID: " + DOM_ELEMENT_IDS.CPT_DISPLAY + ")!"); } // Check for new element
+        // Basic checks for critical elements
+        if (!chooseFileButton || !playPauseButton || !seekBar) {
+            console.warn("UIManager: Some critical UI elements (chooseFile, playPause, seekBar) not found.");
+        }
+        if (!dtmfDisplay) console.warn("UIManager: DTMF display element not found.");
+        if (!cptDisplayElement) console.warn(`UIManager: CPT display element (ID: ${DOM_ELEMENT_IDS.CPT_DISPLAY}) not found.`);
     }
 
-    // --- Slider Marker Positioning ---
-    /** @private */
+    /**
+     * Initializes positions of markers (like 0.5x, 1x, 2x) for sliders.
+     * @private
+     */
     function initializeSliderMarkers() {
+        /** @type {Array<{slider: HTMLInputElement|null, markersDiv: HTMLDivElement|null}>} */
         const markerConfigs = [
             { slider: playbackSpeedControl, markersDiv: speedMarkers },
             { slider: pitchControl, markersDiv: pitchMarkers },
@@ -168,45 +198,51 @@ AudioApp.uiManager = (function() {
             const min = parseFloat(slider.min);
             const max = parseFloat(slider.max);
             const range = max - min;
-            if (range <= 0) return;
+            if (range <= 0) return; // Avoid division by zero or negative range
+            /** @type {NodeListOf<HTMLSpanElement>} */
             const markers = markersDiv.querySelectorAll('span[data-value]');
             markers.forEach(span => {
-                const value = parseFloat(span.dataset.value);
-                if (!isNaN(value)) { const percent = ((value - min) / range) * 100; span.style.left = `${percent}%`; }
+                const value = parseFloat(span.dataset.value || "");
+                if (!isNaN(value)) {
+                    const percent = ((value - min) / range) * 100;
+                    span.style.left = `${percent}%`;
+                }
             });
         });
     }
 
-    // --- Event Listener Setup ---
-    /** @private */
+    /**
+     * Sets up all general UI event listeners.
+     * @private
+     */
     function setupEventListeners() {
         chooseFileButton?.addEventListener('click', () => { hiddenAudioFile?.click(); });
         hiddenAudioFile?.addEventListener('change', (e) => {
-            const file = e.target.files?.[0];
-            if (file) { updateFileName(file.name); dispatchUIEvent('audioapp:fileSelected', { file: file }); }
-            else { updateFileName(""); }
+            const target = /** @type {HTMLInputElement} */ (e.target);
+            const file = target.files?.[0];
+            if (file) {
+                updateFileName(file.name);
+                dispatchUIEvent('audioapp:fileSelected', { file: file });
+            } else {
+                updateFileName("");
+            }
         });
 
         loadUrlButton?.addEventListener('click', () => {
             const audioUrl = audioUrlInput?.value.trim();
             if (audioUrl) {
                 dispatchUIEvent('audioapp:urlSelected', { url: audioUrl });
-                // Optionally clear the input:
-                // if (audioUrlInput) audioUrlInput.value = "";
-                // updateFileName(audioUrl); // Or display URL as filename
             } else {
-                // Optionally provide feedback if URL is empty
                 console.warn("UIManager: Load URL button clicked, but URL is empty.");
                 if (audioUrlInput) {
                     audioUrlInput.focus();
-                    setUrlInputStyle('error'); // Indicate error state
+                    setUrlInputStyle('error');
                 }
             }
         });
 
         audioUrlInput?.addEventListener('keypress', (event) => {
             if (event.key === 'Enter') {
-                // Prevent the default form submission behavior if the input is in a form
                 event.preventDefault();
                 const audioUrl = audioUrlInput?.value.trim();
                 if (audioUrl) {
@@ -215,7 +251,7 @@ AudioApp.uiManager = (function() {
                     console.warn("UIManager: Enter pressed in URL input, but URL is empty.");
                     if (audioUrlInput) {
                         audioUrlInput.focus();
-                        setUrlInputStyle('error'); // Indicate error state
+                        setUrlInputStyle('error');
                     }
                 }
             }
@@ -229,22 +265,15 @@ AudioApp.uiManager = (function() {
         });
 
         audioUrlInput?.addEventListener('input', () => {
-            if (!audioUrlInput) return; // Guard
+            if (!audioUrlInput) return;
             const currentStyles = audioUrlInput.classList;
-
             if (currentStyles.contains('url-style-success') || currentStyles.contains('url-style-file')) {
-                // If it was successfully loaded (file or URL) and user types, mark as modified
                 setUrlInputStyle('modified');
             } else if (currentStyles.contains('url-style-error')) {
-                // If it was an error and user types, revert to default input style as it's a new attempt
                 setUrlInputStyle('default');
             } else if (currentStyles.contains('url-style-default')) {
-                // If it's default (e.g. after resetUI or initial empty state) and user types, mark as modified
                 setUrlInputStyle('modified');
             }
-            // If it's already 'modified', further input will re-trigger this listener,
-            // but since none of the conditions for 'success', 'file', or 'error' will be met,
-            // and it's not 'default', it will effectively remain 'modified' without needing an explicit else.
         });
 
         seekBar?.addEventListener('input', (e) => {
@@ -260,9 +289,9 @@ AudioApp.uiManager = (function() {
         setupSliderListeners(pitchControl, pitchValueDisplay, 'audioapp:pitchChanged', 'pitch', 'x');
         setupSliderListeners(gainControl, gainValueDisplay, 'audioapp:gainChanged', 'gain', 'x');
 
-        speedMarkers?.addEventListener('click', (e) => handleMarkerClick(e, playbackSpeedControl));
-        pitchMarkers?.addEventListener('click', (e) => handleMarkerClick(e, pitchControl));
-        gainMarkers?.addEventListener('click', (e) => handleMarkerClick(e, gainControl));
+        speedMarkers?.addEventListener('click', (e) => handleMarkerClick(/** @type {MouseEvent} */ (e), playbackSpeedControl));
+        pitchMarkers?.addEventListener('click', (e) => handleMarkerClick(/** @type {MouseEvent} */ (e), pitchControl));
+        gainMarkers?.addEventListener('click', (e) => handleMarkerClick(/** @type {MouseEvent} */ (e), gainControl));
 
         vadThresholdSlider?.addEventListener('input', handleVadSliderInput);
         vadNegativeThresholdSlider?.addEventListener('input', handleVadSliderInput);
@@ -270,7 +299,15 @@ AudioApp.uiManager = (function() {
         document.addEventListener('keydown', handleKeyDown);
     }
 
-    /** @private */
+    /**
+     * Sets up an event listener for a slider control.
+     * @private
+     * @param {HTMLInputElement|null} slider - The slider element.
+     * @param {HTMLSpanElement|null} valueDisplay - The element to display the slider's value.
+     * @param {string} eventName - The name of the custom event to dispatch.
+     * @param {string} detailKey - The key for the value in the event detail object.
+     * @param {string} [suffix=''] - Suffix to append to the displayed value.
+     */
     function setupSliderListeners(slider, valueDisplay, eventName, detailKey, suffix = '') {
         if (!slider || !valueDisplay) return;
         slider.addEventListener('input', () => {
@@ -280,21 +317,27 @@ AudioApp.uiManager = (function() {
         });
     }
 
-    /** @private */
+    /**
+     * Handles keydown events for global shortcuts.
+     * @private
+     * @param {KeyboardEvent} e - The keyboard event.
+     */
     function handleKeyDown(e) {
-        const target = e.target;
+        const target = /** @type {HTMLElement} */ (e.target);
+        // Ignore key events if the target is an input field where typing is expected.
         const isTextInput = target instanceof HTMLInputElement && ['text', 'number', 'search', 'email', 'password', 'url'].includes(target.type);
         const isTextArea = target instanceof HTMLTextAreaElement;
-        if (isTextInput || isTextArea) return; // Ignore inputs in text fields
+        if (isTextInput || isTextArea) return;
 
-        let handled = false; let eventKey = null;
+        let handled = false;
+        /** @type {string|null} */ let eventKey = null;
         switch (e.code) {
             case 'Space': eventKey = 'Space'; handled = true; break;
             case 'ArrowLeft': eventKey = 'ArrowLeft'; handled = true; break;
             case 'ArrowRight': eventKey = 'ArrowRight'; handled = true; break;
         }
         if (eventKey) { dispatchUIEvent('audioapp:keyPressed', { key: eventKey }); }
-        if (handled) { e.preventDefault(); }
+        if (handled) { e.preventDefault(); } // Prevent default browser action (e.g., scrolling on space)
     }
 
     /**
@@ -304,14 +347,13 @@ AudioApp.uiManager = (function() {
      */
     function updateDtmfDisplay(tones) {
         if (!dtmfDisplay) return;
-
         if (Array.isArray(tones) && tones.length > 0) {
             dtmfDisplay.textContent = tones.join(', ');
-        } else if (typeof tones === 'string' && tones.length > 0 && tones.trim() !== "") { // Also check if string is not just whitespace
+        } else if (typeof tones === 'string' && tones.length > 0 && tones.trim() !== "") {
             dtmfDisplay.textContent = tones;
-        } else if (Array.isArray(tones) && tones.length === 0) { // Empty array means no tones detected
+        } else if (Array.isArray(tones) && tones.length === 0) {
             dtmfDisplay.textContent = "No DTMF detected.";
-        } else { // Fallback for null, undefined, or empty string after trim
+        } else {
             dtmfDisplay.textContent = "N/A";
         }
     }
@@ -326,22 +368,24 @@ AudioApp.uiManager = (function() {
             console.error("UIManager: CPT display element not found.");
             return;
         }
-
         if (Array.isArray(tones) && tones.length > 0) {
             cptDisplayElement.textContent = tones.join(', ');
         } else if (Array.isArray(tones) && tones.length === 0) {
             cptDisplayElement.textContent = "No ringtone detected.";
         } else {
-            // Handles null, undefined, or other non-array types if passed by mistake
             cptDisplayElement.textContent = "N/A";
         }
     }
 
-    /** @private */
+    /**
+     * Handles input events from VAD threshold sliders.
+     * @private
+     * @param {Event} e - The input event.
+     */
     function handleVadSliderInput(e) {
         const slider = /** @type {HTMLInputElement} */ (e.target);
         const value = parseFloat(slider.value);
-        let type = null;
+        /** @type {string|null} */ let type = null;
         if (slider === vadThresholdSlider && vadThresholdValueDisplay) {
             vadThresholdValueDisplay.textContent = value.toFixed(2); type = 'positive';
         } else if (slider === vadNegativeThresholdSlider && vadNegativeThresholdValueDisplay) {
@@ -350,32 +394,45 @@ AudioApp.uiManager = (function() {
         if (type) { dispatchUIEvent('audioapp:thresholdChanged', { type: type, value: value }); }
     }
 
-    /** @private */
+    /**
+     * Handles clicks on slider markers to set the slider value.
+     * @private
+     * @param {MouseEvent} event - The click event.
+     * @param {HTMLInputElement|null} sliderElement - The slider element associated with the markers.
+     */
      function handleMarkerClick(event, sliderElement) {
         if (!sliderElement || sliderElement.disabled) return;
-        const target = event.target;
-        if (target instanceof HTMLElement && target.tagName === 'SPAN' && target.dataset.value) {
+        const target = /** @type {HTMLElement} */ (event.target);
+        if (target.tagName === 'SPAN' && target.dataset.value) {
             const value = parseFloat(target.dataset.value);
             if (!isNaN(value)) {
                 sliderElement.value = String(value);
+                // Dispatch 'input' event to trigger associated listeners (e.g., value display update, app logic)
                 sliderElement.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
     }
 
-    /** @public @returns {number} */
+    /**
+     * Gets the current gain value from the gain control slider.
+     * @public
+     * @returns {number} The current gain value (default is 1.0).
+     */
     function getGainValue() {
         return gainControl ? parseFloat(gainControl.value) : 1.0;
     }
 
-    /** @public @param {number} value */
+    /**
+     * Sets the gain value on the UI slider and display.
+     * @public
+     * @param {number} value - The gain value to set.
+     */
     function setGainValue(value) {
         if (gainControl) {
             gainControl.value = String(value);
         }
         if (gainValueDisplay) {
-            // Ensure value is a number before calling toFixed
-            const numericValue = parseFloat(value);
+            const numericValue = parseFloat(String(value)); // Ensure it's a number
             gainValueDisplay.textContent = numericValue.toFixed(2) + 'x';
         }
     }
@@ -401,13 +458,22 @@ AudioApp.uiManager = (function() {
         }
     }
 
-    /** @private */
+    /**
+     * Dispatches a custom UI event.
+     * @private
+     * @param {string} eventName - The name of the event.
+     * @param {Object<string, any>} [detail={}] - The detail object for the event.
+     */
     function dispatchUIEvent(eventName, detail = {}) {
         document.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
     }
 
     // --- Public Methods for Updating UI ---
-    /** @public @param {string} message */
+    /**
+     * Sets the error message for URL loading.
+     * @public
+     * @param {string} message - The error message to display.
+     */
     function setUrlLoadingError(message) {
         if (urlLoadingErrorDisplay) {
             urlLoadingErrorDisplay.textContent = message;
@@ -417,34 +483,18 @@ AudioApp.uiManager = (function() {
     /**
      * Sets the visual style of the URL input field.
      * @public
-     * @param {'success' | 'error' | 'file' | 'default'} styleType
+     * @param {'success' | 'error' | 'file' | 'default' | 'modified'} styleType - The style to apply.
      */
     function setUrlInputStyle(styleType) {
         if (!audioUrlInput) return;
-
         audioUrlInput.classList.remove('url-style-success', 'url-style-error', 'url-style-file', 'url-style-default', 'url-style-modified');
-
-        switch (styleType) {
-            case 'success':
-                audioUrlInput.classList.add('url-style-success');
-                break;
-            case 'error':
-                audioUrlInput.classList.add('url-style-error');
-                break;
-            case 'file': // For when a file is chosen, to distinguish from URL loading
-                audioUrlInput.classList.add('url-style-file');
-                break;
-            case 'modified':
-                audioUrlInput.classList.add('url-style-modified');
-                break;
-            case 'default':
-            default:
-                audioUrlInput.classList.add('url-style-default');
-                break;
-        }
+        audioUrlInput.classList.add(`url-style-${styleType}`);
     }
 
-    /** @public */
+    /**
+     * Resets the entire UI to its initial state.
+     * @public
+     */
     function resetUI() {
         console.log("UIManager: Resetting UI");
         updateFileName("");
@@ -453,71 +503,107 @@ AudioApp.uiManager = (function() {
         updateTimeDisplay(0, 0);
         updateSeekBar(0);
         setSpeechRegionsText("None");
-        updateVadDisplay(0.5, 0.35, true); // Reset VAD sliders to N/A
-        showVadProgress(false); // Hide VAD bar
-        updateVadProgress(0);   // Reset VAD bar width
-        if (dtmfDisplay) dtmfDisplay.textContent = "N/A"; // Reset DTMF display
-        if (cptDisplayElement) cptDisplayElement.textContent = "N/A"; // Reset CPT display
-        if (urlLoadingErrorDisplay) urlLoadingErrorDisplay.textContent = ""; // Clear URL error
-        setAudioUrlInputValue(""); // Clear URL input text
-        setUrlInputStyle('default'); // Reset URL input style
+        updateVadDisplay(0.5, 0.35, true); // Reset VAD sliders and mark as N/A
+        showVadProgress(false);
+        updateVadProgress(0);
+        if (dtmfDisplay) dtmfDisplay.textContent = "N/A";
+        if (cptDisplayElement) cptDisplayElement.textContent = "N/A";
+        if (urlLoadingErrorDisplay) urlLoadingErrorDisplay.textContent = "";
+        setAudioUrlInputValue("");
+        setUrlInputStyle('default');
 
-        // Reset sliders
-        if (playbackSpeedControl) playbackSpeedControl.value = "1.0"; if (speedValueDisplay) speedValueDisplay.textContent = "1.00x";
-        if (pitchControl) pitchControl.value = "1.0"; if (pitchValueDisplay) pitchValueDisplay.textContent = "1.00x";
-        if (gainControl) gainControl.value = "1.0"; if (gainValueDisplay) gainValueDisplay.textContent = "1.00x";
+        if (playbackSpeedControl && speedValueDisplay) { playbackSpeedControl.value = "1.0"; speedValueDisplay.textContent = "1.00x"; }
+        if (pitchControl && pitchValueDisplay) { pitchControl.value = "1.0"; pitchValueDisplay.textContent = "1.00x"; }
+        if (gainControl && gainValueDisplay) { gainControl.value = "1.0"; gainValueDisplay.textContent = "1.00x"; }
         if (jumpTimeInput) jumpTimeInput.value = "5";
 
-        // Disable controls
         enableSeekBar(false);
+        // Playback controls are typically enabled/disabled based on worklet readiness, not full reset.
     }
 
-    /** @public @param {string} text */
+    /**
+     * Updates the displayed file name.
+     * @public
+     * @param {string} text - The file name to display.
+     */
     function updateFileName(text) { if (fileNameDisplay) { fileNameDisplay.textContent = text; fileNameDisplay.title = text; } }
-    /** @public @param {string} text */
+
+    /**
+     * Sets the general file information/status message.
+     * @public
+     * @param {string} text - The message to display.
+     */
     function setFileInfo(text) { if (fileInfo) { fileInfo.textContent = text; fileInfo.title = text; } }
-    /** @public @param {boolean} isPlaying */
+
+    /**
+     * Sets the state of the play/pause button.
+     * @public
+     * @param {boolean} isPlaying - True if audio is playing, false otherwise.
+     */
     function setPlayButtonState(isPlaying) { if (playPauseButton) playPauseButton.textContent = isPlaying ? 'Pause' : 'Play'; }
 
     /**
+     * Updates the time display (current time / duration).
      * @public
-     * @param {number} currentTime
-     * @param {number} duration
-     * Uses AudioApp.Utils.formatTime
+     * @param {number} currentTime - The current playback time in seconds.
+     * @param {number} duration - The total duration of the audio in seconds.
      */
     function updateTimeDisplay(currentTime, duration) {
-        if (timeDisplay && Utils) { // Check Utils exists
+        if (timeDisplay && Utils) {
             timeDisplay.textContent = `${Utils.formatTime(currentTime)} / ${Utils.formatTime(duration)}`;
         } else if (timeDisplay) {
-             timeDisplay.textContent = `Err / Err`; // Fallback if Utils missing
+             timeDisplay.textContent = `Err / Err`; // Fallback if Utils is not available
         }
     }
 
-    /** @public @param {number} fraction */
+    /**
+     * Updates the position of the seek bar.
+     * @public
+     * @param {number} fraction - The progress fraction (0 to 1).
+     */
     function updateSeekBar(fraction) {
         if (seekBar) {
             const clampedFraction = Math.max(0, Math.min(1, fraction));
-            if (Math.abs(parseFloat(seekBar.value) - clampedFraction) > 1e-6 ) { seekBar.value = String(clampedFraction); }
+            // Only update if significantly different to avoid fighting with user input
+            if (Math.abs(parseFloat(seekBar.value) - clampedFraction) > 1e-6 ) {
+                seekBar.value = String(clampedFraction);
+            }
         }
     }
 
-    /** @public @param {string | Array<{start: number, end: number}>} regionsOrText */
+    /**
+     * Sets the text content for the speech regions display.
+     * @public
+     * @param {string | Array<{start: number, end: number}>} regionsOrText - Either a string message or an array of speech region objects.
+     */
     function setSpeechRegionsText(regionsOrText) {
         if (!speechRegionsDisplay) return;
-        if (typeof regionsOrText === 'string') { speechRegionsDisplay.textContent = regionsOrText; }
-        else if (Array.isArray(regionsOrText)) {
-             if (regionsOrText.length > 0) { speechRegionsDisplay.textContent = regionsOrText.map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`).join('\n'); }
-             else { speechRegionsDisplay.textContent = "No speech detected."; }
-        } else { speechRegionsDisplay.textContent = "None"; }
+        if (typeof regionsOrText === 'string') {
+            speechRegionsDisplay.textContent = regionsOrText;
+        } else if (Array.isArray(regionsOrText)) {
+             if (regionsOrText.length > 0) {
+                 speechRegionsDisplay.textContent = regionsOrText.map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`).join('\n');
+             } else {
+                 speechRegionsDisplay.textContent = "No speech detected.";
+             }
+        } else {
+            speechRegionsDisplay.textContent = "None"; // Default fallback
+        }
     }
 
-    /** @public @param {number} positive @param {number} negative @param {boolean} [isNA=false] */
+    /**
+     * Updates the VAD threshold sliders and their value displays.
+     * @public
+     * @param {number} positive - The positive VAD threshold value.
+     * @param {number} negative - The negative VAD threshold value.
+     * @param {boolean} [isNA=false] - If true, sets displays to "N/A" and resets sliders to default.
+     */
     function updateVadDisplay(positive, negative, isNA = false) {
         if (isNA) {
             if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = "N/A";
             if (vadNegativeThresholdValueDisplay) vadNegativeThresholdValueDisplay.textContent = "N/A";
-            if (vadThresholdSlider) vadThresholdSlider.value = "0.5";
-            if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.value = "0.35";
+            if (vadThresholdSlider) vadThresholdSlider.value = "0.5"; // Default value
+            if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.value = "0.35"; // Default value
         } else {
             if (vadThresholdSlider) vadThresholdSlider.value = String(positive);
             if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = positive.toFixed(2);
@@ -526,43 +612,68 @@ AudioApp.uiManager = (function() {
         }
     }
 
-    /** @public @param {boolean} enable */
+    /**
+     * Enables or disables main playback controls.
+     * @public
+     * @param {boolean} enable - True to enable, false to disable.
+     */
     function enablePlaybackControls(enable) {
         if (playPauseButton) playPauseButton.disabled = !enable;
         if (jumpBackButton) jumpBackButton.disabled = !enable;
         if (jumpForwardButton) jumpForwardButton.disabled = !enable;
         if (playbackSpeedControl) playbackSpeedControl.disabled = !enable;
         if (pitchControl) pitchControl.disabled = !enable;
-        // Gain control generally always enabled
+        // Note: Gain control is typically always enabled.
     }
-    /** @public @param {boolean} enable */
+
+    /**
+     * Enables or disables the seek bar.
+     * @public
+     * @param {boolean} enable - True to enable, false to disable.
+     */
      function enableSeekBar(enable) { if (seekBar) seekBar.disabled = !enable; }
-    /** @public @param {boolean} enable */
+
+    /**
+     * Enables or disables VAD threshold controls.
+     * @public
+     * @param {boolean} enable - True to enable, false to disable.
+     */
     function enableVadControls(enable) {
         if (vadThresholdSlider) vadThresholdSlider.disabled = !enable;
         if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.disabled = !enable;
-        if (!enable) { updateVadDisplay(0.5, 0.35, true); } // Reset display if disabling
+        if (!enable) {
+            updateVadDisplay(0.5, 0.35, true); // Reset display values to N/A and sliders to default if disabling
+        }
     }
 
-    /** @public @returns {number} */
-    function getJumpTime() { return parseFloat(jumpTimeInput?.value) || 5; }
+    /**
+     * Gets the current jump time value from the input field.
+     * @public
+     * @returns {number} The jump time in seconds (default is 5).
+     */
+    function getJumpTime() { return parseFloat(jumpTimeInput?.value || "5") || 5; }
 
-    // --- formatTime function REMOVED ---
-
-    // --- VAD Progress Bar Functions ---
-    /** @public @param {number} percentage */
+    /**
+     * Updates the VAD progress bar percentage.
+     * @public
+     * @param {number} percentage - The progress percentage (0 to 100).
+     */
     function updateVadProgress(percentage) {
         if (!vadProgressBar) return;
         const clampedPercentage = Math.max(0, Math.min(100, percentage));
         vadProgressBar.style.width = `${clampedPercentage}%`;
     }
-    /** @public @param {boolean} show */
+
+    /**
+     * Shows or hides the VAD progress bar container.
+     * @public
+     * @param {boolean} show - True to show, false to hide.
+     */
     function showVadProgress(show) {
         if (!vadProgressContainer) return;
-        vadProgressContainer.style.display = show ? 'block' : 'none'; // Simple show/hide
+        vadProgressContainer.style.display = show ? 'block' : 'none';
     }
 
-    // --- Drop Zone Management ---
     /**
      * Shows the drop zone overlay with file information.
      * @public
@@ -570,8 +681,8 @@ AudioApp.uiManager = (function() {
      */
     function showDropZone(file) {
         if (dropZoneOverlay && dropZoneMessage) {
-            dropZoneOverlay.style.display = 'flex'; // Or 'block'
-            // Utils.formatBytes is not available, display size in bytes.
+            dropZoneOverlay.style.display = 'flex';
+            // Assuming Utils.formatBytes is not available or moved, displaying size in bytes.
             dropZoneMessage.textContent = `File: ${file.name}, Size: ${file.size} bytes`;
             document.body.classList.add('blurred-background');
         }
@@ -589,71 +700,136 @@ AudioApp.uiManager = (function() {
         }
     }
 
-    // --- New Getter and Setter Functions ---
-
-    /** @public @returns {number} */
+    /**
+     * Gets the current playback speed value.
+     * @public
+     * @returns {number} The current playback speed.
+     */
     function getPlaybackSpeedValue() {
         return playbackSpeedControl ? parseFloat(playbackSpeedControl.value) : 1.0;
     }
 
-    /** @public @param {number} value */
+    /**
+     * Sets the playback speed value on the UI.
+     * @public
+     * @param {number} value - The playback speed to set.
+     */
     function setPlaybackSpeedValue(value) {
         if (playbackSpeedControl) {
             playbackSpeedControl.value = String(value);
         }
         if (speedValueDisplay) {
-            speedValueDisplay.textContent = parseFloat(value).toFixed(2) + 'x';
+            speedValueDisplay.textContent = parseFloat(String(value)).toFixed(2) + 'x';
         }
     }
 
-    /** @public @returns {number} */
+    /**
+     * Gets the current pitch value.
+     * @public
+     * @returns {number} The current pitch value.
+     */
     function getPitchValue() {
         return pitchControl ? parseFloat(pitchControl.value) : 1.0;
     }
 
-    /** @public @param {number} value */
+    /**
+     * Sets the pitch value on the UI.
+     * @public
+     * @param {number} value - The pitch value to set.
+     */
     function setPitchValue(value) {
         if (pitchControl) {
             pitchControl.value = String(value);
         }
         if (pitchValueDisplay) {
-            pitchValueDisplay.textContent = parseFloat(value).toFixed(2) + 'x';
+            pitchValueDisplay.textContent = parseFloat(String(value)).toFixed(2) + 'x';
         }
     }
 
-    /** @public @returns {number} */
+    /**
+     * Gets the current VAD positive threshold value.
+     * @public
+     * @returns {number} The current VAD positive threshold.
+     */
     function getVadPositiveThresholdValue() {
-        // Default based on HTML or common starting point if slider not found
-        return vadThresholdSlider ? parseFloat(vadThresholdSlider.value) : 0.5;
+        return vadThresholdSlider ? parseFloat(vadThresholdSlider.value) : 0.5; // Default based on HTML
     }
 
-    /** @public @param {number} value */
+    /**
+     * Sets the VAD positive threshold value on the UI.
+     * @public
+     * @param {number} value - The VAD positive threshold to set.
+     */
     function setVadPositiveThresholdValue(value) {
         if (vadThresholdSlider) {
             vadThresholdSlider.value = String(value);
         }
         if (vadThresholdValueDisplay) {
-            vadThresholdValueDisplay.textContent = parseFloat(value).toFixed(2);
+            vadThresholdValueDisplay.textContent = parseFloat(String(value)).toFixed(2);
         }
     }
 
-    /** @public @returns {number} */
+    /**
+     * Gets the current VAD negative threshold value.
+     * @public
+     * @returns {number} The current VAD negative threshold.
+     */
     function getVadNegativeThresholdValue() {
-        // Default based on HTML or common starting point if slider not found
-        return vadNegativeThresholdSlider ? parseFloat(vadNegativeThresholdSlider.value) : 0.35;
+        return vadNegativeThresholdSlider ? parseFloat(vadNegativeThresholdSlider.value) : 0.35; // Default based on HTML
     }
 
-    /** @public @param {number} value */
+    /**
+     * Sets the VAD negative threshold value on the UI.
+     * @public
+     * @param {number} value - The VAD negative threshold to set.
+     */
     function setVadNegativeThresholdValue(value) {
         if (vadNegativeThresholdSlider) {
             vadNegativeThresholdSlider.value = String(value);
         }
         if (vadNegativeThresholdValueDisplay) {
-            vadNegativeThresholdValueDisplay.textContent = parseFloat(value).toFixed(2);
+            vadNegativeThresholdValueDisplay.textContent = parseFloat(String(value)).toFixed(2);
         }
     }
 
-    // --- Public Interface ---
+    /**
+     * @typedef {Object} UIManagerPublicInterface
+     * @property {function(): void} init
+     * @property {function(): void} resetUI
+     * @property {function(string): void} setFileInfo
+     * @property {function(string): void} updateFileName
+     * @property {function(boolean): void} setPlayButtonState
+     * @property {function(number, number): void} updateTimeDisplay
+     * @property {function(string|string[]): void} updateDtmfDisplay
+     * @property {function(string[]): void} updateCallProgressTonesDisplay
+     * @property {function(number): void} updateSeekBar
+     * @property {function(string|Array<{start: number, end: number}>): void} setSpeechRegionsText
+     * @property {function(number, number, boolean=): void} updateVadDisplay
+     * @property {function(boolean): void} enablePlaybackControls
+     * @property {function(boolean): void} enableSeekBar
+     * @property {function(boolean): void} enableVadControls
+     * @property {function(): number} getJumpTime
+     * @property {function(number): void} updateVadProgress
+     * @property {function(boolean): void} showVadProgress
+     * @property {function(string): void} setUrlLoadingError
+     * @property {function('success'|'error'|'file'|'default'|'modified'): void} setUrlInputStyle
+     * @property {function(): void} unfocusUrlInput
+     * @property {function(string): void} setAudioUrlInputValue
+     * @property {function(File): void} showDropZone
+     * @property {function(): void} hideDropZone
+     * @property {function(): number} getPlaybackSpeedValue
+     * @property {function(): number} getPitchValue
+     * @property {function(): number} getVadPositiveThresholdValue
+     * @property {function(): number} getVadNegativeThresholdValue
+     * @property {function(): number} getGainValue
+     * @property {function(number): void} setPlaybackSpeedValue
+     * @property {function(number): void} setPitchValue
+     * @property {function(number): void} setVadPositiveThresholdValue
+     * @property {function(number): void} setVadNegativeThresholdValue
+     * @property {function(number): void} setGainValue
+     */
+
+    /** @type {UIManagerPublicInterface} */
     return {
         init: init,
         resetUI: resetUI,
@@ -662,7 +838,7 @@ AudioApp.uiManager = (function() {
         setPlayButtonState: setPlayButtonState,
         updateTimeDisplay: updateTimeDisplay,
         updateDtmfDisplay: updateDtmfDisplay,
-        updateCallProgressTonesDisplay: updateCallProgressTonesDisplay, // Expose new function
+        updateCallProgressTonesDisplay: updateCallProgressTonesDisplay,
         updateSeekBar: updateSeekBar,
         setSpeechRegionsText: setSpeechRegionsText,
         updateVadDisplay: updateVadDisplay,
@@ -683,13 +859,13 @@ AudioApp.uiManager = (function() {
         getPitchValue: getPitchValue,
         getVadPositiveThresholdValue: getVadPositiveThresholdValue,
         getVadNegativeThresholdValue: getVadNegativeThresholdValue,
-        getGainValue: getGainValue, // Added
+        getGainValue: getGainValue,
         // New Setters
         setPlaybackSpeedValue: setPlaybackSpeedValue,
         setPitchValue: setPitchValue,
         setVadPositiveThresholdValue: setVadPositiveThresholdValue,
         setVadNegativeThresholdValue: setVadNegativeThresholdValue,
-        setGainValue: setGainValue // Added
+        setGainValue: setGainValue
     };
 })();
 // --- /vibe-player/js/uiManager.js ---
