@@ -21,7 +21,8 @@ AudioApp.uiManager = (function() {
     /** @type {HTMLParagraphElement|null} */ let fileInfo;
     /** @type {HTMLDivElement|null} */ let vadProgressContainer;
     /** @type {HTMLSpanElement|null} */ let vadProgressBar;
-    /** @type {HTMLDivElement|null} */ let dtmfDisplay;
+    /** @type {HTMLDivElement|null} */ let dtmfDisplay; // Existing DTMF display
+    /** @type {HTMLDivElement|null} */ let cptDisplayElement; // New CPT display
 
     // Drop Zone
     /** @type {HTMLDivElement|null} */ let dropZoneOverlay;
@@ -80,6 +81,13 @@ AudioApp.uiManager = (function() {
         console.log("UIManager: Initialized.");
     }
 
+    // --- DOM Element IDs (Conceptual - for reference) ---
+    const DOM_ELEMENT_IDS = {
+        // ... (other IDs if listed centrally, though this pattern isn't strictly used in this file yet)
+        DTMF_DISPLAY: 'dtmfDisplay', // Assuming this is the ID for dtmfDisplay
+        CPT_DISPLAY: 'cpt-display-content' // New ID for CPT display
+    };
+
     // --- DOM Element Assignment ---
     /** @private */
     function assignDOMElements() {
@@ -136,12 +144,14 @@ AudioApp.uiManager = (function() {
 
         // Speech Info
         speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
-        dtmfDisplay = document.getElementById('dtmfDisplay');
+        dtmfDisplay = document.getElementById(DOM_ELEMENT_IDS.DTMF_DISPLAY); // Use conceptual ID
+        cptDisplayElement = document.getElementById(DOM_ELEMENT_IDS.CPT_DISPLAY); // Cache new element
 
         // Check essential elements
         if (!vadProgressContainer || !vadProgressBar ) { console.warn("UIManager: Could not find VAD progress bar elements!"); }
         if (!chooseFileButton || !hiddenAudioFile || !playPauseButton || !seekBar || !playbackSpeedControl) { console.warn("UIManager: Could not find all required UI elements!"); }
         if (!dtmfDisplay) { console.warn("UIManager: Could not find DTMF display element!"); }
+        if (!cptDisplayElement) { console.warn("UIManager: Could not find CPT display element (ID: " + DOM_ELEMENT_IDS.CPT_DISPLAY + ")!"); } // Check for new element
     }
 
     // --- Slider Marker Positioning ---
@@ -297,10 +307,33 @@ AudioApp.uiManager = (function() {
 
         if (Array.isArray(tones) && tones.length > 0) {
             dtmfDisplay.textContent = tones.join(', ');
-        } else if (typeof tones === 'string' && tones.length > 0) {
+        } else if (typeof tones === 'string' && tones.length > 0 && tones.trim() !== "") { // Also check if string is not just whitespace
             dtmfDisplay.textContent = tones;
+        } else if (Array.isArray(tones) && tones.length === 0) { // Empty array means no tones detected
+            dtmfDisplay.textContent = "None detected.";
+        } else { // Fallback for null, undefined, or empty string after trim
+            dtmfDisplay.textContent = "N/A";
+        }
+    }
+
+    /**
+     * Updates the Call Progress Tones display box.
+     * @public
+     * @param {string[]} tones - An array of detected CPT names.
+     */
+    function updateCallProgressTonesDisplay(tones) {
+        if (!cptDisplayElement) {
+            console.error("UIManager: CPT display element not found.");
+            return;
+        }
+
+        if (Array.isArray(tones) && tones.length > 0) {
+            cptDisplayElement.textContent = tones.join(', ');
+        } else if (Array.isArray(tones) && tones.length === 0) {
+            cptDisplayElement.textContent = "None detected.";
         } else {
-            dtmfDisplay.textContent = "No DTMF tones detected yet.";
+            // Handles null, undefined, or other non-array types if passed by mistake
+            cptDisplayElement.textContent = "N/A";
         }
     }
 
@@ -423,7 +456,8 @@ AudioApp.uiManager = (function() {
         updateVadDisplay(0.5, 0.35, true); // Reset VAD sliders to N/A
         showVadProgress(false); // Hide VAD bar
         updateVadProgress(0);   // Reset VAD bar width
-        if (dtmfDisplay) dtmfDisplay.textContent = "No DTMF tones detected yet."; // Reset DTMF display
+        if (dtmfDisplay) dtmfDisplay.textContent = "N/A"; // Reset DTMF display
+        if (cptDisplayElement) cptDisplayElement.textContent = "N/A"; // Reset CPT display
         if (urlLoadingErrorDisplay) urlLoadingErrorDisplay.textContent = ""; // Clear URL error
         setAudioUrlInputValue(""); // Clear URL input text
         setUrlInputStyle('default'); // Reset URL input style
@@ -627,7 +661,8 @@ AudioApp.uiManager = (function() {
         updateFileName: updateFileName,
         setPlayButtonState: setPlayButtonState,
         updateTimeDisplay: updateTimeDisplay,
-        updateDtmfDisplay: updateDtmfDisplay, // Added
+        updateDtmfDisplay: updateDtmfDisplay,
+        updateCallProgressTonesDisplay: updateCallProgressTonesDisplay, // Expose new function
         updateSeekBar: updateSeekBar,
         setSpeechRegionsText: setSpeechRegionsText,
         updateVadDisplay: updateVadDisplay,

@@ -49,6 +49,8 @@ AudioApp = (function() {
     let dragCounter = 0;
     /** @type {AudioApp.DTMFParser|null} The DTMF parser instance. */
     let dtmfParser = null;
+    /** @type {AudioApp.CallProgressToneParser|null} The Call Progress Tone parser instance. */
+    let cptParser = null;
 
     // --- Main Thread Playback Time State (Preserved) ---
     /** @type {number|null} AudioContext time when playback/seek started */ let playbackStartTimeContext = null;
@@ -237,6 +239,15 @@ AudioApp = (function() {
         } else {
             console.error("AudioApp: DTMFParser module not available to initialize.");
         }
+
+        // Initialize Call Progress Tone Parser
+        if (AudioApp.CallProgressToneParser) {
+            cptParser = new AudioApp.CallProgressToneParser(); // Uses default constants from goertzel.js
+            console.log("AudioApp: Call Progress Tone Parser initialized.");
+        } else {
+            console.warn("AudioApp: CallProgressToneParser module not available to initialize."); // Warn instead of error, as it's newer
+        }
+
         console.log("AudioApp: Initialized. Waiting for file...");
     }
 
@@ -565,8 +576,8 @@ AudioApp = (function() {
         runVadInBackground(currentAudioBuffer); // Fire and forget
 
         // After VAD, or in parallel if desired and safe
-        if (dtmfParser && currentAudioBuffer) {
-            processAudioForDTMF(currentAudioBuffer);
+        if (currentAudioBuffer && (dtmfParser || cptParser)) { // Check if either parser is available
+            processAudioForTones(currentAudioBuffer);
         }
 
         // If a file was loaded (not a URL), and we have display URL info, ensure it's shown.
@@ -689,103 +700,138 @@ AudioApp = (function() {
     }
 
     /**
-     * Resamples audio, processes it for DTMF tones, and updates the UI.
+     * Resamples audio, processes it for DTMF and Call Progress Tones, and updates the UI.
      * @param {AudioBuffer} audioBuffer The audio buffer to process.
      * @private
      */
-    async function processAudioForDTMF(audioBuffer) {
-        if (!audioBuffer || !dtmfParser || !AudioApp.audioEngine || !AudioApp.uiManager) {
-            console.error("App (DTMF): Missing dependencies for DTMF processing.");
-            AudioApp.uiManager?.updateDtmfDisplay("DTMF Error: Missing components.");
+    async function processAudioForTones(audioBuffer) {
+        if (!audioBuffer || !AudioApp.audioEngine || !AudioApp.uiManager) {
+            console.error("App (Tones): Missing core dependencies for tone processing.");
+            AudioApp.uiManager?.updateDtmfDisplay("Tone Error: Missing components.");
+            // Potentially a new UI display for CPT errors if separate from DTMF
             return;
         }
 
-        const targetSampleRate = AudioApp.DTMFParser.DTMF_SAMPLE_RATE || 8000; // Access constant if exposed, else default
-        const blockSize = AudioApp.DTMFParser.DTMF_BLOCK_SIZE || 205;     // Access constant if exposed, else default
+        // Common settings for both parsers
+        // Both parsers are currently designed to work with 16kHz from resampleTo16kMono
+        // and use constants like DTMF_BLOCK_SIZE or CPT_DEFAULT_BLOCK_SIZE (which defaults to DTMF_BLOCK_SIZE).
+        const pcmSampleRate = 16000; // Explicitly stating the sample rate of pcmData
+        const pcmBlockSize = AudioApp.DTMFParser.DTMF_BLOCK_SIZE || 410; // Default if not exposed
 
-        AudioApp.uiManager.updateDtmfDisplay("Processing DTMF..."); // Initial message
-
+        let pcmData;
         try {
-            console.log(`App (DTMF): Resampling audio to ${targetSampleRate}Hz for DTMF detection.`);
-            // Assuming a method like resampleToMonoAtTargetRate exists or can be added to audioEngine
-            // For now, let's use a placeholder name. This might require a new method in audioEngine.
-            // If audioEngine.resampleTo16kMono can be adapted or a similar one created:
-            // Let's assume audioEngine has a generic resampler or we adapt resampleTo16kMono
-            // For this step, we'll mock the resampling if direct method isn't available,
-            // focusing on the DTMF processing loop.
-            // In a real scenario, this resampling is crucial.
-
-            // Placeholder for resampling:
-            // const pcmData = await AudioApp.audioEngine.resampleToTargetRateMono(audioBuffer, targetSampleRate);
-            // For now, let's try to use resampleTo16kMono and acknowledge the rate difference if any.
-            // let pcmData; // Original declaration
-            // if (targetSampleRate === 16000) { // If our DTMF rate is 16kHz
-            //      pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
-            // } else {
-            //     // IMPORTANT: This is a simplification. Proper resampling to DTMF_SAMPLE_RATE (e.g., 8000Hz) is required.
-            //     // If audioEngine cannot resample to arbitrary rates, this part needs enhancement.
-            //     // For now, we'll log a warning and proceed with 16kHz data if target is different,
-            //     // which will make DTMF detection less accurate or fail if constants in goertzel.js are for 8kHz.
-            //     // console.warn(`App (DTMF): Attempting to use 16kHz resampled data for DTMF configured for ${targetSampleRate}Hz. Results may be inaccurate. Proper resampling is needed.`); // REMOVED
-            //     pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
-            //      // Ideally, dtmfParser should be configured with the actual sample rate of pcmData.
-            //      // Or pcmData should be exactly at dtmfParser.sampleRate.
-            // }
-
-            console.log(`App (DTMF): Using 16kHz resampled data for DTMF detection (Sample Rate: ${targetSampleRate}Hz).`);
-            const pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+            console.log(`App (Tones): Resampling audio to ${pcmSampleRate}Hz for tone detection.`);
+            pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
 
             if (!pcmData || pcmData.length === 0) {
-                console.log("App (DTMF): No audio data after resampling for DTMF.");
-                AudioApp.uiManager.updateDtmfDisplay("DTMF: No audio data.");
+                console.log("App (Tones): No audio data after resampling.");
+                if (dtmfParser) AudioApp.uiManager.updateDtmfDisplay("DTMF: No audio data.");
+                // Placeholder for CPT display update
+                // AudioApp.uiManager.updateCallProgressTonesDisplay("CPT: No audio data.");
+                console.log("App (Tones): CPT: No audio data.");
                 return;
             }
-            console.log(`App (DTMF): Resampled audio data length: ${pcmData.length}`);
-
-            const detectedTones = [];
-            let lastDetectedTone = null;
-            let consecutiveDetections = 0;
-            const minConsecutiveDetections = 2; // Require a tone to be stable for ~X blocks
-
-            for (let i = 0; i + blockSize <= pcmData.length; i += blockSize) {
-                const audioBlock = pcmData.subarray(i, i + blockSize);
-                const tone = dtmfParser.processAudioBlock(audioBlock);
-
-                if (tone) {
-                    if (tone === lastDetectedTone) {
-                        consecutiveDetections++;
-                    } else {
-                        // New tone detected, reset counter
-                        lastDetectedTone = tone;
-                        consecutiveDetections = 1;
-                    }
-
-                    // Only add if it's stable (or if it's the first of a new kind after silence)
-                    if (consecutiveDetections === minConsecutiveDetections) {
-                         // Check if this tone is different from the last one added to the main list
-                        if (detectedTones.length === 0 || detectedTones[detectedTones.length - 1] !== tone) {
-                            detectedTones.push(tone);
-                        }
-                    }
-                } else {
-                    // No tone detected in this block, reset stability counter
-                    lastDetectedTone = null;
-                    consecutiveDetections = 0;
-                }
-            }
-
-            if (detectedTones.length > 0) {
-                console.log("App (DTMF): Detected tones:", detectedTones.join(', '));
-                AudioApp.uiManager.updateDtmfDisplay(detectedTones);
-            } else {
-                console.log("App (DTMF): No DTMF tones detected.");
-                AudioApp.uiManager.updateDtmfDisplay("No DTMF tones detected.");
-            }
-
+            console.log(`App (Tones): Resampled audio data length: ${pcmData.length}`);
         } catch (error) {
-            console.error("App (DTMF): Error during DTMF processing -", error);
-            AudioApp.uiManager.updateDtmfDisplay(`DTMF Error: ${error.message.substring(0,100)}`);
+            console.error("App (Tones): Error during audio resampling -", error);
+            if (dtmfParser) AudioApp.uiManager.updateDtmfDisplay(`DTMF Error: ${error.message.substring(0,100)}`);
+            // AudioApp.uiManager.updateCallProgressTonesDisplay(`CPT Error: ${error.message.substring(0,100)}`);
+            console.log(`App (Tones): CPT Error: ${error.message.substring(0,100)}`);
+            return;
         }
+
+        // --- DTMF Processing ---
+        if (dtmfParser) {
+            AudioApp.uiManager.updateDtmfDisplay("Processing DTMF...");
+            try {
+                const detectedDtmfTones = [];
+                let lastDetectedDtmf = null;
+                let consecutiveDtmfDetections = 0;
+                const minConsecutiveDtmf = 2;
+
+                for (let i = 0; i + pcmBlockSize <= pcmData.length; i += pcmBlockSize) {
+                    const audioBlock = pcmData.subarray(i, i + pcmBlockSize);
+                    // Ensure dtmfParser is configured for pcmSampleRate if its internal SR is different
+                    // (current DTMFParser defaults to 16000, so it matches)
+                    const tone = dtmfParser.processAudioBlock(audioBlock);
+
+                    if (tone) {
+                        if (tone === lastDetectedDtmf) {
+                            consecutiveDtmfDetections++;
+                        } else {
+                            lastDetectedDtmf = tone;
+                            consecutiveDtmfDetections = 1;
+                        }
+                        if (consecutiveDtmfDetections === minConsecutiveDtmf) {
+                            if (detectedDtmfTones.length === 0 || detectedDtmfTones[detectedDtmfTones.length - 1] !== tone) {
+                                detectedDtmfTones.push(tone);
+                            }
+                        }
+                    } else {
+                        lastDetectedDtmf = null;
+                        consecutiveDtmfDetections = 0;
+                    }
+                }
+                if (detectedDtmfTones.length > 0) {
+                    console.log("App (DTMF): Detected DTMF tones:", detectedDtmfTones.join(', '));
+                    AudioApp.uiManager.updateDtmfDisplay(detectedDtmfTones);
+                } else {
+                    console.log("App (DTMF): No DTMF tones detected.");
+                    AudioApp.uiManager.updateDtmfDisplay("No DTMF tones detected.");
+                }
+            } catch (error) {
+                console.error("App (DTMF): Error during DTMF processing -", error);
+                AudioApp.uiManager.updateDtmfDisplay(`DTMF Error: ${error.message.substring(0,100)}`);
+            }
+        } else {
+            console.log("App (Tones): DTMF Parser not available, skipping DTMF detection.");
+        }
+
+        // --- Call Progress Tone (CPT) Processing ---
+        const detectedCallProgressTones = new Set(); // Use a Set to store unique tones
+        if (cptParser) {
+            // Placeholder for CPT display update
+            // AudioApp.uiManager.updateCallProgressTonesDisplay("Processing CPTs...");
+            console.log("App (Tones): Processing CPTs...");
+            try {
+                // Reset CPT parser state if it holds state across calls to processAudioForTones
+                // (e.g., if the same audio is processed again, or a new file is loaded)
+                // This might mean cptParser needs a .reset() method, or re-instantiate it.
+                // For now, assume processAudioBlock is okay to be called sequentially for new files.
+                // If CallProgressToneParser maintains state, it should be reset here:
+                // cptParser.reset(); // Example if such a method exists
+
+                for (let i = 0; i + pcmBlockSize <= pcmData.length; i += pcmBlockSize) {
+                    const audioBlock = pcmData.subarray(i, i + pcmBlockSize);
+                    // Ensure cptParser is configured for pcmSampleRate
+                    // (current CallProgressToneParser defaults to 16000, so it matches)
+                    const toneName = cptParser.processAudioBlock(audioBlock);
+                    if (toneName) {
+                        detectedCallProgressTones.add(toneName);
+                    }
+                }
+
+                if (detectedCallProgressTones.size > 0) {
+                    console.log("App (Tones): Detected CPTs:", Array.from(detectedCallProgressTones));
+                    // AudioApp.uiManager.updateCallProgressTonesDisplay(Array.from(detectedCallProgressTones)); // Call to non-existent UI function
+                } else {
+                    console.log("App (Tones): No CPTs detected.");
+                    // AudioApp.uiManager.updateCallProgressTonesDisplay("No CPTs detected."); // Call to non-existent UI function
+                }
+            } catch (error) {
+                console.error("App (Tones): Error during CPT processing -", error);
+                // AudioApp.uiManager.updateCallProgressTonesDisplay(`CPT Error: ${error.message.substring(0,100)}`);
+                console.log(`App (Tones): CPT Error: ${error.message.substring(0,100)}`);
+            }
+        } else {
+            console.log("App (Tones): Call Progress Tone Parser not available, skipping CPT detection.");
+        }
+        // Temporary console log for CPTs until UI function is ready
+        console.log("App (Tones): Final Detected CPTs for UI (placeholder):", Array.from(detectedCallProgressTones));
+        // Actual call to the (future) UI manager function
+        AudioApp.uiManager.updateCallProgressTonesDisplay(Array.from(detectedCallProgressTones));
+
+
     }
 
     /** @param {CustomEvent<{type?: string, error: Error}>} e @private */
