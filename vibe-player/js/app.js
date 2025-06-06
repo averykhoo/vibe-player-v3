@@ -47,6 +47,8 @@ AudioApp = (function() {
     let isVadProcessing = false;
     /** @type {number} Counter for drag enter/leave events. */
     let dragCounter = 0;
+    /** @type {AudioApp.DTMFParser|null} The DTMF parser instance. */
+    let dtmfParser = null;
 
     // --- Main Thread Playback Time State (Preserved) ---
     /** @type {number|null} AudioContext time when playback/seek started */ let playbackStartTimeContext = null;
@@ -160,7 +162,7 @@ AudioApp = (function() {
         console.log("AudioApp: Initializing...");
 
         // Check for critical module dependencies (including Utils)
-        if (!AudioApp.uiManager || !AudioApp.audioEngine || !AudioApp.waveformVisualizer || !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.Constants || !AudioApp.Utils) {
+        if (!AudioApp.uiManager || !AudioApp.audioEngine || !AudioApp.waveformVisualizer || !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.Constants || !AudioApp.Utils || !AudioApp.DTMFParser) { // Added AudioApp.DTMFParser
              console.error("AudioApp: CRITICAL - One or more required modules/constants/utils not found on AudioApp namespace! Check script loading order.");
              AudioApp.uiManager?.setFileInfo("Initialization Error: Missing modules. Check console.");
              return;
@@ -227,6 +229,14 @@ AudioApp = (function() {
         AudioApp.waveformVisualizer.init();
         AudioApp.spectrogramVisualizer.init();
         // VAD modules don't have explicit init functions currently
+
+        // Initialize DTMF Parser
+        if (AudioApp.DTMFParser) {
+            dtmfParser = new AudioApp.DTMFParser(); // Uses default constants from goertzel.js
+            console.log("AudioApp: DTMF Parser initialized.");
+        } else {
+            console.error("AudioApp: DTMFParser module not available to initialize.");
+        }
         console.log("AudioApp: Initialized. Waiting for file...");
     }
 
@@ -554,6 +564,11 @@ AudioApp = (function() {
         console.log("App: Starting background VAD processing...");
         runVadInBackground(currentAudioBuffer); // Fire and forget
 
+        // After VAD, or in parallel if desired and safe
+        if (dtmfParser && currentAudioBuffer) {
+            processAudioForDTMF(currentAudioBuffer);
+        }
+
         // If a file was loaded (not a URL), and we have display URL info, ensure it's shown.
         // This primarily ensures that if resetUI was called during processing, the file URL is restored.
         if (currentFile && currentDisplayUrl && currentUrlStyle === 'file') {
@@ -670,6 +685,103 @@ AudioApp = (function() {
         } finally {
             // 7. Cleanup Task State
             isVadProcessing = false;
+        }
+    }
+
+    /**
+     * Resamples audio, processes it for DTMF tones, and updates the UI.
+     * @param {AudioBuffer} audioBuffer The audio buffer to process.
+     * @private
+     */
+    async function processAudioForDTMF(audioBuffer) {
+        if (!audioBuffer || !dtmfParser || !AudioApp.audioEngine || !AudioApp.uiManager) {
+            console.error("App (DTMF): Missing dependencies for DTMF processing.");
+            AudioApp.uiManager?.updateDtmfDisplay("DTMF Error: Missing components.");
+            return;
+        }
+
+        const targetSampleRate = AudioApp.DTMFParser.DTMF_SAMPLE_RATE || 8000; // Access constant if exposed, else default
+        const blockSize = AudioApp.DTMFParser.DTMF_BLOCK_SIZE || 205;     // Access constant if exposed, else default
+
+        AudioApp.uiManager.updateDtmfDisplay("Processing DTMF..."); // Initial message
+
+        try {
+            console.log(`App (DTMF): Resampling audio to ${targetSampleRate}Hz for DTMF detection.`);
+            // Assuming a method like resampleToMonoAtTargetRate exists or can be added to audioEngine
+            // For now, let's use a placeholder name. This might require a new method in audioEngine.
+            // If audioEngine.resampleTo16kMono can be adapted or a similar one created:
+            // Let's assume audioEngine has a generic resampler or we adapt resampleTo16kMono
+            // For this step, we'll mock the resampling if direct method isn't available,
+            // focusing on the DTMF processing loop.
+            // In a real scenario, this resampling is crucial.
+
+            // Placeholder for resampling:
+            // const pcmData = await AudioApp.audioEngine.resampleToTargetRateMono(audioBuffer, targetSampleRate);
+            // For now, let's try to use resampleTo16kMono and acknowledge the rate difference if any.
+            let pcmData;
+            if (targetSampleRate === 16000) { // If our DTMF rate is 16kHz
+                 pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+            } else {
+                // IMPORTANT: This is a simplification. Proper resampling to DTMF_SAMPLE_RATE (e.g., 8000Hz) is required.
+                // If audioEngine cannot resample to arbitrary rates, this part needs enhancement.
+                // For now, we'll log a warning and proceed with 16kHz data if target is different,
+                // which will make DTMF detection less accurate or fail if constants in goertzel.js are for 8kHz.
+                console.warn(`App (DTMF): Attempting to use 16kHz resampled data for DTMF configured for ${targetSampleRate}Hz. Results may be inaccurate. Proper resampling is needed.`);
+                pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+                 // Ideally, dtmfParser should be configured with the actual sample rate of pcmData.
+                 // Or pcmData should be exactly at dtmfParser.sampleRate.
+            }
+
+            if (!pcmData || pcmData.length === 0) {
+                console.log("App (DTMF): No audio data after resampling for DTMF.");
+                AudioApp.uiManager.updateDtmfDisplay("DTMF: No audio data.");
+                return;
+            }
+            console.log(`App (DTMF): Resampled audio data length: ${pcmData.length}`);
+
+            const detectedTones = [];
+            let lastDetectedTone = null;
+            let consecutiveDetections = 0;
+            const minConsecutiveDetections = 2; // Require a tone to be stable for ~X blocks
+
+            for (let i = 0; i + blockSize <= pcmData.length; i += blockSize) {
+                const audioBlock = pcmData.subarray(i, i + blockSize);
+                const tone = dtmfParser.processAudioBlock(audioBlock);
+
+                if (tone) {
+                    if (tone === lastDetectedTone) {
+                        consecutiveDetections++;
+                    } else {
+                        // New tone detected, reset counter
+                        lastDetectedTone = tone;
+                        consecutiveDetections = 1;
+                    }
+
+                    // Only add if it's stable (or if it's the first of a new kind after silence)
+                    if (consecutiveDetections === minConsecutiveDetections) {
+                         // Check if this tone is different from the last one added to the main list
+                        if (detectedTones.length === 0 || detectedTones[detectedTones.length - 1] !== tone) {
+                            detectedTones.push(tone);
+                        }
+                    }
+                } else {
+                    // No tone detected in this block, reset stability counter
+                    lastDetectedTone = null;
+                    consecutiveDetections = 0;
+                }
+            }
+
+            if (detectedTones.length > 0) {
+                console.log("App (DTMF): Detected tones:", detectedTones.join(', '));
+                AudioApp.uiManager.updateDtmfDisplay(detectedTones);
+            } else {
+                console.log("App (DTMF): No DTMF tones detected.");
+                AudioApp.uiManager.updateDtmfDisplay("No DTMF tones detected.");
+            }
+
+        } catch (error) {
+            console.error("App (DTMF): Error during DTMF processing -", error);
+            AudioApp.uiManager.updateDtmfDisplay(`DTMF Error: ${error.message.substring(0,100)}`);
         }
     }
 

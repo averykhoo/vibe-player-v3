@@ -21,6 +21,7 @@ AudioApp.uiManager = (function() {
     /** @type {HTMLParagraphElement|null} */ let fileInfo;
     /** @type {HTMLDivElement|null} */ let vadProgressContainer;
     /** @type {HTMLSpanElement|null} */ let vadProgressBar;
+    /** @type {HTMLDivElement|null} */ let dtmfDisplay;
 
     // Drop Zone
     /** @type {HTMLDivElement|null} */ let dropZoneOverlay;
@@ -135,10 +136,12 @@ AudioApp.uiManager = (function() {
 
         // Speech Info
         speechRegionsDisplay = document.getElementById('speechRegionsDisplay');
+        dtmfDisplay = document.getElementById('dtmfDisplay');
 
         // Check essential elements
         if (!vadProgressContainer || !vadProgressBar ) { console.warn("UIManager: Could not find VAD progress bar elements!"); }
         if (!chooseFileButton || !hiddenAudioFile || !playPauseButton || !seekBar || !playbackSpeedControl) { console.warn("UIManager: Could not find all required UI elements!"); }
+        if (!dtmfDisplay) { console.warn("UIManager: Could not find DTMF display element!"); }
     }
 
     // --- Slider Marker Positioning ---
@@ -284,6 +287,23 @@ AudioApp.uiManager = (function() {
         if (handled) { e.preventDefault(); }
     }
 
+    /**
+     * Updates the DTMF display box with detected tones.
+     * @public
+     * @param {string | string[]} tones - The detected DTMF tone(s). Can be a single string or an array of strings.
+     */
+    function updateDtmfDisplay(tones) {
+        if (!dtmfDisplay) return;
+
+        if (Array.isArray(tones) && tones.length > 0) {
+            dtmfDisplay.textContent = tones.join(', ');
+        } else if (typeof tones === 'string' && tones.length > 0) {
+            dtmfDisplay.textContent = tones;
+        } else {
+            dtmfDisplay.textContent = "No DTMF tones detected yet.";
+        }
+    }
+
     /** @private */
     function handleVadSliderInput(e) {
         const slider = /** @type {HTMLInputElement} */ (e.target);
@@ -403,6 +423,7 @@ AudioApp.uiManager = (function() {
         updateVadDisplay(0.5, 0.35, true); // Reset VAD sliders to N/A
         showVadProgress(false); // Hide VAD bar
         updateVadProgress(0);   // Reset VAD bar width
+        if (dtmfDisplay) dtmfDisplay.textContent = "No DTMF tones detected yet."; // Reset DTMF display
         if (urlLoadingErrorDisplay) urlLoadingErrorDisplay.textContent = ""; // Clear URL error
         setAudioUrlInputValue(""); // Clear URL input text
         setUrlInputStyle('default'); // Reset URL input style
@@ -606,6 +627,7 @@ AudioApp.uiManager = (function() {
         updateFileName: updateFileName,
         setPlayButtonState: setPlayButtonState,
         updateTimeDisplay: updateTimeDisplay,
+        updateDtmfDisplay: updateDtmfDisplay, // Added
         updateSeekBar: updateSeekBar,
         setSpeechRegionsText: setSpeechRegionsText,
         updateVadDisplay: updateVadDisplay,
