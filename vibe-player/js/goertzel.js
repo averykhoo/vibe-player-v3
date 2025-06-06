@@ -144,9 +144,11 @@ const GoertzelModule = (function() {
             this.highGroupFilters = DTMF_FREQUENCIES_HIGH.map(freq =>
                 new AudioApp.GoertzelFilter(freq, this.sampleRate, this.blockSize)
             );
+            this.processedBlocksCounter = 0;
         }
 
         processAudioBlock(audioBlock) {
+            this.processedBlocksCounter++;
             if (audioBlock.length !== this.blockSize) {
                 // console.warn(`DTMFParser: Audio block length (${audioBlock.length}) does not match expected block size (${this.blockSize}). Results may be inaccurate.`);
                 // For now, we'll proceed, but in a real scenario, buffering/windowing would be needed.
@@ -182,6 +184,7 @@ const GoertzelModule = (function() {
                 }
             });
 
+            console.log(`DTMF Raw Detect: Block Time: ${(this.processedBlocksCounter !== undefined ? this.processedBlocksCounter * this.blockSize / this.sampleRate : 'N/A').toFixed(3)}s, Low Freq: ${detectedLowFreq} (MagSq: ${maxLowMag.toExponential(2)}), High Freq: ${detectedHighFreq} (MagSq: ${maxHighMag.toExponential(2)})`);
             // Check absolute threshold
             if (maxLowMag < this.threshold || maxHighMag < this.threshold) {
                 return null; // Below absolute threshold
