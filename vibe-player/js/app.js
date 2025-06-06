@@ -338,29 +338,50 @@ AudioApp = (function() {
     /** @param {CustomEvent<{file: File}>} e @private */
     async function handleFileSelected(e) {
         const file = e.detail.file; if (!file) return;
-        currentFile = file;
-        currentDisplayUrl = 'file:///' + file.name;
+
+        const previousDisplayUrl = currentDisplayUrl;
+        console.log(`[handleFileSelected] Previous URL: ${previousDisplayUrl}`);
+        const newDisplayUrl = 'file:///' + file.name;
+
+        currentFile = file; // Assign currentFile early
+        currentDisplayUrl = newDisplayUrl; // Update currentDisplayUrl
         currentUrlStyle = 'file';
-        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
-        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
-        debouncedUpdateHashFromSettings(); // Update hash on file selected
+        // UI for URL input is updated after conditional reset
+
         console.log("App: File selected -", file.name);
 
-        // Reset state
+        // Reset state (common parts)
         stopUIUpdateLoop();
         isActuallyPlaying = false; playbackNaturallyEnded = false; isVadProcessing = false;
         playbackStartTimeContext = null; playbackStartSourceTime = 0.0;
         currentSpeedForUpdate = 1.0; currentAudioBuffer = null;
         currentVadResults = null; workletPlaybackReady = false;
 
-        // Reset UI & Visuals
-        AudioApp.uiManager.resetUI();
+        // Conditional UI Reset
+        if (newDisplayUrl !== previousDisplayUrl || !previousDisplayUrl) {
+            console.log(`[handleFileSelected] New file selected (${newDisplayUrl}), performing full UI reset.`);
+            AudioApp.uiManager.resetUI();
+        } else {
+            console.log(`[handleFileSelected] Same file re-selected (${newDisplayUrl}), UI settings (speed, pitch, gain) will be preserved. Only file-specific info resets.`);
+            AudioApp.uiManager.updateFileName(file.name); // Keep this
+            AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`); // Keep this
+            AudioApp.uiManager.updateTimeDisplay(0, 0); // Reset time
+            AudioApp.uiManager.updateSeekBar(0); // Reset seek bar
+            AudioApp.uiManager.setSpeechRegionsText("None"); // Reset VAD display
+            AudioApp.uiManager.showVadProgress(false);
+            AudioApp.uiManager.updateVadProgress(0);
+        }
+
+        // Update URL input field and style AFTER conditional reset
         AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
         AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
-        AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`);
-        AudioApp.waveformVisualizer.clearVisuals(); // Use specific visualizer
-        AudioApp.spectrogramVisualizer.clearVisuals(); // Use specific visualizer
-        AudioApp.spectrogramVisualizer.showSpinner(true); // Show spectrogram spinner
+        debouncedUpdateHashFromSettings(); // Update hash
+
+        // Common UI updates for loading visuals
+        AudioApp.uiManager.setFileInfo(`Loading: ${file.name}...`); // May be redundant if full reset, but harmless
+        AudioApp.waveformVisualizer.clearVisuals();
+        AudioApp.spectrogramVisualizer.clearVisuals();
+        AudioApp.spectrogramVisualizer.showSpinner(true);
 
         try { await AudioApp.audioEngine.loadAndProcessFile(file); }
         catch (error) {
@@ -373,65 +394,84 @@ AudioApp = (function() {
 
     /** @param {CustomEvent<{url: string}>} e @private */
     async function handleUrlSelected(e) {
-        const url = e.detail.url;
-        currentDisplayUrl = url;
+        const newUrlFromEvent = e.detail.url; // Capture incoming URL
+        const previousDisplayUrl = currentDisplayUrl;
+        console.log(`[handleUrlSelected] Started. New URL: ${newUrlFromEvent}, Previous URL: ${previousDisplayUrl}, Current File: ${currentFile ? currentFile.name : 'null'}, Initial Hash: ${JSON.stringify(initialHashSettings)}`);
+
+        currentDisplayUrl = newUrlFromEvent; // Update internal state early
         currentUrlStyle = 'default'; // Represents "loading" or "modified before load"
-        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
-        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
-        if (!url) {
+
+        if (!currentDisplayUrl) { // Check after assigning from newUrlFromEvent
             console.warn("App: URL selected event received, but URL is empty.");
+            AudioApp.uiManager.setAudioUrlInputValue(""); // Explicitly clear
+            AudioApp.uiManager.setUrlInputStyle('error');
             AudioApp.uiManager.setFileInfo("Error: No URL provided.");
-            // Potentially set error style for URL input if it was briefly shown
-            currentUrlStyle = 'error';
-            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
             return;
         }
-        console.log("App: URL selected -", url);
+
+        console.log("App: URL selected -", currentDisplayUrl);
         AudioApp.uiManager.setUrlLoadingError(""); // Clear previous URL errors
-        // The style is already 'default' from above, so no need to set it again here explicitly
-        // unless a specific condition requires it.
 
         // Attempt to derive a filename from the URL
         let filename = "loaded_from_url";
         try {
-            const urlPath = new URL(url).pathname;
+            const urlPath = new URL(currentDisplayUrl).pathname;
             const lastSegment = urlPath.substring(urlPath.lastIndexOf('/') + 1);
             if (lastSegment) {
                 filename = decodeURIComponent(lastSegment);
             }
         } catch (urlError) {
             console.warn("App: Could not parse URL to extract filename, using default.", urlError);
-            filename = url; // Fallback to using the full URL if parsing fails or no path segment
+            filename = currentDisplayUrl;
         }
 
-        // Update UI to show the URL is being loaded
-        AudioApp.uiManager.updateFileName(filename); // Show derived filename or full URL
-
-        // Reset state (similar to handleFileSelected)
+        // Reset state (common parts)
         stopUIUpdateLoop();
         isActuallyPlaying = false; playbackNaturallyEnded = false; isVadProcessing = false;
         playbackStartTimeContext = null; playbackStartSourceTime = 0.0;
         currentSpeedForUpdate = 1.0; currentAudioBuffer = null;
         currentVadResults = null; workletPlaybackReady = false;
-        currentFile = null; // Clear previous file object
+        currentFile = null;
 
-        // Reset UI & Visuals
-        AudioApp.uiManager.resetUI(); // Resets most things, including file name if we want that behaviour
+        // Conditional UI Reset
+        if (newUrlFromEvent !== previousDisplayUrl || !previousDisplayUrl) {
+            console.log(`[handleUrlSelected] New URL selected (${newUrlFromEvent}), performing full UI reset.`);
+            AudioApp.uiManager.resetUI();
+        } else {
+            console.log(`[handleUrlSelected] Same URL re-selected (${newUrlFromEvent}), UI settings (speed, pitch, gain) will be preserved. Only file-specific info resets.`);
+            AudioApp.uiManager.updateFileName(filename);
+            AudioApp.uiManager.setFileInfo(`Loading from URL: ${filename}...`);
+            AudioApp.uiManager.updateTimeDisplay(0, 0);
+            AudioApp.uiManager.updateSeekBar(0);
+            AudioApp.uiManager.setSpeechRegionsText("None");
+            AudioApp.uiManager.showVadProgress(false);
+            AudioApp.uiManager.updateVadProgress(0);
+        }
+
+        // Update URL input field and style AFTER conditional reset
         AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
-        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle); // currentUrlStyle is 'default' here
-        AudioApp.uiManager.updateFileName(filename); // Re-apply filename after resetUI
-        AudioApp.uiManager.setFileInfo(`Loading from URL: ${filename}...`);
+        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+        // debouncedUpdateHashFromSettings(); // Called on success or if init triggers it.
+
+        // Common UI updates for loading visuals
+        AudioApp.uiManager.updateFileName(filename); // May be redundant if full reset, but harmless
+        AudioApp.uiManager.setFileInfo(`Loading from URL: ${filename}...`); // May be redundant
         AudioApp.waveformVisualizer.clearVisuals();
         AudioApp.spectrogramVisualizer.clearVisuals();
         AudioApp.spectrogramVisualizer.showSpinner(true);
 
         try {
             AudioApp.uiManager.setFileInfo(`Fetching: ${filename}...`);
+            console.log(`[handleUrlSelected] About to fetch URL: ${url}`);
             const response = await fetch(url);
+            console.log(`[handleUrlSelected] Fetch response received. Status: ${response.status}, OK: ${response.ok}`);
             if (!response.ok) {
+                console.error(`[handleUrlSelected] Fetch response not OK. StatusText: ${response.statusText}`);
                 throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
             }
+            console.log(`[handleUrlSelected] Response Content-Type: ${response.headers.get('Content-Type')}`);
             const arrayBuffer = await response.arrayBuffer();
+            console.log(`[handleUrlSelected] ArrayBuffer received. Byte length: ${arrayBuffer?.byteLength}`);
             AudioApp.uiManager.setFileInfo(`Processing: ${filename}...`);
 
             // Determine MIME type from URL extension if possible, otherwise default
@@ -443,9 +483,12 @@ AudioApp = (function() {
             // Add more types as needed
 
             const newFileObject = new File([arrayBuffer], filename, { type: mimeType });
+            console.log(`[handleUrlSelected] New File object created. Name: ${newFileObject.name}, Size: ${newFileObject.size}, Type: ${newFileObject.type}`);
             currentFile = newFileObject; // Store the new File object
 
+            console.log(`[handleUrlSelected] About to call audioEngine.loadAndProcessFile for: ${newFileObject.name}`);
             await AudioApp.audioEngine.loadAndProcessFile(newFileObject);
+            console.log(`[handleUrlSelected] Successfully called audioEngine.loadAndProcessFile for: ${newFileObject.name}`);
             // currentDisplayUrl is already set to the remote URL
             currentUrlStyle = 'success';
             AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
@@ -454,7 +497,7 @@ AudioApp = (function() {
             debouncedUpdateHashFromSettings(); // Update hash on successful URL load
 
         } catch (error) {
-            console.error("App: Error fetching or processing URL -", error);
+            console.error(`[handleUrlSelected] CATCH block. Error fetching/processing URL ${url}:`, error);
             AudioApp.uiManager.resetUI(); // Call this first
 
             currentUrlStyle = 'error';
