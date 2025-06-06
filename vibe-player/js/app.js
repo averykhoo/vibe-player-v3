@@ -370,6 +370,7 @@ AudioApp = (function() {
             AudioApp.uiManager.setSpeechRegionsText("None"); // Reset VAD display
             AudioApp.uiManager.showVadProgress(false);
             AudioApp.uiManager.updateVadProgress(0);
+            AudioApp.uiManager.setUrlLoadingError(""); // Clear stale file error message
         }
 
         // Update URL input field and style AFTER conditional reset
@@ -446,6 +447,7 @@ AudioApp = (function() {
             AudioApp.uiManager.setSpeechRegionsText("None");
             AudioApp.uiManager.showVadProgress(false);
             AudioApp.uiManager.updateVadProgress(0);
+            AudioApp.uiManager.setUrlLoadingError(""); // Clear stale file error message
         }
 
         // Update URL input field and style AFTER conditional reset
@@ -462,8 +464,8 @@ AudioApp = (function() {
 
         try {
             AudioApp.uiManager.setFileInfo(`Fetching: ${filename}...`);
-            console.log(`[handleUrlSelected] About to fetch URL: ${url}`);
-            const response = await fetch(url);
+            console.log(`[handleUrlSelected] About to fetch URL: ${currentDisplayUrl}`);
+            const response = await fetch(currentDisplayUrl);
             console.log(`[handleUrlSelected] Fetch response received. Status: ${response.status}, OK: ${response.ok}`);
             if (!response.ok) {
                 console.error(`[handleUrlSelected] Fetch response not OK. StatusText: ${response.statusText}`);
@@ -497,7 +499,7 @@ AudioApp = (function() {
             debouncedUpdateHashFromSettings(); // Update hash on successful URL load
 
         } catch (error) {
-            console.error(`[handleUrlSelected] CATCH block. Error fetching/processing URL ${url}:`, error);
+            console.error(`[handleUrlSelected] CATCH block. Error fetching/processing URL ${currentDisplayUrl}:`, error);
             AudioApp.uiManager.resetUI(); // Call this first
 
             currentUrlStyle = 'error';
