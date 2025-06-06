@@ -181,7 +181,7 @@ AudioApp = (function() {
             }
 
             const position = calculateEstimatedSourceTime();
-            if (position > 0 && isActuallyPlaying) { // Only save position if actually playing
+            if (position > 0) { // Save position if it's greater than 0
                 params.set(HASH_PARAM_POSITION, position.toFixed(2));
             }
 
