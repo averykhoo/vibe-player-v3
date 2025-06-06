@@ -13,7 +13,7 @@ const GoertzelModule = (function() {
     // Relative magnitude threshold: dominant tone must be X times stronger than others in its group
     const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0; // Example: Dominant tone must be 2x stronger
     // Absolute magnitude threshold: minimum energy for a tone to be considered
-    const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 1e3;   // Needs tuning based on input levels and N
+    const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 4e2;   // Needs tuning based on input levels and N
 
     const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941]; // Hz
     const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633]; // Hz (including A,B,C,D for completeness)
@@ -184,7 +184,7 @@ const GoertzelModule = (function() {
                 }
             });
 
-            console.log(`DTMF Raw Detect: Block Time: ${(this.processedBlocksCounter !== undefined ? this.processedBlocksCounter * this.blockSize / this.sampleRate : 'N/A').toFixed(3)}s, Low Freq: ${detectedLowFreq} (MagSq: ${maxLowMag.toExponential(2)}), High Freq: ${detectedHighFreq} (MagSq: ${maxHighMag.toExponential(2)})`);
+            // console.log(`DTMF Raw Detect: Block Time: ${(this.processedBlocksCounter !== undefined ? this.processedBlocksCounter * this.blockSize / this.sampleRate : 'N/A').toFixed(3)}s, Low Freq: ${detectedLowFreq} (MagSq: ${maxLowMag.toExponential(2)}), High Freq: ${detectedHighFreq} (MagSq: ${maxHighMag.toExponential(2)})`);
             // Check absolute threshold
             if (maxLowMag < this.threshold || maxHighMag < this.threshold) {
                 return null; // Below absolute threshold
