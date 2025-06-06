@@ -211,24 +211,36 @@
 <script src="lib/ort.min.js"></script> <!-- ONNX Runtime -->
 <script src="lib/fft.js"></script> <!-- FFT for Visualizer -->
 
-<!-- Core App & Utils -->
-<script src="js/constants.js"></script> <!-- Shared Constants -->
-<script src="js/utils.js"></script> <!-- Utility Functions -->
-<script src="js/goertzel.js"></script> <!-- Goertzel Algorithm & DTMF Parser -->
-<script src="js/app.js"></script> <!-- Main App Orchestrator (defines AudioApp) -->
+<!-- Core App Namespace & Foundational Modules -->
+<!-- 1. app.js: Establishes AudioApp IIFE structure. Other files attach to this. -->
+<script src="js/app.js"></script>
+<!-- 2. constants.js: Defines AudioApp.Constants. Needed by many modules. -->
+<script src="js/constants.js"></script>
+<!-- 3. utils.js: Defines AudioApp.Utils. Needed by many modules. -->
+<script src="js/utils.js"></script>
 
-<!-- App Modules -->
-<script src="js/uiManager.js"></script> <!-- UI Logic (Uses Utils) -->
-<script src="js/player/audioEngine.js"></script> <!-- Audio Backend (Uses Constants) -->
+<!-- App Feature Modules & Components -->
+<!-- These may depend on AudioApp, Constants, Utils -->
+<!-- 4. goertzel.js: Defines AudioApp.GoertzelFilter & AudioApp.DTMFParser. May use Constants. DTMFParser is checked by app.js's init. -->
+<script src="js/goertzel.js"></script>
+<!-- 5. uiManager.js: Defines AudioApp.uiManager. Uses Utils. Checked by app.js's init. -->
+<script src="js/uiManager.js"></script>
+<!-- 6. player/audioEngine.js: Defines AudioApp.audioEngine. Uses Constants. Checked by app.js's init. -->
+<script src="js/player/audioEngine.js"></script>
 
-<!-- VAD Modules -->
-<script src="js/vad/sileroWrapper.js"></script> <!-- VAD: ONNX Wrapper -->
-<script src="js/vad/sileroProcessor.js"></script> <!-- VAD: Frame Processor (Uses Wrapper, Constants, Utils) -->
-<script src="js/vad/vadAnalyzer.js"></script> <!-- VAD: State & Recalculation (Uses Processor, Constants) -->
+<!-- VAD Modules (Order within this group matters) -->
+<!-- 7. vad/sileroWrapper.js: Defines AudioApp.sileroWrapper. Checked by app.js's init. -->
+<script src="js/vad/sileroWrapper.js"></script>
+<!-- 8. vad/sileroProcessor.js: Defines AudioApp.sileroProcessor. Uses Wrapper, Constants, Utils. -->
+<script src="js/vad/sileroProcessor.js"></script>
+<!-- 9. vad/vadAnalyzer.js: Defines AudioApp.vadAnalyzer. Uses Processor, Constants. Checked by app.js's init. -->
+<script src="js/vad/vadAnalyzer.js"></script>
 
 <!-- Visualizer Modules -->
-<script src="js/visualizers/waveformVisualizer.js"></script> <!-- Waveform Logic (Uses Constants, Utils) -->
-<script src="js/visualizers/spectrogramVisualizer.js"></script> <!-- Spectrogram Logic (Uses FFT, Constants, Utils) -->
+<!-- 10. visualizers/waveformVisualizer.js: Defines AudioApp.waveformVisualizer. Uses Constants, Utils. Checked by app.js's init. -->
+<script src="js/visualizers/waveformVisualizer.js"></script>
+<!-- 11. visualizers/spectrogramVisualizer.js: Defines AudioApp.spectrogramVisualizer. Uses FFT, Constants, Utils. Checked by app.js's init. -->
+<script src="js/visualizers/spectrogramVisualizer.js"></script>
 <!-- <script src="js/visualizers/visualizer.js"></script> --> <!-- REMOVED OLD COMBINED VISUALIZER -->
 
 <!-- App Initialization -->
