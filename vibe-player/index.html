@@ -245,26 +245,8 @@
         // 1) Wire up dblclick → toggle sparkle
         const fileSpan = document.getElementById("file-loader");
         if (fileSpan) {
-
-            // Desktop: dblclick still works
             fileSpan.addEventListener("dblclick", () => {
                 sparkle(); // calling with no args toggles on/off
-            });
-
-            // Mobile: look for two quick taps
-            let lastTapTime = 0;
-            fileSpan.addEventListener("touchend", (evt) => {
-                const now = Date.now();
-                if (now - lastTapTime < 200) {
-                    // It's a double‐tap – toggle sparkle and prevent the “ghost click”
-                    sparkle();
-                    evt.preventDefault();
-                    lastTapTime = 0;
-                } else {
-                    // First tap – just record the timestamp, but do NOT preventDefault
-                    lastTapTime = now;
-                }
-                // (No preventDefault() here on the first tap, so buttons inside can still receive single clicks)
             });
         }
 
@@ -274,7 +256,6 @@
             // Month is zero-based: 3 = April
             sparkle(true);
         }
-        ;
     });
 </script>
 

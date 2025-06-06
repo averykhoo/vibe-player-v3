@@ -10,8 +10,8 @@
     //  CONFIGURATION CONSTANTS
     // ───────────────────────────────────────────────────────────────────────────
     const MAX_SPARKLES = 1000;
-    const SPARKLE_LIFETIME = 30;   // Each “star” lives 2× this, then becomes a dot for 2× this
-    const SPARKLE_DISTANCE = 30;   // Affects how many spawn along fast mouse movements
+    const SPARKLE_LIFETIME = 40;   // Each “star” lives 2× this, then becomes a dot for 2× this
+    const SPARKLE_DISTANCE = 10;   // Affects how many spawn along fast mouse movements
 
     // ───────────────────────────────────────────────────────────────────────────
     //  INTERNAL STATE
@@ -53,9 +53,6 @@
         isInitialized = true;
 
         // 1) Create and append a full-screen <canvas>
-        docW = document.documentElement.scrollWidth;
-        docH = document.documentElement.scrollHeight;
-
         canvas = document.createElement("canvas");
         canvas.style.position = "fixed";
         canvas.style.top = "0";
@@ -64,12 +61,11 @@
         canvas.style.height = "100%";
         canvas.style.pointerEvents = "none";
         canvas.style.zIndex = "999";
-        canvas.width = docW;
-        canvas.height = docH;
         document.body.appendChild(canvas);
         ctx = canvas.getContext("2d");
 
-        // 2) Hook up resize listener
+        // 2) Set initial size and hook up resize listener
+        handleResize(); // Call it once to set initial size
         window.addEventListener("resize", handleResize);
 
         // 3) Hook up mousemove listener
@@ -85,8 +81,9 @@
     // When window resizes, update canvas dimensions
     function handleResize() {
         if (!canvas) return;
-        docW = document.documentElement.scrollWidth;
-        docH = document.documentElement.scrollHeight;
+        // CHANGED: Use viewport dimensions for a 'fixed' canvas
+        docW = window.innerWidth;
+        docH = window.innerHeight;
         canvas.width = docW;
         canvas.height = docH;
     }
@@ -96,7 +93,7 @@
     // ───────────────────────────────────────────────────────────────────────────
     function spawnStar(x, y) {
         // If out of bounds, do nothing
-        if (x + 5 >= docW || y + 5 >= docH) return;
+        if (x + 5 >= docW || y + 5 >= docH || x < 0 || y < 0) return; // Added x/y < 0 check
 
         // Find either an inactive slot or the slot with the smallest ticksLeft
         let chosenIdx = -1;
@@ -148,7 +145,7 @@
             if (!s.active) continue;
 
             s.ticksLeft--;
-            if (s.ticksLeft === 0) {
+            if (s.ticksLeft <= 0) { // Changed to <= 0 for robustness
                 // Convert to a “tiny” dot immediately
                 tinnies[i].active = true;
                 tinnies[i].x = s.x;
@@ -156,7 +153,7 @@
                 tinnies[i].ticksLeft = SPARKLE_LIFETIME * 2;
                 tinnies[i].color = s.color;
                 s.active = false;
-                anyAlive = true;
+                anyAlive = true; // Still counts as alive for this frame
                 continue;
             }
 
@@ -164,7 +161,7 @@
             s.y += 1 + 3 * Math.random();
             s.x += (i % 5 - 2) / 5;
 
-            if (s.y + 5 < docH && s.x + 5 < docW) {
+            if (s.y + 5 < docH && s.x + 5 < docW && s.x > -5 && s.y > -5) { // Loosened boundary check
                 // Draw—either full 5×5 “+” or half‐shrunken 3×3 “+”
                 const halfLife = SPARKLE_LIFETIME;
                 ctx.strokeStyle = s.color;
@@ -203,7 +200,7 @@
             if (!t.active) continue;
 
             t.ticksLeft--;
-            if (t.ticksLeft === 0) {
+            if (t.ticksLeft <= 0) { // Changed to <= 0
                 t.active = false;
                 continue;
             }
@@ -212,7 +209,7 @@
             t.y += 1 + 2 * Math.random();
             t.x += (i % 4 - 2) / 4;
 
-            if (t.y + 3 < docH && t.x + 3 < docW) {
+            if (t.y + 3 < docH && t.x + 3 < docW && t.x > -3 && t.y > -3) { // Loosened boundary check
                 const halfLife = SPARKLE_LIFETIME;
                 ctx.fillStyle = t.color;
                 if (t.ticksLeft > halfLife) {
@@ -254,10 +251,12 @@
         const dist = Math.hypot(dx, dy);
         if (dist < 0.5) return;
 
+        // CHANGED: Use clientX/Y for viewport-relative coordinates
+        let mx = e.clientX;
+        let my = e.clientY;
+
         const prob = dist / SPARKLE_DISTANCE;
         let cum = 0;
-        let mx = e.pageX;
-        let my = e.pageY;
         const stepX = (dx * SPARKLE_DISTANCE * 2) / dist;
         const stepY = (dy * SPARKLE_DISTANCE * 2) / dist;
 
