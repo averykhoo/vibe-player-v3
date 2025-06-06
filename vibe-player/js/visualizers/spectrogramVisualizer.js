@@ -134,7 +134,6 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
 
         const endTime = performance.now();
         console.log(`SpectrogramVisualizer: Processing took ${((endTime - startTime)/1000).toFixed(2)}s.`);
-        updateProgressIndicator(0, audioBuffer.duration);
     }
 
     // --- Computation Helper Functions ---
