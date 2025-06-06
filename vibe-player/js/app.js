@@ -172,6 +172,7 @@ AudioApp = (function() {
         }, DEBOUNCE_HASH_UPDATE_MS);
 
         AudioApp.uiManager.init();
+        setupAppEventListeners(); // MOVED HERE
         initialHashSettings = parseSettingsFromHash(); // Changed const to assignment
 
         // Apply common settings BEFORE attempting to load URL or handling file URL error
@@ -226,7 +227,6 @@ AudioApp = (function() {
         AudioApp.waveformVisualizer.init();
         AudioApp.spectrogramVisualizer.init();
         // VAD modules don't have explicit init functions currently
-        setupAppEventListeners();
         console.log("AudioApp: Initialized. Waiting for file...");
     }
 
