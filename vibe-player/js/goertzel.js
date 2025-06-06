@@ -87,16 +87,10 @@ const GoertzelModule = (function() {
          * @param {number} targetFrequency - The specific frequency (in Hz) this filter will detect.
          * @param {number} sampleRate - The sample rate (in Hz) of the audio signal.
          * @param {number} N - The block size (number of samples) for one analysis window.
-         *                   Coefficients are calculated based on this N.
-         */
-         * @param {number} targetFrequency - The specific frequency (in Hz) this filter will detect.
-         * @param {number} sampleRate - The sample rate (in Hz) of the audio signal.
-         * @param {number} N - The block size (number of samples) for one analysis window.
          *                   Coefficients are calculated based on this N, and for the most
          *                   straightforward interpretation of getMagnitudeSquared(), exactly
          *                   N samples should be processed after a reset.
          */
-        constructor(targetFrequency, sampleRate, N) {
         constructor(targetFrequency, sampleRate, N) {
             if (N <= 0) {
                 throw new Error("GoertzelFilter: Block size N must be positive.");
