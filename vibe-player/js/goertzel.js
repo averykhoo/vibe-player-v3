@@ -8,12 +8,12 @@ const GoertzelModule = (function() {
     'use strict';
 
     // --- DTMF Constants ---
-    const DTMF_SAMPLE_RATE = 8000; // Standard sample rate for DTMF processing
-    const DTMF_BLOCK_SIZE = 205;   // Common block size for 8kHz sample rate
+    const DTMF_SAMPLE_RATE = 16000; // Standard sample rate for DTMF processing
+    const DTMF_BLOCK_SIZE = 410;   // Common block size for 16kHz sample rate (205 * 2)
     // Relative magnitude threshold: dominant tone must be X times stronger than others in its group
     const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0; // Example: Dominant tone must be 2x stronger
     // Absolute magnitude threshold: minimum energy for a tone to be considered
-    const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 1e4; // Needs tuning based on input levels and N
+    const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 4e4; // Needs tuning (adjusted for N change, e.g. 1e4 * (410/205) ideally power related so maybe (N2/N1)^2 or N2/N1)
 
     const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941]; // Hz
     const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633]; // Hz (including A,B,C,D for completeness)

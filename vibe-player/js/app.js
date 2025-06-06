@@ -718,19 +718,22 @@ AudioApp = (function() {
             // Placeholder for resampling:
             // const pcmData = await AudioApp.audioEngine.resampleToTargetRateMono(audioBuffer, targetSampleRate);
             // For now, let's try to use resampleTo16kMono and acknowledge the rate difference if any.
-            let pcmData;
-            if (targetSampleRate === 16000) { // If our DTMF rate is 16kHz
-                 pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
-            } else {
-                // IMPORTANT: This is a simplification. Proper resampling to DTMF_SAMPLE_RATE (e.g., 8000Hz) is required.
-                // If audioEngine cannot resample to arbitrary rates, this part needs enhancement.
-                // For now, we'll log a warning and proceed with 16kHz data if target is different,
-                // which will make DTMF detection less accurate or fail if constants in goertzel.js are for 8kHz.
-                console.warn(`App (DTMF): Attempting to use 16kHz resampled data for DTMF configured for ${targetSampleRate}Hz. Results may be inaccurate. Proper resampling is needed.`);
-                pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
-                 // Ideally, dtmfParser should be configured with the actual sample rate of pcmData.
-                 // Or pcmData should be exactly at dtmfParser.sampleRate.
-            }
+            // let pcmData; // Original declaration
+            // if (targetSampleRate === 16000) { // If our DTMF rate is 16kHz
+            //      pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+            // } else {
+            //     // IMPORTANT: This is a simplification. Proper resampling to DTMF_SAMPLE_RATE (e.g., 8000Hz) is required.
+            //     // If audioEngine cannot resample to arbitrary rates, this part needs enhancement.
+            //     // For now, we'll log a warning and proceed with 16kHz data if target is different,
+            //     // which will make DTMF detection less accurate or fail if constants in goertzel.js are for 8kHz.
+            //     // console.warn(`App (DTMF): Attempting to use 16kHz resampled data for DTMF configured for ${targetSampleRate}Hz. Results may be inaccurate. Proper resampling is needed.`); // REMOVED
+            //     pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+            //      // Ideally, dtmfParser should be configured with the actual sample rate of pcmData.
+            //      // Or pcmData should be exactly at dtmfParser.sampleRate.
+            // }
+
+            console.log(`App (DTMF): Using 16kHz resampled data for DTMF detection (Sample Rate: ${targetSampleRate}Hz).`);
+            const pcmData = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
 
             if (!pcmData || pcmData.length === 0) {
                 console.log("App (DTMF): No audio data after resampling for DTMF.");
