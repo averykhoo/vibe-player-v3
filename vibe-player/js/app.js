@@ -205,10 +205,15 @@ AudioApp = (function() {
                 // Other settings like speed, pitch, volume, VAD have already been applied above.
                 // Position will be handled in handleWorkletReady if it was in the hash.
             } else {
-                currentDisplayUrl = initialHashSettings.audioUrl;
-                // Dispatch event to load the URL. Other settings (speed, pitch, etc.)
-                // have been applied above. Position is handled in handleWorkletReady.
-                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', { detail: { url: initialHashSettings.audioUrl } }));
+                // This block is for http, https, including http://localhost
+                currentDisplayUrl = initialHashSettings.audioUrl; // Set internal variable
+
+                // Update UI immediately to show the URL from the hash
+                AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+                AudioApp.uiManager.setUrlInputStyle('default'); // Or 'modified' if preferred, to show it's from hash
+
+                console.log("App: Dispatching urlSelected for hash URL:", currentDisplayUrl);
+                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', { detail: { url: currentDisplayUrl } }));
             }
         }
 
@@ -338,6 +343,7 @@ AudioApp = (function() {
         currentUrlStyle = 'file';
         AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
         AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+        debouncedUpdateHashFromSettings(); // Update hash on file selected
         console.log("App: File selected -", file.name);
 
         // Reset state
@@ -445,6 +451,7 @@ AudioApp = (function() {
             AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
             // Ensure the input value is still the remote URL after potential background processing
             AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+            debouncedUpdateHashFromSettings(); // Update hash on successful URL load
 
         } catch (error) {
             console.error("App: Error fetching or processing URL -", error);
