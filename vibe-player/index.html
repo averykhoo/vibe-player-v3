@@ -106,6 +106,28 @@
 
 </section>
 
+
+<!-- === Visualizations Section === -->
+<section class="visualization">
+    <h3>Spectrogram <span id="spectrogramSpinner" class="spinner">(Computing...)</span></h3>
+    <div class="canvas-container">
+        <canvas id="spectrogramCanvas"></canvas>
+        <div id="spectrogramProgressBar" class="progress-bar">
+            <div id="spectrogramProgressIndicator" class="playback-position-indicator"></div>
+        </div>
+    </div>
+</section>
+
+<section class="visualization">
+    <h3>Waveform <small>(Speech in Yellow)</small></h3>
+    <div class="canvas-container">
+        <canvas id="waveformCanvas"></canvas>
+        <div id="waveformProgressBar" class="progress-bar">
+            <div id="waveformProgressIndicator" class="playback-position-indicator"></div>
+        </div>
+    </div>
+</section>
+
 <!-- === VAD Tuning Section === -->
 <section id="vad-tuning">
     <h2>Voice Activity Detection (Silero)</h2>
@@ -144,28 +166,6 @@
 
 </section>
 
-
-<!-- === Visualizations Section === -->
-<section class="visualization">
-    <h3>Waveform <small>(Speech in Yellow)</small></h3>
-    <div class="canvas-container">
-        <canvas id="waveformCanvas"></canvas>
-        <div id="waveformProgressBar" class="progress-bar">
-            <div id="waveformProgressIndicator" class="playback-position-indicator"></div>
-        </div>
-    </div>
-</section>
-
-<section class="visualization">
-    <h3>Spectrogram <span id="spectrogramSpinner" class="spinner">(Computing...)</span></h3>
-    <div class="canvas-container">
-        <canvas id="spectrogramCanvas"></canvas>
-        <div id="spectrogramProgressBar" class="progress-bar">
-            <div id="spectrogramProgressIndicator" class="playback-position-indicator"></div>
-        </div>
-    </div>
-</section>
-
 <!-- === Keyboard Shortcuts Section === -->
 <section id="keybinds">
     <h2>Keyboard Shortcuts</h2>
@@ -200,7 +200,8 @@
         No DTMF tones detected yet.
     </div>
     <br>
-    <div id="cpt-display-content" style="min-height: 50px; background-color: #f0f0f0; border: 1px solid #ccc; padding: 5px;">
+    <div id="cpt-display-content"
+         style="min-height: 50px; background-color: #f0f0f0; border: 1px solid #ccc; padding: 5px;">
         No ringtones detected yet.
     </div>
 </section>
