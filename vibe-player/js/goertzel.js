@@ -437,7 +437,7 @@ const GoertzelModule = (function() {
             if (this._updateCadenceState('Reorder', reorderToneActive)) {
                 // If Busy was also progressing, Reorder cadence is shorter, so it might confirm first.
                 // Add logic if specific priority is needed, though distinct cadences should differentiate.
-                return "Reorder Tone";
+                return "Fast Busy / Reorder Tone";
             }
 
             // Ringback Tone

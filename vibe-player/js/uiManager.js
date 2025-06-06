@@ -310,7 +310,7 @@ AudioApp.uiManager = (function() {
         } else if (typeof tones === 'string' && tones.length > 0 && tones.trim() !== "") { // Also check if string is not just whitespace
             dtmfDisplay.textContent = tones;
         } else if (Array.isArray(tones) && tones.length === 0) { // Empty array means no tones detected
-            dtmfDisplay.textContent = "None detected.";
+            dtmfDisplay.textContent = "No DTMF detected.";
         } else { // Fallback for null, undefined, or empty string after trim
             dtmfDisplay.textContent = "N/A";
         }
@@ -330,7 +330,7 @@ AudioApp.uiManager = (function() {
         if (Array.isArray(tones) && tones.length > 0) {
             cptDisplayElement.textContent = tones.join(', ');
         } else if (Array.isArray(tones) && tones.length === 0) {
-            cptDisplayElement.textContent = "None detected.";
+            cptDisplayElement.textContent = "No ringtone detected.";
         } else {
             // Handles null, undefined, or other non-array types if passed by mistake
             cptDisplayElement.textContent = "N/A";
