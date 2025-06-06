@@ -310,6 +310,23 @@ AudioApp.uiManager = (function() {
         }
     }
 
+    /** @public @returns {number} */
+    function getGainValue() {
+        return gainControl ? parseFloat(gainControl.value) : 1.0;
+    }
+
+    /** @public @param {number} value */
+    function setGainValue(value) {
+        if (gainControl) {
+            gainControl.value = String(value);
+        }
+        if (gainValueDisplay) {
+            // Ensure value is a number before calling toFixed
+            const numericValue = parseFloat(value);
+            gainValueDisplay.textContent = numericValue.toFixed(2) + 'x';
+        }
+    }
+
     /**
      * Sets the value of the audio URL input field.
      * @public
@@ -609,11 +626,13 @@ AudioApp.uiManager = (function() {
         getPitchValue: getPitchValue,
         getVadPositiveThresholdValue: getVadPositiveThresholdValue,
         getVadNegativeThresholdValue: getVadNegativeThresholdValue,
+        getGainValue: getGainValue, // Added
         // New Setters
         setPlaybackSpeedValue: setPlaybackSpeedValue,
         setPitchValue: setPitchValue,
         setVadPositiveThresholdValue: setVadPositiveThresholdValue,
-        setVadNegativeThresholdValue: setVadNegativeThresholdValue
+        setVadNegativeThresholdValue: setVadNegativeThresholdValue,
+        setGainValue: setGainValue // Added
     };
 })();
 // --- /vibe-player/js/uiManager.js ---

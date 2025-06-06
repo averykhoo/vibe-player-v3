@@ -398,19 +398,17 @@ small {
 
 /* --- Drop Zone Overlay Styles --- */
 #dropZoneOverlay {
-    display: none; /* Initially hidden, shown by JS */
+    display: none; /* This ensures it's hidden initially */
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.75); /* Semi-transparent black */
-    z-index: 10000; /* High z-index to be on top */
-    /* Flexbox for centering the message */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* Text styling for the overlay content */
+    background-color: rgba(0, 0, 0, 0.75);
+    z-index: 10000;
+    /* Flexbox for centering will be applied when JS changes display to 'flex' */
+    align-items: center; /* These are fine to keep for when it becomes flex */
+    justify-content: center; /* These are fine to keep for when it becomes flex */
     color: white;
     font-size: 1.5em;
     text-align: center;

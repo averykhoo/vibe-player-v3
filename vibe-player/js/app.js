@@ -13,10 +13,16 @@ var AudioApp = AudioApp || {}; // Create the main application namespace
 AudioApp = (function() {
     'use strict';
 
+    let initialHashSettings = {}; // Added for broader scope
+    let lastHashUpdateTime = 0; // Added for periodic hash updates
+
     const HASH_PARAM_SPEED = 's';
     const HASH_PARAM_PITCH = 'p';
     const HASH_PARAM_VAD_POSITIVE = 'vp';
     const HASH_PARAM_VAD_NEGATIVE = 'vn';
+    const HASH_PARAM_VOLUME = 'v';
+    const HASH_PARAM_AUDIO_URL = 'url';
+    const HASH_PARAM_POSITION = 't';
 
     // === Module Dependencies ===
     // Assuming other modules are loaded and attached to AudioApp
@@ -78,6 +84,15 @@ AudioApp = (function() {
         const vadNegative = params.get(HASH_PARAM_VAD_NEGATIVE);
         if (vadNegative !== null && !isNaN(parseFloat(vadNegative))) settings.vadNegative = parseFloat(vadNegative);
 
+        const volume = params.get(HASH_PARAM_VOLUME);
+        if (volume !== null && !isNaN(parseFloat(volume))) settings.volume = parseFloat(volume);
+
+        const audioUrl = params.get(HASH_PARAM_AUDIO_URL);
+        if (audioUrl !== null && audioUrl !== '') settings.audioUrl = audioUrl;
+
+        const position = params.get(HASH_PARAM_POSITION);
+        if (position !== null && !isNaN(parseFloat(position))) settings.position = parseFloat(position);
+
         console.log('App: Parsed settings from hash:', settings);
         return settings;
     }
@@ -105,6 +120,25 @@ AudioApp = (function() {
             // Default for VAD negative is 0.35
             if (vadNegative !== 0.35) params.set(HASH_PARAM_VAD_NEGATIVE, vadNegative.toFixed(2));
 
+            // Volume
+            const volume = AudioApp.uiManager.getGainValue();
+            if (volume !== 1.0) params.set(HASH_PARAM_VOLUME, volume.toFixed(2));
+
+            // Audio URL
+            try {
+                if (currentDisplayUrl !== null && currentDisplayUrl !== '') {
+                    params.set(HASH_PARAM_AUDIO_URL, currentDisplayUrl);
+                }
+            } catch (e) {
+                console.warn('App: Error processing currentDisplayUrl for hash update.', e);
+            }
+
+            // Position
+            const position = calculateEstimatedSourceTime();
+            if (position > 0) {
+                params.set(HASH_PARAM_POSITION, position.toFixed(2));
+            }
+
             newHash = params.toString();
 
             if (newHash) {
@@ -128,45 +162,56 @@ AudioApp = (function() {
         // Check for critical module dependencies (including Utils)
         if (!AudioApp.uiManager || !AudioApp.audioEngine || !AudioApp.waveformVisualizer || !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.Constants || !AudioApp.Utils) {
              console.error("AudioApp: CRITICAL - One or more required modules/constants/utils not found on AudioApp namespace! Check script loading order.");
-             // Optionally display a user-facing error
              AudioApp.uiManager?.setFileInfo("Initialization Error: Missing modules. Check console.");
              return;
         }
 
-        // Create debounced function instance using AudioApp.Utils directly (CORRECTED)
         debouncedSyncEngine = AudioApp.Utils.debounce(syncEngineToEstimatedTime, SYNC_DEBOUNCE_WAIT_MS);
-
-        // Initialize the debounced version of updateHashFromSettings
-        // Assumes AudioApp.Utils.debounce is available
         debouncedUpdateHashFromSettings = AudioApp.Utils.debounce(() => {
-            // console.log('App: Debounced call to updateHashFromSettings.'); // Optional: for debugging
             updateHashFromSettings();
         }, DEBOUNCE_HASH_UPDATE_MS);
 
-        // Initialize modules
         AudioApp.uiManager.init();
-        // Load settings from URL hash
-        const hashSettings = parseSettingsFromHash();
-        if (Object.keys(hashSettings).length > 0) {
-            console.log("App: Applying settings from URL hash on init.");
-            if (hashSettings.speed !== undefined) {
-                AudioApp.uiManager.setPlaybackSpeedValue(hashSettings.speed);
-                if (AudioApp.audioEngine) AudioApp.audioEngine.setSpeed(hashSettings.speed);
-            }
-            if (hashSettings.pitch !== undefined) {
-                AudioApp.uiManager.setPitchValue(hashSettings.pitch);
-                if (AudioApp.audioEngine) AudioApp.audioEngine.setPitch(hashSettings.pitch);
-            }
-            if (hashSettings.vadPositive !== undefined) {
-                AudioApp.uiManager.setVadPositiveThresholdValue(hashSettings.vadPositive);
-                // VAD analyzer update will be handled when a file is loaded and VAD runs,
-                // or if we explicitly trigger handleThresholdChange here after checking currentVadResults.
-                // For init, just setting the UI is usually enough, VAD will pick it up.
-            }
-            if (hashSettings.vadNegative !== undefined) {
-                AudioApp.uiManager.setVadNegativeThresholdValue(hashSettings.vadNegative);
+        initialHashSettings = parseSettingsFromHash(); // Changed const to assignment
+
+        // Apply common settings BEFORE attempting to load URL or handling file URL error
+        if (initialHashSettings.speed !== undefined) {
+            AudioApp.uiManager.setPlaybackSpeedValue(initialHashSettings.speed);
+            if (AudioApp.audioEngine) AudioApp.audioEngine.setSpeed(initialHashSettings.speed);
+        }
+        if (initialHashSettings.pitch !== undefined) {
+            AudioApp.uiManager.setPitchValue(initialHashSettings.pitch);
+            if (AudioApp.audioEngine) AudioApp.audioEngine.setPitch(initialHashSettings.pitch);
+        }
+        if (initialHashSettings.volume !== undefined) { // Added volume handling
+            AudioApp.uiManager.setGainValue(initialHashSettings.volume);
+            if (AudioApp.audioEngine) AudioApp.audioEngine.setGain(initialHashSettings.volume);
+        }
+        if (initialHashSettings.vadPositive !== undefined) {
+            AudioApp.uiManager.setVadPositiveThresholdValue(initialHashSettings.vadPositive);
+        }
+        if (initialHashSettings.vadNegative !== undefined) {
+            AudioApp.uiManager.setVadNegativeThresholdValue(initialHashSettings.vadNegative);
+        }
+
+        if (initialHashSettings.audioUrl) {
+            console.log("App: Applying audioUrl from hash:", initialHashSettings.audioUrl);
+            if (initialHashSettings.audioUrl.startsWith('file:///')) {
+                currentDisplayUrl = initialHashSettings.audioUrl;
+                currentUrlStyle = 'error';
+                AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+                AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+                AudioApp.uiManager.setUrlLoadingError("Local files cannot be automatically reloaded from the URL. Please re-select the file.");
+                // Other settings like speed, pitch, volume, VAD have already been applied above.
+                // Position will be handled in handleWorkletReady if it was in the hash.
+            } else {
+                currentDisplayUrl = initialHashSettings.audioUrl;
+                // Dispatch event to load the URL. Other settings (speed, pitch, etc.)
+                // have been applied above. Position is handled in handleWorkletReady.
+                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', { detail: { url: initialHashSettings.audioUrl } }));
             }
         }
+
         setTimeout(() => {
             if (AudioApp.uiManager && typeof AudioApp.uiManager.unfocusUrlInput === 'function') {
                 AudioApp.uiManager.unfocusUrlInput();
@@ -483,6 +528,18 @@ AudioApp = (function() {
             AudioApp.audioEngine.setPitch(AudioApp.uiManager.getPitchValue());
             console.log("App: Re-affirmed current UI speed/pitch to engine when worklet ready.");
         }
+
+        // Apply position from hash settings if available
+        if (initialHashSettings.position !== undefined && currentAudioBuffer) {
+            console.log(`App: Restoring position from hash: ${initialHashSettings.position.toFixed(3)}s`);
+            AudioApp.audioEngine.seek(initialHashSettings.position);
+            playbackStartSourceTime = initialHashSettings.position;
+            playbackStartTimeContext = null; // Not playing yet
+            updateUIWithTime(initialHashSettings.position);
+        }
+
+        // Clear initialHashSettings after applying them to prevent re-application
+        initialHashSettings = {};
     }
 
     /**
@@ -614,6 +671,7 @@ AudioApp = (function() {
 
             // Update UI immediately to the precise pause time
             updateUIWithTime(finalEstimatedTime);
+            debouncedUpdateHashFromSettings(); // Update hash on pause
         }
         // --- End Corrected Pause Logic ---
 
@@ -646,6 +704,7 @@ AudioApp = (function() {
              playbackStartTimeContext = null;
             updateUIWithTime(targetTime); // Manually update UI while paused
         }
+        debouncedUpdateHashFromSettings(); // Update hash on jump
     }
 
     /** @param {CustomEvent<{fraction: number}>} e @private */
@@ -665,6 +724,7 @@ AudioApp = (function() {
              playbackStartTimeContext = null;
             updateUIWithTime(targetTime); // Manually update UI while paused
         }
+        debouncedUpdateHashFromSettings(); // Update hash on seek
     }
     const handleSeekBarInput = handleSeek; // Alias remains
 
@@ -693,7 +753,7 @@ AudioApp = (function() {
     /** @param {CustomEvent<{pitch: number}>} e @private */
     function handlePitchChange(e) { AudioApp.audioEngine?.setPitch(e.detail.pitch); debouncedUpdateHashFromSettings(); }
     /** @param {CustomEvent<{gain: number}>} e @private */
-    function handleGainChange(e) { AudioApp.audioEngine?.setGain(e.detail.gain); }
+    function handleGainChange(e) { AudioApp.audioEngine?.setGain(e.detail.gain); debouncedUpdateHashFromSettings(); }
 
     /**
      * Performs the actual seek operation to synchronize the engine
@@ -779,6 +839,7 @@ AudioApp = (function() {
         }
         playbackNaturallyEnded = true;
         AudioApp.uiManager.setPlayButtonState(false);
+        debouncedUpdateHashFromSettings(); // Update hash on playback ended
     }
 
     /**
@@ -891,6 +952,13 @@ AudioApp = (function() {
         // Calculate time based on main thread context time and speed
         const estimatedTime = calculateEstimatedSourceTime();
         updateUIWithTime(estimatedTime);
+
+        // Periodically update hash
+        const currentTime = performance.now();
+        if (currentTime - lastHashUpdateTime > 3000) { // Update hash roughly every 3 seconds
+            debouncedUpdateHashFromSettings();
+            lastHashUpdateTime = currentTime;
+        }
 
         // Request the next frame
         rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime);
