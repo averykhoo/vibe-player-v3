@@ -142,8 +142,6 @@ AudioApp.audioEngine = (function() {
         currentDecodedBuffer = null;
         isPlaying = false;
         currentWorkletTime = 0.0;
-        currentPlaybackSpeed = 1.0; // Reset speed/pitch/formant on new file
-        currentPitchScale = 1.0;
         currentFormantScale = 1.0;
 
         try {

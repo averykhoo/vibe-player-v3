@@ -397,9 +397,7 @@ AudioApp.uiManager = (function() {
         if (jumpTimeInput) jumpTimeInput.value = "5";
 
         // Disable controls
-        enablePlaybackControls(false);
         enableSeekBar(false);
-        enableVadControls(false);
     }
 
     /** @public @param {string} text */
@@ -519,6 +517,70 @@ AudioApp.uiManager = (function() {
         }
     }
 
+    // --- New Getter and Setter Functions ---
+
+    /** @public @returns {number} */
+    function getPlaybackSpeedValue() {
+        return playbackSpeedControl ? parseFloat(playbackSpeedControl.value) : 1.0;
+    }
+
+    /** @public @param {number} value */
+    function setPlaybackSpeedValue(value) {
+        if (playbackSpeedControl) {
+            playbackSpeedControl.value = String(value);
+        }
+        if (speedValueDisplay) {
+            speedValueDisplay.textContent = parseFloat(value).toFixed(2) + 'x';
+        }
+    }
+
+    /** @public @returns {number} */
+    function getPitchValue() {
+        return pitchControl ? parseFloat(pitchControl.value) : 1.0;
+    }
+
+    /** @public @param {number} value */
+    function setPitchValue(value) {
+        if (pitchControl) {
+            pitchControl.value = String(value);
+        }
+        if (pitchValueDisplay) {
+            pitchValueDisplay.textContent = parseFloat(value).toFixed(2) + 'x';
+        }
+    }
+
+    /** @public @returns {number} */
+    function getVadPositiveThresholdValue() {
+        // Default based on HTML or common starting point if slider not found
+        return vadThresholdSlider ? parseFloat(vadThresholdSlider.value) : 0.5;
+    }
+
+    /** @public @param {number} value */
+    function setVadPositiveThresholdValue(value) {
+        if (vadThresholdSlider) {
+            vadThresholdSlider.value = String(value);
+        }
+        if (vadThresholdValueDisplay) {
+            vadThresholdValueDisplay.textContent = parseFloat(value).toFixed(2);
+        }
+    }
+
+    /** @public @returns {number} */
+    function getVadNegativeThresholdValue() {
+        // Default based on HTML or common starting point if slider not found
+        return vadNegativeThresholdSlider ? parseFloat(vadNegativeThresholdSlider.value) : 0.35;
+    }
+
+    /** @public @param {number} value */
+    function setVadNegativeThresholdValue(value) {
+        if (vadNegativeThresholdSlider) {
+            vadNegativeThresholdSlider.value = String(value);
+        }
+        if (vadNegativeThresholdValueDisplay) {
+            vadNegativeThresholdValueDisplay.textContent = parseFloat(value).toFixed(2);
+        }
+    }
+
     // --- Public Interface ---
     return {
         init: init,
@@ -541,7 +603,17 @@ AudioApp.uiManager = (function() {
         unfocusUrlInput: unfocusUrlInput,
         setAudioUrlInputValue: setAudioUrlInputValue,
         showDropZone: showDropZone,
-        hideDropZone: hideDropZone
+        hideDropZone: hideDropZone,
+        // New Getters
+        getPlaybackSpeedValue: getPlaybackSpeedValue,
+        getPitchValue: getPitchValue,
+        getVadPositiveThresholdValue: getVadPositiveThresholdValue,
+        getVadNegativeThresholdValue: getVadNegativeThresholdValue,
+        // New Setters
+        setPlaybackSpeedValue: setPlaybackSpeedValue,
+        setPitchValue: setPitchValue,
+        setVadPositiveThresholdValue: setVadPositiveThresholdValue,
+        setVadNegativeThresholdValue: setVadNegativeThresholdValue
     };
 })();
 // --- /vibe-player/js/uiManager.js ---

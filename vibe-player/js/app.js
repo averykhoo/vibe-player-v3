@@ -13,6 +13,11 @@ var AudioApp = AudioApp || {}; // Create the main application namespace
 AudioApp = (function() {
     'use strict';
 
+    const HASH_PARAM_SPEED = 's';
+    const HASH_PARAM_PITCH = 'p';
+    const HASH_PARAM_VAD_POSITIVE = 'vp';
+    const HASH_PARAM_VAD_NEGATIVE = 'vn';
+
     // === Module Dependencies ===
     // Assuming other modules are loaded and attached to AudioApp
     const Utils = AudioApp.Utils; // Now using Utils
@@ -50,6 +55,71 @@ AudioApp = (function() {
     let debouncedSyncEngine = null;
     const SYNC_DEBOUNCE_WAIT_MS = 300; // Wait 300ms after last speed change before syncing
 
+    const DEBOUNCE_HASH_UPDATE_MS = 500; // milliseconds
+    let debouncedUpdateHashFromSettings = null; // Will be initialized in init()
+
+    // --- URL Hash Settings Persistence ---
+    function parseSettingsFromHash() {
+        const settings = {};
+        const hash = window.location.hash.substring(1); // Remove #
+        if (!hash) return settings;
+
+        const params = new URLSearchParams(hash);
+
+        const speed = params.get(HASH_PARAM_SPEED);
+        if (speed !== null && !isNaN(parseFloat(speed))) settings.speed = parseFloat(speed);
+
+        const pitch = params.get(HASH_PARAM_PITCH);
+        if (pitch !== null && !isNaN(parseFloat(pitch))) settings.pitch = parseFloat(pitch);
+
+        const vadPositive = params.get(HASH_PARAM_VAD_POSITIVE);
+        if (vadPositive !== null && !isNaN(parseFloat(vadPositive))) settings.vadPositive = parseFloat(vadPositive);
+
+        const vadNegative = params.get(HASH_PARAM_VAD_NEGATIVE);
+        if (vadNegative !== null && !isNaN(parseFloat(vadNegative))) settings.vadNegative = parseFloat(vadNegative);
+
+        console.log('App: Parsed settings from hash:', settings);
+        return settings;
+    }
+
+    function updateHashFromSettings() {
+        if (!AudioApp.uiManager) return;
+
+        const params = new URLSearchParams();
+        let newHash = '';
+
+        try {
+            // Get current values from UI
+            const speed = AudioApp.uiManager.getPlaybackSpeedValue();
+            // Only add to hash if not default (1.0 for speed/pitch) to keep URL clean
+            if (speed !== 1.0) params.set(HASH_PARAM_SPEED, speed.toFixed(2));
+
+            const pitch = AudioApp.uiManager.getPitchValue();
+            if (pitch !== 1.0) params.set(HASH_PARAM_PITCH, pitch.toFixed(2));
+
+            const vadPositive = AudioApp.uiManager.getVadPositiveThresholdValue();
+            // Default for VAD positive is 0.5
+            if (vadPositive !== 0.5) params.set(HASH_PARAM_VAD_POSITIVE, vadPositive.toFixed(2));
+
+            const vadNegative = AudioApp.uiManager.getVadNegativeThresholdValue();
+            // Default for VAD negative is 0.35
+            if (vadNegative !== 0.35) params.set(HASH_PARAM_VAD_NEGATIVE, vadNegative.toFixed(2));
+
+            newHash = params.toString();
+
+            if (newHash) {
+                window.location.hash = newHash;
+            } else {
+                // If all settings are default, clear the hash.
+                // Use replaceState to avoid creating history entries for empty hash.
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+            // console.log('App: Updated hash from settings.'); // Commented out for debounced version
+        } catch (e) {
+            console.warn('App: Error updating hash from settings.', e);
+        }
+    }
+
     // --- Initialization ---
     /** @public */
     function init() {
@@ -66,8 +136,37 @@ AudioApp = (function() {
         // Create debounced function instance using AudioApp.Utils directly (CORRECTED)
         debouncedSyncEngine = AudioApp.Utils.debounce(syncEngineToEstimatedTime, SYNC_DEBOUNCE_WAIT_MS);
 
+        // Initialize the debounced version of updateHashFromSettings
+        // Assumes AudioApp.Utils.debounce is available
+        debouncedUpdateHashFromSettings = AudioApp.Utils.debounce(() => {
+            // console.log('App: Debounced call to updateHashFromSettings.'); // Optional: for debugging
+            updateHashFromSettings();
+        }, DEBOUNCE_HASH_UPDATE_MS);
+
         // Initialize modules
         AudioApp.uiManager.init();
+        // Load settings from URL hash
+        const hashSettings = parseSettingsFromHash();
+        if (Object.keys(hashSettings).length > 0) {
+            console.log("App: Applying settings from URL hash on init.");
+            if (hashSettings.speed !== undefined) {
+                AudioApp.uiManager.setPlaybackSpeedValue(hashSettings.speed);
+                if (AudioApp.audioEngine) AudioApp.audioEngine.setSpeed(hashSettings.speed);
+            }
+            if (hashSettings.pitch !== undefined) {
+                AudioApp.uiManager.setPitchValue(hashSettings.pitch);
+                if (AudioApp.audioEngine) AudioApp.audioEngine.setPitch(hashSettings.pitch);
+            }
+            if (hashSettings.vadPositive !== undefined) {
+                AudioApp.uiManager.setVadPositiveThresholdValue(hashSettings.vadPositive);
+                // VAD analyzer update will be handled when a file is loaded and VAD runs,
+                // or if we explicitly trigger handleThresholdChange here after checking currentVadResults.
+                // For init, just setting the UI is usually enough, VAD will pick it up.
+            }
+            if (hashSettings.vadNegative !== undefined) {
+                AudioApp.uiManager.setVadNegativeThresholdValue(hashSettings.vadNegative);
+            }
+        }
         setTimeout(() => {
             if (AudioApp.uiManager && typeof AudioApp.uiManager.unfocusUrlInput === 'function') {
                 AudioApp.uiManager.unfocusUrlInput();
@@ -334,6 +433,12 @@ AudioApp = (function() {
         AudioApp.waveformVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration); // Use specific visualizer
         AudioApp.spectrogramVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration); // Use specific visualizer
         playbackStartSourceTime = 0.0;
+        // Apply current UI settings (which should reflect hash or user changes) to the engine
+        if (AudioApp.audioEngine && AudioApp.uiManager) {
+            AudioApp.audioEngine.setSpeed(AudioApp.uiManager.getPlaybackSpeedValue());
+            AudioApp.audioEngine.setPitch(AudioApp.uiManager.getPitchValue());
+            console.log("App: Applied current UI speed/pitch to engine after audio loaded.");
+        }
 
         // Draw initial waveform (gray)
         console.log("App: Drawing initial waveform...");
@@ -369,6 +474,15 @@ AudioApp = (function() {
         // Spectrogram spinner is handled by spectrogramVisualizer
         AudioApp.uiManager.setFileInfo(`Ready: ${currentFile ? currentFile.name : 'Unknown File'}`);
         AudioApp.uiManager.unfocusUrlInput();
+        // Ensure settings are applied again in case VAD processing took time
+        // and loadAndApplySettings in handleAudioLoaded was based on old VAD values
+        // or if settings were changed while VAD was processing.
+        // Re-affirm engine speed/pitch
+        if (AudioApp.audioEngine && AudioApp.uiManager) {
+            AudioApp.audioEngine.setSpeed(AudioApp.uiManager.getPlaybackSpeedValue());
+            AudioApp.audioEngine.setPitch(AudioApp.uiManager.getPitchValue());
+            console.log("App: Re-affirmed current UI speed/pitch to engine when worklet ready.");
+        }
     }
 
     /**
@@ -426,6 +540,12 @@ AudioApp = (function() {
             AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
             AudioApp.uiManager.setSpeechRegionsText(speechRegions);
             AudioApp.uiManager.enableVadControls(true);
+            // Apply VAD settings from UI to the analyzer
+            if (AudioApp.vadAnalyzer && AudioApp.uiManager && currentVadResults) {
+                handleThresholdChange({ detail: { type: 'positive', value: AudioApp.uiManager.getVadPositiveThresholdValue() } });
+                handleThresholdChange({ detail: { type: 'negative', value: AudioApp.uiManager.getVadNegativeThresholdValue() } });
+                console.log("App: Applied current UI VAD thresholds to analyzer after VAD processing.");
+            }
             AudioApp.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions); // Use specific visualizer
             AudioApp.uiManager.updateVadProgress(100);
             vadSucceeded = true;
@@ -565,12 +685,13 @@ AudioApp = (function() {
         AudioApp.audioEngine?.setSpeed(e.detail.speed);
         // Trigger the debounced sync function (resets timer on each input)
         debouncedSyncEngine();
+        debouncedUpdateHashFromSettings();
     }
 
     // handleSpeedChangeEnd REMOVED (Logic moved to debouncedSyncEngine call)
 
     /** @param {CustomEvent<{pitch: number}>} e @private */
-    function handlePitchChange(e) { AudioApp.audioEngine?.setPitch(e.detail.pitch); }
+    function handlePitchChange(e) { AudioApp.audioEngine?.setPitch(e.detail.pitch); debouncedUpdateHashFromSettings(); }
     /** @param {CustomEvent<{gain: number}>} e @private */
     function handleGainChange(e) { AudioApp.audioEngine?.setGain(e.detail.gain); }
 
@@ -645,6 +766,7 @@ AudioApp = (function() {
         const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value); // Use VAD module
         AudioApp.uiManager.setSpeechRegionsText(newRegions);
         if(currentAudioBuffer) { AudioApp.waveformVisualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions); } // Use waveform visualizer
+        debouncedUpdateHashFromSettings();
     }
 
     /** @private */
