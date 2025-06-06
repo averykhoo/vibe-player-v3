@@ -104,4 +104,10 @@ This document outlines the principles and procedures for collaborating with an L
     *   **Context:** When generating or significantly updating a project's `README.md` file.
     *   **Action:** LLM **must** include a statement in the `README.md` (e.g., in a "Developer Notes" or "Contributing" section) advising that development involving LLM assistance should follow the rules outlined in `../CONTRIBUTING-LLM.md` (adjust the relative path from the README's location as needed) and instructing potential contributors/LLMs to request this file if it wasn't provided.
 
+### P7: Branch based coding
+
+1. **Always push your code to your branch as soon as you're done**
+    *   Nobody can see your local code
+    *   Trust the process
+
 <!-- /CONTRIBUTING-LLM.md -->
