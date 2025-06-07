@@ -183,6 +183,9 @@ const GoertzelModule = (function() {
      * @class DTMFParser
      * @memberof AudioApp
      * @description Parses DTMF tones from audio blocks using Goertzel filters.
+     * Note: This parser can be quite robust and may detect tones even if the provided
+     * audioBlock is somewhat shorter than the configured blockSize, provided enough
+     * characteristic signal is present.
      */
     class DTMFParser {
         /**

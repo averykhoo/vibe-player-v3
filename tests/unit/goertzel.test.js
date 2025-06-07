@@ -161,6 +161,8 @@ describe('AudioApp.DTMFParser', () => {
     expect(parser.processAudioBlock(toneSamples.slice(0, blockSize))).toBe('1');
 
     // Test with a smaller block - this will likely fail or give null as not enough data for filters
+    // Use a significantly shorter block (1/4 of configured) to ensure insufficient data for tone detection,
+    // as the parser can be robust to moderately shorter blocks.
     const shortBlock = toneSamples.slice(0, Math.floor(blockSize / 4));
     expect(parser.processAudioBlock(shortBlock)).toBeNull();
   });

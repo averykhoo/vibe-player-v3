@@ -38,11 +38,11 @@ jobs:
           if [ -f node_modules/playwright/cli.js ]; then echo "node_modules/playwright/cli.js exists"; else echo "node_modules/playwright/cli.js DOES NOT EXIST"; fi
           if [ -d node_modules/@playwright/test ]; then echo "node_modules/@playwright/test directory exists"; else echo "node_modules/@playwright/test DOES NOT EXIST"; fi
 
-      - name: Install Playwright Browsers and dependencies
-        run: npx playwright install --with-deps
-
       - name: Run unit tests
         run: npm run test:unit
+
+      - name: Install Playwright Browsers and dependencies
+        run: npx playwright install --with-deps
 
       - name: Start test server
         run: npm run serve-for-test &

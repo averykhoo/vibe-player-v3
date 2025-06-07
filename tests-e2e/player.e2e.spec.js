@@ -55,7 +55,7 @@ test.describe('Vibe Player End-to-End', () => {
     // Wait for time to advance - check that current time is not 0:00
     // This requires the audio to actually play and time to update.
     // We might need a small delay or a more robust way to check time advancement.
-    await page.waitForTimeout(500); // Wait for 0.5 second of playback
+    await page.waitForFunction(() => document.getElementById('timeDisplay').textContent?.startsWith('0:00') === false, null, { timeout: 5000 });
     const initialTime = await player.timeDisplay.textContent();
     expect(initialTime).not.toBe('0:00 / 0:00'); // Or more specific check if duration is known
     expect(initialTime?.startsWith('0:00')).toBe(false); // Current time should not be 0:00
@@ -94,7 +94,7 @@ test.describe('Vibe Player End-to-End', () => {
     // This also verifies duration is still displayed correctly
     expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
     expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
-    expect(player.playPauseButton).toHaveText('Pause'); // Should still be playing
+    await expect(player.playPauseButton).toHaveText('Pause', { timeout: 2000 }); // Should still be playing
   });
 
   test('should jump forward and backward', async ({ page }) => {
