@@ -233,13 +233,17 @@
 <!-- 6. player/audioEngine.js: Defines AudioApp.audioEngine. Uses Constants. Checked by app.js's init. -->
 <script src="js/player/audioEngine.js"></script>
 
-<!-- VAD Modules (Order within this group matters) -->
-<!-- 7. vad/sileroWrapper.js: Defines AudioApp.sileroWrapper. Checked by app.js's init. -->
-<script src="js/vad/sileroWrapper.js"></script>
-<!-- 8. vad/sileroProcessor.js: Defines AudioApp.sileroProcessor. Uses Wrapper, Constants, Utils. -->
-<script src="js/vad/sileroProcessor.js"></script>
-<!-- 9. vad/vadAnalyzer.js: Defines AudioApp.vadAnalyzer. Uses Processor, Constants. Checked by app.js's init. -->
-<script src="js/vad/vadAnalyzer.js"></script>
+    <!-- VAD Modules (Order within this group matters) -->
+    <!-- 7. Load the new strategy files FIRST. -->
+    <script src="js/vad/RemoteApiStrategy.js"></script>
+    <script src="js/vad/LocalWorkerStrategy.js"></script>
+
+    <!-- 8. THEN load the analyzer that uses them. -->
+    <script src="js/vad/vadAnalyzer.js"></script>
+
+    <!-- 9. The original VAD modules are now loaded inside the worker, so we can remove them from here. -->
+    <!-- REMOVE <script src="js/vad/sileroWrapper.js"></script> -->
+    <!-- REMOVE <script src="js/vad/sileroProcessor.js"></script> -->
 
 <!-- Visualizer Modules -->
 <!-- 10. visualizers/waveformVisualizer.js: Defines AudioApp.waveformVisualizer. Uses Constants, Utils. Checked by app.js's init. -->
