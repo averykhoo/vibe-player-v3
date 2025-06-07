@@ -598,58 +598,65 @@ AudioApp = (function() {
         initialHashSettings = {}; // Clear after use
     }
 
-    /**
-     * Runs VAD analysis in the background.
-     * @private
-     * @param {AudioBuffer} audioBuffer - The audio buffer to analyze.
-     * @returns {Promise<void>}
-     */
-     async function runVadInBackground(audioBuffer) {
-        if (!audioBuffer || !AudioApp.vadAnalyzer || !AudioApp.sileroWrapper || !AudioApp.audioEngine || !AudioApp.uiManager || !AudioApp.waveformVisualizer) {
-             console.error("App (VAD): Missing dependencies for VAD task.");
-             isVadProcessing = false; return;
-        }
-        if (isVadProcessing) { console.warn("App (VAD): Processing already running."); return; }
-        isVadProcessing = true;
-        /** @type {Float32Array|null} */ let pcm16k = null;
-
-        try {
-            if (!vadModelReady) {
-                vadModelReady = await AudioApp.sileroWrapper.create(AudioApp.Constants.VAD_SAMPLE_RATE);
-                if (!vadModelReady) throw new Error("Failed to create Silero VAD model.");
-            }
-            AudioApp.uiManager.showVadProgress(true); AudioApp.uiManager.updateVadProgress(0);
-            pcm16k = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
-            if (!pcm16k || pcm16k.length === 0) {
-                 AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)");
-                 AudioApp.uiManager.updateVadProgress(100); AudioApp.uiManager.enableVadControls(false);
+        /**
+         * Runs VAD analysis in the background. (REFACTORED)
+         * @private
+         * @param {AudioBuffer} audioBuffer - The audio buffer to analyze.
+         * @returns {Promise<void>}
+         */
+         async function runVadInBackground(audioBuffer) {
+            if (!audioBuffer || !AudioApp.vadAnalyzer || !AudioApp.audioEngine || !AudioApp.uiManager || !AudioApp.waveformVisualizer) {
+                 console.error("App (VAD): Missing dependencies for VAD task.");
                  isVadProcessing = false; return;
             }
-            /** @type {function({processedFrames: number, totalFrames: number}): void} */
-            const vadProgressCallback = (progress) => {
-                 if (!AudioApp.uiManager) return;
-                 const percentage = progress.totalFrames > 0 ? (progress.processedFrames / progress.totalFrames) * 100 : 0;
-                 AudioApp.uiManager.updateVadProgress(percentage);
-            };
-            currentVadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, { onProgress: vadProgressCallback });
-            const speechRegions = currentVadResults.regions || [];
-            AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
-            AudioApp.uiManager.setSpeechRegionsText(speechRegions);
-            AudioApp.uiManager.enableVadControls(true);
-            // Apply current UI VAD thresholds to the analyzer post-analysis
-            handleThresholdChange({ detail: { type: 'positive', value: AudioApp.uiManager.getVadPositiveThresholdValue() } });
-            handleThresholdChange({ detail: { type: 'negative', value: AudioApp.uiManager.getVadNegativeThresholdValue() } });
-            AudioApp.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions);
-            AudioApp.uiManager.updateVadProgress(100);
-        } catch (error) {
-            console.error("App (VAD): Error during VAD processing -", error);
-            AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${error?.message || 'Unknown error'}`);
-            AudioApp.uiManager.enableVadControls(false); AudioApp.uiManager.updateVadProgress(0);
-            currentVadResults = null;
-        } finally {
-            isVadProcessing = false;
+            if (isVadProcessing) { console.warn("App (VAD): Processing already running."); return; }
+
+            isVadProcessing = true;
+
+            try {
+                // 1. Initialize the VAD analyzer (this creates the worker).
+                AudioApp.vadAnalyzer.init();
+
+                // 2. Show progress bar and resample the audio.
+                AudioApp.uiManager.showVadProgress(true);
+                AudioApp.uiManager.updateVadProgress(0);
+                const pcm16k = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
+
+                if (!pcm16k || pcm16k.length === 0) {
+                     AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)");
+                     AudioApp.uiManager.updateVadProgress(100);
+                     isVadProcessing = false; return;
+                }
+
+                // 3. Define the progress callback and start analysis.
+                const vadProgressCallback = (progress) => {
+                     if (!AudioApp.uiManager) return;
+                     const percentage = progress.totalFrames > 0 ? (progress.processedFrames / progress.totalFrames) * 100 : 0;
+                     AudioApp.uiManager.updateVadProgress(percentage);
+                };
+
+                // 4. The `analyze` call now returns a promise with the final result.
+                const vadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, { onProgress: vadProgressCallback });
+                currentVadResults = vadResults; // Store the final results
+
+                // 5. Update the UI with the final results.
+                const speechRegions = currentVadResults.regions || [];
+                AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
+                AudioApp.uiManager.setSpeechRegionsText(speechRegions);
+                // The `handleThresholdChange` logic can be re-integrated later if needed,
+                // but for now this completes the core analysis.
+                AudioApp.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions);
+                AudioApp.uiManager.updateVadProgress(100);
+
+            } catch (error) {
+                console.error("App (VAD): Error during VAD processing -", error);
+                AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${error?.message || 'Unknown error'}`);
+                AudioApp.uiManager.updateVadProgress(0);
+                currentVadResults = null;
+            } finally {
+                isVadProcessing = false;
+            }
         }
-    }
 
     /**
      * Resamples audio and processes it for DTMF and Call Progress Tones.
