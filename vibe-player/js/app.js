@@ -510,37 +510,54 @@ AudioApp = (function() {
     }
 
 
-    /**
-     * Handles audio decoding completion. Stores buffer, draws initial visuals, starts background VAD.
+        /**
+     * Handles audio decoding completion.
+     * This is the central point for kicking off all parallel analysis tasks.
      * @private
      * @param {CustomEvent<{audioBuffer: AudioBuffer}>} e - The event object.
      */
     async function handleAudioLoaded(e) {
         currentAudioBuffer = e.detail.audioBuffer;
-        console.log(`App: Audio decoded (${currentAudioBuffer.duration.toFixed(2)}s)`);
+        console.log(`App: Audio decoded (${currentAudioBuffer.duration.toFixed(2)}s). Starting parallel analysis.`);
 
+        // --- 1. Basic UI Setup (Instant) ---
         AudioApp.uiManager.updateTimeDisplay(0, currentAudioBuffer.duration);
         AudioApp.uiManager.updateSeekBar(0);
         AudioApp.waveformVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration);
         AudioApp.spectrogramVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration);
         playbackStartSourceTime = 0.0;
 
-        // Apply current UI settings (which might reflect hash or user changes) to the engine
+        // Apply current UI settings to the engine
         if (AudioApp.audioEngine && AudioApp.uiManager) {
             AudioApp.audioEngine.setSpeed(AudioApp.uiManager.getPlaybackSpeedValue());
             AudioApp.audioEngine.setPitch(AudioApp.uiManager.getPitchValue());
-            AudioApp.audioEngine.setGain(AudioApp.uiManager.getGainValue()); // Also apply gain
+            AudioApp.audioEngine.setGain(AudioApp.uiManager.getGainValue());
         }
 
+        // --- 2. Draw Waveform First (Fastest visual feedback) ---
+        // We can await this as it's quick and provides the first visual confirmation.
         await AudioApp.waveformVisualizer.computeAndDrawWaveform(currentAudioBuffer, []);
-        await AudioApp.spectrogramVisualizer.computeAndDrawSpectrogram(currentAudioBuffer); // Handles its own spinner
 
-        AudioApp.uiManager.setFileInfo(`Processing VAD: ${currentFile?.name || currentDisplayUrl || 'Loaded Audio'}`);
-        runVadInBackground(currentAudioBuffer); // Non-blocking
+        // --- 3. Launch All Long-Running Tasks Concurrently ---
+        // We DO NOT await these calls. We want them to start immediately and run in the background.
+        // The main thread is now free to handle user input.
 
+        console.log("App: Kicking off Spectrogram, VAD, and Tone analysis in parallel.");
+
+        // A. Start Spectrogram Worker
+        AudioApp.spectrogramVisualizer.computeAndDrawSpectrogram(currentAudioBuffer);
+
+        // B. Start VAD Analysis
+        runVadInBackground(currentAudioBuffer);
+
+        // C. Start Tone Detection Analysis
         if (dtmfParser || cptParser) {
-            processAudioForTones(currentAudioBuffer); // Non-blocking
+            processAudioForTones(currentAudioBuffer);
         }
+
+        // --- 4. Update File Info ---
+        // The UI now shows "Processing..." while the background tasks run.
+        AudioApp.uiManager.setFileInfo(`Processing Analyses: ${currentFile?.name || currentDisplayUrl || 'Loaded Audio'}`);
 
         // If a local file was loaded, ensure its "file:///" URL is displayed correctly.
         if (currentFile && currentDisplayUrl && currentUrlStyle === 'file') {
