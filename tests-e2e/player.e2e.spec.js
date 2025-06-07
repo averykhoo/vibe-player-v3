@@ -27,6 +27,6 @@ test.describe('Vibe Player End-to-End', () => {
   test('should correctly detect and display Call Progress Tones', async () => {
     await player.loadAudioFile('Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3');
     await player.expectControlsToBeEnabled();
-    await expect(player.cptDisplay).toContainText('Busy Signal', { timeout: 15000 });
+    await expect(player.cptDisplay).toContainText('Fast Busy / Reorder Tone', { timeout: 15000 });
   });
 });
