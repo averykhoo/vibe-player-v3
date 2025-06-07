@@ -31,6 +31,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: List Playwright directory contents
+        run: |
+          ls -la node_modules/.bin/
+          ls -la node_modules/@playwright/
+          if [ -f node_modules/playwright/cli.js ]; then echo "node_modules/playwright/cli.js exists"; else echo "node_modules/playwright/cli.js DOES NOT EXIST"; fi
+          if [ -d node_modules/@playwright/test ]; then echo "node_modules/@playwright/test directory exists"; else echo "node_modules/@playwright/test DOES NOT EXIST"; fi
+
       - name: Install Playwright Browsers and dependencies
         run: npx playwright install --with-deps
 
@@ -46,7 +53,7 @@ jobs:
       - name: Run E2E tests
         run: |
           sleep 5 # Wait for server to start
-          npm run test:e2e
+          ./node_modules/.bin/playwright test # Changed command
 
       - name: Upload Playwright report
         if: always() # Run this step even if previous steps fail, to get reports
