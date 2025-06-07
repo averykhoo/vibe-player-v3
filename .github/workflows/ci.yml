@@ -1,0 +1,57 @@
+name: Vibe Player CI
+
+on:
+  push:
+    branches: [ "**" ] # Run on pushes to all branches
+  pull_request:
+    branches: [ "main", "master" ] # Run on PRs targeting main or master
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers and dependencies
+        run: npx playwright install --with-deps
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Start test server
+        run: npm run serve-for-test &
+        # Add a small delay to ensure server starts before tests
+        # Note: In a real-world scenario, a more robust wait strategy might be needed
+        # e.g., using wait-on or a custom script to check if the server is responsive.
+
+      - name: Run E2E tests
+        run: |
+          sleep 5 # Wait for server to start
+          npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always() # Run this step even if previous steps fail, to get reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
