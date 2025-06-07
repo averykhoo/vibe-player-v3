@@ -197,5 +197,5 @@ AudioApp.sileroWrapper = (function(globalOrt) {
         isAvailable: isAvailable // Changed to a function
     };
 
-})(window.ort);
+})(self.ort);
 // --- /vibe-player/js/vad/sileroWrapper.js --- // Updated Path

@@ -7,12 +7,22 @@ var AudioApp = AudioApp || {};
 AudioApp.LocalWorkerStrategy = class {
     constructor() {
         this.worker = null;
+        // Add a "ready" promise that resolves when the worker confirms model is loaded
+        this.readyPromise = new Promise((resolve, reject) => {
+            this._resolveReady = resolve;
+            this._rejectReady = reject;
+        });
     }
 
     init() {
         // Terminate any old worker to ensure a clean state.
         if (this.worker) {
             this.worker.terminate();
+            // Re-create the promise for the new worker instance
+            this.readyPromise = new Promise((resolve, reject) => {
+                this._resolveReady = resolve;
+                this._rejectReady = reject;
+            });
         }
 
         // --- Step 1: Define the entire worker's code as a single string ---
@@ -44,6 +54,7 @@ AudioApp.LocalWorkerStrategy = class {
                         if (modelReady) {
                             self.postMessage({ type: 'model_ready' });
                         } else {
+                            self.postMessage({ type: 'error', payload: { message: "Failed to create Silero VAD model in worker." } });
                             throw new Error("Failed to create Silero VAD model in worker.");
                         }
                     } catch (e) {
@@ -73,6 +84,24 @@ AudioApp.LocalWorkerStrategy = class {
         const blob = new Blob([workerScript], { type: 'application/javascript' });
         this.worker = new Worker(URL.createObjectURL(blob));
 
+        // Set up the onmessage handler for the worker HERE, specifically to listen for the 'model_ready' signal
+        this.worker.onmessage = (event) => {
+            const { type, payload } = event.data;
+            if (type === 'model_ready') {
+                console.log("LocalWorkerStrategy: Worker reported model is ready.");
+                this._resolveReady(true); // Resolve the ready promise
+            } else if (type === 'error') {
+                 // If an error happens during initialization, reject the ready promise
+                 this._rejectReady(new Error(payload.message));
+            }
+            // After initialization, subsequent messages will be handled by the promise in `analyze`
+        };
+
+        this.worker.onerror = (err) => {
+            this._rejectReady(new Error(`VAD Worker initialization error: ${err.message}`));
+        };
+
+
         // --- Step 3: Immediately send it the correct paths for initialization ---
         // The main thread knows where everything is relative to index.html.
         const pageUrl = new URL('.', window.location.href);
@@ -87,12 +116,16 @@ AudioApp.LocalWorkerStrategy = class {
     }
 
     async analyze(pcmData, options) {
+        // First, AWAIT the ready promise. This ensures init is complete.
+        await this.readyPromise;
+
         if (!this.worker) {
             return Promise.reject(new Error("VAD worker has not been initialized."));
         }
 
         // This returns a Promise that will resolve or reject when the worker sends back a final message.
         return new Promise((resolve, reject) => {
+            // Set the message handler for this specific analysis task
             this.worker.onmessage = (event) => {
                 const { type, payload } = event.data;
                 if (type === 'result') {
