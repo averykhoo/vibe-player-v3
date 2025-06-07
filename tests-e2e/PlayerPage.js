@@ -13,6 +13,10 @@ exports.PlayerPage = class PlayerPage {
     this.cptDisplay = page.locator('#cpt-display-content');
     this.chooseFileButton = page.locator('#chooseFileButton');
     this.timeDisplay = page.locator('#timeDisplay');
+    this.seekBar = page.locator('#seekBar');
+    this.jumpBack = page.locator('#jumpBack');
+    this.jumpForward = page.locator('#jumpForward');
+    this.jumpTimeInput = page.locator('#jumpTime');
   }
 
   // --- Define User Actions Here ---
@@ -36,5 +40,9 @@ exports.PlayerPage = class PlayerPage {
 
   async expectFileName(fileName) {
     await expect(this.fileNameDisplay).toHaveText(fileName);
+  }
+
+  async seekToMiddle() {
+    await this.seekBar.click(); // Playwright clicks in the center by default
   }
 };

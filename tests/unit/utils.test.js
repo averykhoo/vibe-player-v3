@@ -17,3 +17,12 @@ describe('AudioApp.DTMFParser', () => {
     expect(typeof parser.processAudioBlock).toBe('function');
   });
 });
+
+describe('AudioApp.Constants', () => {
+  test('should exist and contain essential constants', () => {
+    expect(AudioApp.Constants).toBeDefined();
+    expect(AudioApp.Constants.PROCESSOR_SCRIPT_URL).toBe('js/player/rubberbandProcessor.js');
+    expect(AudioApp.Constants.VAD_SAMPLE_RATE).toBe(16000);
+    expect(AudioApp.Constants.WAVEFORM_COLOR_SPEECH).toBe('#FDE725');
+  });
+});
