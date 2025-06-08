@@ -18,7 +18,7 @@ AudioApp.sileroProcessor = (function(wrapper) {
      * @private
      * @type {AudioApp.Constants} Reference to the Constants module.
      */
-    const Constants = AudioApp.Constants;
+    // const Constants = AudioApp.Constants; // Constants is now a global class
     /**
      * @private
      * @type {AudioApp.Utils} Reference to the Utils module.
@@ -37,10 +37,10 @@ AudioApp.sileroProcessor = (function(wrapper) {
         };
         return nonFunctionalInterface;
     }
-    if (!Constants) {
-         console.error("SileroProcessor: CRITICAL - AudioApp.Constants not available!");
+    if (typeof Constants === 'undefined') {
+         console.error("SileroProcessor: CRITICAL - Constants class not available!");
          /** @type {SileroProcessorPublicInterface} */
-         const errorInterface = { analyzeAudio: () => Promise.reject(new Error("Constants not available")), recalculateSpeechRegions: () => [] };
+         const errorInterface = { analyzeAudio: () => Promise.reject(new Error("Constants class not available")), recalculateSpeechRegions: () => [] };
          return errorInterface;
     }
      if (!Utils) {
@@ -97,7 +97,7 @@ AudioApp.sileroProcessor = (function(wrapper) {
             }
         }
 
-        const frameSamples = options.frameSamples || Constants.DEFAULT_VAD_FRAME_SAMPLES;
+        const frameSamples = options.frameSamples || Constants.VAD.DEFAULT_FRAME_SAMPLES;
         const positiveThreshold = options.positiveSpeechThreshold !== undefined ? options.positiveSpeechThreshold : 0.5;
         const negativeThreshold = options.negativeSpeechThreshold !== undefined ? options.negativeSpeechThreshold : Math.max(0.01, positiveThreshold - 0.15);
         const redemptionFrames = options.redemptionFrames !== undefined ? options.redemptionFrames : 7;
@@ -110,7 +110,7 @@ AudioApp.sileroProcessor = (function(wrapper) {
              /** @type {VadResult} */
              const emptyResult = {
                  regions: [], probabilities: new Float32Array(),
-                 frameSamples: frameSamples, sampleRate: Constants.VAD_SAMPLE_RATE,
+                 frameSamples: frameSamples, sampleRate: Constants.VAD.SAMPLE_RATE,
                  initialPositiveThreshold: positiveThreshold, initialNegativeThreshold: negativeThreshold,
                  redemptionFrames: redemptionFrames
              };
@@ -136,10 +136,10 @@ AudioApp.sileroProcessor = (function(wrapper) {
                 allProbabilities.push(probability);
                 processedFrames++;
 
-                if (processedFrames === 1 || processedFrames === totalFrames || (processedFrames % Constants.VAD_PROGRESS_REPORT_INTERVAL === 0)) {
+                if (processedFrames === 1 || processedFrames === totalFrames || (processedFrames % Constants.VAD.PROGRESS_REPORT_INTERVAL === 0)) {
                      onProgress({ processedFrames, totalFrames });
                 }
-                if (processedFrames % Constants.VAD_YIELD_INTERVAL === 0 && processedFrames < totalFrames) {
+                if (processedFrames % Constants.VAD.YIELD_INTERVAL === 0 && processedFrames < totalFrames) {
                      await Utils.yieldToMainThread();
                 }
             }
@@ -154,7 +154,7 @@ AudioApp.sileroProcessor = (function(wrapper) {
 
         const probabilities = new Float32Array(allProbabilities);
         const initialRegions = recalculateSpeechRegions(probabilities, {
-            frameSamples, sampleRate: Constants.VAD_SAMPLE_RATE,
+            frameSamples, sampleRate: Constants.VAD.SAMPLE_RATE,
             positiveSpeechThreshold: positiveThreshold, negativeSpeechThreshold: negativeThreshold,
             redemptionFrames
         });
@@ -163,7 +163,7 @@ AudioApp.sileroProcessor = (function(wrapper) {
         /** @type {VadResult} */
         const result = {
             regions: initialRegions, probabilities, frameSamples,
-            sampleRate: Constants.VAD_SAMPLE_RATE,
+            sampleRate: Constants.VAD.SAMPLE_RATE,
             initialPositiveThreshold: positiveThreshold, initialNegativeThreshold: negativeThreshold,
             redemptionFrames
         };
@@ -190,8 +190,8 @@ AudioApp.sileroProcessor = (function(wrapper) {
     function recalculateSpeechRegions(probabilities, options) {
         const { frameSamples, sampleRate, positiveSpeechThreshold, negativeSpeechThreshold, redemptionFrames } = options;
 
-         if (sampleRate !== Constants.VAD_SAMPLE_RATE) {
-            console.warn(`SileroProcessor: Recalculating speech regions with sample rate ${sampleRate}, which differs from the expected VAD constant ${Constants.VAD_SAMPLE_RATE}. This may lead to incorrect timing if frameSamples is based on the original rate.`);
+         if (sampleRate !== Constants.VAD.SAMPLE_RATE) {
+            console.warn(`SileroProcessor: Recalculating speech regions with sample rate ${sampleRate}, which differs from the expected VAD constant ${Constants.VAD.SAMPLE_RATE}. This may lead to incorrect timing if frameSamples is based on the original rate.`);
         }
         if (!probabilities || probabilities.length === 0 || !frameSamples || !sampleRate ||
             positiveSpeechThreshold === undefined || negativeSpeechThreshold === undefined || redemptionFrames === undefined) {

@@ -97,15 +97,15 @@ AudioApp.audioEngine = (function() {
     async function preFetchWorkletResources() {
         console.log("AudioEngine: Pre-fetching WASM resources...");
         try {
-            if (!AudioApp.Constants) {
-                throw new Error("AudioApp.Constants module not found. Cannot fetch resources.");
+            if (typeof Constants === 'undefined') {
+                throw new Error("Constants class not found. Cannot fetch resources.");
             }
-            const wasmResponse = await fetch(AudioApp.Constants.WASM_BINARY_URL);
-            if (!wasmResponse.ok) throw new Error(`Fetch failed (${wasmResponse.status}) for WASM binary: ${AudioApp.Constants.WASM_BINARY_URL}`);
+            const wasmResponse = await fetch(Constants.AudioEngine.WASM_BINARY_URL);
+            if (!wasmResponse.ok) throw new Error(`Fetch failed (${wasmResponse.status}) for WASM binary: ${Constants.AudioEngine.WASM_BINARY_URL}`);
             wasmBinary = await wasmResponse.arrayBuffer();
 
-            const loaderResponse = await fetch(AudioApp.Constants.LOADER_SCRIPT_URL);
-            if (!loaderResponse.ok) throw new Error(`Fetch failed (${loaderResponse.status}) for Loader script: ${AudioApp.Constants.LOADER_SCRIPT_URL}`);
+            const loaderResponse = await fetch(Constants.AudioEngine.LOADER_SCRIPT_URL);
+            if (!loaderResponse.ok) throw new Error(`Fetch failed (${loaderResponse.status}) for Loader script: ${Constants.AudioEngine.LOADER_SCRIPT_URL}`);
             loaderScriptText = await loaderResponse.text();
             console.log("AudioEngine: WASM resources fetched successfully.");
         } catch (fetchError) {
@@ -165,8 +165,8 @@ AudioApp.audioEngine = (function() {
      * @returns {Promise<Float32Array>} A promise resolving to the resampled PCM data.
      */
     function convertAudioBufferTo16kHzMonoFloat32(audioBuffer) {
-        if (!AudioApp.Constants) return Promise.reject(new Error("AudioApp.Constants not found for resampling."));
-        const targetSampleRate = AudioApp.Constants.VAD_SAMPLE_RATE;
+        if (typeof Constants === 'undefined') return Promise.reject(new Error("Constants class not found for resampling."));
+        const targetSampleRate = Constants.VAD.SAMPLE_RATE;
         const targetLength = Math.ceil(audioBuffer.duration * targetSampleRate);
 
         if (!targetLength || targetLength <= 0) return Promise.resolve(new Float32Array(0));
@@ -243,13 +243,13 @@ AudioApp.audioEngine = (function() {
      * @throws {Error} If prerequisites are missing or setup fails.
      */
     async function setupAndStartWorklet(decodedBuffer) {
-        if (!audioCtx || !decodedBuffer || !wasmBinary || !loaderScriptText || !gainNode || !AudioApp.Constants) {
+        if (!audioCtx || !decodedBuffer || !wasmBinary || !loaderScriptText || !gainNode || typeof Constants === 'undefined') {
             throw new Error("Cannot setup worklet - prerequisites missing.");
         }
         await cleanupCurrentWorklet(); // Ensure previous instance is cleared
 
         try {
-            await audioCtx.audioWorklet.addModule(AudioApp.Constants.PROCESSOR_SCRIPT_URL);
+            await audioCtx.audioWorklet.addModule(Constants.AudioEngine.PROCESSOR_SCRIPT_URL);
             const wasmBinaryTransfer = wasmBinary.slice(0); // Create a transferable copy
             const processorOpts = {
                 sampleRate: audioCtx.sampleRate,
@@ -258,7 +258,7 @@ AudioApp.audioEngine = (function() {
                 loaderScriptText: loaderScriptText
             };
 
-            workletNode = new AudioWorkletNode(audioCtx, AudioApp.Constants.PROCESSOR_NAME, {
+            workletNode = new AudioWorkletNode(audioCtx, Constants.AudioEngine.PROCESSOR_NAME, {
                 numberOfInputs: 0, numberOfOutputs: 1,
                 outputChannelCount: [decodedBuffer.numberOfChannels],
                 processorOptions: processorOpts

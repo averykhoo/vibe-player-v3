@@ -219,36 +219,39 @@
 <!-- Core App Namespace & Foundational Modules -->
 <!-- 1. app.js: Establishes AudioApp IIFE structure. Other files attach to this. -->
 <script src="js/app.js"></script>
-<!-- 2. constants.js: Defines AudioApp.Constants. Needed by many modules. -->
-<script src="js/constants.js"></script>
-<!-- 3. utils.js: Defines AudioApp.Utils. Needed by many modules. -->
+<!-- 2. utils.js: Defines AudioApp.Utils. Needed by many modules. -->
 <script src="js/utils.js"></script>
+<!-- 3. state/constants.js: Defines the new Constants class. Needed by many modules. -->
+    <script src="js/state/constants.js"></script>
+<!-- 4. state/appState.js: Defines the AppState class for managing application state. -->
+    <script src="js/state/appState.js"></script>
 
 <!-- App Feature Modules & Components -->
 <!-- These may depend on AudioApp, Constants, Utils -->
-<!-- 4. goertzel.js: Defines AudioApp.GoertzelFilter & AudioApp.DTMFParser. May use Constants. DTMFParser is checked by app.js's init. -->
+<!-- 5. goertzel.js: Defines AudioApp.GoertzelFilter & AudioApp.DTMFParser. May use Constants. DTMFParser is checked by app.js's init. -->
+<!-- 5. goertzel.js: Defines AudioApp.GoertzelFilter & AudioApp.DTMFParser. May use Constants. DTMFParser is checked by app.js's init. -->
 <script src="js/goertzel.js"></script>
-<!-- 5. uiManager.js: Defines AudioApp.uiManager. Uses Utils. Checked by app.js's init. -->
+<!-- 6. uiManager.js: Defines AudioApp.uiManager. Uses Utils. Checked by app.js's init. -->
 <script src="js/uiManager.js"></script>
-<!-- 6. player/audioEngine.js: Defines AudioApp.audioEngine. Uses Constants. Checked by app.js's init. -->
+<!-- 7. player/audioEngine.js: Defines AudioApp.audioEngine. Uses Constants. Checked by app.js's init. -->
 <script src="js/player/audioEngine.js"></script>
 
     <!-- VAD Modules (Order within this group matters) -->
-    <!-- 7. Load the new strategy files FIRST. -->
+    <!-- 8. Load the new strategy files FIRST. -->
     <script src="js/vad/RemoteApiStrategy.js"></script>
     <script src="js/vad/LocalWorkerStrategy.js"></script>
 
-    <!-- 8. THEN load the analyzer that uses them. -->
+    <!-- 9. THEN load the analyzer that uses them. -->
     <script src="js/vad/vadAnalyzer.js"></script>
 
-    <!-- 9. The original VAD modules are now loaded inside the worker, so we can remove them from here. -->
+    <!-- 10. The original VAD modules are now loaded inside the worker, so we can remove them from here. -->
     <!-- REMOVE <script src="js/vad/sileroWrapper.js"></script> -->
     <!-- REMOVE <script src="js/vad/sileroProcessor.js"></script> -->
 
 <!-- Visualizer Modules -->
-<!-- 10. visualizers/waveformVisualizer.js: Defines AudioApp.waveformVisualizer. Uses Constants, Utils. Checked by app.js's init. -->
+<!-- 11. visualizers/waveformVisualizer.js: Defines AudioApp.waveformVisualizer. Uses Constants, Utils. Checked by app.js's init. -->
 <script src="js/visualizers/waveformVisualizer.js"></script>
-<!-- 11. visualizers/spectrogramVisualizer.js: Defines AudioApp.spectrogramVisualizer. Uses FFT, Constants, Utils. Checked by app.js's init. -->
+<!-- 12. visualizers/spectrogramVisualizer.js: Defines AudioApp.spectrogramVisualizer. Uses FFT, Constants, Utils. Checked by app.js's init. -->
 <script src="js/visualizers/spectrogramVisualizer.js"></script>
 <!-- <script src="js/visualizers/visualizer.js"></script> --> <!-- REMOVED OLD COMBINED VISUALIZER -->
 

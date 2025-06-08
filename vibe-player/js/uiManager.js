@@ -503,7 +503,7 @@ AudioApp.uiManager = (function() {
         updateTimeDisplay(0, 0);
         updateSeekBar(0);
         setSpeechRegionsText("None");
-        updateVadDisplay(0.5, 0.35, true); // Reset VAD sliders and mark as N/A
+        updateVadDisplay(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD, Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD, true); // Reset VAD sliders and mark as N/A
         showVadProgress(false);
         updateVadProgress(0);
         if (dtmfDisplay) dtmfDisplay.textContent = "N/A";
@@ -602,8 +602,8 @@ AudioApp.uiManager = (function() {
         if (isNA) {
             if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = "N/A";
             if (vadNegativeThresholdValueDisplay) vadNegativeThresholdValueDisplay.textContent = "N/A";
-            if (vadThresholdSlider) vadThresholdSlider.value = "0.5"; // Default value
-            if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.value = "0.35"; // Default value
+            if (vadThresholdSlider) vadThresholdSlider.value = String(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD); // Default value
+            if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.value = String(Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD); // Default value
         } else {
             if (vadThresholdSlider) vadThresholdSlider.value = String(positive);
             if (vadThresholdValueDisplay) vadThresholdValueDisplay.textContent = positive.toFixed(2);
@@ -642,7 +642,7 @@ AudioApp.uiManager = (function() {
         if (vadThresholdSlider) vadThresholdSlider.disabled = !enable;
         if (vadNegativeThresholdSlider) vadNegativeThresholdSlider.disabled = !enable;
         if (!enable) {
-            updateVadDisplay(0.5, 0.35, true); // Reset display values to N/A and sliders to default if disabling
+            updateVadDisplay(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD, Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD, true); // Reset display values to N/A and sliders to default if disabling
         }
     }
 
@@ -752,7 +752,7 @@ AudioApp.uiManager = (function() {
      * @returns {number} The current VAD positive threshold.
      */
     function getVadPositiveThresholdValue() {
-        return vadThresholdSlider ? parseFloat(vadThresholdSlider.value) : 0.5; // Default based on HTML
+        return vadThresholdSlider ? parseFloat(vadThresholdSlider.value) : Constants.VAD.DEFAULT_POSITIVE_THRESHOLD; // Default based on HTML
     }
 
     /**
@@ -775,7 +775,7 @@ AudioApp.uiManager = (function() {
      * @returns {number} The current VAD negative threshold.
      */
     function getVadNegativeThresholdValue() {
-        return vadNegativeThresholdSlider ? parseFloat(vadNegativeThresholdSlider.value) : 0.35; // Default based on HTML
+        return vadNegativeThresholdSlider ? parseFloat(vadNegativeThresholdSlider.value) : Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD; // Default based on HTML
     }
 
     /**

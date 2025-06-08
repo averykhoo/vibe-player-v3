@@ -4,7 +4,7 @@
 // 1. Import Dependencies
 try {
     // These paths are relative to this worker file's location.
-    importScripts('../../lib/fft.js', '../constants.js', '../utils.js');
+    importScripts('../../lib/fft.js', '../state/constants.js', '../utils.js'); // Updated path for constants
 } catch (e) {
     console.error("Spectrogram Worker: Failed to import scripts.", e);
     self.postMessage({ type: 'error', detail: 'Worker script import failed.' });
@@ -13,8 +13,13 @@ try {
 // 2. Listen for Messages
 self.onmessage = (event) => {
     // Verify that dependencies loaded correctly before proceeding.
-    if (typeof self.FFT === 'undefined' || typeof self.AudioApp === 'undefined') {
-        self.postMessage({ type: 'error', detail: 'Worker dependencies are missing.' });
+    // Check for global Constants class directly on self
+    if (typeof self.FFT === 'undefined' || typeof self.Constants === 'undefined' || typeof self.AudioApp?.Utils === 'undefined') {
+        let missing = [];
+        if (typeof self.FFT === 'undefined') missing.push('FFT');
+        if (typeof self.Constants === 'undefined') missing.push('Constants');
+        if (typeof self.AudioApp?.Utils === 'undefined') missing.push('AudioApp.Utils');
+        self.postMessage({ type: 'error', detail: `Worker dependencies are missing: ${missing.join(', ')}.` });
         return;
     }
 
@@ -25,12 +30,12 @@ self.onmessage = (event) => {
             const { channelData, sampleRate, duration, fftSize, targetSlices } = payload;
 
             // Access the globally loaded scripts via the 'self' scope.
-            const Constants = self.AudioApp.Constants;
-            const Utils = self.AudioApp.Utils;
+            // Constants is now directly on self.
+            const Utils = self.AudioApp.Utils; // Utils is still under AudioApp namespace for now
             const FFT = self.FFT;
 
             // 3. Run Computation
-            const spectrogramData = computeSpectrogram(channelData, sampleRate, duration, fftSize, targetSlices, FFT, Constants, Utils);
+            const spectrogramData = computeSpectrogram(channelData, sampleRate, duration, fftSize, targetSlices, FFT, self.Constants, Utils);
 
             // 4. Post Result Back (with Transferable objects for performance)
             if (spectrogramData) {
@@ -47,13 +52,13 @@ self.onmessage = (event) => {
 };
 
 // THIS FUNCTION IS A DIRECT COPY FROM THE ORIGINAL spectrogramVisualizer.js
-function computeSpectrogram(channelData, sampleRate, duration, actualFftSize, targetSlices, FFTConstructor, Constants, Utils) {
+function computeSpectrogram(channelData, sampleRate, duration, actualFftSize, targetSlices, FFTConstructor, ConstantsGlobal, Utils) {
     if (!channelData) { console.error("Worker: Invalid channelData."); return null; }
     const totalSamples = channelData.length;
-    const hopDivisor = duration < Constants.SPEC_SHORT_FILE_HOP_THRESHOLD_S ? Constants.SPEC_SHORT_HOP_DIVISOR : Constants.SPEC_NORMAL_HOP_DIVISOR;
+    const hopDivisor = duration < ConstantsGlobal.Visualizer.SPEC_SHORT_FILE_HOP_THRESHOLD_S ? ConstantsGlobal.Visualizer.SPEC_SHORT_HOP_DIVISOR : ConstantsGlobal.Visualizer.SPEC_NORMAL_HOP_DIVISOR;
     const hopSize = Math.max(1, Math.floor(actualFftSize / hopDivisor));
-    const padding = Constants.SPEC_CENTER_WINDOWS ? Math.floor(actualFftSize / 2) : 0;
-    const rawSliceCount = Constants.SPEC_CENTER_WINDOWS ? Math.ceil(totalSamples / hopSize)
+    const padding = ConstantsGlobal.Visualizer.SPEC_CENTER_WINDOWS ? Math.floor(actualFftSize / 2) : 0;
+    const rawSliceCount = ConstantsGlobal.Visualizer.SPEC_CENTER_WINDOWS ? Math.ceil(totalSamples / hopSize)
         : (totalSamples < actualFftSize ? 0 : Math.floor((totalSamples - actualFftSize) / hopSize) + 1);
 
     if (rawSliceCount <= 0) { console.warn("Worker: Not enough audio samples for FFT."); return []; }

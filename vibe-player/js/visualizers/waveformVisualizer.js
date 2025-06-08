@@ -16,7 +16,7 @@ AudioApp.waveformVisualizer = (function() {
      * @private
      * @type {AudioApp.Constants} Reference to the Constants module.
      */
-    const Constants = AudioApp.Constants;
+    // const Constants = AudioApp.Constants; // Constants is now a global class
     /**
      * @private
      * @type {AudioApp.Utils} Reference to the Utils module (not directly used in this snippet but assumed available if needed).
@@ -192,7 +192,7 @@ AudioApp.waveformVisualizer = (function() {
      * @param {number} width - The current width of the canvas.
      */
      function drawWaveform(waveformData, canvas, ctx, speechRegions, audioDuration, width) {
-        if (!ctx || !Constants) { console.error("WaveformVisualizer: Missing context or Constants for drawing."); return; }
+        if (!ctx || typeof Constants === 'undefined') { console.error("WaveformVisualizer: Missing context or Constants for drawing."); return; }
 
         const { height } = canvas;
         ctx.clearRect(0, 0, width, height);
@@ -206,10 +206,10 @@ AudioApp.waveformVisualizer = (function() {
 
         const dataLen = waveformData.length;
         const halfHeight = height / 2;
-        const scale = halfHeight * Constants.WAVEFORM_HEIGHT_SCALE;
+        const scale = halfHeight * Constants.Visualizer.WAVEFORM_HEIGHT_SCALE;
         const pixelsPerSecond = width / audioDuration;
         const initialDraw = !speechRegions || speechRegions.length === 0;
-        const defaultColor = initialDraw ? Constants.WAVEFORM_COLOR_LOADING : Constants.WAVEFORM_COLOR_DEFAULT;
+        const defaultColor = initialDraw ? Constants.Visualizer.WAVEFORM_COLOR_LOADING : Constants.Visualizer.WAVEFORM_COLOR_DEFAULT;
         const speechPixelRegions = initialDraw ? [] : (speechRegions || []).map(r => ({
             startPx: r.start * pixelsPerSecond, endPx: r.end * pixelsPerSecond
         }));
@@ -237,7 +237,7 @@ AudioApp.waveformVisualizer = (function() {
 
         // Draw speech highlights
         if (!initialDraw) {
-            ctx.fillStyle = Constants.WAVEFORM_COLOR_SPEECH;
+            ctx.fillStyle = Constants.Visualizer.WAVEFORM_COLOR_SPEECH;
             ctx.beginPath();
             for (let i = 0; i < dataLen; i++) {
                 const x = i * pixelWidth;

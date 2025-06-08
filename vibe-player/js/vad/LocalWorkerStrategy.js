@@ -38,7 +38,7 @@ AudioApp.LocalWorkerStrategy = class {
                     try {
                         // The 'basePath' ensures all these scripts load correctly.
                         importScripts(
-                            basePath + 'js/constants.js',
+                            basePath + 'js/state/constants.js', // Updated path
                             basePath + 'js/utils.js',
                             basePath + 'lib/ort.min.js', // Load ONNX runtime inside worker
                             basePath + 'js/vad/sileroWrapper.js',
@@ -49,7 +49,7 @@ AudioApp.LocalWorkerStrategy = class {
                         self.ort.env.wasm.wasmPaths = onnxWasmPath;
 
                         // Now, initialize the VAD model using the correct path.
-                        const modelReady = await AudioApp.sileroWrapper.create(AudioApp.Constants.VAD_SAMPLE_RATE, modelPath);
+                        const modelReady = await AudioApp.sileroWrapper.create(Constants.VAD.SAMPLE_RATE, modelPath);
 
                         if (modelReady) {
                             self.postMessage({ type: 'model_ready' });

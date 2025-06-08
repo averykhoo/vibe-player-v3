@@ -43,19 +43,16 @@ var AudioApp = AudioApp || {};
 AudioApp = (function () {
     'use strict';
 
+    // Instantiate AppState and expose it on the AudioApp namespace
+    const appState = new AppState();
+    AudioApp.state = appState;
+
     /** @type {HashSettings} Stores settings parsed from the URL hash. */
     let initialHashSettings = {};
     /** @type {number} Timestamp of the last URL hash update. */
     let lastHashUpdateTime = 0;
 
-    // Constants for URL hash parameters
-    /** @const @private @type {string} */ const HASH_PARAM_SPEED = 's';
-    /** @const @private @type {string} */ const HASH_PARAM_PITCH = 'p';
-    /** @const @private @type {string} */ const HASH_PARAM_VAD_POSITIVE = 'vp';
-    /** @const @private @type {string} */ const HASH_PARAM_VAD_NEGATIVE = 'vn';
-    /** @const @private @type {string} */ const HASH_PARAM_VOLUME = 'v';
-    /** @const @private @type {string} */ const HASH_PARAM_AUDIO_URL = 'url';
-    /** @const @private @type {string} */ const HASH_PARAM_POSITION = 't';
+    // Constants for URL hash parameters are now sourced from Constants.URLHashKeys
 
     /**
      * @private
@@ -64,141 +61,86 @@ AudioApp = (function () {
     const Utils = AudioApp.Utils;
 
     // --- Application State ---
-    /** @type {AudioBuffer|null} The currently loaded and decoded audio buffer. */
-    let currentAudioBuffer = null;
-    /** @type {string|null} The URL to display in the input field (can be a remote URL or a "file:///" local path). */
-    let currentDisplayUrl = null;
-    /** @type {'default'|'success'|'error'|'file'|'modified'} The style to apply to the URL input field. */
-    let currentUrlStyle = 'default';
-    /** @type {VadResult|null} Results from the VAD analysis. */
-    let currentVadResults = null;
-    /** @type {File|null} The currently loaded audio file object (if loaded from disk or drag-and-drop). */
-    let currentFile = null;
-    /** @type {boolean} Flag indicating if the Silero VAD model is loaded and ready. */
-    let vadModelReady = false;
-    /** @type {boolean} Flag indicating if the AudioWorklet processor is loaded and ready for playback commands. */
-    let workletPlaybackReady = false;
-    /** @type {boolean} Flag indicating if the background VAD task is currently running. */
-    let isVadProcessing = false;
+    // Most local state variables are now managed by AudioApp.state (AppState instance)
+    // e.g., currentAudioBuffer -> AudioApp.state.runtime.currentAudioBuffer
+    //       isActuallyPlaying  -> AudioApp.state.status.isActuallyPlaying
+
     /** @type {number} Counter for drag enter/leave events to manage drop zone visibility. */
-    let dragCounter = 0;
+    let dragCounter = 0; // This remains local as it's purely a UI interaction detail
     /** @type {AudioApp.DTMFParser|null} The DTMF parser instance. */
     let dtmfParser = null;
     /** @type {AudioApp.CallProgressToneParser|null} The Call Progress Tone parser instance. */
     let cptParser = null;
 
     // --- Main Thread Playback Time State ---
-    /** @type {number|null} AudioContext time (in seconds) when playback/seek started. Null if paused. */
-    let playbackStartTimeContext = null;
-    /** @type {number} Source time (in seconds within the audioBuffer) when playback/seek started. */
-    let playbackStartSourceTime = 0.0;
-    /** @type {boolean} Tracks if the audio engine is confirmed to be in a playing state. */
-    let isActuallyPlaying = false;
+    // playbackStartTimeContext, playbackStartSourceTime, isActuallyPlaying, currentSpeedForUpdate, playbackNaturallyEnded
+    // are now primarily managed in AppState.status and AppState.runtime.
+
     /** @type {number|null} Handle for the requestAnimationFrame UI update loop. Null if not running. */
-    let rAFUpdateHandle = null;
-    /** @type {number} Current playback speed factor used for UI time estimation. */
-    let currentSpeedForUpdate = 1.0;
-    /** @type {boolean} Flag indicating if playback ended naturally (reached end of audio). */
-    let playbackNaturallyEnded = false;
+    let rAFUpdateHandle = null; // Remains local for managing the rAF loop itself.
 
     // --- Debounced Functions ---
     /** @type {Function|null} Debounced function for synchronizing the audio engine after speed changes. */
     let debouncedSyncEngine = null;
-    /** @const @private @type {number} Debounce wait time in milliseconds for engine sync. */
-    const SYNC_DEBOUNCE_WAIT_MS = 300;
+    // SYNC_DEBOUNCE_WAIT_MS is now Constants.UI.SYNC_DEBOUNCE_WAIT_MS
 
-    /** @const @private @type {number} Debounce wait time in milliseconds for URL hash updates. */
-    const DEBOUNCE_HASH_UPDATE_MS = 500;
+    // DEBOUNCE_HASH_UPDATE_MS is now Constants.UI.DEBOUNCE_HASH_UPDATE_MS
     /** @type {Function|null} Debounced function for updating the URL hash from current settings. */
-    let debouncedUpdateHashFromSettings = null;
+    let debouncedUpdateUrlHash = null; // Renamed from debouncedUpdateHashFromSettings
 
     /**
-     * Parses application settings from the URL hash.
+     * Parses application settings from the URL hash and updates AppState.
      * @private
-     * @returns {HashSettings} An object containing the parsed settings.
      */
-    function parseSettingsFromHash() {
-        /** @type {HashSettings} */
-        const settings = {};
+    function parseSettingsFromHashAndUpdateState() {
         const hash = window.location.hash.substring(1);
-        if (!hash) return settings;
+        if (!hash) return;
 
         const params = new URLSearchParams(hash);
 
-        const speed = params.get(HASH_PARAM_SPEED);
-        if (speed !== null && !isNaN(parseFloat(speed))) settings.speed = parseFloat(speed);
+        const speedStr = params.get(Constants.URLHashKeys.SPEED);
+        if (speedStr !== null) AudioApp.state.updateParam('speed', parseFloat(speedStr));
 
-        const pitch = params.get(HASH_PARAM_PITCH);
-        if (pitch !== null && !isNaN(parseFloat(pitch))) settings.pitch = parseFloat(pitch);
+        const pitchStr = params.get(Constants.URLHashKeys.PITCH);
+        if (pitchStr !== null) AudioApp.state.updateParam('pitch', parseFloat(pitchStr));
 
-        const vadPositive = params.get(HASH_PARAM_VAD_POSITIVE);
-        if (vadPositive !== null && !isNaN(parseFloat(vadPositive))) settings.vadPositive = parseFloat(vadPositive);
+        const vadPositiveStr = params.get(Constants.URLHashKeys.VAD_POSITIVE);
+        if (vadPositiveStr !== null) AudioApp.state.updateParam('vadPositive', parseFloat(vadPositiveStr));
 
-        const vadNegative = params.get(HASH_PARAM_VAD_NEGATIVE);
-        if (vadNegative !== null && !isNaN(parseFloat(vadNegative))) settings.vadNegative = parseFloat(vadNegative);
+        const vadNegativeStr = params.get(Constants.URLHashKeys.VAD_NEGATIVE);
+        if (vadNegativeStr !== null) AudioApp.state.updateParam('vadNegative', parseFloat(vadNegativeStr));
 
-        const volume = params.get(HASH_PARAM_VOLUME);
-        if (volume !== null && !isNaN(parseFloat(volume))) settings.volume = parseFloat(volume);
+        const gainStr = params.get(Constants.URLHashKeys.GAIN); // Note: 'volume' from old hash becomes 'gain'
+        if (gainStr !== null) AudioApp.state.updateParam('gain', parseFloat(gainStr));
 
-        const audioUrl = params.get(HASH_PARAM_AUDIO_URL);
-        if (audioUrl !== null && audioUrl !== '') settings.audioUrl = audioUrl;
+        const audioUrl = params.get(Constants.URLHashKeys.AUDIO_URL);
+        if (audioUrl !== null) AudioApp.state.updateParam('audioUrl', audioUrl);
 
-        const position = params.get(HASH_PARAM_POSITION);
-        if (position !== null && !isNaN(parseFloat(position))) settings.position = parseFloat(position);
-
-        console.log('App: Parsed settings from hash:', settings);
-        return settings;
+        const timeStr = params.get(Constants.URLHashKeys.TIME);
+        if (timeStr !== null) {
+            // This time will be applied when the worklet is ready and audio loaded
+            initialHashSettings.position = parseFloat(timeStr);
+        }
+        console.log('App: Parsed initial settings from hash and updated AppState.');
     }
+
 
     /**
-     * Updates the URL hash based on the current application settings.
+     * Generates a URL hash string from the current AppState and playback position.
      * @private
      */
-    function updateHashFromSettings() {
-        if (!AudioApp.uiManager) return;
+    function updateUrlHashFromState() {
+        if (!AudioApp.state || !AudioApp.audioEngine) return;
 
-        const params = new URLSearchParams();
-        let newHash = '';
+        const newHash = AudioApp.state.serialize(AudioApp.audioEngine.getCurrentTime().currentTime);
 
-        try {
-            const speed = AudioApp.uiManager.getPlaybackSpeedValue();
-            if (speed !== 1.0) params.set(HASH_PARAM_SPEED, speed.toFixed(2));
-
-            const pitch = AudioApp.uiManager.getPitchValue();
-            if (pitch !== 1.0) params.set(HASH_PARAM_PITCH, pitch.toFixed(2));
-
-            const vadPositive = AudioApp.uiManager.getVadPositiveThresholdValue();
-            if (vadPositive !== 0.5) params.set(HASH_PARAM_VAD_POSITIVE, vadPositive.toFixed(2));
-
-            const vadNegative = AudioApp.uiManager.getVadNegativeThresholdValue();
-            if (vadNegative !== 0.35) params.set(HASH_PARAM_VAD_NEGATIVE, vadNegative.toFixed(2));
-
-            const volume = AudioApp.uiManager.getGainValue();
-            if (volume !== 1.0) params.set(HASH_PARAM_VOLUME, volume.toFixed(2));
-
-            if (currentDisplayUrl !== null && currentDisplayUrl !== '') {
-                params.set(HASH_PARAM_AUDIO_URL, currentDisplayUrl);
-            }
-
-            const position = calculateEstimatedSourceTime();
-            if (position > 0) { // Save position if it's greater than 0
-                params.set(HASH_PARAM_POSITION, position.toFixed(2));
-            }
-
-            newHash = params.toString();
-
-            if (newHash) {
-                // Using replaceState to avoid flooding browser history during playback.
-                // For more persistent hash updates (e.g., on pause or explicit share),
-                // window.location.hash might be preferred.
-                history.replaceState(null, '', `#${newHash}`);
-            } else {
-                history.replaceState(null, '', window.location.pathname + window.location.search);
-            }
-        } catch (e) {
-            console.warn('App: Error updating hash from settings.', e);
+        if (newHash) {
+            history.replaceState(null, '', `#${newHash}`);
+        } else {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
         }
     }
+
 
     /**
      * Initializes the main application.
@@ -210,40 +152,47 @@ AudioApp = (function () {
         console.log("AudioApp: Initializing...");
 
         if (!AudioApp.uiManager || !AudioApp.audioEngine || !AudioApp.waveformVisualizer ||
-            !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer ||
-            !AudioApp.Constants || !AudioApp.Utils || !AudioApp.DTMFParser || !AudioApp.CallProgressToneParser) {
+            !AudioApp.spectrogramVisualizer || !AudioApp.vadAnalyzer || /* !AudioApp.Constants || */ // Constants is now global
+            !AudioApp.Utils || !AudioApp.DTMFParser || !AudioApp.CallProgressToneParser || typeof Constants === 'undefined') {
             console.error("AudioApp: CRITICAL - One or more required modules not found! Check script loading order.");
             AudioApp.uiManager?.setFileInfo("Initialization Error: Missing modules. Check console.");
             return;
         }
 
-        debouncedSyncEngine = AudioApp.Utils.debounce(syncEngineToEstimatedTime, SYNC_DEBOUNCE_WAIT_MS);
-        debouncedUpdateHashFromSettings = AudioApp.Utils.debounce(updateHashFromSettings, DEBOUNCE_HASH_UPDATE_MS);
+        debouncedSyncEngine = AudioApp.Utils.debounce(syncEngineToEstimatedTime, Constants.UI.SYNC_DEBOUNCE_WAIT_MS);
+        debouncedUpdateUrlHash = AudioApp.Utils.debounce(updateUrlHashFromState, Constants.UI.DEBOUNCE_HASH_UPDATE_MS);
 
-        AudioApp.uiManager.init();
-        setupAppEventListeners();
-        initialHashSettings = parseSettingsFromHash();
+        AudioApp.uiManager.init(); // Initializes UI elements and their default states
 
-        // Apply settings from hash before loading audio
-        if (initialHashSettings.speed !== undefined) AudioApp.uiManager.setPlaybackSpeedValue(initialHashSettings.speed);
-        if (initialHashSettings.pitch !== undefined) AudioApp.uiManager.setPitchValue(initialHashSettings.pitch);
-        if (initialHashSettings.volume !== undefined) AudioApp.uiManager.setGainValue(initialHashSettings.volume);
-        if (initialHashSettings.vadPositive !== undefined) AudioApp.uiManager.setVadPositiveThresholdValue(initialHashSettings.vadPositive);
-        if (initialHashSettings.vadNegative !== undefined) AudioApp.uiManager.setVadNegativeThresholdValue(initialHashSettings.vadNegative);
-        // Engine speed/pitch/gain will be set after audio is loaded or worklet is ready.
+        // Parse hash and update AppState. This might trigger UI updates if AppState is already connected to UI.
+        initialHashSettings = {}; // Reset before parsing
+        parseSettingsFromHashAndUpdateState();
 
-        if (initialHashSettings.audioUrl) {
-            console.log("App: Applying audioUrl from hash:", initialHashSettings.audioUrl);
-            currentDisplayUrl = initialHashSettings.audioUrl; // Store it
-            AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
+        // Apply AppState params to UI elements that were not set by hash
+        // This ensures UI reflects AppState's defaults if no hash overrides were present.
+        AudioApp.uiManager.setPlaybackSpeedValue(AudioApp.state.params.speed);
+        AudioApp.uiManager.setPitchValue(AudioApp.state.params.pitch);
+        AudioApp.uiManager.setGainValue(AudioApp.state.params.gain);
+        AudioApp.uiManager.setVadPositiveThresholdValue(AudioApp.state.params.vadPositive);
+        AudioApp.uiManager.setVadNegativeThresholdValue(AudioApp.state.params.vadNegative);
 
-            if (initialHashSettings.audioUrl.startsWith('file:///')) {
-                currentUrlStyle = 'error'; // Cannot auto-reload local files
-                AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+        setupAppEventListeners(); // Setup listeners that might depend on initial state being set
+
+        // Handle audioUrl from AppState (which might have been populated by hash)
+        const initialAudioUrl = AudioApp.state.params.audioUrl;
+        if (initialAudioUrl) {
+            console.log("App: Applying audioUrl from AppState (potentially from hash):", initialAudioUrl);
+            AudioApp.uiManager.setAudioUrlInputValue(initialAudioUrl);
+
+            if (initialAudioUrl.startsWith('file:///')) {
+                AudioApp.state.updateStatus('urlInputStyle', 'error');
+                AudioApp.uiManager.setUrlInputStyle(AudioApp.state.status.urlInputStyle);
                 AudioApp.uiManager.setUrlLoadingError("Local files cannot be automatically reloaded from the URL. Please re-select the file.");
             } else {
-                AudioApp.uiManager.setUrlInputStyle('modified'); // Indicate it's from hash, about to load
-                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', {detail: {url: currentDisplayUrl}}));
+                AudioApp.state.updateStatus('urlInputStyle', 'modified');
+                AudioApp.uiManager.setUrlInputStyle(AudioApp.state.status.urlInputStyle);
+                // Trigger loading of the URL
+                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', {detail: {url: initialAudioUrl}}));
             }
         }
 
@@ -253,7 +202,7 @@ AudioApp = (function () {
 
         AudioApp.audioEngine.init();
         AudioApp.waveformVisualizer.init();
-        AudioApp.spectrogramVisualizer.init(() => currentAudioBuffer);
+        AudioApp.spectrogramVisualizer.init(() => AudioApp.state.runtime.currentAudioBuffer);
 
         if (AudioApp.DTMFParser) dtmfParser = new AudioApp.DTMFParser();
         if (AudioApp.CallProgressToneParser) cptParser = new AudioApp.CallProgressToneParser();
@@ -380,18 +329,21 @@ AudioApp = (function () {
         const file = e.detail.file;
         if (!file) return;
 
-        const previousDisplayUrl = currentDisplayUrl;
-        const newDisplayUrl = 'file:///' + file.name; // For display purposes
+        const newDisplayUrl = 'file:///' + file.name;
+        const previousDisplayUrl = AudioApp.state.params.audioUrl;
 
-        currentFile = file;
-        currentDisplayUrl = newDisplayUrl;
-        currentUrlStyle = 'file';
+        AudioApp.state.updateRuntime('currentFile', file);
+        AudioApp.state.updateParam('audioUrl', newDisplayUrl);
+        AudioApp.state.updateStatus('urlInputStyle', 'file');
+        AudioApp.uiManager.setAudioUrlInputValue(newDisplayUrl); // Keep UI in sync
+        AudioApp.uiManager.setUrlInputStyle('file');
+
 
         console.log("App: File selected -", file.name);
         resetAudioStateAndUI(file.name, newDisplayUrl !== previousDisplayUrl);
 
         try {
-            await AudioApp.audioEngine.loadAndProcessFile(file);
+            await AudioApp.audioEngine.loadAndProcessFile(file); // audioEngine will get currentFile from AppState if needed
         } catch (error) {
             console.error("App: Error initiating file processing -", error);
             AudioApp.uiManager.setFileInfo(`Error loading: ${error?.message || 'Unknown error'}`);
@@ -409,68 +361,72 @@ AudioApp = (function () {
      */
     async function handleUrlSelected(e) {
         const newUrlFromEvent = e.detail.url;
-        const previousDisplayUrl = currentDisplayUrl;
+        const previousDisplayUrl = AudioApp.state.params.audioUrl;
 
-        currentDisplayUrl = newUrlFromEvent;
-        currentUrlStyle = 'default'; // Initial style while loading
+        AudioApp.state.updateParam('audioUrl', newUrlFromEvent);
+        AudioApp.state.updateStatus('urlInputStyle', 'default');
+        AudioApp.uiManager.setUrlInputStyle('default');
 
-        if (!currentDisplayUrl) {
+
+        if (!newUrlFromEvent) {
             console.warn("App: URL selected event received, but URL is empty.");
             AudioApp.uiManager.setAudioUrlInputValue("");
+            AudioApp.state.updateStatus('urlInputStyle', 'error');
             AudioApp.uiManager.setUrlInputStyle('error');
-            AudioApp.uiManager.setFileInfo("Error: No URL provided.");
+            AudioApp.state.updateStatus('fileInfoMessage', "Error: No URL provided.");
+            // uiManager will pick up fileInfoMessage via subscription or direct call if needed
             return;
         }
-        console.log("App: URL selected -", currentDisplayUrl);
-        AudioApp.uiManager.setUrlLoadingError("");
+        console.log("App: URL selected -", newUrlFromEvent);
+        AudioApp.state.updateStatus('urlLoadingErrorMessage', "");
+        // uiManager will pick up urlLoadingErrorMessage
 
         let filename = "loaded_from_url";
         try {
-            const urlPath = new URL(currentDisplayUrl).pathname;
+            const urlPath = new URL(newUrlFromEvent).pathname;
             const lastSegment = urlPath.substring(urlPath.lastIndexOf('/') + 1);
             if (lastSegment) filename = decodeURIComponent(lastSegment);
         } catch (urlError) {
-            filename = currentDisplayUrl; // Use full URL if parsing fails
+            filename = newUrlFromEvent; // Use full URL if parsing fails
         }
 
         resetAudioStateAndUI(filename, newUrlFromEvent !== previousDisplayUrl, true);
-        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl); // Ensure input shows the URL being loaded
+        AudioApp.uiManager.setAudioUrlInputValue(newUrlFromEvent);
 
         try {
-            AudioApp.uiManager.setFileInfo(`Fetching: ${filename}...`);
-            const response = await fetch(currentDisplayUrl);
+            AudioApp.state.updateStatus('fileInfoMessage', `Fetching: ${filename}...`);
+            const response = await fetch(newUrlFromEvent);
             if (!response.ok) throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
 
             const arrayBuffer = await response.arrayBuffer();
-            AudioApp.uiManager.setFileInfo(`Processing: ${filename}...`);
+            AudioApp.state.updateStatus('fileInfoMessage', `Processing: ${filename}...`);
 
             let mimeType = response.headers.get('Content-Type')?.split(';')[0] || 'audio/*';
-            // Fallback or refine mimeType based on extension if necessary
             const ext = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
-            if (mimeType === 'application/octet-stream' || mimeType === 'audio/*') { // Common generic types
+            if (mimeType === 'application/octet-stream' || mimeType === 'audio/*') {
                 if (ext === 'mp3') mimeType = 'audio/mpeg';
                 else if (ext === 'wav') mimeType = 'audio/wav';
                 else if (ext === 'ogg') mimeType = 'audio/ogg';
             }
 
             const newFileObject = new File([arrayBuffer], filename, {type: mimeType});
-            currentFile = newFileObject; // Store the fetched content as a File object
+            AudioApp.state.updateRuntime('currentFile', newFileObject);
 
-            await AudioApp.audioEngine.loadAndProcessFile(newFileObject);
-            currentUrlStyle = 'success';
-            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
-            debouncedUpdateHashFromSettings();
+            await AudioApp.audioEngine.loadAndProcessFile(newFileObject); // audioEngine will get currentFile from AppState
+            AudioApp.state.updateStatus('urlInputStyle', 'success');
+            AudioApp.uiManager.setUrlInputStyle('success'); // Keep UI in sync immediately
+            if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
         } catch (error) {
-            console.error(`App: Error fetching/processing URL ${currentDisplayUrl}:`, error);
-            AudioApp.uiManager.resetUI(); // Full UI reset
-            currentUrlStyle = 'error';
-            AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
-            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
-            AudioApp.uiManager.setUrlLoadingError(`Error loading from URL. (${error?.message?.substring(0, 100) || 'Unknown error'})`);
-            AudioApp.uiManager.setFileInfo("Failed to load audio from URL.");
+            console.error(`App: Error fetching/processing URL ${newUrlFromEvent}:`, error);
+            AudioApp.uiManager.resetUI();
+            AudioApp.state.updateStatus('urlInputStyle', 'error');
+            AudioApp.uiManager.setAudioUrlInputValue(newUrlFromEvent);
+            AudioApp.uiManager.setUrlInputStyle('error');
+            AudioApp.state.updateStatus('urlLoadingErrorMessage', `Error loading from URL. (${error?.message?.substring(0, 100) || 'Unknown error'})`);
+            AudioApp.state.updateStatus('fileInfoMessage', "Failed to load audio from URL.");
             AudioApp.spectrogramVisualizer.showSpinner(false);
             stopUIUpdateLoop();
-            currentFile = null;
+            AudioApp.state.updateRuntime('currentFile', null);
         }
     }
 
@@ -483,38 +439,40 @@ AudioApp = (function () {
      */
     function resetAudioStateAndUI(displayName, fullUIRestart, isUrl = false) {
         stopUIUpdateLoop();
-        isActuallyPlaying = false;
-        playbackNaturallyEnded = false;
-        isVadProcessing = false;
-        playbackStartTimeContext = null;
-        playbackStartSourceTime = 0.0;
-        currentSpeedForUpdate = 1.0;
-        currentAudioBuffer = null;
-        currentVadResults = null;
-        workletPlaybackReady = false;
-        if (!isUrl) currentFile = null; // Clear file object only if not a URL load (URL load will set it)
+        AudioApp.state.updateStatus('isActuallyPlaying', false);
+        AudioApp.state.updateStatus('playbackNaturallyEnded', false);
+        AudioApp.state.updateStatus('isVadProcessing', false); // Should also cancel any ongoing VAD
+        AudioApp.state.updateRuntime('playbackStartTimeContext', null);
+        AudioApp.state.updateRuntime('playbackStartSourceTime', 0.0);
+        AudioApp.state.updateRuntime('currentSpeedForUpdate', 1.0);
+        AudioApp.state.updateRuntime('currentAudioBuffer', null);
+        AudioApp.state.updateRuntime('currentVadResults', null);
+        AudioApp.state.updateStatus('workletPlaybackReady', false);
+
+        if (!isUrl) AudioApp.state.updateRuntime('currentFile', null);
 
         if (fullUIRestart) {
-            AudioApp.uiManager.resetUI();
+            AudioApp.uiManager.resetUI(); // This will reset UI to AppState defaults eventually
         } else {
-            // Partial reset: preserve speed/pitch/gain, reset time, VAD, etc.
+            // Partial reset: preserve speed/pitch/gain from AppState, reset time, VAD text, etc.
             AudioApp.uiManager.updateTimeDisplay(0, 0);
             AudioApp.uiManager.updateSeekBar(0);
-            AudioApp.uiManager.setSpeechRegionsText("None");
+            AudioApp.uiManager.setSpeechRegionsText("None"); // Or derive from state if needed
             AudioApp.uiManager.showVadProgress(false);
             AudioApp.uiManager.updateVadProgress(0);
-            AudioApp.uiManager.setUrlLoadingError("");
+            AudioApp.state.updateStatus('urlLoadingErrorMessage', "");
         }
+        // These UI updates should eventually be driven by AppState subscriptions
         AudioApp.uiManager.updateFileName(displayName);
-        AudioApp.uiManager.setFileInfo(`Loading: ${displayName}...`);
-        AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl || ""); // currentDisplayUrl might be set by caller
-        AudioApp.uiManager.setUrlInputStyle(currentUrlStyle); // currentUrlStyle might be set by caller
+        AudioApp.state.updateStatus('fileInfoMessage', `Loading: ${displayName}...`);
+        AudioApp.uiManager.setAudioUrlInputValue(AudioApp.state.params.audioUrl || "");
+        AudioApp.uiManager.setUrlInputStyle(AudioApp.state.status.urlInputStyle);
 
         AudioApp.waveformVisualizer.clearVisuals();
         AudioApp.spectrogramVisualizer.clearVisuals();
-        AudioApp.spectrogramVisualizer.showSpinner(true); // Spinner shown during load
+        AudioApp.spectrogramVisualizer.showSpinner(true);
 
-        debouncedUpdateHashFromSettings();
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
 
@@ -525,52 +483,50 @@ AudioApp = (function () {
      * @param {CustomEvent<{audioBuffer: AudioBuffer}>} e - The event object.
      */
     async function handleAudioLoaded(e) {
-        currentAudioBuffer = e.detail.audioBuffer;
-        console.log(`App: Audio decoded (${currentAudioBuffer.duration.toFixed(2)}s). Starting parallel analysis.`);
+        AudioApp.state.updateRuntime('currentAudioBuffer', e.detail.audioBuffer);
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        console.log(`App: Audio decoded (${audioBuffer.duration.toFixed(2)}s). Starting parallel analysis.`);
 
         // --- 1. Basic UI Setup (Instant) ---
-        AudioApp.uiManager.updateTimeDisplay(0, currentAudioBuffer.duration);
+        AudioApp.uiManager.updateTimeDisplay(0, audioBuffer.duration);
         AudioApp.uiManager.updateSeekBar(0);
-        AudioApp.waveformVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration);
-        AudioApp.spectrogramVisualizer.updateProgressIndicator(0, currentAudioBuffer.duration);
-        playbackStartSourceTime = 0.0;
+        AudioApp.waveformVisualizer.updateProgressIndicator(0, audioBuffer.duration);
+        AudioApp.spectrogramVisualizer.updateProgressIndicator(0, audioBuffer.duration);
+        AudioApp.state.updateRuntime('playbackStartSourceTime', 0.0);
 
-        // Apply current UI settings to the engine
-        if (AudioApp.audioEngine && AudioApp.uiManager) {
-            AudioApp.audioEngine.setSpeed(AudioApp.uiManager.getPlaybackSpeedValue());
-            AudioApp.audioEngine.setPitch(AudioApp.uiManager.getPitchValue());
-            AudioApp.audioEngine.setGain(AudioApp.uiManager.getGainValue());
+
+        // Apply current AppState params to the engine
+        if (AudioApp.audioEngine) {
+            AudioApp.audioEngine.setSpeed(AudioApp.state.params.speed);
+            AudioApp.audioEngine.setPitch(AudioApp.state.params.pitch);
+            AudioApp.audioEngine.setGain(AudioApp.state.params.gain);
         }
 
         // --- 2. Draw Waveform First (Fastest visual feedback) ---
-        // We can await this as it's quick and provides the first visual confirmation.
-        await AudioApp.waveformVisualizer.computeAndDrawWaveform(currentAudioBuffer, []);
+        await AudioApp.waveformVisualizer.computeAndDrawWaveform(audioBuffer, []);
 
         // --- 3. Launch All Long-Running Tasks Concurrently ---
-        // We DO NOT await these calls. We want them to start immediately and run in the background.
-        // The main thread is now free to handle user input.
-
         console.log("App: Kicking off Spectrogram, VAD, and Tone analysis in parallel.");
 
         // A. Start Spectrogram Worker
-        AudioApp.spectrogramVisualizer.computeAndDrawSpectrogram(currentAudioBuffer);
+        AudioApp.spectrogramVisualizer.computeAndDrawSpectrogram(audioBuffer);
 
         // B. Start VAD Analysis
-        runVadInBackground(currentAudioBuffer);
+        runVadInBackground(audioBuffer);
 
         // C. Start Tone Detection Analysis
         if (dtmfParser || cptParser) {
-            processAudioForTones(currentAudioBuffer);
+            processAudioForTones(audioBuffer);
         }
 
         // --- 4. Update File Info ---
-        // The UI now shows "Processing..." while the background tasks run.
-        AudioApp.uiManager.setFileInfo(`Processing Analyses: ${currentFile?.name || currentDisplayUrl || 'Loaded Audio'}`);
+        AudioApp.state.updateStatus('fileInfoMessage', `Processing Analyses: ${AudioApp.state.runtime.currentFile?.name || AudioApp.state.params.audioUrl || 'Loaded Audio'}`);
+
 
         // If a local file was loaded, ensure its "file:///" URL is displayed correctly.
-        if (currentFile && currentDisplayUrl && currentUrlStyle === 'file') {
-            AudioApp.uiManager.setAudioUrlInputValue(currentDisplayUrl);
-            AudioApp.uiManager.setUrlInputStyle(currentUrlStyle);
+        if (AudioApp.state.runtime.currentFile && AudioApp.state.params.audioUrl && AudioApp.state.status.urlInputStyle === 'file') {
+            AudioApp.uiManager.setAudioUrlInputValue(AudioApp.state.params.audioUrl);
+            AudioApp.uiManager.setUrlInputStyle('file');
         }
     }
 
@@ -581,29 +537,30 @@ AudioApp = (function () {
      */
     function handleWorkletReady(e) {
         console.log("App: AudioWorklet processor is ready.");
-        workletPlaybackReady = true;
+        AudioApp.state.updateStatus('workletPlaybackReady', true);
         AudioApp.uiManager.enablePlaybackControls(true);
         AudioApp.uiManager.enableSeekBar(true);
-        AudioApp.uiManager.setFileInfo(`Ready: ${currentFile?.name || currentDisplayUrl || 'Loaded Audio'}`);
+        AudioApp.state.updateStatus('fileInfoMessage', `Ready: ${AudioApp.state.runtime.currentFile?.name || AudioApp.state.params.audioUrl || 'Loaded Audio'}`);
         AudioApp.uiManager.unfocusUrlInput();
 
-        // Re-affirm engine parameters from UI (might have changed or from hash)
-        if (AudioApp.audioEngine && AudioApp.uiManager) {
-            AudioApp.audioEngine.setSpeed(AudioApp.uiManager.getPlaybackSpeedValue());
-            AudioApp.audioEngine.setPitch(AudioApp.uiManager.getPitchValue());
-            AudioApp.audioEngine.setGain(AudioApp.uiManager.getGainValue());
+        // Re-affirm engine parameters from AppState
+        if (AudioApp.audioEngine) {
+            AudioApp.audioEngine.setSpeed(AudioApp.state.params.speed);
+            AudioApp.audioEngine.setPitch(AudioApp.state.params.pitch);
+            AudioApp.audioEngine.setGain(AudioApp.state.params.gain);
         }
 
         // Apply position from hash settings if available and audio buffer exists
-        if (initialHashSettings.position !== undefined && currentAudioBuffer) {
-            const targetTime = Math.max(0, Math.min(initialHashSettings.position, currentAudioBuffer.duration));
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        if (initialHashSettings.position !== undefined && audioBuffer) {
+            const targetTime = Math.max(0, Math.min(initialHashSettings.position, audioBuffer.duration));
             console.log(`App: Restoring position from hash: ${targetTime.toFixed(3)}s`);
             AudioApp.audioEngine.seek(targetTime);
-            playbackStartSourceTime = targetTime;
-            playbackStartTimeContext = null; // Not playing yet
-            updateUIWithTime(targetTime);
+            AudioApp.state.updateRuntime('playbackStartSourceTime', targetTime);
+            AudioApp.state.updateRuntime('playbackStartTimeContext', null); // Not playing yet
+            updateUIWithTime(targetTime); // Update UI immediately
         }
-        initialHashSettings = {}; // Clear after use
+        initialHashSettings = {}; // Clear after use, AppState now holds the applied values
     }
 
     /**
@@ -612,62 +569,60 @@ AudioApp = (function () {
      * @param {AudioBuffer} audioBuffer - The audio buffer to analyze.
      * @returns {Promise<void>}
      */
-    async function runVadInBackground(audioBuffer) {
+    async function runVadInBackground(audioBuffer) { // audioBuffer is from AppState.runtime.currentAudioBuffer
         if (!audioBuffer || !AudioApp.vadAnalyzer || !AudioApp.audioEngine || !AudioApp.uiManager || !AudioApp.waveformVisualizer) {
             console.error("App (VAD): Missing dependencies for VAD task.");
-            isVadProcessing = false;
+            AudioApp.state.updateStatus('isVadProcessing', false);
             return;
         }
-        if (isVadProcessing) {
+        if (AudioApp.state.status.isVadProcessing) {
             console.warn("App (VAD): Processing already running.");
             return;
         }
 
-        isVadProcessing = true;
+        AudioApp.state.updateStatus('isVadProcessing', true);
 
         try {
-            // 1. Initialize the VAD analyzer (this creates the worker).
-            await AudioApp.vadAnalyzer.init();
+            await AudioApp.vadAnalyzer.init(); // Ensures worker is ready
 
-            // 2. Show progress bar and resample the audio.
-            AudioApp.uiManager.showVadProgress(true);
+            AudioApp.uiManager.showVadProgress(true); // Immediate UI feedback
             AudioApp.uiManager.updateVadProgress(0);
             const pcm16k = await AudioApp.audioEngine.resampleTo16kMono(audioBuffer);
 
             if (!pcm16k || pcm16k.length === 0) {
-                AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)");
+                AudioApp.uiManager.setSpeechRegionsText("No VAD data (empty audio?)"); // UI feedback
                 AudioApp.uiManager.updateVadProgress(100);
-                isVadProcessing = false;
+                AudioApp.state.updateStatus('isVadProcessing', false);
                 return;
             }
 
-            // 3. Define the progress callback and start analysis.
             const vadProgressCallback = (progress) => {
                 if (!AudioApp.uiManager) return;
                 const percentage = progress.totalFrames > 0 ? (progress.processedFrames / progress.totalFrames) * 100 : 0;
                 AudioApp.uiManager.updateVadProgress(percentage);
             };
 
-            // 4. The `analyze` call now returns a promise with the final result.
-            const vadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, {onProgress: vadProgressCallback});
-            currentVadResults = vadResults; // Store the final results
+            const vadResults = await AudioApp.vadAnalyzer.analyze(pcm16k, {
+                onProgress: vadProgressCallback,
+                // Pass current thresholds from AppState
+                positiveSpeechThreshold: AudioApp.state.params.vadPositive,
+                negativeSpeechThreshold: AudioApp.state.params.vadNegative
+            });
+            AudioApp.state.updateRuntime('currentVadResults', vadResults);
 
-            // 5. Update the UI with the final results.
-            const speechRegions = currentVadResults.regions || [];
-            AudioApp.uiManager.updateVadDisplay(currentVadResults.initialPositiveThreshold, currentVadResults.initialNegativeThreshold);
+            const speechRegions = vadResults.regions || [];
+            AudioApp.uiManager.updateVadDisplay(vadResults.initialPositiveThreshold, vadResults.initialNegativeThreshold);
             AudioApp.uiManager.setSpeechRegionsText(speechRegions);
-            // The `handleThresholdChange` logic can be re-integrated later if needed,
-            // but for now this completes the core analysis.
-            AudioApp.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions);
+            AudioApp.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions); // audioBuffer is still valid here
             AudioApp.uiManager.updateVadProgress(100);
 
         } catch (error) {
             console.error("App (VAD): Error during VAD processing -", error);
-            AudioApp.uiManager.setSpeechRegionsText(`VAD Error: ${error?.message || 'Unknown error'}`);
+            AudioApp.state.updateStatus('fileInfoMessage', `VAD Error: ${error?.message || 'Unknown error'}`);
             AudioApp.uiManager.updateVadProgress(0);
-            currentVadResults = null;
+            AudioApp.state.updateRuntime('currentVadResults', null);
         } finally {
-            isVadProcessing = false;
+            AudioApp.state.updateStatus('isVadProcessing', false);
         }
     }
 
@@ -682,8 +637,8 @@ AudioApp = (function () {
             console.warn("App (Tones): Missing dependencies or parsers for tone processing.");
             return;
         }
-        const pcmSampleRate = AudioApp.DTMFParser.DTMF_SAMPLE_RATE || 16000; // Use constant from parser
-        const pcmBlockSize = AudioApp.DTMFParser.DTMF_BLOCK_SIZE || 410;   // Use constant from parser
+        const pcmSampleRate = Constants.DTMF.SAMPLE_RATE; // Use new Constants
+        const pcmBlockSize = Constants.DTMF.BLOCK_SIZE;   // Use new Constants
         /** @type {Float32Array|null} */ let pcmData = null;
 
         try {
@@ -760,20 +715,21 @@ AudioApp = (function () {
         const errorMessage = e.detail.error?.message || 'An unknown error occurred';
         console.error(`App: Audio Error - Type: ${errorType}, Message: ${errorMessage}`, e.detail.error);
         stopUIUpdateLoop();
-        AudioApp.uiManager.setFileInfo(`Error (${errorType}): ${errorMessage.substring(0, 100)}`);
-        AudioApp.uiManager.resetUI(); // Full UI reset
+        AudioApp.state.updateStatus('fileInfoMessage', `Error (${errorType}): ${errorMessage.substring(0, 100)}`);
+        AudioApp.uiManager.resetUI(); // Resets UI components
         AudioApp.waveformVisualizer?.clearVisuals();
         AudioApp.spectrogramVisualizer?.clearVisuals();
         AudioApp.spectrogramVisualizer?.showSpinner(false);
-        currentAudioBuffer = null;
-        currentVadResults = null;
-        currentFile = null;
-        workletPlaybackReady = false;
-        isActuallyPlaying = false;
-        isVadProcessing = false;
-        playbackStartTimeContext = null;
-        playbackStartSourceTime = 0.0;
-        currentSpeedForUpdate = 1.0;
+
+        AudioApp.state.updateRuntime('currentAudioBuffer', null);
+        AudioApp.state.updateRuntime('currentVadResults', null);
+        AudioApp.state.updateRuntime('currentFile', null);
+        AudioApp.state.updateStatus('workletPlaybackReady', false);
+        AudioApp.state.updateStatus('isActuallyPlaying', false);
+        AudioApp.state.updateStatus('isVadProcessing', false);
+        AudioApp.state.updateRuntime('playbackStartTimeContext', null);
+        AudioApp.state.updateRuntime('playbackStartSourceTime', 0.0);
+        AudioApp.state.updateRuntime('currentSpeedForUpdate', 1.0);
     }
 
     /**
@@ -781,7 +737,7 @@ AudioApp = (function () {
      * @private
      */
     function handlePlayPause() {
-        if (!workletPlaybackReady || !AudioApp.audioEngine) {
+        if (!AudioApp.state.status.workletPlaybackReady || !AudioApp.audioEngine) {
             console.warn("App: Play/Pause ignored - Engine/Worklet not ready.");
             return;
         }
@@ -791,20 +747,21 @@ AudioApp = (function () {
             return;
         }
 
-        const aboutToPlay = !isActuallyPlaying;
+        const aboutToPlay = !AudioApp.state.status.isActuallyPlaying;
 
         if (!aboutToPlay) { // Requesting Pause
-            playbackNaturallyEnded = false;
+            AudioApp.state.updateStatus('playbackNaturallyEnded', false);
             const finalEstimatedTime = calculateEstimatedSourceTime();
-            AudioApp.audioEngine.seek(finalEstimatedTime); // Sync engine to precise time
-            playbackStartSourceTime = finalEstimatedTime; // Update our base time
-            playbackStartTimeContext = null; // Mark as paused for time calculation
+            AudioApp.audioEngine.seek(finalEstimatedTime);
+            AudioApp.state.updateRuntime('playbackStartSourceTime', finalEstimatedTime);
+            AudioApp.state.updateRuntime('playbackStartTimeContext', null);
             stopUIUpdateLoop();
-            updateUIWithTime(finalEstimatedTime); // Update UI immediately
-            debouncedUpdateHashFromSettings(); // Update hash on pause
+            updateUIWithTime(finalEstimatedTime);
+            if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
         }
-        // For play, time base and UI loop are handled in 'playbackStateChanged'
+        // For play, time base and UI loop are handled in 'playbackStateChanged' (event from audioEngine)
         AudioApp.audioEngine.togglePlayPause(); // Request engine to toggle state
+        // Note: isActuallyPlaying status will be updated by 'playbackStateChanged' event from audioEngine
     }
 
     /**
@@ -813,24 +770,26 @@ AudioApp = (function () {
      * @param {CustomEvent<{seconds: number}>} e - The event object.
      */
     function handleJump(e) {
-        playbackNaturallyEnded = false;
-        if (!workletPlaybackReady || !currentAudioBuffer || !AudioApp.audioEngine) return;
+        AudioApp.state.updateStatus('playbackNaturallyEnded', false);
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        if (!AudioApp.state.status.workletPlaybackReady || !audioBuffer || !AudioApp.audioEngine) return;
+
         const audioCtx = AudioApp.audioEngine.getAudioContext();
         if (!audioCtx) return;
-        const duration = currentAudioBuffer.duration;
+        const duration = audioBuffer.duration;
         if (isNaN(duration) || duration <= 0) return;
 
         const currentTime = calculateEstimatedSourceTime();
         const targetTime = Math.max(0, Math.min(currentTime + e.detail.seconds, duration));
         AudioApp.audioEngine.seek(targetTime);
-        playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) {
-            playbackStartTimeContext = audioCtx.currentTime;
+        AudioApp.state.updateRuntime('playbackStartSourceTime', targetTime);
+        if (AudioApp.state.status.isActuallyPlaying) {
+            AudioApp.state.updateRuntime('playbackStartTimeContext', audioCtx.currentTime);
         } else {
-            playbackStartTimeContext = null;
+            AudioApp.state.updateRuntime('playbackStartTimeContext', null);
             updateUIWithTime(targetTime);
         }
-        debouncedUpdateHashFromSettings();
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /**
@@ -839,21 +798,23 @@ AudioApp = (function () {
      * @param {CustomEvent<{fraction: number}>} e - The event object.
      */
     function handleSeek(e) {
-        playbackNaturallyEnded = false;
-        if (!workletPlaybackReady || !currentAudioBuffer || isNaN(currentAudioBuffer.duration) || currentAudioBuffer.duration <= 0 || !AudioApp.audioEngine) return;
+        AudioApp.state.updateStatus('playbackNaturallyEnded', false);
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        if (!AudioApp.state.status.workletPlaybackReady || !audioBuffer || isNaN(audioBuffer.duration) || audioBuffer.duration <= 0 || !AudioApp.audioEngine) return;
+
         const audioCtx = AudioApp.audioEngine.getAudioContext();
         if (!audioCtx) return;
 
-        const targetTime = e.detail.fraction * currentAudioBuffer.duration;
+        const targetTime = e.detail.fraction * audioBuffer.duration;
         AudioApp.audioEngine.seek(targetTime);
-        playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) {
-            playbackStartTimeContext = audioCtx.currentTime;
+        AudioApp.state.updateRuntime('playbackStartSourceTime', targetTime);
+        if (AudioApp.state.status.isActuallyPlaying) {
+            AudioApp.state.updateRuntime('playbackStartTimeContext', audioCtx.currentTime);
         } else {
-            playbackStartTimeContext = null;
+            AudioApp.state.updateRuntime('playbackStartTimeContext', null);
             updateUIWithTime(targetTime);
         }
-        debouncedUpdateHashFromSettings();
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /** Alias for handleSeek, used by seek bar 'input' event. @private */
@@ -865,10 +826,10 @@ AudioApp = (function () {
      * @param {CustomEvent<{speed: number}>} e - The event object.
      */
     function handleSpeedChange(e) {
-        if (!AudioApp.audioEngine) return;
-        AudioApp.audioEngine.setSpeed(e.detail.speed);
-        if (debouncedSyncEngine) debouncedSyncEngine(); // Sync engine after a short delay
-        debouncedUpdateHashFromSettings();
+        AudioApp.state.updateParam('speed', e.detail.speed);
+        // audioEngine will subscribe to 'param:speed:changed'
+        if (debouncedSyncEngine) debouncedSyncEngine(); // Sync engine after a short delay if still needed
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /**
@@ -877,9 +838,9 @@ AudioApp = (function () {
      * @param {CustomEvent<{pitch: number}>} e - The event object.
      */
     function handlePitchChange(e) {
-        if (!AudioApp.audioEngine) return;
-        AudioApp.audioEngine.setPitch(e.detail.pitch);
-        debouncedUpdateHashFromSettings();
+        AudioApp.state.updateParam('pitch', e.detail.pitch);
+        // audioEngine will subscribe to 'param:pitch:changed'
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /**
@@ -888,9 +849,9 @@ AudioApp = (function () {
      * @param {CustomEvent<{gain: number}>} e - The event object.
      */
     function handleGainChange(e) {
-        if (!AudioApp.audioEngine) return;
-        AudioApp.audioEngine.setGain(e.detail.gain);
-        debouncedUpdateHashFromSettings();
+        AudioApp.state.updateParam('gain', e.detail.gain);
+        // audioEngine will subscribe to 'param:gain:changed'
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /**
@@ -898,18 +859,20 @@ AudioApp = (function () {
      * Called debounced after speed changes.
      * @private
      */
-    function syncEngineToEstimatedTime() {
-        if (!workletPlaybackReady || !currentAudioBuffer || !AudioApp.audioEngine) return;
+    function syncEngineToEstimatedTime() { // This logic might need re-evaluation with AppState
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        if (!AudioApp.state.status.workletPlaybackReady || !audioBuffer || !AudioApp.audioEngine) return;
+
         const audioCtx = AudioApp.audioEngine.getAudioContext();
         if (!audioCtx) return;
 
         const targetTime = calculateEstimatedSourceTime();
         AudioApp.audioEngine.seek(targetTime);
-        playbackStartSourceTime = targetTime;
-        if (isActuallyPlaying) {
-            playbackStartTimeContext = audioCtx.currentTime;
+        AudioApp.state.updateRuntime('playbackStartSourceTime', targetTime);
+        if (AudioApp.state.status.isActuallyPlaying) {
+            AudioApp.state.updateRuntime('playbackStartTimeContext', audioCtx.currentTime);
         } else {
-            playbackStartTimeContext = null;
+            AudioApp.state.updateRuntime('playbackStartTimeContext', null);
             updateUIWithTime(targetTime);
         }
     }
@@ -922,16 +885,16 @@ AudioApp = (function () {
      */
     function handleInternalSpeedChange(e) {
         const newSpeed = e.detail.speed;
-        const oldSpeed = currentSpeedForUpdate;
-        currentSpeedForUpdate = newSpeed;
+        const oldSpeed = AudioApp.state.runtime.currentSpeedForUpdate;
+        AudioApp.state.updateRuntime('currentSpeedForUpdate', newSpeed);
 
         const audioCtx = AudioApp.audioEngine?.getAudioContext();
-        if (isActuallyPlaying && playbackStartTimeContext !== null && audioCtx) {
-            const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
+        if (AudioApp.state.status.isActuallyPlaying && AudioApp.state.runtime.playbackStartTimeContext !== null && audioCtx) {
+            const elapsedContextTime = audioCtx.currentTime - AudioApp.state.runtime.playbackStartTimeContext;
             const elapsedSourceTime = elapsedContextTime * oldSpeed;
-            const previousSourceTime = playbackStartSourceTime + elapsedSourceTime;
-            playbackStartSourceTime = previousSourceTime;
-            playbackStartTimeContext = audioCtx.currentTime;
+            const previousSourceTime = AudioApp.state.runtime.playbackStartSourceTime + elapsedSourceTime;
+            AudioApp.state.updateRuntime('playbackStartSourceTime', previousSourceTime);
+            AudioApp.state.updateRuntime('playbackStartTimeContext', audioCtx.currentTime);
         }
     }
 
@@ -941,12 +904,28 @@ AudioApp = (function () {
      * @param {CustomEvent<{type: string, value: number}>} e - The event object.
      */
     function handleThresholdChange(e) {
-        if (!currentVadResults || isVadProcessing || !AudioApp.vadAnalyzer || !AudioApp.waveformVisualizer || !currentAudioBuffer) return;
         const {type, value} = e.detail;
-        const newRegions = AudioApp.vadAnalyzer.handleThresholdUpdate(type, value);
-        AudioApp.uiManager.setSpeechRegionsText(newRegions);
-        AudioApp.waveformVisualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
-        debouncedUpdateHashFromSettings();
+        if (type === 'positive') {
+            AudioApp.state.updateParam('vadPositive', value);
+        } else if (type === 'negative') {
+            AudioApp.state.updateParam('vadNegative', value);
+        }
+
+        // Re-drawing waveform highlights based on new VAD thresholds (if results exist)
+        const currentVadResults = AudioApp.state.runtime.currentVadResults;
+        const currentAudioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        if (currentVadResults && !AudioApp.state.status.isVadProcessing && AudioApp.vadAnalyzer && AudioApp.waveformVisualizer && currentAudioBuffer) {
+            const newRegions = AudioApp.vadAnalyzer.recalculateSpeechRegions(currentVadResults.probabilities, {
+                frameSamples: currentVadResults.frameSamples,
+                sampleRate: currentVadResults.sampleRate,
+                positiveSpeechThreshold: AudioApp.state.params.vadPositive,
+                negativeSpeechThreshold: AudioApp.state.params.vadNegative,
+                redemptionFrames: currentVadResults.redemptionFrames
+            });
+            AudioApp.uiManager.setSpeechRegionsText(newRegions);
+            AudioApp.waveformVisualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
+        }
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /**
@@ -955,16 +934,17 @@ AudioApp = (function () {
      */
     function handlePlaybackEnded() {
         console.log("App: Playback ended event received.");
-        isActuallyPlaying = false;
+        AudioApp.state.updateStatus('isActuallyPlaying', false);
         stopUIUpdateLoop();
-        playbackStartTimeContext = null;
-        if (currentAudioBuffer) {
-            playbackStartSourceTime = currentAudioBuffer.duration;
-            updateUIWithTime(currentAudioBuffer.duration);
+        AudioApp.state.updateRuntime('playbackStartTimeContext', null);
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        if (audioBuffer) {
+            AudioApp.state.updateRuntime('playbackStartSourceTime', audioBuffer.duration);
+            updateUIWithTime(audioBuffer.duration);
         }
-        playbackNaturallyEnded = true;
-        AudioApp.uiManager.setPlayButtonState(false);
-        debouncedUpdateHashFromSettings();
+        AudioApp.state.updateStatus('playbackNaturallyEnded', true);
+        AudioApp.uiManager.setPlayButtonState(false); // Keep UI in sync
+        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     /**
@@ -974,27 +954,28 @@ AudioApp = (function () {
      */
     function handlePlaybackStateChange(e) {
         const workletIsPlaying = e.detail.isPlaying;
-        const wasPlaying = isActuallyPlaying;
-        isActuallyPlaying = workletIsPlaying;
-        AudioApp.uiManager.setPlayButtonState(isActuallyPlaying);
+        const wasPlaying = AudioApp.state.status.isActuallyPlaying;
+        AudioApp.state.updateStatus('isActuallyPlaying', workletIsPlaying);
+        AudioApp.uiManager.setPlayButtonState(workletIsPlaying); // Keep UI in sync
 
-        if (isActuallyPlaying) {
+        if (workletIsPlaying) {
             const audioCtx = AudioApp.audioEngine?.getAudioContext();
             if (!wasPlaying && audioCtx) { // Transitioned from not playing to playing
-                if (playbackNaturallyEnded && currentAudioBuffer) {
-                    playbackStartSourceTime = 0; // Restart from beginning
-                    playbackNaturallyEnded = false;
+                const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+                if (AudioApp.state.status.playbackNaturallyEnded && audioBuffer) {
+                    AudioApp.state.updateRuntime('playbackStartSourceTime', 0); // Restart from beginning
+                    AudioApp.state.updateStatus('playbackNaturallyEnded', false);
                 } else {
                     // Resuming or starting normally, use engine's current time
-                    playbackStartSourceTime = AudioApp.audioEngine.getCurrentTime().currentTime;
+                    AudioApp.state.updateRuntime('playbackStartSourceTime', AudioApp.audioEngine.getCurrentTime().currentTime);
                 }
-                playbackStartTimeContext = audioCtx.currentTime;
-                updateUIWithTime(playbackStartSourceTime); // Update UI immediately
+                AudioApp.state.updateRuntime('playbackStartTimeContext', audioCtx.currentTime);
+                updateUIWithTime(AudioApp.state.runtime.playbackStartSourceTime); // Update UI immediately
             }
             startUIUpdateLoop();
         } else { // Transitioned to not playing
             stopUIUpdateLoop();
-            playbackStartTimeContext = null; // Mark as paused for time calculation
+            AudioApp.state.updateRuntime('playbackStartTimeContext', null);
             // UI time sync for pause is handled in handlePlayPause
         }
     }
@@ -1005,9 +986,9 @@ AudioApp = (function () {
      * @param {CustomEvent<{key: string}>} e - The event object.
      */
     function handleKeyPress(e) {
-        if (!workletPlaybackReady) return;
+        if (!AudioApp.state.status.workletPlaybackReady) return;
         const key = e.detail.key;
-        const jumpTimeValue = AudioApp.uiManager.getJumpTime();
+        const jumpTimeValue = AudioApp.uiManager.getJumpTime(); // Or AudioApp.state.params.jumpTime
         switch (key) {
             case 'Space':
                 handlePlayPause();
@@ -1026,9 +1007,9 @@ AudioApp = (function () {
      * @private
      */
     function handleWindowResize() {
-        const regions = AudioApp.vadAnalyzer ? AudioApp.vadAnalyzer.getCurrentRegions() : [];
-        AudioApp.waveformVisualizer?.resizeAndRedraw(currentAudioBuffer, regions);
-        AudioApp.spectrogramVisualizer?.resizeAndRedraw(currentAudioBuffer);
+        const regions = AudioApp.state.runtime.currentVadResults?.regions || [];
+        AudioApp.waveformVisualizer?.resizeAndRedraw(AudioApp.state.runtime.currentAudioBuffer, regions);
+        AudioApp.spectrogramVisualizer?.resizeAndRedraw(AudioApp.state.runtime.currentAudioBuffer);
     }
 
     /**
@@ -1070,16 +1051,18 @@ AudioApp = (function () {
      */
     function calculateEstimatedSourceTime() {
         const audioCtx = AudioApp.audioEngine?.getAudioContext();
-        const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0;
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        const duration = audioBuffer ? audioBuffer.duration : 0;
 
-        if (!isActuallyPlaying || playbackStartTimeContext === null || !audioCtx || !currentAudioBuffer || duration <= 0 || currentSpeedForUpdate <= 0) {
-            return playbackStartSourceTime; // Return base time if not playing, speed is zero/negative, or essential info missing
+        if (!AudioApp.state.status.isActuallyPlaying || AudioApp.state.runtime.playbackStartTimeContext === null ||
+            !audioCtx || !audioBuffer || duration <= 0 || AudioApp.state.runtime.currentSpeedForUpdate <= 0) {
+            return AudioApp.state.runtime.playbackStartSourceTime;
         }
 
-        const elapsedContextTime = audioCtx.currentTime - playbackStartTimeContext;
-        const elapsedSourceTime = elapsedContextTime * currentSpeedForUpdate;
-        let estimatedCurrentSourceTime = playbackStartSourceTime + elapsedSourceTime;
-        return Math.max(0, Math.min(estimatedCurrentSourceTime, duration)); // Clamp to valid range
+        const elapsedContextTime = audioCtx.currentTime - AudioApp.state.runtime.playbackStartTimeContext;
+        const elapsedSourceTime = elapsedContextTime * AudioApp.state.runtime.currentSpeedForUpdate;
+        let estimatedCurrentSourceTime = AudioApp.state.runtime.playbackStartSourceTime + elapsedSourceTime;
+        return Math.max(0, Math.min(estimatedCurrentSourceTime, duration));
     }
 
     /**
@@ -1088,12 +1071,15 @@ AudioApp = (function () {
      * @param {number} time - The current source time to display.
      */
     function updateUIWithTime(time) {
-        const duration = currentAudioBuffer ? currentAudioBuffer.duration : 0;
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
+        const duration = audioBuffer ? audioBuffer.duration : 0;
         if (isNaN(duration)) return;
+
         const clampedTime = Math.max(0, Math.min(time, duration));
         const fraction = duration > 0 ? clampedTime / duration : 0;
+
         AudioApp.uiManager.updateTimeDisplay(clampedTime, duration);
-        AudioApp.uiManager.updateSeekBar(fraction);
+        AudioApp.uiManager.updateSeekBar(fraction); // SeekBar input will dispatch seekRequested
         AudioApp.waveformVisualizer?.updateProgressIndicator(clampedTime, duration);
         AudioApp.spectrogramVisualizer?.updateProgressIndicator(clampedTime, duration);
     }
@@ -1105,18 +1091,20 @@ AudioApp = (function () {
      * @param {DOMHighResTimeStamp} timestamp - The timestamp provided by requestAnimationFrame.
      */
     function updateUIBasedOnContextTime(timestamp) {
-        if (!isActuallyPlaying) {
+        if (!AudioApp.state.status.isActuallyPlaying) {
             rAFUpdateHandle = null;
             return; // Stop loop if not playing
         }
         const estimatedTime = calculateEstimatedSourceTime();
         updateUIWithTime(estimatedTime);
 
-        const currentTime = performance.now();
-        if (currentTime - lastHashUpdateTime > 3000 && debouncedUpdateHashFromSettings) { // Update hash roughly every 3 seconds
-            debouncedUpdateHashFromSettings();
-            lastHashUpdateTime = currentTime;
-        }
+        // Debounced hash update is handled by specific actions (play, pause, seek, param change)
+        // The periodic update might be less necessary or adjusted. For now, let debounced calls handle it.
+        // const currentTime = performance.now();
+        // if (currentTime - lastHashUpdateTime > 3000 && debouncedUpdateUrlHash) {
+        //     debouncedUpdateUrlHash();
+        //     lastHashUpdateTime = currentTime;
+        // }
         rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime);
     }
 

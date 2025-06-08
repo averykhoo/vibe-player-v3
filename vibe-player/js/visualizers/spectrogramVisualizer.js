@@ -4,7 +4,7 @@
 AudioApp.spectrogramVisualizer = (function(globalFFT) {
     'use strict';
 
-    const Constants = AudioApp.Constants;
+    // Constants is now a global class, AudioApp.Constants is no longer used.
     const Utils = AudioApp.Utils;
 
     // DOM Elements
@@ -12,7 +12,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
         spectrogramProgressIndicator = null, cachedSpectrogramCanvas = null;
 
     let getSharedAudioBuffer = null;
-    let currentMaxFreqIndex = Constants.SPEC_DEFAULT_MAX_FREQ_INDEX;
+    let currentMaxFreqIndex = Constants.Visualizer.SPEC_DEFAULT_MAX_FREQ_INDEX;
     let worker = null;
     let lastAudioBuffer = null; // Cache the audio buffer for the current job
 
@@ -60,7 +60,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
             }
 
             if (spectrogramData && spectrogramData.length > 0) {
-                const actualFftSize = audioBuffer.duration < Constants.SPEC_SHORT_FILE_FFT_THRESHOLD_S ? Constants.SPEC_SHORT_FFT_SIZE : Constants.SPEC_NORMAL_FFT_SIZE;
+                const actualFftSize = audioBuffer.duration < Constants.Visualizer.SPEC_SHORT_FILE_FFT_THRESHOLD_S ? Constants.Visualizer.SPEC_SHORT_FFT_SIZE : Constants.Visualizer.SPEC_NORMAL_FFT_SIZE;
                 drawSpectrogramAsync(spectrogramData, spectrogramCanvas, audioBuffer.sampleRate, actualFftSize)
                     .catch(error => console.error("SpectrogramVisualizer: Error during async drawing.", error))
                     .finally(() => showSpinner(false));
@@ -89,7 +89,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
         cachedSpectrogramCanvas = null;
         showSpinner(true);
 
-        const actualFftSize = lastAudioBuffer.duration < Constants.SPEC_SHORT_FILE_FFT_THRESHOLD_S ? Constants.SPEC_SHORT_FFT_SIZE : Constants.SPEC_NORMAL_FFT_SIZE;
+        const actualFftSize = lastAudioBuffer.duration < Constants.Visualizer.SPEC_SHORT_FILE_FFT_THRESHOLD_S ? Constants.Visualizer.SPEC_SHORT_FFT_SIZE : Constants.Visualizer.SPEC_NORMAL_FFT_SIZE;
         // IMPORTANT: We must copy the data for transfer, as the original buffer might be needed elsewhere (e.g., VAD)
         const channelData = lastAudioBuffer.getChannelData(0).slice();
 
@@ -100,7 +100,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
                 sampleRate: lastAudioBuffer.sampleRate,
                 duration: lastAudioBuffer.duration,
                 fftSize: actualFftSize,
-                targetSlices: Constants.SPEC_FIXED_WIDTH
+                targetSlices: Constants.Visualizer.SPEC_FIXED_WIDTH
             }
         }, [channelData.buffer]);
     }
@@ -129,9 +129,9 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
 
     function handleCanvasDoubleClick(e) {
         e.preventDefault();
-        if (!spectrogramCanvas || !Constants.SPEC_MAX_FREQS?.length) return;
+        if (!spectrogramCanvas || !Constants.Visualizer.SPEC_MAX_FREQS?.length) return;
 
-        currentMaxFreqIndex = (currentMaxFreqIndex + 1) % Constants.SPEC_MAX_FREQS.length;
+        currentMaxFreqIndex = (currentMaxFreqIndex + 1) % Constants.Visualizer.SPEC_MAX_FREQS.length;
         const audioBufferForRedraw = lastAudioBuffer || (getSharedAudioBuffer ? getSharedAudioBuffer() : null);
         if (audioBufferForRedraw) {
             computeAndDrawSpectrogram(audioBufferForRedraw);
@@ -140,7 +140,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
 
     function drawSpectrogramAsync(spectrogramData, canvas, sampleRate, actualFftSize) {
         return new Promise((resolve, reject) => {
-            if (!canvas || !spectrogramData?.[0] || !Constants || !Utils) {
+            if (!canvas || !spectrogramData?.[0] || typeof Constants === 'undefined' || !Utils) {
                 return reject(new Error("SpectrogramVisualizer: Missing dependencies for async draw."));
             }
             const displayCtx = canvas.getContext('2d');
@@ -159,7 +159,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
 
             const numBins = actualFftSize / 2;
             const nyquist = sampleRate / 2;
-            const currentSpecMaxFreq = Constants.SPEC_MAX_FREQS[currentMaxFreqIndex];
+            const currentSpecMaxFreq = Constants.Visualizer.SPEC_MAX_FREQS[currentMaxFreqIndex];
             const maxBinIndex = Math.min(numBins - 1, Math.floor((currentSpecMaxFreq / nyquist) * (numBins - 1)));
 
             const dbThreshold = -60; let maxDb = -Infinity;
