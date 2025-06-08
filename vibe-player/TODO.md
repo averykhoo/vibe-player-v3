@@ -16,11 +16,6 @@ These are "quick win" features that directly improve usability and the user expe
     * **Details:** The "Back to Start" button should seek playback to `0:00`. The "Reset Controls" button should reset
       Speed, Pitch, Gain, and VAD thresholds to their default values. This provides essential, convenient user actions.
 
-* **Add UI Sounds:**
-    * **Task:** Implement Windows 98-style UI sounds for interactions (e.g., button clicks, slider adjustments).
-    * **Details:** This feature will enhance the retro aesthetic and provide valuable auditory feedback. Sounds should
-      be short and non-intrusive.
-
 * **Complete `jumpTime` Data Flow:**
     * **Task:** Refactor the "Jump Time" input to use the centralized `AppState`.
     * **Details:** Currently, the jump value is read directly from the DOM. This should be updated to follow the
@@ -50,11 +45,6 @@ These are larger features that build on the stable foundation to provide more po
     * **Details:** This graph should align with the waveform and spectrogram. Ideally, it would include draggable
       horizontal lines for the positive/negative thresholds, making VAD tuning highly intuitive. This requires modifying
       the VAD worker to send back the full probability array.
-
-* **Preset Management:**
-    * **Task:** Allow users to save and load sets of Speed, Pitch, Gain, and VAD settings as named presets.
-    * **Details:** This would be very useful for users who frequently switch between different analysis configurations.
-      Presets could be stored in `localStorage`.
 
 * **Advanced Player Controls & Keybinds:**
     * **Task:** Investigate and potentially implement more granular controls (e.g., frame-by-frame stepping).
@@ -92,5 +82,6 @@ These are ongoing tasks to ensure the project remains maintainable and reliable.
 * ~~**[DONE]** Move VAD processing to a Web Worker to prevent UI freezes.~~
 * ~~**[DONE]** Offload Spectrogram FFT computation to a Web Worker.~~
 * ~~**[DONE]** Fix critical script loading order and initialization bugs.~~
+* ~~**[WON'T DO]** Implement Windows 98-style UI sounds for interactions
 
 <!-- /vibe-player/TODO.md -->
