@@ -26,19 +26,28 @@ import pathspec
 
 # !!! EDIT THESE VALUES !!!
 REPO_PATH = Path("./")  # Path to the repository to scan
-# List of filenames to treat as ignore files (e.g., .gitignore, .aiignore)
-IGNORE_FILENAMES = [".gitignore", ".aiignore", ".llmignore"]
+
+# --- Ignore File Configuration ---
+
+# List of filenames for FULL IGNORE (file will not appear in tree or content).
+# Used for files you want the LLM to be completely unaware of.
+IGNORE_FILENAMES = [".gitignore", ".aiignore"]
+
+# <<< NEW SECTION >>>
+# List of filenames for CONTENT-ONLY IGNORE (file appears in tree, but not content).
+# Use this for files you want the LLM to know exist but whose content is not needed,
+# such as log files, large data files, or compiled assets.
+CONTENT_IGNORE_FILENAMES = [".llmignore"]
+
 # Max file size based on estimated "tokens" (word/symbol chunks counted by regex)
 # This limit applies ONLY to files included in the CONTENT section.
 MAX_FILE_ESTIMATED_TOKENS = 99999  # Adjust based on experience
 # Output filename for the generated prompt
 OUTPUT_FILENAME = "system-prompt.txt"
-# Chunk size for reading file head (no longer used for binary check, but kept for potential future use)
-# UNKNOWN_FILE_CHECK_CHUNK_SIZE = 4096 # REMOVED (or keep if needed elsewhere)
 
-# --- File Extension Configuration --- # NEW SECTION
-# Define file extensions (lowercase, without the dot) to include.
-# Add any text-based file types relevant to your repository.
+
+# --- File Extension Configuration ---
+# Define file extensions (lowercase, without the dot) to include for content.
 INCLUDED_EXTENSIONS = {
     "asp", "asm", "S", "bat", "cmd", "c", "h", "cs", "cpp", "hpp", "cxx", "hxx",
     "clj", "cmake", "coffee", "lisp", "cl", "css", "csv", "dart", "dockerfile",
@@ -59,7 +68,7 @@ EXCLUDED_EXTENSIONS = {"sub", "srt"}  # Example
 # If an extension is in INCLUDED_EXTENSIONS but not here, the hint will be the extension itself.
 EXTENSION_TO_LANGUAGE_HINT = {
     "py": "python", "js": "javascript", "ts": "typescript", "tsx": "tsx",
-    "jsx": "jsx", "java": "java", "c": "c", "cpp": "cpp", "cs": "csharp",  # c# -> csharp
+    "jsx": "jsx", "java": "java", "c": "c", "cpp": "cpp", "cs": "csharp",
     "go": "go", "rs": "rust", "rb": "ruby", "php": "php", "html": "html",
     "css": "css", "scss": "scss", "md": "markdown", "sh": "bash", "sql": "sql",
     "yaml": "yaml", "yml": "yaml", "json": "json", "xml": "xml", "kt": "kotlin",
@@ -67,19 +76,14 @@ EXTENSION_TO_LANGUAGE_HINT = {
     "hs": "haskell", "clj": "clojure", "ex": "elixir", "exs": "elixir",
     "dart": "dart", "tf": "terraform", "dockerfile": "dockerfile", "proto": "protobuf",
     "ps1": "powershell", "bat": "batch", "cmd": "batch", "h": "c", "hpp": "cpp",
-    "hxx": "cpp", "cxx": "cpp", "m": "objectivec", "mm": "objectivec",  # obj-c
-    "mk": "makefile", "makefile": "makefile", "tex": "latex", "vb": "vbnet",  # vb.net -> vbnet
+    "hxx": "cpp", "cxx": "cpp", "m": "objectivec", "mm": "objectivec",
+    "mk": "makefile", "makefile": "makefile", "tex": "latex", "vb": "vbnet",
     "v": "verilog", "sv": "systemverilog", "vhdl": "vhdl", "asm": "assembly", "S": "assembly",
     "lisp": "lisp", "cl": "commonlisp", "pas": "pascal", "f": "fortran", "for": "fortran",
     "f90": "fortran", "f95": "fortran", "groovy": "groovy", "ini": "ini", "toml": "toml",
     "less": "less", "tcl": "tcl", "gql": "graphql", "graphql": "graphql", "cmake": "cmake",
-    "jsp": "jsp", "vbs": "vbscript", "txt": "", "text": "", "log": "",  # Empty hint for generic text
+    "jsp": "jsp", "vbs": "vbscript", "txt": "", "text": "", "log": "",
 }
-
-# --- Magika Configuration --- # REMOVED Magika specific config
-# INCLUDED_MAGIKA_LABELS = { ... }
-# EXCLUDED_MAGIKA_LABELS = {"subtitle"}
-# HANDLE_UNKNOWN_AS_TEXT = True
 
 # --- Prompt Template ---
 # Uses 4 backticks for the repository tree block.
@@ -117,7 +121,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
 # ==============================================================================
 
 class FileData(NamedTuple):
-    """Holds information about files included in the prompt."""
+    """Holds information about files whose content is included in the prompt.""" # <<< MODIFIED
     relative_path: Path
     absolute_path: Path
     estimated_tokens: int
@@ -502,8 +506,8 @@ def build_tree_string(all_relative_paths: List[Path], repo_root: Path) -> str:  
 def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
     """
     Generates the main LLM prompt by scanning the repository.
-    - The directory tree shows ALL non-ignored files.
-    - The file content section includes only filtered text files (type, size, etc.).
+    - The directory tree shows ALL files not matching IGNORE_FILENAMES.
+    - The file content section includes only files that pass all content filters.
 
     Returns:
         Tuple containing:
@@ -518,20 +522,26 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
     repo_path = repo_path.resolve()
 
     print(f"Scanning repository: {repo_path}")
-    print(f"Using ignore files: {IGNORE_FILENAMES}")
+    print(f"Using full-ignore files: {IGNORE_FILENAMES}") # <<< MODIFIED
+    print(f"Using content-only-ignore files: {CONTENT_IGNORE_FILENAMES}") # <<< NEW
     print(f"Including extensions for CONTENT: {', '.join(sorted(list(INCLUDED_EXTENSIONS)))}")
     print(f"Excluding extensions for CONTENT: {', '.join(sorted(list(EXCLUDED_EXTENSIONS)))}")
     print(f"Max estimated 'tokens' per file for CONTENT: {MAX_FILE_ESTIMATED_TOKENS}")
 
-    # Get the function that checks if a path is ignored
-    ignore_checker = get_ignore_matcher(repo_path, IGNORE_FILENAMES)
+    # <<< MODIFIED SECTION >>>
+    # Get the function that checks if a path should be completely ignored (tree and content)
+    full_ignore_checker = get_ignore_matcher(repo_path, IGNORE_FILENAMES)
+    # Get the function that checks if a path's content should be ignored (tree only)
+    content_ignore_checker = get_ignore_matcher(repo_path, CONTENT_IGNORE_FILENAMES)
+    # <<< END MODIFIED SECTION >>>
 
     # List to store data for files whose CONTENT passes all filters
     included_files_data: List[FileData] = []
     # List to store relative paths of ALL non-ignored files for the TREE
     all_scanned_files_relative_paths: List[Path] = []
-    skipped_for_content_count = 0  # Tracks files skipped specifically for content inclusion filters
-    ignored_or_non_file_count = 0  # Tracks items skipped by initial ignore/type checks
+    skipped_for_content_count = 0
+    ignored_or_non_file_count = 0
+    skipped_for_content_ignore_count = 0 # <<< NEW
 
     # --- File Discovery and Filtering ---
     print("Walking directory, filtering files for tree and content...")
@@ -539,10 +549,8 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
     for item in repo_path.rglob('*'):
         abs_path = item.resolve()
 
-        # --- Filters applied to BOTH Tree and Content ---
-
-        # Filter 1: Ignore based on rules (.gitignore, .aiignore, .git dir)
-        if ignore_checker(abs_path):
+        # --- Filter 1: Full Ignore (Tree and Content) ---
+        if full_ignore_checker(abs_path):
             ignored_or_non_file_count += 1
             continue
 
@@ -552,7 +560,7 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
             continue  # Skip directories, links etc. for both tree and content lists
 
         # --- Add to list for TREE structure ---
-        # If it passed ignore checks and is a file, add it for the tree view
+        # If it passed full ignore checks and is a file, it's eligible for the tree.
         try:
             relative_path = abs_path.relative_to(repo_path)
             all_scanned_files_relative_paths.append(relative_path)
@@ -564,23 +572,29 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
 
         # --- Filters applied ONLY for CONTENT inclusion ---
 
-        # Filter 3: Exclude the script file itself from content
+        # <<< NEW: Filter 3: Content-Only Ignore ---
+        # Check if the file is in the content-ignore list. If so, skip content processing.
+        if content_ignore_checker(abs_path):
+            skipped_for_content_ignore_count += 1
+            continue
+
+        # Filter 4: Exclude the script file itself from content
         script_path = Path(__file__).resolve()
         if abs_path == script_path:
             skipped_for_content_count += 1
             continue  # Skip content processing
 
-        # also skip the previous output file
+        # Filter 5: Exclude the output file
         if abs_path.name == OUTPUT_FILENAME:
             skipped_for_content_count += 1
             continue  # Skip content processing
 
-        # Filter 4: Exclude .gitkeep files from content
+        # Filter 6: Exclude .gitkeep files from content
         if abs_path.name == '.gitkeep':
             skipped_for_content_count += 1
             continue  # Skip content processing
 
-        # Filter 5: Use file extension check for content inclusion
+        # Filter 7: Use file extension check for content inclusion
         lang_hint, should_include_content = get_file_type_and_hint_by_extension(abs_path)
         if not should_include_content:
             skipped_for_content_count += 1
@@ -595,7 +609,7 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
             skipped_for_content_count += 1
             continue  # Skip content processing
 
-        # Filter 6: Check *estimated* token count against the limit for content
+        # Filter 8: Check estimated token count against the limit
         estimated_token_count = estimate_tokens(content)
         if estimated_token_count > MAX_FILE_ESTIMATED_TOKENS:
             # print(f"Info: Skipping file CONTENT due to estimated token count ({estimated_token_count} > {MAX_FILE_ESTIMATED_TOKENS}): {relative_path}")
@@ -613,28 +627,11 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
 
     # --- Post-Scanning Summary ---
     print(f"Finished scanning.")
-    print(f" - Found {len(all_scanned_files_relative_paths)} non-ignored files for the tree.")
-    print(f" - Included content of {len(included_files_data)} files after filtering.")
-    print(f" - Skipped {ignored_or_non_file_count} items due to ignore rules or not being files.")
-    print(f" - Skipped content of {skipped_for_content_count} files due to type, name, or size filters.")
-
-    # <<< ADD THIS DEBUG BLOCK >>>
-    print("\n--- DEBUG: Inspecting included_files_data BEFORE processing ---")
-    print(f"Total items in included_files_data: {len(included_files_data)}")
-    temp_paths_for_debug = [str(fd.relative_path) for fd in included_files_data]
-    temp_paths_for_debug.sort()  # Sort paths for easier duplicate spotting
-    duplicates_found = False
-    for i in range(len(temp_paths_for_debug) - 1):
-        print(f"  - {temp_paths_for_debug[i]}")
-        if temp_paths_for_debug[i] == temp_paths_for_debug[i + 1]:
-            print(f"    ^ DUPLICATE DETECTED!")
-            duplicates_found = True
-    if temp_paths_for_debug:  # Print the last item if list wasn't empty
-        print(f"  - {temp_paths_for_debug[-1]}")
-    if not duplicates_found:
-        print("(No duplicate paths found in included_files_data)")
-    print("--- END DEBUG BLOCK ---\n")
-    # <<< END DEBUG BLOCK >>>
+    print(f" - Found {len(all_scanned_files_relative_paths)} files for the tree (after full ignore).") # <<< MODIFIED
+    print(f" - Included content of {len(included_files_data)} files after all filters.") # <<< MODIFIED
+    print(f" - Skipped {ignored_or_non_file_count} items due to full-ignore rules or not being files.") # <<< MODIFIED
+    print(f" - Skipped content of {skipped_for_content_ignore_count} files due to content-ignore rules.") # <<< NEW
+    print(f" - Skipped content of {skipped_for_content_count} files due to other filters (name, type, size).") # <<< MODIFIED
 
     # --- Prompt Assembly ---
     # Sort included files (for content) by path for consistent prompt generation
@@ -746,7 +743,8 @@ if __name__ == "__main__":
 
         # Print summary statistics to the console
         print("\n--- Prompt Generation Summary ---")
-        print(f"Total files included in prompt: {len(included_files)}")
+        # print(f"Total files in tree structure: {len(all_scanned_files_relative_paths)}") # <<< Example of how you might update the summary
+        print(f"Total files with content included: {len(included_files)}")
         print(f"Total estimated 'tokens' (regex chunks): ~{total_est_tokens}")
         print("\nIncluded Files (path, estimated 'tokens'):")
         if included_files:
@@ -756,7 +754,7 @@ if __name__ == "__main__":
                 path_str = str(file_data.relative_path).replace(os.path.sep, '/')
                 print(f"  - {path_str} ({file_data.estimated_tokens} est. tokens)")
         else:
-            print("  (No files were included based on the filtering criteria)")
+            print("  (No files had their content included based on the filtering criteria)")
         print("--- End of Summary ---")
 
     except ValueError as e:

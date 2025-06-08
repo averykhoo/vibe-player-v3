@@ -175,3 +175,7 @@ cython_debug/
 
 # Node.js
 node_modules/
+
+# test
+playwright-report/
+test-results/
