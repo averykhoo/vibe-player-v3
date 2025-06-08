@@ -8,7 +8,7 @@ var AudioApp = AudioApp || {}; // Ensure namespace exists
  * @namespace AudioApp.uiManager
  * @description Manages UI elements, interactions, and events for the Vibe Player.
  */
-AudioApp.uiManager = (function() {
+AudioApp.uiManager = (function () {
     'use strict';
 
     // === Module Dependencies ===
@@ -118,13 +118,29 @@ AudioApp.uiManager = (function() {
         resetUI();
 
         // Subscribe to AppState changes
-        AudioApp.state.subscribe('param:speed:changed', (newSpeed) => { setPlaybackSpeedValue(newSpeed); });
-        AudioApp.state.subscribe('param:pitch:changed', (newPitch) => { setPitchValue(newPitch); });
-        AudioApp.state.subscribe('param:gain:changed', (newGain) => { setGainValue(newGain); });
-        AudioApp.state.subscribe('param:vadPositive:changed', (newThreshold) => { setVadPositiveThresholdValue(newThreshold); });
-        AudioApp.state.subscribe('param:vadNegative:changed', (newThreshold) => { setVadNegativeThresholdValue(newThreshold); });
-        AudioApp.state.subscribe('param:audioUrl:changed', (newUrl) => { if (getAudioUrlInputValue() !== newUrl) { setAudioUrlInputValue(newUrl); } });
-        AudioApp.state.subscribe('param:jumpTime:changed', (newJumpTime) => { setJumpTimeValue(newJumpTime); });
+        AudioApp.state.subscribe('param:speed:changed', (newSpeed) => {
+            setPlaybackSpeedValue(newSpeed);
+        });
+        AudioApp.state.subscribe('param:pitch:changed', (newPitch) => {
+            setPitchValue(newPitch);
+        });
+        AudioApp.state.subscribe('param:gain:changed', (newGain) => {
+            setGainValue(newGain);
+        });
+        AudioApp.state.subscribe('param:vadPositive:changed', (newThreshold) => {
+            setVadPositiveThresholdValue(newThreshold);
+        });
+        AudioApp.state.subscribe('param:vadNegative:changed', (newThreshold) => {
+            setVadNegativeThresholdValue(newThreshold);
+        });
+        AudioApp.state.subscribe('param:audioUrl:changed', (newUrl) => {
+            if (getAudioUrlInputValue() !== newUrl) {
+                setAudioUrlInputValue(newUrl);
+            }
+        });
+        AudioApp.state.subscribe('param:jumpTime:changed', (newJumpTime) => {
+            setJumpTimeValue(newJumpTime);
+        });
 
         AudioApp.state.subscribe('runtime:currentAudioBuffer:changed', (audioBuffer) => {
             // Update duration part of timeDisplay
@@ -139,14 +155,24 @@ AudioApp.uiManager = (function() {
             // Waveform highlight will be handled by waveformVisualizer subscribing separately
         });
 
-        AudioApp.state.subscribe('status:isActuallyPlaying:changed', (isPlaying) => { setPlayButtonState(isPlaying); });
+        AudioApp.state.subscribe('status:isActuallyPlaying:changed', (isPlaying) => {
+            setPlayButtonState(isPlaying);
+        });
         AudioApp.state.subscribe('status:workletPlaybackReady:changed', (isReady) => {
             enablePlaybackControls(isReady);
-            if (!isReady) { enableSeekBar(false); } // Also disable seekbar if worklet not ready
+            if (!isReady) {
+                enableSeekBar(false);
+            } // Also disable seekbar if worklet not ready
         });
-        AudioApp.state.subscribe('status:urlInputStyle:changed', (style) => { setUrlInputStyle(style); });
-        AudioApp.state.subscribe('status:fileInfoMessage:changed', (message) => { setFileInfo(message); });
-        AudioApp.state.subscribe('status:urlLoadingErrorMessage:changed', (message) => { setUrlLoadingError(message); });
+        AudioApp.state.subscribe('status:urlInputStyle:changed', (style) => {
+            setUrlInputStyle(style);
+        });
+        AudioApp.state.subscribe('status:fileInfoMessage:changed', (message) => {
+            setFileInfo(message);
+        });
+        AudioApp.state.subscribe('status:urlLoadingErrorMessage:changed', (message) => {
+            setUrlLoadingError(message);
+        });
         AudioApp.state.subscribe('status:isVadProcessing:changed', (isProcessing) => {
             showVadProgress(isProcessing);
             if (!isProcessing) {
@@ -231,12 +257,12 @@ AudioApp.uiManager = (function() {
     function initializeSliderMarkers() {
         /** @type {Array<{slider: HTMLInputElement|null, markersDiv: HTMLDivElement|null}>} */
         const markerConfigs = [
-            { slider: playbackSpeedControl, markersDiv: speedMarkers },
-            { slider: pitchControl, markersDiv: pitchMarkers },
-            { slider: gainControl, markersDiv: gainMarkers }
+            {slider: playbackSpeedControl, markersDiv: speedMarkers},
+            {slider: pitchControl, markersDiv: pitchMarkers},
+            {slider: gainControl, markersDiv: gainMarkers}
         ];
         markerConfigs.forEach(config => {
-            const { slider, markersDiv } = config;
+            const {slider, markersDiv} = config;
             if (!slider || !markersDiv) return;
             const min = parseFloat(slider.min);
             const max = parseFloat(slider.max);
@@ -259,13 +285,15 @@ AudioApp.uiManager = (function() {
      * @private
      */
     function setupEventListeners() {
-        chooseFileButton?.addEventListener('click', () => { hiddenAudioFile?.click(); });
+        chooseFileButton?.addEventListener('click', () => {
+            hiddenAudioFile?.click();
+        });
         hiddenAudioFile?.addEventListener('change', (e) => {
             const target = /** @type {HTMLInputElement} */ (e.target);
             const file = target.files?.[0];
             if (file) {
                 updateFileName(file.name);
-                dispatchUIEvent('audioapp:fileSelected', { file: file });
+                dispatchUIEvent('audioapp:fileSelected', {file: file});
             } else {
                 updateFileName("");
             }
@@ -274,7 +302,7 @@ AudioApp.uiManager = (function() {
         loadUrlButton?.addEventListener('click', () => {
             const audioUrl = audioUrlInput?.value.trim();
             if (audioUrl) {
-                dispatchUIEvent('audioapp:urlSelected', { url: audioUrl });
+                dispatchUIEvent('audioapp:urlSelected', {url: audioUrl});
             } else {
                 console.warn("UIManager: Load URL button clicked, but URL is empty.");
                 if (audioUrlInput) {
@@ -289,7 +317,7 @@ AudioApp.uiManager = (function() {
                 event.preventDefault();
                 const audioUrl = audioUrlInput?.value.trim();
                 if (audioUrl) {
-                    dispatchUIEvent('audioapp:urlSelected', { url: audioUrl });
+                    dispatchUIEvent('audioapp:urlSelected', {url: audioUrl});
                 } else {
                     console.warn("UIManager: Enter pressed in URL input, but URL is empty.");
                     if (audioUrlInput) {
@@ -322,11 +350,13 @@ AudioApp.uiManager = (function() {
         seekBar?.addEventListener('input', (e) => {
             const target = /** @type {HTMLInputElement} */ (e.target);
             const fraction = parseFloat(target.value);
-            if (!isNaN(fraction)) { dispatchUIEvent('audioapp:seekBarInput', { fraction: fraction }); }
+            if (!isNaN(fraction)) {
+                dispatchUIEvent('audioapp:seekBarInput', {fraction: fraction});
+            }
         });
         playPauseButton?.addEventListener('click', () => dispatchUIEvent('audioapp:playPauseClicked'));
-        jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: -getJumpTime() }));
-        jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { seconds: getJumpTime() }));
+        jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', {seconds: -getJumpTime()}));
+        jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', {seconds: getJumpTime()}));
 
         setupSliderListeners(playbackSpeedControl, speedValueDisplay, 'audioapp:speedChanged', 'speed', 'x');
         setupSliderListeners(pitchControl, pitchValueDisplay, 'audioapp:pitchChanged', 'pitch', 'x');
@@ -356,7 +386,7 @@ AudioApp.uiManager = (function() {
         slider.addEventListener('input', () => {
             const value = parseFloat(slider.value);
             valueDisplay.textContent = value.toFixed(2) + suffix;
-            dispatchUIEvent(eventName, { [detailKey]: value });
+            dispatchUIEvent(eventName, {[detailKey]: value});
         });
     }
 
@@ -375,12 +405,25 @@ AudioApp.uiManager = (function() {
         let handled = false;
         /** @type {string|null} */ let eventKey = null;
         switch (e.code) {
-            case 'Space': eventKey = 'Space'; handled = true; break;
-            case 'ArrowLeft': eventKey = 'ArrowLeft'; handled = true; break;
-            case 'ArrowRight': eventKey = 'ArrowRight'; handled = true; break;
+            case 'Space':
+                eventKey = 'Space';
+                handled = true;
+                break;
+            case 'ArrowLeft':
+                eventKey = 'ArrowLeft';
+                handled = true;
+                break;
+            case 'ArrowRight':
+                eventKey = 'ArrowRight';
+                handled = true;
+                break;
         }
-        if (eventKey) { dispatchUIEvent('audioapp:keyPressed', { key: eventKey }); }
-        if (handled) { e.preventDefault(); } // Prevent default browser action (e.g., scrolling on space)
+        if (eventKey) {
+            dispatchUIEvent('audioapp:keyPressed', {key: eventKey});
+        }
+        if (handled) {
+            e.preventDefault();
+        } // Prevent default browser action (e.g., scrolling on space)
     }
 
     /**
@@ -430,11 +473,15 @@ AudioApp.uiManager = (function() {
         const value = parseFloat(slider.value);
         /** @type {string|null} */ let type = null;
         if (slider === vadThresholdSlider && vadThresholdValueDisplay) {
-            vadThresholdValueDisplay.textContent = value.toFixed(2); type = 'positive';
+            vadThresholdValueDisplay.textContent = value.toFixed(2);
+            type = 'positive';
         } else if (slider === vadNegativeThresholdSlider && vadNegativeThresholdValueDisplay) {
-            vadNegativeThresholdValueDisplay.textContent = value.toFixed(2); type = 'negative';
+            vadNegativeThresholdValueDisplay.textContent = value.toFixed(2);
+            type = 'negative';
         }
-        if (type) { dispatchUIEvent('audioapp:thresholdChanged', { type: type, value: value }); }
+        if (type) {
+            dispatchUIEvent('audioapp:thresholdChanged', {type: type, value: value});
+        }
     }
 
     /**
@@ -443,7 +490,7 @@ AudioApp.uiManager = (function() {
      * @param {MouseEvent} event - The click event.
      * @param {HTMLInputElement|null} sliderElement - The slider element associated with the markers.
      */
-     function handleMarkerClick(event, sliderElement) {
+    function handleMarkerClick(event, sliderElement) {
         if (!sliderElement || sliderElement.disabled) return;
         const target = /** @type {HTMLElement} */ (event.target);
         if (target.tagName === 'SPAN' && target.dataset.value) {
@@ -451,7 +498,7 @@ AudioApp.uiManager = (function() {
             if (!isNaN(value)) {
                 sliderElement.value = String(value);
                 // Dispatch 'input' event to trigger associated listeners (e.g., value display update, app logic)
-                sliderElement.dispatchEvent(new Event('input', { bubbles: true }));
+                sliderElement.dispatchEvent(new Event('input', {bubbles: true}));
             }
         }
     }
@@ -528,7 +575,7 @@ AudioApp.uiManager = (function() {
      * @param {Object<string, any>} [detail={}] - The detail object for the event.
      */
     function dispatchUIEvent(eventName, detail = {}) {
-        document.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
+        document.dispatchEvent(new CustomEvent(eventName, {detail: detail}));
     }
 
     // --- Public Methods for Updating UI ---
@@ -575,9 +622,18 @@ AudioApp.uiManager = (function() {
         setAudioUrlInputValue("");
         setUrlInputStyle('default');
 
-        if (playbackSpeedControl && speedValueDisplay) { playbackSpeedControl.value = "1.0"; speedValueDisplay.textContent = "1.00x"; }
-        if (pitchControl && pitchValueDisplay) { pitchControl.value = "1.0"; pitchValueDisplay.textContent = "1.00x"; }
-        if (gainControl && gainValueDisplay) { gainControl.value = "1.0"; gainValueDisplay.textContent = "1.00x"; }
+        if (playbackSpeedControl && speedValueDisplay) {
+            playbackSpeedControl.value = "1.0";
+            speedValueDisplay.textContent = "1.00x";
+        }
+        if (pitchControl && pitchValueDisplay) {
+            pitchControl.value = "1.0";
+            pitchValueDisplay.textContent = "1.00x";
+        }
+        if (gainControl && gainValueDisplay) {
+            gainControl.value = "1.0";
+            gainValueDisplay.textContent = "1.00x";
+        }
         if (jumpTimeInput) jumpTimeInput.value = "5";
 
         enableSeekBar(false);
@@ -589,21 +645,33 @@ AudioApp.uiManager = (function() {
      * @public
      * @param {string} text - The file name to display.
      */
-    function updateFileName(text) { if (fileNameDisplay) { fileNameDisplay.textContent = text; fileNameDisplay.title = text; } }
+    function updateFileName(text) {
+        if (fileNameDisplay) {
+            fileNameDisplay.textContent = text;
+            fileNameDisplay.title = text;
+        }
+    }
 
     /**
      * Sets the general file information/status message.
      * @public
      * @param {string} text - The message to display.
      */
-    function setFileInfo(text) { if (fileInfo) { fileInfo.textContent = text; fileInfo.title = text; } }
+    function setFileInfo(text) {
+        if (fileInfo) {
+            fileInfo.textContent = text;
+            fileInfo.title = text;
+        }
+    }
 
     /**
      * Sets the state of the play/pause button.
      * @public
      * @param {boolean} isPlaying - True if audio is playing, false otherwise.
      */
-    function setPlayButtonState(isPlaying) { if (playPauseButton) playPauseButton.textContent = isPlaying ? 'Pause' : 'Play'; }
+    function setPlayButtonState(isPlaying) {
+        if (playPauseButton) playPauseButton.textContent = isPlaying ? 'Pause' : 'Play';
+    }
 
     /**
      * Updates the time display (current time / duration).
@@ -615,7 +683,7 @@ AudioApp.uiManager = (function() {
         if (timeDisplay && Utils) {
             timeDisplay.textContent = `${Utils.formatTime(currentTime)} / ${Utils.formatTime(duration)}`;
         } else if (timeDisplay) {
-             timeDisplay.textContent = `Err / Err`; // Fallback if Utils is not available
+            timeDisplay.textContent = `Err / Err`; // Fallback if Utils is not available
         }
     }
 
@@ -628,7 +696,7 @@ AudioApp.uiManager = (function() {
         if (seekBar) {
             const clampedFraction = Math.max(0, Math.min(1, fraction));
             // Only update if significantly different to avoid fighting with user input
-            if (Math.abs(parseFloat(seekBar.value) - clampedFraction) > 1e-6 ) {
+            if (Math.abs(parseFloat(seekBar.value) - clampedFraction) > 1e-6) {
                 seekBar.value = String(clampedFraction);
             }
         }
@@ -644,11 +712,11 @@ AudioApp.uiManager = (function() {
         if (typeof regionsOrText === 'string') {
             speechRegionsDisplay.textContent = regionsOrText;
         } else if (Array.isArray(regionsOrText)) {
-             if (regionsOrText.length > 0) {
-                 speechRegionsDisplay.textContent = regionsOrText.map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`).join('\n');
-             } else {
-                 speechRegionsDisplay.textContent = "No speech detected.";
-             }
+            if (regionsOrText.length > 0) {
+                speechRegionsDisplay.textContent = regionsOrText.map(r => `Start: ${r.start.toFixed(2)}s, End: ${r.end.toFixed(2)}s`).join('\n');
+            } else {
+                speechRegionsDisplay.textContent = "No speech detected.";
+            }
         } else {
             speechRegionsDisplay.textContent = "None"; // Default fallback
         }
@@ -694,7 +762,9 @@ AudioApp.uiManager = (function() {
      * @public
      * @param {boolean} enable - True to enable, false to disable.
      */
-     function enableSeekBar(enable) { if (seekBar) seekBar.disabled = !enable; }
+    function enableSeekBar(enable) {
+        if (seekBar) seekBar.disabled = !enable;
+    }
 
     /**
      * Enables or disables VAD threshold controls.
@@ -714,7 +784,9 @@ AudioApp.uiManager = (function() {
      * @public
      * @returns {number} The jump time in seconds (default is 5).
      */
-    function getJumpTime() { return parseFloat(jumpTimeInput?.value || "5") || 5; }
+    function getJumpTime() {
+        return parseFloat(jumpTimeInput?.value || "5") || 5;
+    }
 
     /**
      * Updates the VAD progress bar percentage.

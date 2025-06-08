@@ -4,7 +4,7 @@
 /** @namespace AudioApp */
 var AudioApp = AudioApp || {};
 
-AudioApp.vadAnalyzer = (function() {
+AudioApp.vadAnalyzer = (function () {
     'use strict';
 
     // --- CONFIGURATION ---

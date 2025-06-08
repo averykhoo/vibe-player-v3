@@ -7,7 +7,7 @@ try {
     importScripts('../../lib/fft.js', '../state/constants.js', '../utils.js'); // Updated path for constants
 } catch (e) {
     console.error("Spectrogram Worker: Failed to import scripts.", e);
-    self.postMessage({ type: 'error', detail: 'Worker script import failed.' });
+    self.postMessage({type: 'error', detail: 'Worker script import failed.'});
 }
 
 // 2. Listen for Messages
@@ -19,15 +19,15 @@ self.onmessage = (event) => {
         if (typeof self.FFT === 'undefined') missing.push('FFT');
         if (typeof self.Constants === 'undefined') missing.push('Constants');
         if (typeof self.AudioApp?.Utils === 'undefined') missing.push('AudioApp.Utils');
-        self.postMessage({ type: 'error', detail: `Worker dependencies are missing: ${missing.join(', ')}.` });
+        self.postMessage({type: 'error', detail: `Worker dependencies are missing: ${missing.join(', ')}.`});
         return;
     }
 
-    const { type, payload } = event.data;
+    const {type, payload} = event.data;
 
     if (type === 'compute') {
         try {
-            const { channelData, sampleRate, duration, fftSize, targetSlices } = payload;
+            const {channelData, sampleRate, duration, fftSize, targetSlices} = payload;
 
             // Access the globally loaded scripts via the 'self' scope.
             // Constants is now directly on self.
@@ -40,20 +40,23 @@ self.onmessage = (event) => {
             // 4. Post Result Back (with Transferable objects for performance)
             if (spectrogramData) {
                 const transferable = spectrogramData.map(arr => arr.buffer);
-                self.postMessage({ type: 'result', payload: { spectrogramData } }, transferable);
+                self.postMessage({type: 'result', payload: {spectrogramData}}, transferable);
             } else {
-                 self.postMessage({ type: 'result', payload: { spectrogramData: [] } }); // Send empty result
+                self.postMessage({type: 'result', payload: {spectrogramData: []}}); // Send empty result
             }
         } catch (e) {
             console.error('Spectrogram Worker: Error during computation.', e);
-            self.postMessage({ type: 'error', detail: e.message });
+            self.postMessage({type: 'error', detail: e.message});
         }
     }
 };
 
 // THIS FUNCTION IS A DIRECT COPY FROM THE ORIGINAL spectrogramVisualizer.js
 function computeSpectrogram(channelData, sampleRate, duration, actualFftSize, targetSlices, FFTConstructor, ConstantsGlobal, Utils) {
-    if (!channelData) { console.error("Worker: Invalid channelData."); return null; }
+    if (!channelData) {
+        console.error("Worker: Invalid channelData.");
+        return null;
+    }
     const totalSamples = channelData.length;
     const hopDivisor = duration < ConstantsGlobal.Visualizer.SPEC_SHORT_FILE_HOP_THRESHOLD_S ? ConstantsGlobal.Visualizer.SPEC_SHORT_HOP_DIVISOR : ConstantsGlobal.Visualizer.SPEC_NORMAL_HOP_DIVISOR;
     const hopSize = Math.max(1, Math.floor(actualFftSize / hopDivisor));
@@ -61,13 +64,19 @@ function computeSpectrogram(channelData, sampleRate, duration, actualFftSize, ta
     const rawSliceCount = ConstantsGlobal.Visualizer.SPEC_CENTER_WINDOWS ? Math.ceil(totalSamples / hopSize)
         : (totalSamples < actualFftSize ? 0 : Math.floor((totalSamples - actualFftSize) / hopSize) + 1);
 
-    if (rawSliceCount <= 0) { console.warn("Worker: Not enough audio samples for FFT."); return []; }
+    if (rawSliceCount <= 0) {
+        console.warn("Worker: Not enough audio samples for FFT.");
+        return [];
+    }
 
     const fftInstance = new FFTConstructor(actualFftSize, sampleRate);
     const complexBuffer = fftInstance.createComplexArray();
     const fftInput = new Array(actualFftSize);
     const windowFunc = Utils.hannWindow(actualFftSize);
-    if (!windowFunc) { console.error("Worker: Failed to generate Hann window."); return null; }
+    if (!windowFunc) {
+        console.error("Worker: Failed to generate Hann window.");
+        return null;
+    }
 
     const rawSpec = [];
     for (let i = 0; i < rawSliceCount; i++) {
@@ -101,19 +110,19 @@ function computeSpectrogram(channelData, sampleRate, duration, actualFftSize, ta
     const numFreqBins = rawSpec[0].length;
     const finalSpec = new Array(targetSlices);
     for (let i = 0; i < targetSlices; i++) {
-         const rawPos = (rawSpec.length > 1) ? (i / (targetSlices - 1)) * (rawSpec.length - 1) : 0;
-         const index1 = Math.floor(rawPos);
-         const index2 = Math.min(rawSpec.length - 1, Math.ceil(rawPos));
-         const factor = rawPos - index1;
-         const magnitudes1 = rawSpec[index1], magnitudes2 = rawSpec[index2];
-         finalSpec[i] = new Float32Array(numFreqBins);
-         if (index1 === index2 || factor === 0) {
-             finalSpec[i].set(magnitudes1);
-         } else {
-             for (let k = 0; k < numFreqBins; k++) {
-                 finalSpec[i][k] = magnitudes1[k] * (1.0 - factor) + magnitudes2[k] * factor;
-             }
-         }
+        const rawPos = (rawSpec.length > 1) ? (i / (targetSlices - 1)) * (rawSpec.length - 1) : 0;
+        const index1 = Math.floor(rawPos);
+        const index2 = Math.min(rawSpec.length - 1, Math.ceil(rawPos));
+        const factor = rawPos - index1;
+        const magnitudes1 = rawSpec[index1], magnitudes2 = rawSpec[index2];
+        finalSpec[i] = new Float32Array(numFreqBins);
+        if (index1 === index2 || factor === 0) {
+            finalSpec[i].set(magnitudes1);
+        } else {
+            for (let k = 0; k < numFreqBins; k++) {
+                finalSpec[i][k] = magnitudes1[k] * (1.0 - factor) + magnitudes2[k] * factor;
+            }
+        }
     }
     return finalSpec;
 }

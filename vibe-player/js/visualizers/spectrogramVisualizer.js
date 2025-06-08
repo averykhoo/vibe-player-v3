@@ -1,7 +1,7 @@
 // --- /vibe-player/js/visualizers/spectrogramVisualizer.js --- (CORRECTED)
 // Handles orchestrating the Spectrogram worker and rendering the results to a canvas.
 
-AudioApp.spectrogramVisualizer = (function(globalFFT) {
+AudioApp.spectrogramVisualizer = (function (globalFFT) {
     'use strict';
 
     // Constants is now a global class, AudioApp.Constants is no longer used.
@@ -26,8 +26,8 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
             worker.onmessage = handleWorkerMessage;
             worker.onerror = handleWorkerError;
         } catch (e) {
-             console.error("SpectrogramVisualizer: Failed to create Web Worker.", e);
-             worker = null;
+            console.error("SpectrogramVisualizer: Failed to create Web Worker.", e);
+            worker = null;
         }
 
         if (spectrogramCanvas) {
@@ -48,9 +48,9 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
     }
 
     function handleWorkerMessage(event) {
-        const { type, payload, detail } = event.data;
+        const {type, payload, detail} = event.data;
         if (type === 'result') {
-            const { spectrogramData } = payload;
+            const {spectrogramData} = payload;
             const audioBuffer = lastAudioBuffer;
 
             if (!audioBuffer) {
@@ -69,17 +69,23 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
                 showSpinner(false);
             }
         } else if (type === 'error') {
-            handleWorkerError({ message: detail });
+            handleWorkerError({message: detail});
         }
     }
 
     async function computeAndDrawSpectrogram(audioBufferFromParam) {
         lastAudioBuffer = audioBufferFromParam || (getSharedAudioBuffer ? getSharedAudioBuffer() : null);
 
-        if (!lastAudioBuffer) { console.warn("SpectrogramVisualizer: No AudioBuffer available."); return; }
-        if (!spectrogramCtx || !spectrogramCanvas) { console.warn("SpectrogramVisualizer: Canvas context/element missing."); return; }
+        if (!lastAudioBuffer) {
+            console.warn("SpectrogramVisualizer: No AudioBuffer available.");
+            return;
+        }
+        if (!spectrogramCtx || !spectrogramCanvas) {
+            console.warn("SpectrogramVisualizer: Canvas context/element missing.");
+            return;
+        }
         if (!worker) {
-            handleWorkerError({ message: "Worker not available or failed to load." });
+            handleWorkerError({message: "Worker not available or failed to load."});
             return;
         }
 
@@ -124,7 +130,7 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
         if (!rect || rect.width <= 0) return;
         const clickXRelative = e.clientX - rect.left;
         const fraction = Math.max(0, Math.min(1, clickXRelative / rect.width));
-        document.dispatchEvent(new CustomEvent('audioapp:seekRequested', { detail: { fraction: fraction } }));
+        document.dispatchEvent(new CustomEvent('audioapp:seekRequested', {detail: {fraction: fraction}}));
     }
 
     function handleCanvasDoubleClick(e) {
@@ -147,12 +153,15 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
             if (!displayCtx) return reject(new Error("SpectrogramVisualizer: Could not get 2D context from display canvas."));
 
             displayCtx.clearRect(0, 0, canvas.width, canvas.height);
-            displayCtx.fillStyle = '#000'; displayCtx.fillRect(0, 0, canvas.width, canvas.height);
+            displayCtx.fillStyle = '#000';
+            displayCtx.fillRect(0, 0, canvas.width, canvas.height);
 
-            const dataWidth = spectrogramData.length; const displayHeight = canvas.height;
+            const dataWidth = spectrogramData.length;
+            const displayHeight = canvas.height;
             if (!cachedSpectrogramCanvas || cachedSpectrogramCanvas.width !== dataWidth || cachedSpectrogramCanvas.height !== displayHeight) {
-                 cachedSpectrogramCanvas = document.createElement('canvas');
-                 cachedSpectrogramCanvas.width = dataWidth; cachedSpectrogramCanvas.height = displayHeight;
+                cachedSpectrogramCanvas = document.createElement('canvas');
+                cachedSpectrogramCanvas.width = dataWidth;
+                cachedSpectrogramCanvas.height = displayHeight;
             }
             const offCtx = cachedSpectrogramCanvas.getContext('2d');
             if (!offCtx) return reject(new Error("SpectrogramVisualizer: Could not get context from offscreen canvas."));
@@ -162,29 +171,35 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
             const currentSpecMaxFreq = Constants.Visualizer.SPEC_MAX_FREQS[currentMaxFreqIndex];
             const maxBinIndex = Math.min(numBins - 1, Math.floor((currentSpecMaxFreq / nyquist) * (numBins - 1)));
 
-            const dbThreshold = -60; let maxDb = -Infinity;
+            const dbThreshold = -60;
+            let maxDb = -Infinity;
             const sliceStep = Math.max(1, Math.floor(dataWidth / 100));
             const binStep = Math.max(1, Math.floor(maxBinIndex / 50));
             for (let i = 0; i < dataWidth; i += sliceStep) {
-                 const magnitudes = spectrogramData[i]; if (!magnitudes) continue;
-                 for (let j = 0; j <= maxBinIndex; j += binStep) {
-                     if (j >= magnitudes.length) break;
-                     const db = 20 * Math.log10(Math.max(1e-9, magnitudes[j]));
-                     maxDb = Math.max(maxDb, Math.max(dbThreshold, db));
-                 }
+                const magnitudes = spectrogramData[i];
+                if (!magnitudes) continue;
+                for (let j = 0; j <= maxBinIndex; j += binStep) {
+                    if (j >= magnitudes.length) break;
+                    const db = 20 * Math.log10(Math.max(1e-9, magnitudes[j]));
+                    maxDb = Math.max(maxDb, Math.max(dbThreshold, db));
+                }
             }
             maxDb = Math.max(maxDb, dbThreshold + 1);
-            const minDb = dbThreshold; const dbRange = maxDb - minDb;
+            const minDb = dbThreshold;
+            const dbRange = maxDb - minDb;
 
             const fullImageData = offCtx.createImageData(dataWidth, displayHeight);
             const imgData = fullImageData.data;
-            let currentSlice = 0; const chunkSize = 32;
+            let currentSlice = 0;
+            const chunkSize = 32;
 
             function drawChunk() {
                 try {
-                    const startSlice = currentSlice; const endSlice = Math.min(startSlice + chunkSize, dataWidth);
+                    const startSlice = currentSlice;
+                    const endSlice = Math.min(startSlice + chunkSize, dataWidth);
                     for (let i = startSlice; i < endSlice; i++) {
-                        const magnitudes = spectrogramData[i]; if (!magnitudes) continue;
+                        const magnitudes = spectrogramData[i];
+                        if (!magnitudes) continue;
                         for (let y = 0; y < displayHeight; y++) {
                             const freqRatio = (displayHeight - 1 - y) / (displayHeight - 1);
                             const logFreqRatio = Math.pow(freqRatio, 2.0);
@@ -194,18 +209,25 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
                             const normValue = dbRange > 0 ? (Math.max(minDb, db) - minDb) / dbRange : 0;
                             const [r, g, b] = Utils.viridisColor(normValue);
                             const idx = (i + y * dataWidth) * 4;
-                            imgData[idx] = r; imgData[idx + 1] = g; imgData[idx + 2] = b; imgData[idx + 3] = 255;
+                            imgData[idx] = r;
+                            imgData[idx + 1] = g;
+                            imgData[idx + 2] = b;
+                            imgData[idx + 3] = 255;
                         }
                     }
                     offCtx.putImageData(fullImageData, 0, 0, startSlice, 0, endSlice - startSlice, displayHeight);
                     currentSlice = endSlice;
-                    if (currentSlice < dataWidth) { requestAnimationFrame(drawChunk); }
-                    else {
+                    if (currentSlice < dataWidth) {
+                        requestAnimationFrame(drawChunk);
+                    } else {
                         displayCtx.drawImage(cachedSpectrogramCanvas, 0, 0, canvas.width, canvas.height);
                         resolve();
                     }
-                } catch (error) { reject(error); }
+                } catch (error) {
+                    reject(error);
+                }
             }
+
             requestAnimationFrame(drawChunk);
         });
     }
@@ -213,14 +235,15 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
     function updateProgressIndicator(currentTime, duration) {
         if (!spectrogramCanvas || !spectrogramProgressIndicator) return;
         if (isNaN(duration) || duration <= 0) {
-            spectrogramProgressIndicator.style.left = "0px"; return;
+            spectrogramProgressIndicator.style.left = "0px";
+            return;
         }
         const fraction = Math.max(0, Math.min(1, currentTime / duration));
         spectrogramProgressIndicator.style.left = `${fraction * spectrogramCanvas.clientWidth}px`;
     }
 
     function clearVisualsInternal() {
-         if (spectrogramCtx && spectrogramCanvas) {
+        if (spectrogramCtx && spectrogramCanvas) {
             spectrogramCtx.clearRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
             spectrogramCtx.fillStyle = '#000';
             spectrogramCtx.fillRect(0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
@@ -240,15 +263,17 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
     }
 
     function resizeCanvasInternal() {
-         if (!spectrogramCanvas) return false;
-        const { width, height } = spectrogramCanvas.getBoundingClientRect();
-        const roundedWidth = Math.round(width); const roundedHeight = Math.round(height);
+        if (!spectrogramCanvas) return false;
+        const {width, height} = spectrogramCanvas.getBoundingClientRect();
+        const roundedWidth = Math.round(width);
+        const roundedHeight = Math.round(height);
         if (spectrogramCanvas.width !== roundedWidth || spectrogramCanvas.height !== roundedHeight) {
-            spectrogramCanvas.width = roundedWidth; spectrogramCanvas.height = roundedHeight;
-             if(spectrogramCtx) {
-                  spectrogramCtx.fillStyle = '#000';
-                  spectrogramCtx.fillRect(0, 0, roundedWidth, roundedHeight);
-             }
+            spectrogramCanvas.width = roundedWidth;
+            spectrogramCanvas.height = roundedHeight;
+            if (spectrogramCtx) {
+                spectrogramCtx.fillStyle = '#000';
+                spectrogramCtx.fillRect(0, 0, roundedWidth, roundedHeight);
+            }
             return true;
         }
         return false;
@@ -257,9 +282,9 @@ AudioApp.spectrogramVisualizer = (function(globalFFT) {
     function resizeAndRedraw(audioBuffer) {
         const wasResized = resizeCanvasInternal();
         if (wasResized && cachedSpectrogramCanvas && spectrogramCtx && spectrogramCanvas) {
-             spectrogramCtx.drawImage(cachedSpectrogramCanvas, 0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
+            spectrogramCtx.drawImage(cachedSpectrogramCanvas, 0, 0, spectrogramCanvas.width, spectrogramCanvas.height);
         }
-        const { currentTime = 0, duration = 0 } = AudioApp.audioEngine?.getCurrentTime() || {};
+        const {currentTime = 0, duration = 0} = AudioApp.audioEngine?.getCurrentTime() || {};
         updateProgressIndicator(currentTime, duration || (audioBuffer ? audioBuffer.duration : 0));
     }
 

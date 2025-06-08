@@ -209,16 +209,22 @@
                 ctx.strokeStyle = s.color;
                 ctx.lineWidth = 1;
                 if (s.ticksLeft > halfLife) { // First half of life: 5x5 cross
-                    const cx = s.x + 2; const cy = s.y + 2;
+                    const cx = s.x + 2;
+                    const cy = s.y + 2;
                     ctx.beginPath();
-                    ctx.moveTo(s.x, cy); ctx.lineTo(s.x + 5, cy);
-                    ctx.moveTo(cx, s.y); ctx.lineTo(cx, s.y + 5);
+                    ctx.moveTo(s.x, cy);
+                    ctx.lineTo(s.x + 5, cy);
+                    ctx.moveTo(cx, s.y);
+                    ctx.lineTo(cx, s.y + 5);
                     ctx.stroke();
                 } else { // Second half of life: 3x3 cross
-                    const cx = s.x + 1; const cy = s.y + 1;
+                    const cx = s.x + 1;
+                    const cy = s.y + 1;
                     ctx.beginPath();
-                    ctx.moveTo(s.x, cy); ctx.lineTo(s.x + 3, cy);
-                    ctx.moveTo(cx, s.y); ctx.lineTo(cx, s.y + 3);
+                    ctx.moveTo(s.x, cy);
+                    ctx.lineTo(s.x + 3, cy);
+                    ctx.moveTo(cx, s.y);
+                    ctx.lineTo(cx, s.y + 3);
                     ctx.stroke();
                 }
                 anyAlive = true;

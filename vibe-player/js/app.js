@@ -110,6 +110,9 @@ var AudioApp = AudioApp || {};
         app.waveformVisualizer.init();
         app.spectrogramVisualizer.init(() => app.state.runtime.currentAudioBuffer);
 
+        // EAGER LOAD VAD MODEL
+        app.vadAnalyzer.init();
+
         if (app.DTMFParser) dtmfParser = new app.DTMFParser();
         if (app.CallProgressToneParser) cptParser = new app.CallProgressToneParser();
 
@@ -267,7 +270,7 @@ var AudioApp = AudioApp || {};
             await app.audioEngine.loadAndProcessFile(newFileObject);
             app.state.updateStatus('urlInputStyle', 'success');
             app.uiManager.setUrlInputStyle('success');
-            if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+            if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
         } catch (error) {
             console.error(`App: Error fetching/processing URL ${newUrlFromEvent}:`, error);
             app.uiManager.resetUI();
@@ -311,7 +314,7 @@ var AudioApp = AudioApp || {};
         app.waveformVisualizer.clearVisuals();
         app.spectrogramVisualizer.clearVisuals();
         app.spectrogramVisualizer.showSpinner(true);
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     async function handleAudioLoaded(e) {
@@ -376,9 +379,11 @@ var AudioApp = AudioApp || {};
             console.warn("App (VAD): Processing already running.");
             return;
         }
+
         app.state.updateStatus('isVadProcessing', true);
+
         try {
-            await app.vadAnalyzer.init();
+            // REMOVED: await app.vadAnalyzer.init(); -- This is now done at startup.
             app.uiManager.showVadProgress(true);
             app.uiManager.updateVadProgress(0);
             const pcm16k = await app.audioEngine.resampleTo16kMono(audioBuffer);
@@ -522,7 +527,7 @@ var AudioApp = AudioApp || {};
             app.state.updateRuntime('playbackStartTimeContext', null);
             stopUIUpdateLoop();
             updateUIWithTime(finalEstimatedTime);
-            if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+            if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
         }
         app.audioEngine.togglePlayPause();
     }
@@ -545,7 +550,7 @@ var AudioApp = AudioApp || {};
             app.state.updateRuntime('playbackStartTimeContext', null);
             updateUIWithTime(targetTime);
         }
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     function handleSeek(e) {
@@ -563,7 +568,7 @@ var AudioApp = AudioApp || {};
             app.state.updateRuntime('playbackStartTimeContext', null);
             updateUIWithTime(targetTime);
         }
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     const handleSeekBarInput = handleSeek;
@@ -571,17 +576,17 @@ var AudioApp = AudioApp || {};
     function handleSpeedChange(e) {
         app.state.updateParam('speed', e.detail.speed);
         if (debouncedSyncEngine) debouncedSyncEngine();
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     function handlePitchChange(e) {
         app.state.updateParam('pitch', e.detail.pitch);
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     function handleGainChange(e) {
         app.state.updateParam('gain', e.detail.gain);
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     function syncEngineToEstimatedTime() {
@@ -634,7 +639,7 @@ var AudioApp = AudioApp || {};
             app.uiManager.setSpeechRegionsText(newRegions);
             app.waveformVisualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
         }
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     function handlePlaybackEnded() {
@@ -649,7 +654,7 @@ var AudioApp = AudioApp || {};
         }
         app.state.updateStatus('playbackNaturallyEnded', true);
         app.uiManager.setPlayButtonState(false);
-        if(debouncedUpdateUrlHash) debouncedUpdateUrlHash();
+        if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
     function handlePlaybackStateChange(e) {
@@ -682,9 +687,15 @@ var AudioApp = AudioApp || {};
         const key = e.detail.key;
         const jumpTimeValue = app.uiManager.getJumpTime();
         switch (key) {
-            case 'Space': handlePlayPause(); break;
-            case 'ArrowLeft': handleJump({detail: {seconds: -jumpTimeValue}}); break;
-            case 'ArrowRight': handleJump({detail: {seconds: jumpTimeValue}}); break;
+            case 'Space':
+                handlePlayPause();
+                break;
+            case 'ArrowLeft':
+                handleJump({detail: {seconds: -jumpTimeValue}});
+                break;
+            case 'ArrowRight':
+                handleJump({detail: {seconds: jumpTimeValue}});
+                break;
         }
     }
 

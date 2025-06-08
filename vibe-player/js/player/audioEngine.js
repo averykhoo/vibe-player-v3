@@ -10,7 +10,7 @@ var AudioApp = AudioApp || {};
  * @description Manages Web Audio API, AudioWorklet loading/communication,
  * decoding, resampling, and playback control.
  */
-AudioApp.audioEngine = (function() {
+AudioApp.audioEngine = (function () {
     'use strict';
 
     // --- Web Audio API & Worklet State ---
@@ -95,10 +95,12 @@ AudioApp.audioEngine = (function() {
      * @returns {boolean} True if the AudioContext is ready, false otherwise.
      */
     function setupAudioContext() {
-        if (audioCtx && audioCtx.state !== 'closed') { return true; }
+        if (audioCtx && audioCtx.state !== 'closed') {
+            return true;
+        }
         try {
             if (audioCtx && audioCtx.state === 'closed') {
-                 console.log("AudioEngine: Recreating closed AudioContext.");
+                console.log("AudioEngine: Recreating closed AudioContext.");
             }
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             gainNode = audioCtx.createGain();
@@ -108,14 +110,20 @@ AudioApp.audioEngine = (function() {
             workletReady = false;
             console.log(`AudioEngine: AudioContext created/reset (state: ${audioCtx.state}). Sample Rate: ${audioCtx.sampleRate}Hz`);
             if (audioCtx.state === 'suspended') {
-                 console.warn("AudioEngine: AudioContext is suspended. User interaction (e.g., click) is needed to resume audio playback.");
+                console.warn("AudioEngine: AudioContext is suspended. User interaction (e.g., click) is needed to resume audio playback.");
             }
             return true;
         } catch (e) {
-             console.error("AudioEngine: Failed to create AudioContext.", e);
-             audioCtx = null; gainNode = null; workletNode = null; workletReady = false;
-             dispatchEngineEvent('audioapp:engineError', { type: 'context', error: new Error("Web Audio API not supported or context creation failed.") });
-             return false;
+            console.error("AudioEngine: Failed to create AudioContext.", e);
+            audioCtx = null;
+            gainNode = null;
+            workletNode = null;
+            workletReady = false;
+            dispatchEngineEvent('audioapp:engineError', {
+                type: 'context',
+                error: new Error("Web Audio API not supported or context creation failed.")
+            });
+            return false;
         }
     }
 
@@ -142,8 +150,9 @@ AudioApp.audioEngine = (function() {
             console.log("AudioEngine: WASM resources fetched successfully.");
         } catch (fetchError) {
             console.error("AudioEngine: Failed to fetch WASM/Loader resources:", fetchError);
-            wasmBinary = null; loaderScriptText = null; // Ensure resources are null on error
-            dispatchEngineEvent('audioapp:engineError', { type: 'resource', error: fetchError });
+            wasmBinary = null;
+            loaderScriptText = null; // Ensure resources are null on error
+            dispatchEngineEvent('audioapp:engineError', {type: 'resource', error: fetchError});
         }
     }
 
@@ -156,24 +165,29 @@ AudioApp.audioEngine = (function() {
      * @returns {Promise<void>} Resolves when setup is complete.
      * @throws {Error} If any critical step fails (e.g., context creation, decoding, worklet setup).
      */
-     async function loadAndProcessFile(file) {
+    async function loadAndProcessFile(file) {
         if (!audioCtx || audioCtx.state === 'closed') {
-             if (!setupAudioContext()) { throw new Error("AudioContext could not be created/reset for loading file."); }
+            if (!setupAudioContext()) {
+                throw new Error("AudioContext could not be created/reset for loading file.");
+            }
         }
         if (audioCtx.state === 'suspended') { // Attempt to resume context if suspended
-             await audioCtx.resume().catch(e => console.warn("AudioEngine: Context resume failed during load.", e));
-             if (audioCtx.state !== 'running') {
-                 throw new Error(`AudioContext could not be resumed (state: ${audioCtx.state}). User interaction might be required.`);
-             }
+            await audioCtx.resume().catch(e => console.warn("AudioEngine: Context resume failed during load.", e));
+            if (audioCtx.state !== 'running') {
+                throw new Error(`AudioContext could not be resumed (state: ${audioCtx.state}). User interaction might be required.`);
+            }
         }
 
         await cleanupCurrentWorklet(); // Clean up any existing worklet instance
-        currentDecodedBuffer = null; isPlaying = false; currentWorkletTime = 0.0; currentFormantScale = 1.0;
+        currentDecodedBuffer = null;
+        isPlaying = false;
+        currentWorkletTime = 0.0;
+        currentFormantScale = 1.0;
 
         try {
             const arrayBuffer = await file.arrayBuffer();
             currentDecodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            dispatchEngineEvent('audioapp:audioLoaded', { audioBuffer: currentDecodedBuffer });
+            dispatchEngineEvent('audioapp:audioLoaded', {audioBuffer: currentDecodedBuffer});
 
             if (!wasmBinary || !loaderScriptText) {
                 throw new Error("Cannot setup Worklet: WASM/Loader resources are missing. Ensure preFetchWorkletResources succeeded.");
@@ -183,9 +197,9 @@ AudioApp.audioEngine = (function() {
             console.error("AudioEngine: Error during load/decode/worklet setup:", error);
             currentDecodedBuffer = null;
             const errorType = error.message.includes("decodeAudioData") ? 'decodingError'
-                              : error.message.includes("Worklet") ? 'workletError'
-                              : 'loadError';
-            dispatchEngineEvent(`audioapp:${errorType}`, { error: error });
+                : error.message.includes("Worklet") ? 'workletError'
+                    : 'loadError';
+            dispatchEngineEvent(`audioapp:${errorType}`, {error: error});
             throw error; // Re-throw for the caller (app.js) to handle UI state
         }
     }
@@ -210,7 +224,9 @@ AudioApp.audioEngine = (function() {
             src.connect(offlineCtx.destination);
             src.start();
             return offlineCtx.startRendering().then(renderedBuffer => renderedBuffer.getChannelData(0))
-                .catch(err => { throw new Error(`Audio resampling rendering failed: ${err.message}`); });
+                .catch(err => {
+                    throw new Error(`Audio resampling rendering failed: ${err.message}`);
+                });
         } catch (offlineCtxError) {
             return Promise.reject(new Error(`OfflineContext creation failed: ${offlineCtxError.message}`));
         }
@@ -226,13 +242,13 @@ AudioApp.audioEngine = (function() {
     async function resampleTo16kMono(audioBuffer) {
         console.log("AudioEngine: Resampling audio to 16kHz mono...");
         try {
-             const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(audioBuffer);
-             console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz.`);
-             return pcm16k;
-        } catch(error) {
-             console.error("AudioEngine: Error during public resampling call:", error);
-             dispatchEngineEvent('audioapp:resamplingError', { error: error });
-             throw error;
+            const pcm16k = await convertAudioBufferTo16kHzMonoFloat32(audioBuffer);
+            console.log(`AudioEngine: Resampled to ${pcm16k.length} samples @ 16kHz.`);
+            return pcm16k;
+        } catch (error) {
+            console.error("AudioEngine: Error during public resampling call:", error);
+            dispatchEngineEvent('audioapp:resamplingError', {error: error});
+            throw error;
         }
     }
 
@@ -249,7 +265,7 @@ AudioApp.audioEngine = (function() {
         if (workletNode) {
             console.log("[AudioEngine] Cleaning up previous worklet node...");
             try {
-                postWorkletMessage({ type: 'cleanup' });
+                postWorkletMessage({type: 'cleanup'});
                 await new Promise(resolve => setTimeout(resolve, 50)); // Brief delay for message processing
 
                 if (workletNode.port) { // Check if port still exists
@@ -299,21 +315,27 @@ AudioApp.audioEngine = (function() {
             setupWorkletMessageHandler();
             workletNode.onprocessorerror = (event) => {
                 console.error(`[AudioEngine] Critical Processor Error:`, event);
-                dispatchEngineEvent('audioapp:engineError', { type: 'workletProcessor', error: new Error("Processor crashed or encountered a critical error.") });
-                cleanupCurrentWorklet(); workletReady = false; isPlaying = false;
-                dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: false });
+                dispatchEngineEvent('audioapp:engineError', {
+                    type: 'workletProcessor',
+                    error: new Error("Processor crashed or encountered a critical error.")
+                });
+                cleanupCurrentWorklet();
+                workletReady = false;
+                isPlaying = false;
+                dispatchEngineEvent('audioapp:playbackStateChanged', {isPlaying: false});
             };
 
             workletNode.connect(gainNode);
 
-            const channelData = []; const transferListAudio = [];
+            const channelData = [];
+            const transferListAudio = [];
             for (let i = 0; i < decodedBuffer.numberOfChannels; i++) {
                 const dataArray = decodedBuffer.getChannelData(i);
                 const bufferCopy = dataArray.buffer.slice(dataArray.byteOffset, dataArray.byteOffset + dataArray.byteLength);
                 channelData.push(bufferCopy);
                 transferListAudio.push(bufferCopy);
             }
-            postWorkletMessage({ type: 'load-audio', channelData: channelData }, transferListAudio);
+            postWorkletMessage({type: 'load-audio', channelData: channelData}, transferListAudio);
         } catch (error) {
             console.error("[AudioEngine] Error setting up Worklet Node:", error);
             await cleanupCurrentWorklet();
@@ -329,25 +351,31 @@ AudioApp.audioEngine = (function() {
         if (!workletNode?.port) return;
         workletNode.port.onmessage = (event) => {
             const data = event.data;
-            switch(data.type) {
+            switch (data.type) {
                 case 'status':
                     console.log(`[WorkletStatus] ${data.message}`);
                     if (data.message === 'processor-ready') {
-                        workletReady = true; dispatchEngineEvent('audioapp:workletReady');
+                        workletReady = true;
+                        dispatchEngineEvent('audioapp:workletReady');
                     } else if (data.message === 'Playback ended') {
                         dispatchEngineEvent('audioapp:playbackEnded');
                     } else if (data.message === 'Processor cleaned up') {
-                        workletReady = false; isPlaying = false;
+                        workletReady = false;
+                        isPlaying = false;
                     }
                     break;
                 case 'error':
                     console.error(`[WorkletError] ${data.message}`);
-                    dispatchEngineEvent('audioapp:engineError', { type: 'workletRuntime', error: new Error(data.message) });
-                    workletReady = false; isPlaying = false;
-                    dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: false });
+                    dispatchEngineEvent('audioapp:engineError', {
+                        type: 'workletRuntime',
+                        error: new Error(data.message)
+                    });
+                    workletReady = false;
+                    isPlaying = false;
+                    dispatchEngineEvent('audioapp:playbackStateChanged', {isPlaying: false});
                     break;
                 case 'playback-state':
-                    dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: data.isPlaying });
+                    dispatchEngineEvent('audioapp:playbackStateChanged', {isPlaying: data.isPlaying});
                     break;
                 case 'time-update':
                     if (typeof data.currentTime === 'number' && currentDecodedBuffer) {
@@ -373,10 +401,12 @@ AudioApp.audioEngine = (function() {
             } catch (error) {
                 console.error("[AudioEngine] Error posting message to worklet:", error, "Message type:", message.type);
                 if (message.type !== 'cleanup') { // Avoid error loops on cleanup
-                    dispatchEngineEvent('audioapp:engineError', { type: 'workletComm', error: error });
+                    dispatchEngineEvent('audioapp:engineError', {type: 'workletComm', error: error});
                 }
-                cleanupCurrentWorklet(); workletReady = false; isPlaying = false;
-                dispatchEngineEvent('audioapp:playbackStateChanged', { isPlaying: false });
+                cleanupCurrentWorklet();
+                workletReady = false;
+                isPlaying = false;
+                dispatchEngineEvent('audioapp:playbackStateChanged', {isPlaying: false});
             }
         } else {
             if (workletReady || message.type !== 'cleanup') { // Don't warn if not ready and trying to cleanup
@@ -394,19 +424,23 @@ AudioApp.audioEngine = (function() {
      */
     async function togglePlayPause() {
         if (!workletReady || !audioCtx) {
-            console.warn("AudioEngine: Cannot toggle play/pause - Worklet or AudioContext not ready."); return;
+            console.warn("AudioEngine: Cannot toggle play/pause - Worklet or AudioContext not ready.");
+            return;
         }
         if (audioCtx.state === 'suspended') {
-            try { await audioCtx.resume(); }
-            catch (err) {
-                dispatchEngineEvent('audioapp:engineError', { type: 'contextResume', error: err }); return;
+            try {
+                await audioCtx.resume();
+            } catch (err) {
+                dispatchEngineEvent('audioapp:engineError', {type: 'contextResume', error: err});
+                return;
             }
         }
         if (audioCtx.state !== 'running') {
-             console.error(`AudioEngine: AudioContext not running (state: ${audioCtx.state}). Cannot toggle playback.`); return;
+            console.error(`AudioEngine: AudioContext not running (state: ${audioCtx.state}). Cannot toggle playback.`);
+            return;
         }
         const targetIsPlaying = !isPlaying;
-        postWorkletMessage({ type: targetIsPlaying ? 'play' : 'pause' });
+        postWorkletMessage({type: targetIsPlaying ? 'play' : 'pause'});
         isPlaying = targetIsPlaying; // Update desired state
     }
 
@@ -428,7 +462,7 @@ AudioApp.audioEngine = (function() {
     function seek(time) {
         if (!workletReady || !currentDecodedBuffer || isNaN(currentDecodedBuffer.duration)) return;
         const targetTime = Math.max(0, Math.min(time, currentDecodedBuffer.duration));
-        postWorkletMessage({ type: 'seek', positionSeconds: targetTime });
+        postWorkletMessage({type: 'seek', positionSeconds: targetTime});
         currentWorkletTime = targetTime; // Update internal time immediately
     }
 
@@ -438,12 +472,12 @@ AudioApp.audioEngine = (function() {
      * @param {number} speed - Desired playback speed (e.g., 1.0 for normal).
      */
     function setSpeed(speed) {
-         const rate = Math.max(0.25, Math.min(parseFloat(String(speed)) || 1.0, 2.0));
-         if (currentPlaybackSpeed !== rate) {
-             currentPlaybackSpeed = rate;
-             if (workletReady) postWorkletMessage({ type: 'set-speed', value: rate });
-             dispatchEngineEvent('audioapp:internalSpeedChanged', { speed: rate });
-         }
+        const rate = Math.max(0.25, Math.min(parseFloat(String(speed)) || 1.0, 2.0));
+        if (currentPlaybackSpeed !== rate) {
+            currentPlaybackSpeed = rate;
+            if (workletReady) postWorkletMessage({type: 'set-speed', value: rate});
+            dispatchEngineEvent('audioapp:internalSpeedChanged', {speed: rate});
+        }
     }
 
     /**
@@ -455,7 +489,7 @@ AudioApp.audioEngine = (function() {
         const scale = Math.max(0.25, Math.min(parseFloat(String(pitch)) || 1.0, 2.0));
         if (currentPitchScale !== scale) {
             currentPitchScale = scale;
-            if (workletReady) postWorkletMessage({ type: 'set-pitch', value: scale });
+            if (workletReady) postWorkletMessage({type: 'set-pitch', value: scale});
         }
     }
 
@@ -468,7 +502,7 @@ AudioApp.audioEngine = (function() {
         const scale = Math.max(0.5, Math.min(parseFloat(String(formant)) || 1.0, 2.0));
         if (currentFormantScale !== scale) {
             currentFormantScale = scale;
-            if (workletReady) postWorkletMessage({ type: 'set-formant', value: scale });
+            if (workletReady) postWorkletMessage({type: 'set-formant', value: scale});
         }
     }
 
@@ -514,12 +548,20 @@ AudioApp.audioEngine = (function() {
         cleanupCurrentWorklet().finally(() => {
             if (audioCtx && audioCtx.state !== 'closed') {
                 audioCtx.close().then(() => console.log("AudioEngine: AudioContext closed."))
-                           .catch(e => console.warn("AudioEngine: Error closing AudioContext:", e));
+                    .catch(e => console.warn("AudioEngine: Error closing AudioContext:", e));
             }
-            audioCtx = null; gainNode = null; workletNode = null; currentDecodedBuffer = null;
-            wasmBinary = null; loaderScriptText = null;
-            workletReady = false; isPlaying = false;
-            currentWorkletTime = 0.0; currentPlaybackSpeed = 1.0; currentPitchScale = 1.0; currentFormantScale = 1.0;
+            audioCtx = null;
+            gainNode = null;
+            workletNode = null;
+            currentDecodedBuffer = null;
+            wasmBinary = null;
+            loaderScriptText = null;
+            workletReady = false;
+            isPlaying = false;
+            currentWorkletTime = 0.0;
+            currentPlaybackSpeed = 1.0;
+            currentPitchScale = 1.0;
+            currentFormantScale = 1.0;
         });
     }
 
@@ -531,7 +573,7 @@ AudioApp.audioEngine = (function() {
      * @param {Object<string, any>} [detail={}] - Data to pass with the event.
      */
     function dispatchEngineEvent(eventName, detail = {}) {
-        document.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
+        document.dispatchEvent(new CustomEvent(eventName, {detail: detail}));
     }
 
     /**

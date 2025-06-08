@@ -12,7 +12,7 @@ var AudioApp = AudioApp || {};
  * recurrent state tensors (h, c), and provides methods to process audio frames for VAD.
  * @param {object} globalOrt - The global ONNX Runtime object (typically `window.ort`).
  */
-AudioApp.sileroWrapper = (function(globalOrt) {
+AudioApp.sileroWrapper = (function (globalOrt) {
     'use strict';
 
     if (!globalOrt) {
@@ -21,7 +21,9 @@ AudioApp.sileroWrapper = (function(globalOrt) {
         const nonFunctionalInterface = {
             create: () => Promise.resolve(false),
             process: () => Promise.reject(new Error("ONNX Runtime not available")),
-            reset_state: () => { console.error("SileroWrapper: ONNX Runtime not available, cannot reset state."); },
+            reset_state: () => {
+                console.error("SileroWrapper: ONNX Runtime not available, cannot reset state.");
+            },
             isAvailable: () => false // Changed to a function
         };
         return nonFunctionalInterface;
@@ -64,7 +66,11 @@ AudioApp.sileroWrapper = (function(globalOrt) {
     async function create(sampleRate, uri = './model/silero_vad.onnx') {
         if (session) {
             console.log("SileroWrapper: Session already exists. Resetting state for potential new audio stream.");
-            try { reset_state(); } catch (e) { console.warn("SileroWrapper: Error resetting state for existing session:", e); }
+            try {
+                reset_state();
+            } catch (e) {
+                console.warn("SileroWrapper: Error resetting state for existing session:", e);
+            }
             return true;
         }
 
@@ -106,17 +112,19 @@ AudioApp.sileroWrapper = (function(globalOrt) {
     function reset_state() {
         if (!globalOrt?.Tensor) {
             console.error("SileroWrapper: Cannot reset state - ONNX Runtime (ort.Tensor) is not available.");
-            state_c = null; state_h = null; // Prevent further errors if process is called
+            state_c = null;
+            state_h = null; // Prevent further errors if process is called
             throw new Error("ONNX Runtime Tensor constructor not available. Silero VAD cannot function.");
         }
         try {
             state_c = new globalOrt.Tensor("float32", new Float32Array(stateSize).fill(0.0), stateDims);
             state_h = new globalOrt.Tensor("float32", new Float32Array(stateSize).fill(0.0), stateDims);
         } catch (tensorError) {
-             const err = /** @type {Error} */ (tensorError);
-             console.error("SileroWrapper: Error creating zero-filled state tensors:", err.message, err.stack);
-             state_c = null; state_h = null; // Invalidate state on error
-             throw err; // Re-throw to indicate failure
+            const err = /** @type {Error} */ (tensorError);
+            console.error("SileroWrapper: Error creating zero-filled state tensors:", err.message, err.stack);
+            state_c = null;
+            state_h = null; // Invalidate state on error
+            throw err; // Re-throw to indicate failure
         }
     }
 
@@ -135,7 +143,7 @@ AudioApp.sileroWrapper = (function(globalOrt) {
             throw new Error("SileroWrapper: VAD session or state not initialized. Call create() and ensure it succeeds before processing audio.");
         }
         if (!(audioFrame instanceof Float32Array)) {
-             throw new Error(`SileroWrapper: Input audioFrame must be a Float32Array, but received type ${typeof audioFrame}.`);
+            throw new Error(`SileroWrapper: Input audioFrame must be a Float32Array, but received type ${typeof audioFrame}.`);
         }
 
         try {
@@ -154,15 +162,15 @@ AudioApp.sileroWrapper = (function(globalOrt) {
                 state_h = outputMap.hn;
                 state_c = outputMap.cn;
             } else {
-                 console.warn("SileroWrapper: Model outputs 'hn' and 'cn' for recurrent state update were not found. Subsequent VAD results may be incorrect.");
+                console.warn("SileroWrapper: Model outputs 'hn' and 'cn' for recurrent state update were not found. Subsequent VAD results may be incorrect.");
             }
 
             // The primary VAD probability is typically named 'output'
             if (outputMap.output?.data instanceof Float32Array && typeof outputMap.output.data[0] === 'number') {
                 return outputMap.output.data[0];
             } else {
-                 console.error("SileroWrapper: Unexpected model output structure. 'output' tensor with numeric data not found. Actual output:", outputMap);
-                 throw new Error("SileroWrapper: Invalid model output structure for VAD probability.");
+                console.error("SileroWrapper: Unexpected model output structure. 'output' tensor with numeric data not found. Actual output:", outputMap);
+                throw new Error("SileroWrapper: Invalid model output structure for VAD probability.");
             }
         } catch (e) {
             const err = /** @type {Error} */ (e);

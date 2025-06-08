@@ -220,9 +220,9 @@
 <!-- 2. utils.js: Defines AudioApp.Utils. Needed by many modules. -->
 <script src="js/utils.js"></script>
 <!-- 3. state/constants.js: Defines the new Constants class. Needed by many modules. -->
-    <script src="js/state/constants.js"></script>
+<script src="js/state/constants.js"></script>
 <!-- 4. state/appState.js: Defines the AppState class for managing application state. -->
-    <script src="js/state/appState.js"></script>
+<script src="js/state/appState.js"></script>
 
 <!-- 1. app.js: Establishes AudioApp IIFE structure. Other files attach to this. -->
 <script src="js/app.js"></script>
@@ -237,17 +237,17 @@
 <!-- 7. player/audioEngine.js: Defines AudioApp.audioEngine. Uses Constants. Checked by app.js's init. -->
 <script src="js/player/audioEngine.js"></script>
 
-    <!-- VAD Modules (Order within this group matters) -->
-    <!-- 8. Load the new strategy files FIRST. -->
-    <script src="js/vad/RemoteApiStrategy.js"></script>
-    <script src="js/vad/LocalWorkerStrategy.js"></script>
+<!-- VAD Modules (Order within this group matters) -->
+<!-- 8. Load the new strategy files FIRST. -->
+<script src="js/vad/RemoteApiStrategy.js"></script>
+<script src="js/vad/LocalWorkerStrategy.js"></script>
 
-    <!-- 9. THEN load the analyzer that uses them. -->
-    <script src="js/vad/vadAnalyzer.js"></script>
+<!-- 9. THEN load the analyzer that uses them. -->
+<script src="js/vad/vadAnalyzer.js"></script>
 
-    <!-- 10. The original VAD modules are now loaded inside the worker, so we can remove them from here. -->
-    <!-- REMOVE <script src="js/vad/sileroWrapper.js"></script> -->
-    <!-- REMOVE <script src="js/vad/sileroProcessor.js"></script> -->
+<!-- 10. The original VAD modules are now loaded inside the worker, so we can remove them from here. -->
+<!-- REMOVE <script src="js/vad/sileroWrapper.js"></script> -->
+<!-- REMOVE <script src="js/vad/sileroProcessor.js"></script> -->
 
 <!-- Visualizer Modules -->
 <!-- 11. visualizers/waveformVisualizer.js: Defines AudioApp.waveformVisualizer. Uses Constants, Utils. Checked by app.js's init. -->

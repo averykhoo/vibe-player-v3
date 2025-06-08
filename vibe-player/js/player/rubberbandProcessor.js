@@ -116,7 +116,8 @@ class RubberbandProcessor extends AudioWorkletProcessor {
     async initializeWasmAndRubberband() {
         if (this.wasmReady) return; // Avoid re-initialization
         if (!this.wasmBinary || !this.loaderScriptText) {
-            this.postErrorAndStop("Cannot initialize WASM: Resources missing."); return;
+            this.postErrorAndStop("Cannot initialize WASM: Resources missing.");
+            return;
         }
         this.postStatus("Initializing WASM & Rubberband...");
         try {
@@ -134,11 +135,13 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 const getLoaderFactory = new Function('moduleArg', `${this.loaderScriptText}; return Rubberband;`);
                 loaderFunc = getLoaderFactory();
                 if (typeof loaderFunc !== 'function') throw new Error("Loader script did not return an async function.");
-            } catch (e) { throw new Error(`Loader script evaluation error: ${e.message}`); }
+            } catch (e) {
+                throw new Error(`Loader script evaluation error: ${e.message}`);
+            }
 
-            this.wasmModule = await loaderFunc({ instantiateWasm: instantiateWasm });
+            this.wasmModule = await loaderFunc({instantiateWasm: instantiateWasm});
             if (!this.wasmModule || typeof this.wasmModule._rubberband_new !== 'function') {
-                 throw new Error("WASM module loaded, but essential Rubberband exports not found.");
+                throw new Error("WASM module loaded, but essential Rubberband exports not found.");
             }
 
             const RBOptions = this.wasmModule.RubberBandOptionFlag || {};
@@ -146,7 +149,8 @@ class RubberbandProcessor extends AudioWorkletProcessor {
             this.rubberbandStretcher = this.wasmModule._rubberband_new(this.sampleRate, this.numberOfChannels, options, 1.0, 1.0);
             if (!this.rubberbandStretcher) throw new Error("_rubberband_new failed to create stretcher instance.");
 
-            const pointerSize = 4; const frameSize = 4; // Assuming 32-bit floats and pointers
+            const pointerSize = 4;
+            const frameSize = 4; // Assuming 32-bit floats and pointers
             this.inputPtrs = this.wasmModule._malloc(this.numberOfChannels * pointerSize);
             this.outputPtrs = this.wasmModule._malloc(this.numberOfChannels * pointerSize);
             if (!this.inputPtrs || !this.outputPtrs) throw new Error("Failed to allocate memory for channel pointer arrays.");
@@ -155,79 +159,117 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 const bufferSizeBytes = this.blockSizeWasm * frameSize;
                 const inputBuf = this.wasmModule._malloc(bufferSizeBytes);
                 const outputBuf = this.wasmModule._malloc(bufferSizeBytes);
-                if (!inputBuf || !outputBuf) { this.cleanupWasmMemory(); throw new Error(`Buffer malloc failed for Channel ${i}.`); }
-                this.inputChannelBuffers.push(inputBuf); this.outputChannelBuffers.push(outputBuf);
+                if (!inputBuf || !outputBuf) {
+                    this.cleanupWasmMemory();
+                    throw new Error(`Buffer malloc failed for Channel ${i}.`);
+                }
+                this.inputChannelBuffers.push(inputBuf);
+                this.outputChannelBuffers.push(outputBuf);
                 this.wasmModule.HEAPU32[(this.inputPtrs / pointerSize) + i] = inputBuf;
                 this.wasmModule.HEAPU32[(this.outputPtrs / pointerSize) + i] = outputBuf;
             }
-            this.wasmReady = true; this.postStatus('processor-ready');
+            this.wasmReady = true;
+            this.postStatus('processor-ready');
         } catch (error) {
             console.error(`[Worklet] WASM/Rubberband Init Error: ${error.message}`, error.stack);
             this.postError(`Init Error: ${error.message}`);
-            this.wasmReady = false; this.rubberbandStretcher = 0; this.cleanupWasmMemory();
+            this.wasmReady = false;
+            this.rubberbandStretcher = 0;
+            this.cleanupWasmMemory();
         }
     }
 
     /**
-      * Handles messages received from the main AudioEngine via the processor's port.
-      * @private
-      * @param {MessageEvent<object>} event - The event containing the message data.
-      * @param {string} event.data.type - Message type (e.g., 'load-audio', 'play', 'seek').
-      * @param {*} [event.data.value] - Optional value associated with the message.
-      * @param {ArrayBuffer[]} [event.data.channelData] - Audio data for 'load-audio'.
-      * @param {number} [event.data.positionSeconds] - Seek position for 'seek'.
-      */
+     * Handles messages received from the main AudioEngine via the processor's port.
+     * @private
+     * @param {MessageEvent<object>} event - The event containing the message data.
+     * @param {string} event.data.type - Message type (e.g., 'load-audio', 'play', 'seek').
+     * @param {*} [event.data.value] - Optional value associated with the message.
+     * @param {ArrayBuffer[]} [event.data.channelData] - Audio data for 'load-audio'.
+     * @param {number} [event.data.positionSeconds] - Seek position for 'seek'.
+     */
     handleMessage(event) {
         const data = event.data;
         try {
             switch (data.type) {
                 case 'load-audio':
-                    this.playbackPositionInSeconds = 0; this.resetNeeded = true; this.streamEnded = false; this.finalBlockSent = false;
-                    this.currentTargetSpeed = 1.0; this.lastAppliedStretchRatio = 1.0;
-                    this.currentTargetPitchScale = 1.0; this.lastAppliedPitchScale = 1.0;
-                    this.currentTargetFormantScale = 1.0; this.lastAppliedFormantScale = 1.0;
-                    this.audioLoaded = false; this.originalChannels = null; this.sourceDurationSeconds = 0;
+                    this.playbackPositionInSeconds = 0;
+                    this.resetNeeded = true;
+                    this.streamEnded = false;
+                    this.finalBlockSent = false;
+                    this.currentTargetSpeed = 1.0;
+                    this.lastAppliedStretchRatio = 1.0;
+                    this.currentTargetPitchScale = 1.0;
+                    this.lastAppliedPitchScale = 1.0;
+                    this.currentTargetFormantScale = 1.0;
+                    this.lastAppliedFormantScale = 1.0;
+                    this.audioLoaded = false;
+                    this.originalChannels = null;
+                    this.sourceDurationSeconds = 0;
 
                     if (data.channelData && Array.isArray(data.channelData) && data.channelData.length === this.numberOfChannels) {
                         this.originalChannels = data.channelData.map(buffer => new Float32Array(buffer));
                         this.audioLoaded = true;
                         this.sourceDurationSeconds = (this.originalChannels[0]?.length || 0) / this.sampleRate;
-                        if (!this.wasmReady) { this.initializeWasmAndRubberband(); } else { this.postStatus('processor-ready'); }
-                    } else { this.postError('Invalid audio data received for loading.'); }
+                        if (!this.wasmReady) {
+                            this.initializeWasmAndRubberband();
+                        } else {
+                            this.postStatus('processor-ready');
+                        }
+                    } else {
+                        this.postError('Invalid audio data received for loading.');
+                    }
                     break;
                 case 'play':
                     if (this.wasmReady && this.audioLoaded) {
                         if (!this.isPlaying) {
                             if (this.streamEnded || this.playbackPositionInSeconds >= this.sourceDurationSeconds) {
-                                this.playbackPositionInSeconds = 0; this.resetNeeded = true; this.streamEnded = false; this.finalBlockSent = false;
+                                this.playbackPositionInSeconds = 0;
+                                this.resetNeeded = true;
+                                this.streamEnded = false;
+                                this.finalBlockSent = false;
                             }
-                            this.isPlaying = true; this.port?.postMessage({ type: 'playback-state', isPlaying: true });
+                            this.isPlaying = true;
+                            this.port?.postMessage({type: 'playback-state', isPlaying: true});
                         }
-                    } else { this.postError(`Cannot play: ${!this.wasmReady ? 'WASM not ready' : 'Audio not loaded'}.`); this.port?.postMessage({ type: 'playback-state', isPlaying: false }); }
+                    } else {
+                        this.postError(`Cannot play: ${!this.wasmReady ? 'WASM not ready' : 'Audio not loaded'}.`);
+                        this.port?.postMessage({type: 'playback-state', isPlaying: false});
+                    }
                     break;
                 case 'pause':
-                    if (this.isPlaying) { this.isPlaying = false; this.port?.postMessage({ type: 'playback-state', isPlaying: false }); }
+                    if (this.isPlaying) {
+                        this.isPlaying = false;
+                        this.port?.postMessage({type: 'playback-state', isPlaying: false});
+                    }
                     break;
                 case 'set-speed':
-                     if (this.wasmReady && typeof data.value === 'number') this.currentTargetSpeed = Math.max(0.01, data.value);
-                     break;
-                 case 'set-pitch':
-                     if (this.wasmReady && typeof data.value === 'number') this.currentTargetPitchScale = Math.max(0.1, data.value);
-                     break;
-                 case 'set-formant':
+                    if (this.wasmReady && typeof data.value === 'number') this.currentTargetSpeed = Math.max(0.01, data.value);
+                    break;
+                case 'set-pitch':
+                    if (this.wasmReady && typeof data.value === 'number') this.currentTargetPitchScale = Math.max(0.1, data.value);
+                    break;
+                case 'set-formant':
                     if (this.wasmReady && typeof data.value === 'number') this.currentTargetFormantScale = Math.max(0.1, data.value);
                     break;
                 case 'seek':
                     if (this.wasmReady && this.audioLoaded && typeof data.positionSeconds === 'number') {
                         this.playbackPositionInSeconds = Math.max(0, Math.min(data.positionSeconds, this.sourceDurationSeconds));
-                        this.resetNeeded = true; this.streamEnded = false; this.finalBlockSent = false;
-                    } break;
-                case 'cleanup': this.cleanup(); break;
-                default: console.warn("[Worklet] Received unknown message type:", data.type);
+                        this.resetNeeded = true;
+                        this.streamEnded = false;
+                        this.finalBlockSent = false;
+                    }
+                    break;
+                case 'cleanup':
+                    this.cleanup();
+                    break;
+                default:
+                    console.warn("[Worklet] Received unknown message type:", data.type);
             }
         } catch (error) {
-             this.postError(`Error in handleMessage ('${data.type}'): ${error.message}`);
-             this.isPlaying = false; this.port?.postMessage({ type: 'playback-state', isPlaying: false });
+            this.postError(`Error in handleMessage ('${data.type}'): ${error.message}`);
+            this.isPlaying = false;
+            this.port?.postMessage({type: 'playback-state', isPlaying: false});
         }
     }
 
@@ -242,22 +284,28 @@ class RubberbandProcessor extends AudioWorkletProcessor {
      */
     process(inputs, outputs, parameters) {
         if (!this.wasmReady || !this.audioLoaded || !this.rubberbandStretcher || !this.wasmModule) {
-            this.outputSilence(outputs); return true;
+            this.outputSilence(outputs);
+            return true;
         }
         if (!this.isPlaying) {
-            this.outputSilence(outputs); return true;
+            this.outputSilence(outputs);
+            return true;
         }
 
         const outputBuffer = outputs[0];
         if (!outputBuffer || outputBuffer.length !== this.numberOfChannels || !outputBuffer[0]) {
-            this.outputSilence(outputs); return true; // Should not happen if configured correctly
+            this.outputSilence(outputs);
+            return true; // Should not happen if configured correctly
         }
         const outputBlockSize = outputBuffer[0].length; // e.g., 128 frames
         if (outputBlockSize === 0) return true;
 
         if (this.streamEnded) { // If stream previously ended, check if Rubberband has any remaining buffered samples
-             const availableInRb = this.wasmModule._rubberband_available?.(this.rubberbandStretcher) ?? 0;
-             if (Math.max(0, availableInRb) <= 0) { this.outputSilence(outputs); return true; }
+            const availableInRb = this.wasmModule._rubberband_available?.(this.rubberbandStretcher) ?? 0;
+            if (Math.max(0, availableInRb) <= 0) {
+                this.outputSilence(outputs);
+                return true;
+            }
         }
 
         try {
@@ -276,12 +324,25 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                 this.wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio);
                 this.wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, safeTargetPitch);
                 this.wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, safeTargetFormant);
-                this.lastAppliedStretchRatio = safeStretchRatio; this.lastAppliedPitchScale = safeTargetPitch; this.lastAppliedFormantScale = safeTargetFormant;
-                this.resetNeeded = false; this.finalBlockSent = false; this.streamEnded = false;
+                this.lastAppliedStretchRatio = safeStretchRatio;
+                this.lastAppliedPitchScale = safeTargetPitch;
+                this.lastAppliedFormantScale = safeTargetFormant;
+                this.resetNeeded = false;
+                this.finalBlockSent = false;
+                this.streamEnded = false;
             } else {
-                if (ratioChanged) { this.wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio); this.lastAppliedStretchRatio = safeStretchRatio; }
-                if (pitchChanged) { this.wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, safeTargetPitch); this.lastAppliedPitchScale = safeTargetPitch; }
-                if (formantChanged) { this.wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, safeTargetFormant); this.lastAppliedFormantScale = safeTargetFormant; }
+                if (ratioChanged) {
+                    this.wasmModule._rubberband_set_time_ratio(this.rubberbandStretcher, safeStretchRatio);
+                    this.lastAppliedStretchRatio = safeStretchRatio;
+                }
+                if (pitchChanged) {
+                    this.wasmModule._rubberband_set_pitch_scale(this.rubberbandStretcher, safeTargetPitch);
+                    this.lastAppliedPitchScale = safeTargetPitch;
+                }
+                if (formantChanged) {
+                    this.wasmModule._rubberband_set_formant_scale(this.rubberbandStretcher, safeTargetFormant);
+                    this.lastAppliedFormantScale = safeTargetFormant;
+                }
             }
 
             let inputFramesNeeded = Math.ceil(outputBlockSize / safeStretchRatio) + 4; // Recommended buffer
@@ -301,7 +362,9 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                         const inputSlice = sourceChannels[i].subarray(readPosInSourceSamples, readPosInSourceSamples + actualInputProvided);
                         wasmInputBufferView.set(inputSlice.subarray(0, Math.min(inputSlice.length, this.blockSizeWasm)));
                         if (inputSlice.length < this.blockSizeWasm) wasmInputBufferView.fill(0.0, inputSlice.length);
-                    } else { wasmInputBufferView.fill(0.0); }
+                    } else {
+                        wasmInputBufferView.fill(0.0);
+                    }
                 }
                 this.wasmModule._rubberband_process(this.rubberbandStretcher, this.inputPtrs, actualInputProvided, sendFinalFlag ? 1 : 0);
                 this.playbackPositionInSeconds += (actualInputProvided / this.sampleRate);
@@ -314,19 +377,21 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                         const totalLatencySeconds = (latencySamples / this.sampleRate) + (outputBlockSize / this.sampleRate);
                         correctedTime = Math.max(0, this.playbackPositionInSeconds - totalLatencySeconds);
                     }
-                } catch(e) { /* ignore latency error */ }
-                this.port?.postMessage({type: 'time-update', currentTime: correctedTime });
+                } catch (e) { /* ignore latency error */
+                }
+                this.port?.postMessage({type: 'time-update', currentTime: correctedTime});
                 if (sendFinalFlag) this.finalBlockSent = true;
             }
 
             let totalRetrieved = 0;
-            const tempOutputBuffers = Array.from({ length: this.numberOfChannels }, () => new Float32Array(outputBlockSize));
+            const tempOutputBuffers = Array.from({length: this.numberOfChannels}, () => new Float32Array(outputBlockSize));
             let availableInRb;
             do {
-                 availableInRb = this.wasmModule._rubberband_available?.(this.rubberbandStretcher) ?? 0;
-                 availableInRb = Math.max(0, availableInRb);
-                 if (availableInRb <= 0) break;
-                const neededNow = outputBlockSize - totalRetrieved; if (neededNow <= 0) break;
+                availableInRb = this.wasmModule._rubberband_available?.(this.rubberbandStretcher) ?? 0;
+                availableInRb = Math.max(0, availableInRb);
+                if (availableInRb <= 0) break;
+                const neededNow = outputBlockSize - totalRetrieved;
+                if (neededNow <= 0) break;
                 const framesToRetrieve = Math.min(availableInRb, neededNow, this.blockSizeWasm);
                 if (framesToRetrieve <= 0) break;
                 const retrieved = this.wasmModule._rubberband_retrieve?.(this.rubberbandStretcher, this.outputPtrs, framesToRetrieve) ?? -1;
@@ -336,36 +401,43 @@ class RubberbandProcessor extends AudioWorkletProcessor {
                         tempOutputBuffers[i].set(wasmOutputBufferView.subarray(0, Math.min(retrieved, tempOutputBuffers[i].length - totalRetrieved)), totalRetrieved);
                     }
                     totalRetrieved += retrieved;
-                } else { availableInRb = 0; break; }
+                } else {
+                    availableInRb = 0;
+                    break;
+                }
             } while (totalRetrieved < outputBlockSize);
 
             for (let i = 0; i < this.numberOfChannels; ++i) {
-                 if (outputBuffer[i]) {
-                     outputBuffer[i].set(tempOutputBuffers[i].subarray(0, Math.min(totalRetrieved, outputBlockSize)));
-                     if (totalRetrieved < outputBlockSize) outputBuffer[i].fill(0.0, totalRetrieved);
-                 }
+                if (outputBuffer[i]) {
+                    outputBuffer[i].set(tempOutputBuffers[i].subarray(0, Math.min(totalRetrieved, outputBlockSize)));
+                    if (totalRetrieved < outputBlockSize) outputBuffer[i].fill(0.0, totalRetrieved);
+                }
             }
 
             if (this.finalBlockSent && availableInRb <= 0 && totalRetrieved < outputBlockSize) {
                 if (!this.streamEnded) {
-                    this.streamEnded = true; this.isPlaying = false;
-                    this.postStatus('Playback ended'); this.port?.postMessage({ type: 'playback-state', isPlaying: false });
+                    this.streamEnded = true;
+                    this.isPlaying = false;
+                    this.postStatus('Playback ended');
+                    this.port?.postMessage({type: 'playback-state', isPlaying: false});
                 }
             }
         } catch (error) {
             console.error(`[Worklet] Processing Error: ${error.message}`, error.stack);
             this.postError(`Processing Error: ${error.message}`);
-            this.isPlaying = false; this.streamEnded = true; this.outputSilence(outputs);
-            this.port?.postMessage({ type: 'playback-state', isPlaying: false });
+            this.isPlaying = false;
+            this.streamEnded = true;
+            this.outputSilence(outputs);
+            this.port?.postMessage({type: 'playback-state', isPlaying: false});
         }
         return true;
     }
 
     /**
-      * Fills the output audio buffers with silence (zeros).
-      * @private
-      * @param {Float32Array[][]} outputs - The output buffers from the `process` method.
-      */
+     * Fills the output audio buffers with silence (zeros).
+     * @private
+     * @param {Float32Array[][]} outputs - The output buffers from the `process` method.
+     */
     outputSilence(outputs) {
         if (!outputs?.[0]?.[0]) return; // Ensure valid structure
         for (let channel = 0; channel < outputs[0].length; ++channel) {
@@ -379,8 +451,11 @@ class RubberbandProcessor extends AudioWorkletProcessor {
      * @param {string} message - The status message.
      */
     postStatus(message) {
-        try { this.port?.postMessage({ type: 'status', message }); }
-        catch (e) { console.error(`[Worklet] FAILED to post status '${message}':`, e.message); }
+        try {
+            this.port?.postMessage({type: 'status', message});
+        } catch (e) {
+            console.error(`[Worklet] FAILED to post status '${message}':`, e.message);
+        }
     }
 
     /**
@@ -389,8 +464,11 @@ class RubberbandProcessor extends AudioWorkletProcessor {
      * @param {string} message - The error message.
      */
     postError(message) {
-         try { this.port?.postMessage({ type: 'error', message }); }
-         catch (e) { console.error(`[Worklet] FAILED to post error '${message}':`, e.message); }
+        try {
+            this.port?.postMessage({type: 'error', message});
+        } catch (e) {
+            console.error(`[Worklet] FAILED to post error '${message}':`, e.message);
+        }
     }
 
     /**
@@ -410,14 +488,22 @@ class RubberbandProcessor extends AudioWorkletProcessor {
     cleanupWasmMemory() {
         if (this.wasmModule?._free) {
             try {
-                this.inputChannelBuffers.forEach(ptr => { if (ptr) this.wasmModule._free(ptr); });
-                this.outputChannelBuffers.forEach(ptr => { if (ptr) this.wasmModule._free(ptr); });
+                this.inputChannelBuffers.forEach(ptr => {
+                    if (ptr) this.wasmModule._free(ptr);
+                });
+                this.outputChannelBuffers.forEach(ptr => {
+                    if (ptr) this.wasmModule._free(ptr);
+                });
                 if (this.inputPtrs) this.wasmModule._free(this.inputPtrs);
                 if (this.outputPtrs) this.wasmModule._free(this.outputPtrs);
-            } catch (e) { console.error("[Worklet] Error during explicit WASM memory cleanup:", e.message); }
+            } catch (e) {
+                console.error("[Worklet] Error during explicit WASM memory cleanup:", e.message);
+            }
         }
-        this.inputPtrs = 0; this.outputPtrs = 0;
-        this.inputChannelBuffers = []; this.outputChannelBuffers = [];
+        this.inputPtrs = 0;
+        this.outputPtrs = 0;
+        this.inputChannelBuffers = [];
+        this.outputChannelBuffers = [];
     }
 
     /**
@@ -429,18 +515,25 @@ class RubberbandProcessor extends AudioWorkletProcessor {
         console.log("[Worklet] Cleanup initiated.");
         this.isPlaying = false;
         if (this.wasmReady && this.rubberbandStretcher !== 0 && this.wasmModule?._rubberband_delete) {
-            try { this.wasmModule._rubberband_delete(this.rubberbandStretcher); }
-            catch (e) { console.error("[Worklet] Error deleting Rubberband instance:", e.message); }
+            try {
+                this.wasmModule._rubberband_delete(this.rubberbandStretcher);
+            } catch (e) {
+                console.error("[Worklet] Error deleting Rubberband instance:", e.message);
+            }
         }
         this.rubberbandStretcher = 0;
         this.cleanupWasmMemory();
-        this.wasmReady = false; this.audioLoaded = false;
-        this.originalChannels = null; this.wasmModule = null;
+        this.wasmReady = false;
+        this.audioLoaded = false;
+        this.originalChannels = null;
+        this.wasmModule = null;
         // Keep wasmBinary & loaderScriptText if re-init is possible without new options.
         // For full cleanup, these would be nulled too:
         // this.wasmBinary = null; this.loaderScriptText = null;
-        this.playbackPositionInSeconds = 0; this.streamEnded = true;
-        this.finalBlockSent = false; this.resetNeeded = true;
+        this.playbackPositionInSeconds = 0;
+        this.streamEnded = true;
+        this.finalBlockSent = false;
+        this.resetNeeded = true;
         this.postStatus("Processor cleaned up");
     }
 }
@@ -452,13 +545,16 @@ try {
         console.error("[Worklet] `registerProcessor` or global `sampleRate` is not defined. Cannot register RubberbandProcessor.");
         // Attempt to notify main thread about this critical failure if postMessage is available
         if (typeof self !== 'undefined' && self.postMessage) {
-            self.postMessage({ type: 'error', message: 'Worklet environment error: registerProcessor or sampleRate undefined.' });
+            self.postMessage({
+                type: 'error',
+                message: 'Worklet environment error: registerProcessor or sampleRate undefined.'
+            });
         }
     }
 } catch (error) {
     console.error(`[Worklet] CRITICAL: Failed to register processor '${PROCESSOR_NAME}'. Error: ${error.message}`, error.stack);
     if (typeof self !== 'undefined' && self.postMessage) {
-        self.postMessage({ type: 'error', message: `Failed to register processor ${PROCESSOR_NAME}: ${error.message}` });
+        self.postMessage({type: 'error', message: `Failed to register processor ${PROCESSOR_NAME}: ${error.message}`});
     }
 }
 // --- /vibe-player/js/player/rubberbandProcessor.js --- // Updated Path

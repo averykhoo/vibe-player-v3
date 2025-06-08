@@ -9,7 +9,7 @@ var AudioApp = AudioApp || {};
  * @description Manages the rendering of the audio waveform, including highlighting speech regions
  * and displaying a playback progress indicator.
  */
-AudioApp.waveformVisualizer = (function() {
+AudioApp.waveformVisualizer = (function () {
     'use strict';
 
     /**
@@ -76,7 +76,7 @@ AudioApp.waveformVisualizer = (function() {
         if (!rect || rect.width <= 0) return; // Avoid division by zero if canvas has no width
         const clickXRelative = e.clientX - rect.left;
         const fraction = Math.max(0, Math.min(1, clickXRelative / rect.width)); // Clamp fraction to [0, 1]
-        document.dispatchEvent(new CustomEvent('audioapp:seekRequested', { detail: { fraction: fraction } }));
+        document.dispatchEvent(new CustomEvent('audioapp:seekRequested', {detail: {fraction: fraction}}));
     }
 
 
@@ -97,8 +97,14 @@ AudioApp.waveformVisualizer = (function() {
      * @returns {Promise<void>} Resolves when the waveform has been drawn.
      */
     async function computeAndDrawWaveform(audioBuffer, speechRegions) {
-        if (!audioBuffer) { console.warn("WaveformVisualizer: computeAndDrawWaveform called with no AudioBuffer."); return; }
-        if (!waveformCtx || !waveformCanvas) { console.warn("WaveformVisualizer: Canvas context/element missing for drawing."); return; }
+        if (!audioBuffer) {
+            console.warn("WaveformVisualizer: computeAndDrawWaveform called with no AudioBuffer.");
+            return;
+        }
+        if (!waveformCtx || !waveformCanvas) {
+            console.warn("WaveformVisualizer: Canvas context/element missing for drawing.");
+            return;
+        }
 
         resizeCanvasInternal(); // Ensure canvas dimensions are up-to-date
         const width = waveformCanvas.width;
@@ -116,13 +122,22 @@ AudioApp.waveformVisualizer = (function() {
      * @param {SpeechRegion[]} speechRegions - The speech regions to highlight.
      */
     function redrawWaveformHighlight(audioBuffer, speechRegions) {
-         if (!audioBuffer) { console.warn("WaveformVisualizer: Cannot redraw highlight, AudioBuffer missing."); return; }
-         if (!waveformCanvas || !waveformCtx) { console.warn("WaveformVisualizer: Cannot redraw highlight, canvas/context missing."); return; }
-         const width = waveformCanvas.width;
-         if (width <= 0) { console.warn("WaveformVisualizer: Cannot redraw highlight, canvas width is zero or invalid."); return; }
+        if (!audioBuffer) {
+            console.warn("WaveformVisualizer: Cannot redraw highlight, AudioBuffer missing.");
+            return;
+        }
+        if (!waveformCanvas || !waveformCtx) {
+            console.warn("WaveformVisualizer: Cannot redraw highlight, canvas/context missing.");
+            return;
+        }
+        const width = waveformCanvas.width;
+        if (width <= 0) {
+            console.warn("WaveformVisualizer: Cannot redraw highlight, canvas width is zero or invalid.");
+            return;
+        }
 
-         const waveformData = computeWaveformData(audioBuffer, width);
-         drawWaveform(waveformData, waveformCanvas, waveformCtx, speechRegions, audioBuffer.duration, width);
+        const waveformData = computeWaveformData(audioBuffer, width);
+        drawWaveform(waveformData, waveformCanvas, waveformCtx, speechRegions, audioBuffer.duration, width);
     }
 
 
@@ -157,7 +172,9 @@ AudioApp.waveformVisualizer = (function() {
                     sourceData[i] += chData[i];
                 }
             }
-            for (let i = 0; i < bufferLength; i++) { sourceData[i] /= channelCount; }
+            for (let i = 0; i < bufferLength; i++) {
+                sourceData[i] /= channelCount;
+            }
         }
 
         const samplesPerPixel = Math.max(1, Math.floor(bufferLength / targetWidth));
@@ -166,7 +183,10 @@ AudioApp.waveformVisualizer = (function() {
         for (let i = 0; i < targetWidth; i++) {
             const start = Math.floor(i * samplesPerPixel);
             const end = Math.min(start + samplesPerPixel, bufferLength);
-            if (start >= end) { waveform.push({min: 0, max: 0}); continue; }
+            if (start >= end) {
+                waveform.push({min: 0, max: 0});
+                continue;
+            }
 
             let min = 1.0, max = -1.0;
             for (let j = start; j < end; j++) {
@@ -191,15 +211,21 @@ AudioApp.waveformVisualizer = (function() {
      * @param {number} audioDuration - Total duration of the audio in seconds.
      * @param {number} width - The current width of the canvas.
      */
-     function drawWaveform(waveformData, canvas, ctx, speechRegions, audioDuration, width) {
-        if (!ctx || typeof Constants === 'undefined') { console.error("WaveformVisualizer: Missing context or Constants for drawing."); return; }
+    function drawWaveform(waveformData, canvas, ctx, speechRegions, audioDuration, width) {
+        if (!ctx || typeof Constants === 'undefined') {
+            console.error("WaveformVisualizer: Missing context or Constants for drawing.");
+            return;
+        }
 
-        const { height } = canvas;
+        const {height} = canvas;
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height); // Background
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height); // Background
 
         if (!waveformData || waveformData.length === 0 || !audioDuration || audioDuration <= 0) {
-            ctx.fillStyle = '#888'; ctx.textAlign = 'center'; ctx.font = '12px sans-serif';
+            ctx.fillStyle = '#888';
+            ctx.textAlign = 'center';
+            ctx.font = '12px sans-serif';
             ctx.fillText("No waveform data available", width / 2, height / 2);
             return;
         }
@@ -224,12 +250,16 @@ AudioApp.waveformVisualizer = (function() {
             let isOutsideSpeech = true;
             if (!initialDraw) {
                 for (const region of speechPixelRegions) {
-                    if (x < region.endPx && currentPixelEnd > region.startPx) { isOutsideSpeech = false; break; }
+                    if (x < region.endPx && currentPixelEnd > region.startPx) {
+                        isOutsideSpeech = false;
+                        break;
+                    }
                 }
             }
             if (isOutsideSpeech) {
-                const { min, max } = waveformData[i];
-                const y1 = halfHeight - (max * scale); const y2 = halfHeight - (min * scale);
+                const {min, max} = waveformData[i];
+                const y1 = halfHeight - (max * scale);
+                const y2 = halfHeight - (min * scale);
                 ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1)); // Ensure rect has at least 1px height
             }
         }
@@ -244,11 +274,15 @@ AudioApp.waveformVisualizer = (function() {
                 const currentPixelEnd = x + pixelWidth;
                 let isInsideSpeech = false;
                 for (const region of speechPixelRegions) {
-                    if (x < region.endPx && currentPixelEnd > region.startPx) { isInsideSpeech = true; break; }
+                    if (x < region.endPx && currentPixelEnd > region.startPx) {
+                        isInsideSpeech = true;
+                        break;
+                    }
                 }
                 if (isInsideSpeech) {
-                    const { min, max } = waveformData[i];
-                    const y1 = halfHeight - (max * scale); const y2 = halfHeight - (min * scale);
+                    const {min, max} = waveformData[i];
+                    const y1 = halfHeight - (max * scale);
+                    const y2 = halfHeight - (min * scale);
                     ctx.rect(x, y1, pixelWidth, Math.max(1, y2 - y1));
                 }
             }
@@ -266,7 +300,8 @@ AudioApp.waveformVisualizer = (function() {
     function updateProgressIndicator(currentTime, duration) {
         if (!waveformCanvas || !waveformProgressIndicator) return;
         if (isNaN(duration) || duration <= 0) {
-            waveformProgressIndicator.style.left = "0px"; return;
+            waveformProgressIndicator.style.left = "0px";
+            return;
         }
         const fraction = Math.max(0, Math.min(1, currentTime / duration));
         const waveformWidth = waveformCanvas.clientWidth;
@@ -295,16 +330,16 @@ AudioApp.waveformVisualizer = (function() {
      */
     function resizeCanvasInternal() {
         if (!waveformCanvas) return false;
-        const { width, height } = waveformCanvas.getBoundingClientRect();
+        const {width, height} = waveformCanvas.getBoundingClientRect();
         const roundedWidth = Math.max(10, Math.round(width)); // Ensure minimum size
         const roundedHeight = Math.max(10, Math.round(height));
         if (waveformCanvas.width !== roundedWidth || waveformCanvas.height !== roundedHeight) {
             waveformCanvas.width = roundedWidth;
             waveformCanvas.height = roundedHeight;
-             if(waveformCtx) { // Redraw background if context exists
-                  waveformCtx.fillStyle = '#000';
-                  waveformCtx.fillRect(0, 0, roundedWidth, roundedHeight);
-             }
+            if (waveformCtx) { // Redraw background if context exists
+                waveformCtx.fillStyle = '#000';
+                waveformCtx.fillRect(0, 0, roundedWidth, roundedHeight);
+            }
             return true;
         }
         return false;
@@ -325,7 +360,7 @@ AudioApp.waveformVisualizer = (function() {
             clearVisuals(); // Clear if resized but no audio buffer to redraw
         }
         // Always update progress indicator, as its position depends on clientWidth
-        const { currentTime = 0, duration = 0 } = AudioApp.audioEngine?.getCurrentTime() || {};
+        const {currentTime = 0, duration = 0} = AudioApp.audioEngine?.getCurrentTime() || {};
         updateProgressIndicator(currentTime, duration || (audioBuffer ? audioBuffer.duration : 0));
     }
 

@@ -81,18 +81,18 @@ AudioApp.LocalWorkerStrategy = class {
 
         // --- Step 2: Create the worker from a Blob URL ---
         // This avoids needing a separate .js file on disk for the worker code.
-        const blob = new Blob([workerScript], { type: 'application/javascript' });
+        const blob = new Blob([workerScript], {type: 'application/javascript'});
         this.worker = new Worker(URL.createObjectURL(blob));
 
         // Set up the onmessage handler for the worker HERE, specifically to listen for the 'model_ready' signal
         this.worker.onmessage = (event) => {
-            const { type, payload } = event.data;
+            const {type, payload} = event.data;
             if (type === 'model_ready') {
                 console.log("LocalWorkerStrategy: Worker reported model is ready.");
                 this._resolveReady(true); // Resolve the ready promise
             } else if (type === 'error') {
-                 // If an error happens during initialization, reject the ready promise
-                 this._rejectReady(new Error(payload.message));
+                // If an error happens during initialization, reject the ready promise
+                this._rejectReady(new Error(payload.message));
             }
             // After initialization, subsequent messages will be handled by the promise in `analyze`
         };
@@ -127,7 +127,7 @@ AudioApp.LocalWorkerStrategy = class {
         return new Promise((resolve, reject) => {
             // Set the message handler for this specific analysis task
             this.worker.onmessage = (event) => {
-                const { type, payload } = event.data;
+                const {type, payload} = event.data;
                 if (type === 'result') {
                     resolve(payload); // Analysis was successful.
                 } else if (type === 'progress') {
@@ -149,7 +149,7 @@ AudioApp.LocalWorkerStrategy = class {
             // This is a very fast, zero-copy transfer of the data to the worker.
             this.worker.postMessage({
                 type: 'analyze',
-                payload: { pcmData }
+                payload: {pcmData}
             }, [pcmData.buffer]);
         });
     }

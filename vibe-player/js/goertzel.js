@@ -9,7 +9,7 @@ var AudioApp = AudioApp || {}; // Ensure AudioApp namespace exists
  * @module GoertzelModule
  * @description Provides GoertzelFilter, DTMFParser, CallProgressToneParser classes and related constants.
  */
-const GoertzelModule = (function() {
+const GoertzelModule = (function () {
     'use strict';
 
     // --- DTMF Constants ---
@@ -52,13 +52,13 @@ const GoertzelModule = (function() {
     // --- Call Progress Tone Cadences (ms ON, ms OFF) ---
     /** @typedef {{on: number, off: number}} CadenceSpec */
     /** @type {CadenceSpec} Cadence for Busy Signal. */
-    const CPT_CADENCE_BUSY_SIGNAL = { on: 500, off: 500 };
+    const CPT_CADENCE_BUSY_SIGNAL = {on: 500, off: 500};
     /** @type {CadenceSpec} Cadence for Reorder Tone. */
-    const CPT_CADENCE_REORDER_TONE = { on: 250, off: 250 };
+    const CPT_CADENCE_REORDER_TONE = {on: 250, off: 250};
     /** @type {CadenceSpec} Cadence for Ringback Tone. */
-    const CPT_CADENCE_RINGBACK_TONE = { on: 2000, off: 4000 };
+    const CPT_CADENCE_RINGBACK_TONE = {on: 2000, off: 4000};
     /** @type {CadenceSpec} Cadence for Call Waiting Tone. */
-    const CPT_CADENCE_CALL_WAITING_TONE = { on: 300, off: 9700 }; // Approximate
+    const CPT_CADENCE_CALL_WAITING_TONE = {on: 300, off: 9700}; // Approximate
 
     // --- Call Progress Tone Parser Constants ---
     /** @type {number} Default sample rate for CPT parser (Hz). */
@@ -367,8 +367,8 @@ const GoertzelModule = (function() {
              * @type {Object<string, ContinuousToneState>} State for continuous tones.
              */
             this.continuousToneStates = {
-                DialTone: { requiredFreqs: CPT_FREQ_DIAL_TONE, presentBlocks: 0, neededBlocks: 2 },
-                OffHookWarning: { requiredFreqs: CPT_FREQ_OFF_HOOK_WARNING, presentBlocks: 0, neededBlocks: 2 }
+                DialTone: {requiredFreqs: CPT_FREQ_DIAL_TONE, presentBlocks: 0, neededBlocks: 2},
+                OffHookWarning: {requiredFreqs: CPT_FREQ_OFF_HOOK_WARNING, presentBlocks: 0, neededBlocks: 2}
             };
         }
 
@@ -498,12 +498,12 @@ const GoertzelModule = (function() {
             const offHookPresent = this._checkMultiFrequencyPresence(CPT_FREQ_OFF_HOOK_WARNING, magnitudes);
             if (offHookPresent) {
                 this.continuousToneStates.OffHookWarning.presentBlocks++;
-                 if (this.continuousToneStates.OffHookWarning.presentBlocks >= this.continuousToneStates.OffHookWarning.neededBlocks) {
+                if (this.continuousToneStates.OffHookWarning.presentBlocks >= this.continuousToneStates.OffHookWarning.neededBlocks) {
                     for (const tone in this.cadenceStates) this.cadenceStates[tone].cyclesDetected = 0;
                     return "Off-Hook Warning";
                 }
             } else {
-                 this.continuousToneStates.OffHookWarning.presentBlocks = 0;
+                this.continuousToneStates.OffHookWarning.presentBlocks = 0;
             }
 
             if (this.continuousToneStates.DialTone.presentBlocks >= this.continuousToneStates.DialTone.neededBlocks ||

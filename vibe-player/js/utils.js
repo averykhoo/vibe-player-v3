@@ -8,7 +8,7 @@ var AudioApp = AudioApp || {}; // Ensure main namespace exists
  * @namespace AudioApp.Utils
  * @description Provides utility functions for the Vibe Player application.
  */
-AudioApp.Utils = (function() {
+AudioApp.Utils = (function () {
     'use strict';
 
     /**
@@ -58,40 +58,40 @@ AudioApp.Utils = (function() {
         return windowArr;
     }
 
-     /**
+    /**
      * Viridis colormap function. Maps a normalized value (0 to 1) to an RGB color.
      * The Viridis colormap is designed to be perceptually uniform.
      * @param {number} t - Normalized value (0 to 1). Values outside this range will be clamped.
      * @returns {number[]} Array containing [r, g, b] values (each 0-255).
      */
-     function viridisColor(t) {
-         /** @type {Array<Array<number>>} Colormap definition: [value, r, g, b] */
-         const colors = [ // [normalized_value, R, G, B]
-             [0.0, 68, 1, 84], [0.1, 72, 40, 120], [0.2, 62, 74, 137], [0.3, 49, 104, 142],
-             [0.4, 38, 130, 142], [0.5, 31, 155, 137], [0.6, 53, 178, 126], [0.7, 109, 199, 104],
-             [0.8, 170, 217, 70], [0.9, 235, 231, 35], [1.0, 253, 231, 37] // Last point
-         ];
-         t = Math.max(0, Math.min(1, t)); // Clamp t to [0, 1]
+    function viridisColor(t) {
+        /** @type {Array<Array<number>>} Colormap definition: [value, r, g, b] */
+        const colors = [ // [normalized_value, R, G, B]
+            [0.0, 68, 1, 84], [0.1, 72, 40, 120], [0.2, 62, 74, 137], [0.3, 49, 104, 142],
+            [0.4, 38, 130, 142], [0.5, 31, 155, 137], [0.6, 53, 178, 126], [0.7, 109, 199, 104],
+            [0.8, 170, 217, 70], [0.9, 235, 231, 35], [1.0, 253, 231, 37] // Last point
+        ];
+        t = Math.max(0, Math.min(1, t)); // Clamp t to [0, 1]
 
-         /** @type {Array<number>} */ let c1 = colors[0];
-         /** @type {Array<number>} */ let c2 = colors[colors.length - 1];
+        /** @type {Array<number>} */ let c1 = colors[0];
+        /** @type {Array<number>} */ let c2 = colors[colors.length - 1];
 
-         for (let i = 0; i < colors.length - 1; i++) {
-             if (t >= colors[i][0] && t <= colors[i + 1][0]) {
-                 c1 = colors[i];
-                 c2 = colors[i + 1];
-                 break;
-             }
-         }
+        for (let i = 0; i < colors.length - 1; i++) {
+            if (t >= colors[i][0] && t <= colors[i + 1][0]) {
+                c1 = colors[i];
+                c2 = colors[i + 1];
+                break;
+            }
+        }
 
-         const range = c2[0] - c1[0];
-         const ratio = (range === 0) ? 0 : (t - c1[0]) / range; // Avoid division by zero
+        const range = c2[0] - c1[0];
+        const ratio = (range === 0) ? 0 : (t - c1[0]) / range; // Avoid division by zero
 
-         const r = Math.round(c1[1] + ratio * (c2[1] - c1[1]));
-         const g = Math.round(c1[2] + ratio * (c2[2] - c1[2]));
-         const b = Math.round(c1[3] + ratio * (c2[3] - c1[3]));
-         return [r, g, b];
-     }
+        const r = Math.round(c1[1] + ratio * (c2[1] - c1[1]));
+        const g = Math.round(c1[2] + ratio * (c2[2] - c1[2]));
+        const b = Math.round(c1[3] + ratio * (c2[3] - c1[3]));
+        return [r, g, b];
+    }
 
 
     /**
@@ -115,7 +115,7 @@ AudioApp.Utils = (function() {
             const context = this;
             const args = arguments; // arguments is not typed with ...args in JSDoc well
 
-            const later = function() {
+            const later = function () {
                 timeout = null;
                 if (!immediate) {
                     func.apply(context, args);

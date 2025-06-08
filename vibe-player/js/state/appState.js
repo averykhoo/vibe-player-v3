@@ -42,7 +42,7 @@ class AppState {
             if (this.params[param] !== value) {
                 this.params[param] = value;
                 this._notify('param:' + param + ':changed', value);
-                this._notify('param:changed', { param: param, value: value }); // Generic notification
+                this._notify('param:changed', {param: param, value: value}); // Generic notification
             }
         } else {
             console.warn(`AppState: Attempted to update unknown param "${param}"`);
