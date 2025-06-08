@@ -53,6 +53,38 @@ AudioApp.audioEngine = (function() {
         console.log("AudioEngine: Initializing...");
         setupAudioContext();
         await preFetchWorkletResources();
+
+        if (AudioApp.state) {
+            AudioApp.state.subscribe('param:speed:changed', (newSpeed) => {
+                AudioApp.audioEngine.setSpeed(newSpeed);
+            });
+            AudioApp.state.subscribe('param:pitch:changed', (newPitch) => {
+                AudioApp.audioEngine.setPitch(newPitch);
+            });
+            AudioApp.state.subscribe('param:gain:changed', (newGain) => {
+                AudioApp.audioEngine.setGain(newGain);
+            });
+            AudioApp.state.subscribe('status:isActuallyPlaying:changed', (nowPlaying) => {
+                // Compare with internal isPlaying state to avoid redundant toggles if possible
+                // This assumes 'this.isPlaying' refers to the local 'isPlaying' variable in this IIFE's scope.
+                // If AudioApp.audioEngine.isPlaying() getter were available, it would be better.
+                // For now, directly call togglePlayPause if the AppState differs from the engine's last known command state.
+                // The togglePlayPause method itself handles the internal 'isPlaying' state.
+                // This also means if something else (e.g. worklet event) changes internal 'isPlaying',
+                // AppState might toggle it back if it's not in sync. This needs careful handling.
+                // A simple approach: if AppState says "play" and engine isn't, play. If AppState says "pause" and engine is, pause.
+
+                // Get current internal state (assuming isPlaying variable in this scope reflects it)
+                const internalIsPlaying = isPlaying;
+                if (internalIsPlaying !== nowPlaying) {
+                    AudioApp.audioEngine.togglePlayPause(); // This will flip internal 'isPlaying' and command worklet
+                }
+            });
+            console.log("AudioEngine: Subscribed to AppState changes.");
+        } else {
+            console.warn("AudioEngine: AppState not available for subscriptions during init.");
+        }
+
         console.log("AudioEngine: Initialized.");
     }
 

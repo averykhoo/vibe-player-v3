@@ -1,10 +1,12 @@
 // jest.setup.js
 const fs = require('fs');
 const path = require('path');
-// const vm = require('vm'); // Not using vm for this approach
+const vm = require('vm');
 
 // --- 1. Mock Browser-Specific APIs ---
 global.window = global; // JSDOM's global IS window. Make it explicit.
+global.self = global;   // Common alias for window or worker global scope
+global.document = global.document; // JSDOM provides document
 
 global.AudioContext = jest.fn(() => ({
   createGain: jest.fn(() => ({ connect: jest.fn(), gain: { value: 1, setTargetAtTime: jest.fn() } })),
@@ -30,82 +32,100 @@ global.ort = { InferenceSession: { create: jest.fn(() => Promise.resolve({ run: 
 
 try {
     const fftScriptContent = fs.readFileSync(path.resolve(__dirname, 'vibe-player/lib/fft.js'), 'utf-8');
-    const scriptEl = global.document.createElement('script');
-    scriptEl.textContent = fftScriptContent;
-    global.document.body.appendChild(scriptEl);
-    // console.log('FFT script loaded via JSDOM script tag.');
-} catch (e) {
-    console.error("Failed to load lib/fft.js via JSDOM:", e.message);
-}
+    new vm.Script(fftScriptContent, { filename: 'lib/fft.js' }).runInThisContext();
+} catch (e) { console.error("Failed to load lib/fft.js:", e.message); }
+
 
 // --- 2. Load Application Scripts in Order ---
 const appRoot = path.resolve(__dirname, 'vibe-player');
 global.AudioApp = global.AudioApp || {};
+global.__jestLoadedScripts = global.__jestLoadedScripts || new Set(); // Prevent re-runs
 
-if (!global.__jestLoadedScriptsInJsdom) {
-    global.__jestLoadedScriptsInJsdom = new Set();
-}
-
-const loadScriptViaJsdom = (scriptPathFromAppRoot) => {
+const loadAndExposeScript = (scriptPathFromAppRoot, details) => {
   const absoluteScriptPath = path.join(appRoot, scriptPathFromAppRoot);
 
-  if (global.__jestLoadedScriptsInJsdom.has(absoluteScriptPath)) {
-    // console.log(`JSDOM script ${absoluteScriptPath} already loaded.`);
+  if (global.__jestLoadedScripts.has(absoluteScriptPath)) {
+    // console.log(`Script ${scriptPathFromAppRoot} already loaded.`);
+    return;
+  }
+
+  // For classes, check if the global variable already exists.
+  // This helps prevent "Identifier 'ClassName' has already been declared".
+  if (details.type === 'class' && typeof global[details.name] !== 'undefined') {
+    // console.log(`Global class ${details.name} already defined. Assuming ${scriptPathFromAppRoot} was loaded.`);
+    global.__jestLoadedScripts.add(absoluteScriptPath); // Mark as loaded to prevent re-reading
     return;
   }
 
   try {
-    // console.log(`JSDOM loading script: ${absoluteScriptPath}`);
     const scriptCode = fs.readFileSync(absoluteScriptPath, 'utf-8');
-    const scriptEl = global.document.createElement('script');
-    scriptEl.textContent = scriptCode;
-    global.document.body.appendChild(scriptEl); // JSDOM should execute this
-    global.__jestLoadedScriptsInJsdom.add(absoluteScriptPath);
-  } catch (e) {
-    console.error(`Error JSDOM loading script ${scriptPathFromAppRoot}: ${e.message}`);
-    // For critical scripts, re-throw to fail the setup early.
-    if (scriptPathFromAppRoot.includes('constants.js') ||
-        scriptPathFromAppRoot.includes('appState.js') ||
-        scriptPathFromAppRoot.includes('app.js') ||
-        scriptPathFromAppRoot.includes('utils.js') ||
-        scriptPathFromAppRoot.includes('goertzel.js') ) {
-        throw e;
+    let codeToRun = scriptCode;
+
+    if (details.type === 'class') {
+      // Assuming the class is the main export, append a line to assign it to global if not already.
+      // This is a bit of a hack due to vm.runInThisContext not always making classes global as expected.
+      // A better way is if the script itself ensures global.ClassName = ClassName;
+      // For now, we hope runInThisContext defines it globally.
+      // The check will happen after execution.
+    } else if (details.type === 'namespace') {
+      // Scripts that attach to AudioApp (which is global.AudioApp) should just work.
     }
+
+    new vm.Script(codeToRun, { filename: absoluteScriptPath }).runInThisContext();
+    global.__jestLoadedScripts.add(absoluteScriptPath);
+
+    // Post-execution checks
+    if (details.type === 'class') {
+      if (typeof global[details.name] === 'undefined') {
+        console.error(`CRITICAL ERROR (post-exec): global.${details.name} is undefined after loading ${scriptPathFromAppRoot}`);
+        if(details.critical) throw new Error(`global.${details.name} not defined by ${scriptPathFromAppRoot}`);
+      } else {
+        // console.log(`Successfully loaded class ${details.name} from ${scriptPathFromAppRoot}`);
+      }
+    } else if (details.type === 'namespace') {
+      const nameParts = details.name.split('.'); // e.g., "Utils" or "state" for AudioApp.state
+      let obj = global.AudioApp;
+      let partDefined = true;
+      for (const part of nameParts) {
+        if (typeof obj[part] === 'undefined') {
+          partDefined = false;
+          break;
+        }
+        obj = obj[part];
+      }
+      if (!partDefined) {
+        console.error(`CRITICAL ERROR (post-exec): global.AudioApp.${details.name} is undefined after loading ${scriptPathFromAppRoot}`);
+        if(details.critical) throw new Error(`global.AudioApp.${details.name} not defined by ${scriptPathFromAppRoot}`);
+      } else {
+         // console.log(`Successfully loaded namespace AudioApp.${details.name} from ${scriptPathFromAppRoot}`);
+      }
+    }
+  } catch (e) {
+    console.error(`Error loading script ${scriptPathFromAppRoot} (${details.name}): ${e.message}`);
+    if (details.critical) throw e;
   }
 };
 
-const scriptsToLoad = [
-  'js/state/constants.js',
-  'js/state/appState.js',
-  'js/utils.js',
-  'js/goertzel.js',
-  'js/app.js',
-  'js/uiManager.js',
-  'js/player/audioEngine.js',
-  'js/vad/RemoteApiStrategy.js',
-  'js/vad/sileroWrapper.js',
-  'js/vad/sileroProcessor.js',
-  'js/vad/LocalWorkerStrategy.js',
-  'js/vad/vadAnalyzer.js',
-  'js/visualizers/waveformVisualizer.js',
-  'js/visualizers/spectrogramVisualizer.js',
-  'js/sparkles.js'
+const orderedScriptsAndDetails = [
+  { path: 'js/state/constants.js', type: 'class', name: 'Constants', critical: true },
+  { path: 'js/state/appState.js', type: 'class', name: 'AppState', critical: true },
+  { path: 'js/utils.js', type: 'namespace', name: 'Utils', critical: true },
+  { path: 'js/goertzel.js', type: 'namespace', name: 'DTMFParser', critical: true }, // Also defines GoertzelFilter, CPT_CONSTANTS on AudioApp
+  { path: 'js/app.js', type: 'namespace', name: 'state', critical: true } // Checks AudioApp.state which app.js defines
 ];
 
-console.log("Loading application scripts for Jest environment using JSDOM script execution...");
-scriptsToLoad.forEach(scriptPath => {
-    if (scriptPath === 'js/constants.js') { // old constants file, skip
-        console.log("Skipping obsolete js/constants.js");
-        return;
-    }
-    loadScriptViaJsdom(scriptPath);
+console.log("Loading CRITICAL application scripts for Jest environment...");
+orderedScriptsAndDetails.forEach(scriptInfo => {
+    loadAndExposeScript(scriptInfo.path, scriptInfo);
 });
 
-console.log('All specified scripts processed for Jest environment.');
+// Do NOT load other scripts like UI, VAD, visualizers for this focused test.
 
-// Final checks to see if critical globals are defined.
-if (typeof global.Constants === 'undefined') console.error("FINAL CHECK FAIL: global.Constants is undefined.");
-if (typeof global.AppState === 'undefined') console.error("FINAL CHECK FAIL: global.AppState is undefined.");
-if (!global.AudioApp || typeof global.AudioApp.Utils === 'undefined') console.error("FINAL CHECK FAIL: global.AudioApp.Utils is undefined.");
-if (!global.AudioApp || typeof global.AudioApp.DTMFParser === 'undefined') console.error("FINAL CHECK FAIL: global.AudioApp.DTMFParser is undefined.");
-if (!global.AudioApp || typeof global.AudioApp.state === 'undefined') console.error("FINAL CHECK FAIL: global.AudioApp.state is undefined.");
+console.log('Minimal critical scripts processed for Jest environment.');
+
+// Final overall checks
+if (typeof global.Constants === 'undefined') console.error("FINAL OVERALL CHECK FAIL: global.Constants is undefined.");
+if (typeof global.AppState === 'undefined') console.error("FINAL OVERALL CHECK FAIL: global.AppState is undefined.");
+if (!global.AudioApp || typeof global.AudioApp.Utils === 'undefined') console.error("FINAL OVERALL CHECK FAIL: global.AudioApp.Utils is undefined.");
+if (!global.AudioApp || typeof global.AudioApp.DTMFParser === 'undefined') console.error("FINAL OVERALL CHECK FAIL: global.AudioApp.DTMFParser is undefined.");
+if (!global.AudioApp || typeof global.AudioApp.state === 'undefined') console.error("FINAL OVERALL CHECK FAIL: global.AudioApp.state is undefined.");

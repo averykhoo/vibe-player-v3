@@ -86,44 +86,12 @@ AudioApp = (function () {
 
     // DEBOUNCE_HASH_UPDATE_MS is now Constants.UI.DEBOUNCE_HASH_UPDATE_MS
     /** @type {Function|null} Debounced function for updating the URL hash from current settings. */
-    let debouncedUpdateUrlHash = null; // Renamed from debouncedUpdateHashFromSettings
+    let debouncedUpdateUrlHash = null;
 
-    /**
-     * Parses application settings from the URL hash and updates AppState.
-     * @private
-     */
-    function parseSettingsFromHashAndUpdateState() {
-        const hash = window.location.hash.substring(1);
-        if (!hash) return;
-
-        const params = new URLSearchParams(hash);
-
-        const speedStr = params.get(Constants.URLHashKeys.SPEED);
-        if (speedStr !== null) AudioApp.state.updateParam('speed', parseFloat(speedStr));
-
-        const pitchStr = params.get(Constants.URLHashKeys.PITCH);
-        if (pitchStr !== null) AudioApp.state.updateParam('pitch', parseFloat(pitchStr));
-
-        const vadPositiveStr = params.get(Constants.URLHashKeys.VAD_POSITIVE);
-        if (vadPositiveStr !== null) AudioApp.state.updateParam('vadPositive', parseFloat(vadPositiveStr));
-
-        const vadNegativeStr = params.get(Constants.URLHashKeys.VAD_NEGATIVE);
-        if (vadNegativeStr !== null) AudioApp.state.updateParam('vadNegative', parseFloat(vadNegativeStr));
-
-        const gainStr = params.get(Constants.URLHashKeys.GAIN); // Note: 'volume' from old hash becomes 'gain'
-        if (gainStr !== null) AudioApp.state.updateParam('gain', parseFloat(gainStr));
-
-        const audioUrl = params.get(Constants.URLHashKeys.AUDIO_URL);
-        if (audioUrl !== null) AudioApp.state.updateParam('audioUrl', audioUrl);
-
-        const timeStr = params.get(Constants.URLHashKeys.TIME);
-        if (timeStr !== null) {
-            // This time will be applied when the worklet is ready and audio loaded
-            initialHashSettings.position = parseFloat(timeStr);
-        }
-        console.log('App: Parsed initial settings from hash and updated AppState.');
-    }
-
+    // The old parseSettingsFromHashAndUpdateState function is removed.
+    // AppState.deserialize will handle parsing.
+    // initialHashSettings will be used to temporarily store 'position' if found by AppState.deserialize,
+    // as its application is deferred until audio is loaded.
 
     /**
      * Generates a URL hash string from the current AppState and playback position.
@@ -164,35 +132,29 @@ AudioApp = (function () {
 
         AudioApp.uiManager.init(); // Initializes UI elements and their default states
 
-        // Parse hash and update AppState. This might trigger UI updates if AppState is already connected to UI.
-        initialHashSettings = {}; // Reset before parsing
-        parseSettingsFromHashAndUpdateState();
-
-        // Apply AppState params to UI elements that were not set by hash
-        // This ensures UI reflects AppState's defaults if no hash overrides were present.
-        AudioApp.uiManager.setPlaybackSpeedValue(AudioApp.state.params.speed);
-        AudioApp.uiManager.setPitchValue(AudioApp.state.params.pitch);
-        AudioApp.uiManager.setGainValue(AudioApp.state.params.gain);
-        AudioApp.uiManager.setVadPositiveThresholdValue(AudioApp.state.params.vadPositive);
-        AudioApp.uiManager.setVadNegativeThresholdValue(AudioApp.state.params.vadNegative);
+        // Deserialize hash into AppState. This will trigger param:*:changed events,
+        // which uiManager subscribes to, updating the UI elements.
+        if (AudioApp.state && typeof AudioApp.state.deserialize === 'function') {
+            AudioApp.state.deserialize(window.location.hash.substring(1));
+        }
 
         setupAppEventListeners(); // Setup listeners that might depend on initial state being set
 
-        // Handle audioUrl from AppState (which might have been populated by hash)
-        const initialAudioUrl = AudioApp.state.params.audioUrl;
-        if (initialAudioUrl) {
-            console.log("App: Applying audioUrl from AppState (potentially from hash):", initialAudioUrl);
-            AudioApp.uiManager.setAudioUrlInputValue(initialAudioUrl);
-
-            if (initialAudioUrl.startsWith('file:///')) {
+        // Handle audioUrl from AppState (which was populated by deserialize)
+        const initialAudioUrlFromState = AudioApp.state.params.audioUrl;
+        if (initialAudioUrlFromState) {
+            console.log("App: Applying audioUrl from AppState (from hash):", initialAudioUrlFromState);
+            // uiManager's subscription to 'param:audioUrl:changed' should have updated the input field.
+            // We still need to handle the file loading or error display logic here.
+            if (initialAudioUrlFromState.startsWith('file:///')) {
                 AudioApp.state.updateStatus('urlInputStyle', 'error');
-                AudioApp.uiManager.setUrlInputStyle(AudioApp.state.status.urlInputStyle);
+                // uiManager subscription handles UI update
                 AudioApp.uiManager.setUrlLoadingError("Local files cannot be automatically reloaded from the URL. Please re-select the file.");
             } else {
                 AudioApp.state.updateStatus('urlInputStyle', 'modified');
-                AudioApp.uiManager.setUrlInputStyle(AudioApp.state.status.urlInputStyle);
+                // uiManager subscription handles UI update
                 // Trigger loading of the URL
-                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', {detail: {url: initialAudioUrl}}));
+                document.dispatchEvent(new CustomEvent('audioapp:urlSelected', {detail: {url: initialAudioUrlFromState}}));
             }
         }
 
@@ -550,17 +512,18 @@ AudioApp = (function () {
             AudioApp.audioEngine.setGain(AudioApp.state.params.gain);
         }
 
-        // Apply position from hash settings if available and audio buffer exists
-        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer;
-        if (initialHashSettings.position !== undefined && audioBuffer) {
-            const targetTime = Math.max(0, Math.min(initialHashSettings.position, audioBuffer.duration));
-            console.log(`App: Restoring position from hash: ${targetTime.toFixed(3)}s`);
+        // Apply initialSeekTime from AppState if available
+        const audioBuffer = AudioApp.state.runtime.currentAudioBuffer; // Get current buffer, if any
+        if (AudioApp.state.params.initialSeekTime !== null && audioBuffer) {
+            const targetTime = Math.max(0, Math.min(AudioApp.state.params.initialSeekTime, audioBuffer.duration));
+            console.log(`App: Applying initialSeekTime from AppState: ${targetTime.toFixed(3)}s`);
             AudioApp.audioEngine.seek(targetTime);
             AudioApp.state.updateRuntime('playbackStartSourceTime', targetTime);
             AudioApp.state.updateRuntime('playbackStartTimeContext', null); // Not playing yet
             updateUIWithTime(targetTime); // Update UI immediately
+            AudioApp.state.updateParam('initialSeekTime', null); // Reset after applying
         }
-        initialHashSettings = {}; // Clear after use, AppState now holds the applied values
+        // initialHashSettings is no longer used here for position.
     }
 
     /**
