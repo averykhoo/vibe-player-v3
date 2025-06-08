@@ -40,7 +40,7 @@ class Constants {
             SPEC_NORMAL_FFT_SIZE: 8192,
             SPEC_SHORT_FFT_SIZE: 2048,
             SPEC_SHORT_FILE_FFT_THRESHOLD_S: 10.0,
-            SPEC_MAX_FREQS: [6000, 10000, 16000],
+            SPEC_MAX_FREQS: [5000, 16000],
             SPEC_DEFAULT_MAX_FREQ_INDEX: 0,
             SPEC_FIXED_WIDTH: 2048,
             SPEC_SHORT_FILE_HOP_THRESHOLD_S: 5.0,
