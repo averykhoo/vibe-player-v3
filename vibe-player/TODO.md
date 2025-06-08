@@ -3,49 +3,94 @@
 # Vibe Player - TODO & Future Ideas
 
 This file tracks potential improvements, features, and known issues requiring further investigation for the Vibe Player
-project.
+project. The list is prioritized, with the most impactful and straightforward tasks at the top.
 
-## Bugs / Issues
+---
 
-* **[INVESTIGATE] Formant Shift:** The formant shift feature provided by Rubberband WASM is currently non-functional (no
-  audible effect despite parameter being set). Requires deeper investigation into Rubberband flags, potential WASM build
-  issues, or alternative approaches if the library feature is fundamentally broken in this context.
+### Priority 1: High-Impact UI/UX Features
 
-## Potential Enhancements / Features
+These are "quick win" features that directly improve usability and the user experience.
 
-* **VAD Probability Graph:** Add a visualization showing the raw VAD probability scores over time, with draggable
-  horizontal lines indicating the current positive/negative thresholds. This would make the VAD process more transparent
-  and tuning more intuitive.
-* **VAD Worker:** Migrate Silero VAD processing (`sileroProcessor`, `sileroWrapper`) to a separate Web Worker. This
-  would eliminate potential UI jank during analysis and allow VAD to complete even if the tab is backgrounded. Requires
-  setting up worker communication.
-* **Visualizer Computation Worker(s):** Migrate Waveform and/or Spectrogram *computation* logic to Web Worker(s). The
-  main thread would only handle Canvas drawing based on received data, further improving responsiveness, especially for
-  long files.
+* **Implement UI Control Buttons:**
+    * **Task:** Add "Back to Start" and "Reset Controls" buttons to the main interface.
+    * **Details:** The "Back to Start" button should seek playback to `0:00`. The "Reset Controls" button should reset
+      Speed, Pitch, Gain, and VAD thresholds to their default values. This provides essential, convenient user actions.
+
+* **Add UI Sounds:**
+    * **Task:** Implement Windows 98-style UI sounds for interactions (e.g., button clicks, slider adjustments).
+    * **Details:** This feature will enhance the retro aesthetic and provide valuable auditory feedback. Sounds should
+      be short and non-intrusive.
+
+* **Complete `jumpTime` Data Flow:**
+    * **Task:** Refactor the "Jump Time" input to use the centralized `AppState`.
+    * **Details:** Currently, the jump value is read directly from the DOM. This should be updated to follow the
+      unidirectional data flow pattern: the input field should update `AppState`, and the jump logic should read its
+      value from `AppState`. This is a code quality improvement that completes the state refactor.
+
+---
+
+### Priority 2: Core Functionality & Bug Fixes
+
+This addresses the most significant known issue with an audio processing feature.
+
+* **[INVESTIGATE] Formant Shift Functionality:**
+    * **Task:** The formant shift feature is implemented but has no audible effect. Investigate the cause and either fix
+      it or remove the control.
+    * **Details:** This requires deep-diving into the Rubberband WASM library's flags and documentation. If a fix is not
+      feasible, the formant slider should be removed from the UI to avoid user confusion.
+
+---
+
+### Priority 3: Advanced Features & Visualizations
+
+These are larger features that build on the stable foundation to provide more power to the user.
+
+* **VAD Probability Graph:**
+    * **Task:** Add a new visualization that shows the raw VAD probability scores over time.
+    * **Details:** This graph should align with the waveform and spectrogram. Ideally, it would include draggable
+      horizontal lines for the positive/negative thresholds, making VAD tuning highly intuitive. This requires modifying
+      the VAD worker to send back the full probability array.
+
+* **Preset Management:**
+    * **Task:** Allow users to save and load sets of Speed, Pitch, Gain, and VAD settings as named presets.
+    * **Details:** This would be very useful for users who frequently switch between different analysis configurations.
+      Presets could be stored in `localStorage`.
+
+* **Advanced Player Controls & Keybinds:**
+    * **Task:** Investigate and potentially implement more granular controls (e.g., frame-by-frame stepping).
+    * **Details:** Also, consider making keyboard shortcuts customizable by the user, with settings saved to
+      `localStorage`.
+
+---
+
+### Priority 4: Long-Term Code Health & Robustness
+
+These are ongoing tasks to ensure the project remains maintainable and reliable.
+
+* **Expand Automated Testing:**
+    * **Task:** Increase test coverage with more unit and integration tests.
+    * **Details:** Now that the architecture is more modular, modules like `audioEngine` and `uiManager` can be more
+      easily tested. This is crucial for preventing regressions as new features are added.
+
+* **Continue `app.js` Refactoring:**
+    * **Task:** Reduce the complexity of `app.js` by moving distinct responsibilities to more specialized modules.
+    * **Details:** For example, the VAD and Tone analysis orchestration logic could be moved out of `app.js` into a
+      dedicated `analysisOrchestrator.js` module. This improves separation of concerns and maintainability.
+
+---
+
+### Others
+
 * **Improved Spectrogram Rendering:** Explore true progressive computation/rendering for the spectrogram, where slices
   are calculated and drawn incrementally, rather than computing all data upfront.
-* **Error Handling UI:** Display user-friendly error messages in the UI for issues like decoding failures, VAD errors,
-  etc., instead of relying solely on `console.error` and generic file info updates.
-* **State Management Module (`audioPlayerState.js`):** Consider creating a dedicated module to manage playback-related
-  state (`isPlaying`, `currentTime`, speed/pitch targets) currently spread between `app.js` and `audioEngine.js`. This
-  could improve separation of concerns if the application grows more complex.
-* **Parameter Smoothing:** Investigate if parameter changes (speed, pitch) sent to Rubberband could benefit from
-  smoother transitions (if supported by the library/worklet) to avoid abrupt audio changes.
-* **Preset Management:** Allow saving/loading sets of Speed/Pitch/Gain/VAD settings.
-* Windows 98 sounds on click etc
-* Hide VAD tuning or add a graph to show the probs, start and stop thresholds, and color that too but faded?
-* more player controls? maybe up and down to change speed by 0.25? enter also to play/pause? make the keybinds
-  modifiable? and savable in local storage? and a reset button too if so
-* add a 'back to start' button near play/pause and a 'reset' button to controls / vad controls
 
-## Code Health / Refactoring Ideas
+---
 
-* **Review `app.js` Complexity:** As features are added, monitor the size and complexity of `app.js`. If it becomes too
-  large, revisit introducing a more formal state management pattern or further decomposing its responsibilities.
-* **Review `audioEngine.js` State:** Re-evaluate if `audioEngine` can be made more stateless regarding playback
-  parameters (see `audioPlayerState.js` idea above).
-* **Automated Testing:** Introduce some form of automated testing (e.g., unit tests for utility functions, potentially
-  integration tests for core flows if feasible without excessive mocking) to improve regression safety (currently relies
-  on manual testing - C5).
+### Done / Completed
+
+* ~~**[DONE]** Refactor state management into a centralized `AppState` module.~~
+* ~~**[DONE]** Move VAD processing to a Web Worker to prevent UI freezes.~~
+* ~~**[DONE]** Offload Spectrogram FFT computation to a Web Worker.~~
+* ~~**[DONE]** Fix critical script loading order and initialization bugs.~~
 
 <!-- /vibe-player/TODO.md -->
