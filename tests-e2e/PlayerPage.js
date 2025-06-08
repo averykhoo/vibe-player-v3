@@ -12,7 +12,6 @@ exports.PlayerPage = class PlayerPage {
     this.dtmfDisplay = page.locator('#dtmfDisplay');
     this.cptDisplay = page.locator('#cpt-display-content');
     this.chooseFileButton = page.locator('#chooseFileButton');
-    // ADDED: Locator for the actual hidden file input
     this.hiddenFileInput = page.locator('#hiddenAudioFile');
     this.timeDisplay = page.locator('#timeDisplay');
     this.seekBar = page.locator('#seekBar');
@@ -25,9 +24,12 @@ exports.PlayerPage = class PlayerPage {
   async goto() {
     // Assumes server is running on localhost:8080
     await this.page.goto('http://localhost:8080/');
+    // ADDED: Explicitly wait for a key UI element to be ready.
+    // This ensures that all the app's JavaScript, including event listeners,
+    // has been initialized before the test proceeds.
+    await this.chooseFileButton.waitFor({ state: 'visible', timeout: 10000 });
   }
 
-  // REFACTORED: This method now uses setInputFiles directly.
   async loadAudioFile(fileName) {
     // This is the idiomatic and more robust way to handle file uploads in Playwright.
     // It targets the hidden input element directly and doesn't rely on clicking
