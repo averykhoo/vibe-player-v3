@@ -78,6 +78,10 @@ class Constants {
 // Export for Node.js/CommonJS for testing, or attach to window/global for browser/other environments
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Constants;
+} else if (typeof self !== 'undefined' && (typeof self.importScripts === 'function' || typeof self.postMessage === 'function')) {
+    // ADDED: Explicit check for a Worker-like environment ('self' exists and has worker functions).
+    // This will make the Constants class available globally inside the worker.
+    self.Constants = Constants;
 } else if (typeof window !== 'undefined') {
     window.Constants = Constants;
 } else if (typeof global !== 'undefined') {
