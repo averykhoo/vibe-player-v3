@@ -1,12 +1,10 @@
 // jest.setup.js
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
+// const vm = require('vm'); // Not using vm for this approach
 
 // --- 1. Mock Browser-Specific APIs ---
-// JSDOM (Jest's default environment) provides `window`, `document`, `navigator`.
-// `global` in this context IS the JSDOM window. Explicitly alias for clarity/scripts expecting `window`.
-global.window = global;
+global.window = global; // JSDOM's global IS window. Make it explicit.
 
 global.AudioContext = jest.fn(() => ({
   createGain: jest.fn(() => ({ connect: jest.fn(), gain: { value: 1, setTargetAtTime: jest.fn() } })),
@@ -23,131 +21,91 @@ global.AudioContext = jest.fn(() => ({
   currentTime: 0,
   state: 'running',
   destination: {},
-  createBufferSource: jest.fn(() => ({
-    buffer: null,
-    connect: jest.fn(),
-    start: jest.fn(),
-    stop: jest.fn(),
-    loop: false,
-    onended: null,
-  })),
-  createOscillator: jest.fn(() => ({
-    type: 'sine',
-    frequency: { value: 440, setValueAtTime: jest.fn() },
-    connect: jest.fn(),
-    start: jest.fn(),
-    stop: jest.fn(),
-    onended: null,
-  })),
+  createBufferSource: jest.fn(() => ({ buffer: null, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), loop: false, onended: null })),
+  createOscillator: jest.fn(() => ({ type: 'sine', frequency: { value: 440, setValueAtTime: jest.fn() }, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), onended: null })),
 }));
-global.AudioWorkletNode = jest.fn().mockImplementation(() => ({
-    connect: jest.fn(),
-    disconnect: jest.fn(),
-    port: {
-        postMessage: jest.fn(),
-        onmessage: null,
-    },
-    onprocessorerror: null,
-}));
+global.AudioWorkletNode = jest.fn().mockImplementation(() => ({ connect: jest.fn(), disconnect: jest.fn(), port: { postMessage: jest.fn(), onmessage: null }, onprocessorerror: null }));
+global.Worker = jest.fn().mockImplementation(function(stringUrl) { this.postMessage = jest.fn(); this.terminate = jest.fn(); this.onmessage = null; this.onerror = null; });
+global.ort = { InferenceSession: { create: jest.fn(() => Promise.resolve({ run: jest.fn(() => Promise.resolve({ output: new global.ort.Tensor('float32', [0.5], [1])}) ) })) }, Tensor: jest.fn((type, data, dims) => ({ type, data, dims, ortType: type, input: true })), env: { wasm: {} } };
 
-global.Worker = jest.fn().mockImplementation(function(stringUrl) {
-  this.postMessage = jest.fn();
-  this.terminate = jest.fn();
-  this.onmessage = null;
-  this.onerror = null;
-  if (stringUrl && stringUrl.includes('blob:')) {
-    setTimeout(() => {
-      if (typeof this.onmessage === 'function') {
-        // this.onmessage({ data: { type: 'model_ready' } });
-      }
-    }, 0);
-  }
-});
-
-global.ort = {
-  InferenceSession: { create: jest.fn(() => Promise.resolve({ run: jest.fn(() => Promise.resolve({ output: new global.ort.Tensor('float32', [0.5], [1])}) ) })) },
-  Tensor: jest.fn((type, data, dims) => ({ type, data, dims, ortType: type, input: true })),
-  env: { wasm: {} }
-};
-
-// Load FFT script into the global context.
 try {
     const fftScriptContent = fs.readFileSync(path.resolve(__dirname, 'vibe-player/lib/fft.js'), 'utf-8');
-    new vm.Script(fftScriptContent, { filename: 'lib/fft.js' }).runInThisContext();
+    const scriptEl = global.document.createElement('script');
+    scriptEl.textContent = fftScriptContent;
+    global.document.body.appendChild(scriptEl);
+    // console.log('FFT script loaded via JSDOM script tag.');
 } catch (e) {
-    console.error("Failed to load lib/fft.js:", e.message);
+    console.error("Failed to load lib/fft.js via JSDOM:", e.message);
 }
 
 // --- 2. Load Application Scripts in Order ---
 const appRoot = path.resolve(__dirname, 'vibe-player');
-
-// Ensure AudioApp namespace exists globally
 global.AudioApp = global.AudioApp || {};
 
-// Use a global marker object to ensure each script's code is executed only once
-// across all test suites if Jest re-runs jest.setup.js in a shared global scope.
-if (!global.__jestScriptsLoaded) {
-    global.__jestScriptsLoaded = {};
+if (!global.__jestLoadedScriptsInJsdom) {
+    global.__jestLoadedScriptsInJsdom = new Set();
 }
 
-const loadScript = (scriptPathFromAppRoot, isCritical = false) => {
+const loadScriptViaJsdom = (scriptPathFromAppRoot) => {
   const absoluteScriptPath = path.join(appRoot, scriptPathFromAppRoot);
-  const scriptNameKey = scriptPathFromAppRoot.replace(/\//g, '_'); // Create a unique key
 
-  if (global.__jestScriptsLoaded[scriptNameKey]) {
-    // console.log(`Script ${scriptPathFromAppRoot} already executed in this global context.`);
+  if (global.__jestLoadedScriptsInJsdom.has(absoluteScriptPath)) {
+    // console.log(`JSDOM script ${absoluteScriptPath} already loaded.`);
     return;
   }
 
   try {
-    // console.log(`Loading script: ${scriptPathFromAppRoot}`);
+    // console.log(`JSDOM loading script: ${absoluteScriptPath}`);
     const scriptCode = fs.readFileSync(absoluteScriptPath, 'utf-8');
-    new vm.Script(scriptCode, { filename: scriptPathFromAppRoot }).runInThisContext();
-    global.__jestScriptsLoaded[scriptNameKey] = true;
+    const scriptEl = global.document.createElement('script');
+    scriptEl.textContent = scriptCode;
+    global.document.body.appendChild(scriptEl); // JSDOM should execute this
+    global.__jestLoadedScriptsInJsdom.add(absoluteScriptPath);
   } catch (e) {
-    console.error(`Error loading script ${scriptPathFromAppRoot}: ${e.message}`);
-    if (isCritical) {
-        // For critical scripts, re-throw to fail the setup early.
+    console.error(`Error JSDOM loading script ${scriptPathFromAppRoot}: ${e.message}`);
+    // For critical scripts, re-throw to fail the setup early.
+    if (scriptPathFromAppRoot.includes('constants.js') ||
+        scriptPathFromAppRoot.includes('appState.js') ||
+        scriptPathFromAppRoot.includes('app.js') ||
+        scriptPathFromAppRoot.includes('utils.js') ||
+        scriptPathFromAppRoot.includes('goertzel.js') ) {
         throw e;
     }
-    // For non-critical scripts, log and continue if desired, or throw as well.
-    // throw e;
   }
 };
 
-// Defined load order based on dependencies
-const orderedScripts = [
-  { path: 'js/state/constants.js', critical: true },    // Defines global Constants
-  { path: 'js/state/appState.js', critical: true },     // Defines global AppState, uses Constants
-  { path: 'js/utils.js', critical: true },              // Attaches AudioApp.Utils
-  { path: 'js/goertzel.js', critical: true },           // Attaches AudioApp.DTMFParser etc.
-  { path: 'js/app.js', critical: true },                // Instantiates AppState, needs AudioApp, Constants, AppState
-
-  { path: 'js/uiManager.js', critical: false },          // Needs AudioApp, Constants, AppState
-  { path: 'js/player/audioEngine.js', critical: false }, // Needs AudioApp, Constants
-
-  { path: 'js/vad/RemoteApiStrategy.js', critical: false },
-  { path: 'js/vad/sileroWrapper.js', critical: false },      // Uses self.ort (global.ort in JSDOM)
-  { path: 'js/vad/sileroProcessor.js', critical: false },  // Uses Constants, Utils, AudioApp.sileroWrapper
-  { path: 'js/vad/LocalWorkerStrategy.js', critical: false },// Uses Constants (in worker string)
-  { path: 'js/vad/vadAnalyzer.js', critical: false },      // Uses the strategies
-
-  { path: 'js/visualizers/waveformVisualizer.js', critical: false },   // Uses AudioApp, Constants
-  { path: 'js/visualizers/spectrogramVisualizer.js', critical: false },// Uses AudioApp, Constants, window.FFT
-
-  { path: 'js/sparkles.js', critical: false } // Uses window, document
+const scriptsToLoad = [
+  'js/state/constants.js',
+  'js/state/appState.js',
+  'js/utils.js',
+  'js/goertzel.js',
+  'js/app.js',
+  'js/uiManager.js',
+  'js/player/audioEngine.js',
+  'js/vad/RemoteApiStrategy.js',
+  'js/vad/sileroWrapper.js',
+  'js/vad/sileroProcessor.js',
+  'js/vad/LocalWorkerStrategy.js',
+  'js/vad/vadAnalyzer.js',
+  'js/visualizers/waveformVisualizer.js',
+  'js/visualizers/spectrogramVisualizer.js',
+  'js/sparkles.js'
 ];
 
-console.log("Loading application scripts for Jest environment...");
-orderedScripts.forEach(scriptInfo => {
-    // Skip old constants file if it's somehow in a list (it shouldn't be here)
-    if (scriptInfo.path === 'js/constants.js') {
+console.log("Loading application scripts for Jest environment using JSDOM script execution...");
+scriptsToLoad.forEach(scriptPath => {
+    if (scriptPath === 'js/constants.js') { // old constants file, skip
         console.log("Skipping obsolete js/constants.js");
         return;
     }
-    loadScript(scriptInfo.path, scriptInfo.critical);
+    loadScriptViaJsdom(scriptPath);
 });
 
 console.log('All specified scripts processed for Jest environment.');
-// global.AudioApp, global.Constants, global.AppState should be available to tests.
-// `window` in JSDOM is `global`, so `window.Constants` etc., should also work.
+
+// Final checks to see if critical globals are defined.
+if (typeof global.Constants === 'undefined') console.error("FINAL CHECK FAIL: global.Constants is undefined.");
+if (typeof global.AppState === 'undefined') console.error("FINAL CHECK FAIL: global.AppState is undefined.");
+if (!global.AudioApp || typeof global.AudioApp.Utils === 'undefined') console.error("FINAL CHECK FAIL: global.AudioApp.Utils is undefined.");
+if (!global.AudioApp || typeof global.AudioApp.DTMFParser === 'undefined') console.error("FINAL CHECK FAIL: global.AudioApp.DTMFParser is undefined.");
+if (!global.AudioApp || typeof global.AudioApp.state === 'undefined') console.error("FINAL CHECK FAIL: global.AudioApp.state is undefined.");
