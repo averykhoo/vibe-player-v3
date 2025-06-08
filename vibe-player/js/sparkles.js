@@ -326,6 +326,7 @@
     //    - sparkle(false) → turn OFF immediately (clears all alive particles)
     //    - sparkle()      → toggle on/off
     // ───────────────────────────────────────────────────────────────────────────
+    const globalRef = typeof window !== 'undefined' ? window : global;
     /**
      * @global
      * @function sparkle
@@ -333,7 +334,7 @@
      * Call with `true` to enable, `false` to disable, or no argument to toggle.
      * @param {boolean} [enable=null] - True to enable, false to disable. Toggles if null.
      */
-    window.sparkle = function (enable = null) {
+    globalRef.sparkle = function (enable = null) {
         if (enable === null) {
             sparklesEnabled = !sparklesEnabled;
         } else {

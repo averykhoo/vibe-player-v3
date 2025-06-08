@@ -107,15 +107,58 @@ AudioApp.uiManager = (function() {
      */
     function init() {
         console.log("UIManager: Initializing...");
-        if (!Utils) {
-            console.error("UIManager: CRITICAL - AudioApp.Utils not found! UI might not function correctly.");
+        if (!Utils || typeof AudioApp === 'undefined' || !AudioApp.state || typeof Constants === 'undefined') {
+            console.error("UIManager: CRITICAL - Missing dependencies (Utils, AudioApp.state, or Constants)! UI might not function correctly.");
             return;
         }
         assignDOMElements();
         initializeSliderMarkers();
         setupEventListeners();
+        // Initial UI setup based on AppState defaults, before subscriptions might override them
         resetUI();
-        console.log("UIManager: Initialized.");
+
+        // Subscribe to AppState changes
+        AudioApp.state.subscribe('param:speed:changed', (newSpeed) => { setPlaybackSpeedValue(newSpeed); });
+        AudioApp.state.subscribe('param:pitch:changed', (newPitch) => { setPitchValue(newPitch); });
+        AudioApp.state.subscribe('param:gain:changed', (newGain) => { setGainValue(newGain); });
+        AudioApp.state.subscribe('param:vadPositive:changed', (newThreshold) => { setVadPositiveThresholdValue(newThreshold); });
+        AudioApp.state.subscribe('param:vadNegative:changed', (newThreshold) => { setVadNegativeThresholdValue(newThreshold); });
+        AudioApp.state.subscribe('param:audioUrl:changed', (newUrl) => { if (getAudioUrlInputValue() !== newUrl) { setAudioUrlInputValue(newUrl); } });
+        AudioApp.state.subscribe('param:jumpTime:changed', (newJumpTime) => { setJumpTimeValue(newJumpTime); });
+
+        AudioApp.state.subscribe('runtime:currentAudioBuffer:changed', (audioBuffer) => {
+            // Update duration part of timeDisplay
+            const duration = audioBuffer ? audioBuffer.duration : 0;
+            const currentTime = seekBar ? parseFloat(seekBar.value) * duration : 0; // Maintain current time if possible
+            updateTimeDisplay(currentTime, duration); // Will update both current time and duration
+            enableSeekBar(!!audioBuffer);
+        });
+        AudioApp.state.subscribe('runtime:currentVadResults:changed', (vadResults) => {
+            const regions = vadResults ? vadResults.regions || [] : [];
+            setSpeechRegionsText(regions);
+            // Waveform highlight will be handled by waveformVisualizer subscribing separately
+        });
+
+        AudioApp.state.subscribe('status:isActuallyPlaying:changed', (isPlaying) => { setPlayButtonState(isPlaying); });
+        AudioApp.state.subscribe('status:workletPlaybackReady:changed', (isReady) => {
+            enablePlaybackControls(isReady);
+            if (!isReady) { enableSeekBar(false); } // Also disable seekbar if worklet not ready
+        });
+        AudioApp.state.subscribe('status:urlInputStyle:changed', (style) => { setUrlInputStyle(style); });
+        AudioApp.state.subscribe('status:fileInfoMessage:changed', (message) => { setFileInfo(message); });
+        AudioApp.state.subscribe('status:urlLoadingErrorMessage:changed', (message) => { setUrlLoadingError(message); });
+        AudioApp.state.subscribe('status:isVadProcessing:changed', (isProcessing) => {
+            showVadProgress(isProcessing);
+            if (!isProcessing) {
+                // Check if VAD results are present to determine if progress should be 100% or reset
+                const vadResults = AudioApp.state.runtime.currentVadResults;
+                updateVadProgress(vadResults ? 100 : 0);
+            } else {
+                updateVadProgress(0);
+            }
+        });
+
+        console.log("UIManager: Initialized and subscribed to AppState.");
     }
 
     /**
@@ -438,6 +481,15 @@ AudioApp.uiManager = (function() {
     }
 
     /**
+     * Gets the current value of the audio URL input field.
+     * @public
+     * @returns {string} The current value of the audio URL input.
+     */
+    function getAudioUrlInputValue() {
+        return audioUrlInput ? audioUrlInput.value : "";
+    }
+
+    /**
      * Sets the value of the audio URL input field.
      * @public
      * @param {string} text The text to set as the value.
@@ -445,6 +497,17 @@ AudioApp.uiManager = (function() {
     function setAudioUrlInputValue(text) {
         if (audioUrlInput) {
             audioUrlInput.value = text;
+        }
+    }
+
+    /**
+     * Sets the value of the jump time input field.
+     * @public
+     * @param {number|string} value The jump time value to set.
+     */
+    function setJumpTimeValue(value) {
+        if (jumpTimeInput) {
+            jumpTimeInput.value = String(value);
         }
     }
 
@@ -815,6 +878,8 @@ AudioApp.uiManager = (function() {
      * @property {function('success'|'error'|'file'|'default'|'modified'): void} setUrlInputStyle
      * @property {function(): void} unfocusUrlInput
      * @property {function(string): void} setAudioUrlInputValue
+     * @property {function(): string} getAudioUrlInputValue
+     * @property {function(number|string): void} setJumpTimeValue
      * @property {function(File): void} showDropZone
      * @property {function(): void} hideDropZone
      * @property {function(): number} getPlaybackSpeedValue
@@ -852,6 +917,8 @@ AudioApp.uiManager = (function() {
         setUrlInputStyle: setUrlInputStyle,
         unfocusUrlInput: unfocusUrlInput,
         setAudioUrlInputValue: setAudioUrlInputValue,
+        getAudioUrlInputValue: getAudioUrlInputValue,
+        setJumpTimeValue: setJumpTimeValue,
         showDropZone: showDropZone,
         hideDropZone: hideDropZone,
         // New Getters

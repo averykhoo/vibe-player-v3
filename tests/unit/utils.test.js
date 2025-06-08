@@ -18,11 +18,16 @@ describe('AudioApp.DTMFParser', () => {
   });
 });
 
-describe('AudioApp.Constants', () => {
-  test('should exist and contain essential constants', () => {
-    expect(AudioApp.Constants).toBeDefined();
-    expect(AudioApp.Constants.PROCESSOR_SCRIPT_URL).toBe('js/player/rubberbandProcessor.js');
-    expect(AudioApp.Constants.VAD_SAMPLE_RATE).toBe(16000);
-    expect(AudioApp.Constants.WAVEFORM_COLOR_SPEECH).toBe('#FDE725');
+// Updated to test the new global Constants class
+describe('Constants', () => {
+  test('should exist and contain essential constants structured correctly', () => {
+    expect(Constants).toBeDefined();
+    expect(Constants.AudioEngine.PROCESSOR_SCRIPT_URL).toBe('js/player/rubberbandProcessor.js');
+    expect(Constants.VAD.SAMPLE_RATE).toBe(16000);
+    expect(Constants.Visualizer.WAVEFORM_COLOR_SPEECH).toBe('#FDE725');
+    // Add checks for other important constants if necessary
+    expect(Constants.URLHashKeys.SPEED).toBe('speed');
+    expect(Constants.UI.DEBOUNCE_HASH_UPDATE_MS).toBe(500);
+    expect(Constants.DTMF.BLOCK_SIZE).toBe(410);
   });
 });
