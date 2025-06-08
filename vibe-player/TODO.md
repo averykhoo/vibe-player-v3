@@ -73,6 +73,7 @@ These are ongoing tasks to ensure the project remains maintainable and reliable.
 
 * **Improved Spectrogram Rendering:** Explore true progressive computation/rendering for the spectrogram, where slices
   are calculated and drawn incrementally, rather than computing all data upfront.
+* Improve typing, docstrings, comment section headers, make the header and footer comment with the file path consistent 
 
 ---
 
