@@ -13,6 +13,8 @@ exports.PlayerPage = class PlayerPage {
     this.cptDisplay = page.locator('#cpt-display-content');
     this.chooseFileButton = page.locator('#chooseFileButton');
     this.hiddenFileInput = page.locator('#hiddenAudioFile');
+    // ADDED: Locator for the file info status text
+    this.fileInfoStatus = page.locator('#fileInfo');
     this.timeDisplay = page.locator('#timeDisplay');
     this.seekBar = page.locator('#seekBar');
     this.jumpBack = page.locator('#jumpBack');
@@ -24,10 +26,10 @@ exports.PlayerPage = class PlayerPage {
   async goto() {
     // Assumes server is running on localhost:8080
     await this.page.goto('http://localhost:8080/');
-    // ADDED: Explicitly wait for a key UI element to be ready.
-    // This ensures that all the app's JavaScript, including event listeners,
-    // has been initialized before the test proceeds.
-    await this.chooseFileButton.waitFor({ state: 'visible', timeout: 10000 });
+    // REFACTORED: Wait for a more reliable signal of app initialization.
+    // The uiManager sets this text to "No file selected." once it's fully ready.
+    // This is much more robust than waiting for a static element to be visible.
+    await expect(this.fileInfoStatus).toHaveText("No file selected.", { timeout: 10000 });
   }
 
   async loadAudioFile(fileName) {
