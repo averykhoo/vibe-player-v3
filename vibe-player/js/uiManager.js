@@ -355,8 +355,19 @@ AudioApp.uiManager = (function () {
             }
         });
         playPauseButton?.addEventListener('click', () => dispatchUIEvent('audioapp:playPauseClicked'));
-        jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', {seconds: -getJumpTime()}));
-        jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', {seconds: getJumpTime()}));
+        jumpBackButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { direction: -1 }));
+        jumpForwardButton?.addEventListener('click', () => dispatchUIEvent('audioapp:jumpClicked', { direction: 1 }));
+
+        jumpTimeInput?.addEventListener('input', (e) => {
+          const inputElement = /** @type {HTMLInputElement} */ (e.target);
+          let value = parseFloat(inputElement.value);
+          if (isNaN(value) || value <= 0) {
+            value = Math.max(1, value || 1); // Ensure jump time is at least 1
+            // Optionally, update the input field visually to reflect the corrected value
+            // inputElement.value = String(value);
+          }
+          dispatchUIEvent('audioapp:jumpTimeChanged', { value: value });
+        });
 
         setupSliderListeners(playbackSpeedControl, speedValueDisplay, 'audioapp:speedChanged', 'speed', 'x');
         setupSliderListeners(pitchControl, pitchValueDisplay, 'audioapp:pitchChanged', 'pitch', 'x');
@@ -403,23 +414,24 @@ AudioApp.uiManager = (function () {
         if (isTextInput || isTextArea) return;
 
         let handled = false;
-        /** @type {string|null} */ let eventKey = null;
+        /** @type {string|null} */ let eventKey = null; // To track if 'Space' was pressed for the specific event
         switch (e.code) {
             case 'Space':
-                eventKey = 'Space';
+                eventKey = 'Space'; // Specifically track Space for audioapp:keyPressed
                 handled = true;
                 break;
             case 'ArrowLeft':
-                eventKey = 'ArrowLeft';
+                dispatchUIEvent('audioapp:jumpClicked', { direction: -1 });
                 handled = true;
                 break;
             case 'ArrowRight':
-                eventKey = 'ArrowRight';
+                dispatchUIEvent('audioapp:jumpClicked', { direction: 1 });
                 handled = true;
                 break;
         }
-        if (eventKey) {
-            dispatchUIEvent('audioapp:keyPressed', {key: eventKey});
+        // Dispatch keyPressed only for Space, JumpClicked is handled directly for arrows
+        if (eventKey && eventKey === 'Space') {
+            dispatchUIEvent('audioapp:keyPressed', { key: eventKey });
         }
         if (handled) {
             e.preventDefault();
@@ -553,8 +565,13 @@ AudioApp.uiManager = (function () {
      * @param {number|string} value The jump time value to set.
      */
     function setJumpTimeValue(value) {
-        if (jumpTimeInput) {
-            jumpTimeInput.value = String(value);
+        const inputElement = jumpTimeInput;
+        if (inputElement) {
+            const currentValue = parseFloat(inputElement.value);
+            const newValue = parseFloat(String(value)); // Convert value to string first for robustness
+            if (currentValue !== newValue && !isNaN(newValue)) {
+                inputElement.value = String(newValue);
+            }
         }
     }
 
@@ -780,15 +797,6 @@ AudioApp.uiManager = (function () {
     }
 
     /**
-     * Gets the current jump time value from the input field.
-     * @public
-     * @returns {number} The jump time in seconds (default is 5).
-     */
-    function getJumpTime() {
-        return parseFloat(jumpTimeInput?.value || "5") || 5;
-    }
-
-    /**
      * Updates the VAD progress bar percentage.
      * @public
      * @param {number} percentage - The progress percentage (0 to 100).
@@ -982,7 +990,6 @@ AudioApp.uiManager = (function () {
         enablePlaybackControls: enablePlaybackControls,
         enableSeekBar: enableSeekBar,
         enableVadControls: enableVadControls,
-        getJumpTime: getJumpTime,
         updateVadProgress: updateVadProgress,
         showVadProgress: showVadProgress,
         setUrlLoadingError: setUrlLoadingError,

@@ -135,6 +135,7 @@ var AudioApp = AudioApp || {};
         document.addEventListener('audioapp:gainChanged', (handleGainChange));
         document.addEventListener('audioapp:thresholdChanged', (handleThresholdChange));
         document.addEventListener('audioapp:keyPressed', (handleKeyPress));
+        document.addEventListener('audioapp:jumpTimeChanged', (handleJumpTimeChange)); // New listener
         document.addEventListener('audioapp:audioLoaded', (handleAudioLoaded));
         document.addEventListener('audioapp:workletReady', (handleWorkletReady));
         document.addEventListener('audioapp:decodingError', (handleAudioError));
@@ -150,6 +151,19 @@ var AudioApp = AudioApp || {};
         window.addEventListener('dragover', handleDragOver);
         window.addEventListener('dragleave', handleDragLeave);
         window.addEventListener('drop', handleDrop);
+    }
+
+    /**
+     * Handles changes to the jump time from the UI.
+     * @param {CustomEvent<{value: number}>} e - The event containing the new jump time.
+     * @private
+     */
+    function handleJumpTimeChange(e) {
+        const newJumpTime = e.detail.value;
+        if (typeof newJumpTime === 'number' && newJumpTime > 0) {
+            app.state.updateParam('jumpTime', newJumpTime);
+            if (debouncedUpdateUrlHash) debouncedUpdateUrlHash(); // Update URL hash if jump time changes
+        }
     }
 
     function handleDragEnter(event) {
@@ -541,7 +555,10 @@ var AudioApp = AudioApp || {};
         const duration = audioBuffer.duration;
         if (isNaN(duration) || duration <= 0) return;
         const currentTime = calculateEstimatedSourceTime();
-        const targetTime = Math.max(0, Math.min(currentTime + e.detail.seconds, duration));
+        const direction = e.detail.direction; // Get direction
+        const jumpTime = app.state.params.jumpTime; // Get jumpTime from state
+        const jumpAmount = jumpTime * direction; // Calculate jumpAmount
+        const targetTime = Math.max(0, Math.min(currentTime + jumpAmount, duration)); // Use jumpAmount
         app.audioEngine.seek(targetTime);
         app.state.updateRuntime('playbackStartSourceTime', targetTime);
         if (app.state.status.isActuallyPlaying) {
@@ -685,17 +702,13 @@ var AudioApp = AudioApp || {};
     function handleKeyPress(e) {
         if (!app.state.status.workletPlaybackReady) return;
         const key = e.detail.key;
-        const jumpTimeValue = app.uiManager.getJumpTime();
+        // const jumpTimeValue = app.uiManager.getJumpTime(); // Removed
         switch (key) {
             case 'Space':
                 handlePlayPause();
                 break;
-            case 'ArrowLeft':
-                handleJump({detail: {seconds: -jumpTimeValue}});
-                break;
-            case 'ArrowRight':
-                handleJump({detail: {seconds: jumpTimeValue}});
-                break;
+            // ArrowLeft and ArrowRight cases are removed as they are handled by uiManager
+            // and dispatch 'audioapp:jumpClicked' directly.
         }
     }
 
