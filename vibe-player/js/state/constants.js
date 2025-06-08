@@ -74,3 +74,13 @@ class Constants {
         };
     }
 }
+
+// Export for Node.js/CommonJS for testing, or attach to window/global for browser/other environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Constants;
+} else if (typeof window !== 'undefined') {
+    window.Constants = Constants;
+} else if (typeof global !== 'undefined') {
+    // Fallback for environments like Jest's JSDOM where 'global' is the window-like object
+    global.Constants = Constants;
+}

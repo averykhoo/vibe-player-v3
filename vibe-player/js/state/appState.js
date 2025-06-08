@@ -205,3 +205,13 @@ class AppState {
         return searchParams.toString();
     }
 }
+
+// Export for Node.js/CommonJS for testing, or attach to window/global for browser/other environments
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = AppState;
+} else if (typeof window !== 'undefined') {
+    window.AppState = AppState;
+} else if (typeof global !== 'undefined') {
+    // Fallback for environments like Jest's JSDOM where 'global' is the window-like object
+    global.AppState = AppState;
+}
