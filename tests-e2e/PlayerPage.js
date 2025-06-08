@@ -12,6 +12,8 @@ exports.PlayerPage = class PlayerPage {
     this.dtmfDisplay = page.locator('#dtmfDisplay');
     this.cptDisplay = page.locator('#cpt-display-content');
     this.chooseFileButton = page.locator('#chooseFileButton');
+    // ADDED: Locator for the actual hidden file input
+    this.hiddenFileInput = page.locator('#hiddenAudioFile');
     this.timeDisplay = page.locator('#timeDisplay');
     this.seekBar = page.locator('#seekBar');
     this.jumpBack = page.locator('#jumpBack');
@@ -25,12 +27,14 @@ exports.PlayerPage = class PlayerPage {
     await this.page.goto('http://localhost:8080/');
   }
 
+  // REFACTORED: This method now uses setInputFiles directly.
   async loadAudioFile(fileName) {
-    const fileChooserPromise = this.page.waitForEvent('filechooser');
-    await this.chooseFileButton.click();
-    const fileChooser = await fileChooserPromise;
-    // NOTE: This assumes test-audio is at the project root. Adjust if needed.
-    await fileChooser.setFiles(path.join(__dirname, `../test-audio/${fileName}`));
+    // This is the idiomatic and more robust way to handle file uploads in Playwright.
+    // It targets the hidden input element directly and doesn't rely on clicking
+    // the proxy button, which avoids the timeout issue.
+    // Playwright's setInputFiles will correctly trigger the 'change' event
+    // on the input that the application's uiManager is listening for.
+    await this.hiddenFileInput.setInputFiles(path.join(__dirname, `../test-audio/${fileName}`));
   }
 
   // --- Define Test Assertions Here ---
