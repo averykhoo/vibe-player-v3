@@ -171,12 +171,12 @@ AudioApp.audioEngine = (function () {
                 throw new Error("AudioContext could not be created/reset for loading file.");
             }
         }
-        if (audioCtx.state === 'suspended') { // Attempt to resume context if suspended
-            await audioCtx.resume().catch(e => console.warn("AudioEngine: Context resume failed during load.", e));
-            if (audioCtx.state !== 'running') {
-                throw new Error(`AudioContext could not be resumed (state: ${audioCtx.state}). User interaction might be required.`);
-            }
-        }
+        // if (audioCtx.state === 'suspended') { // Attempt to resume context if suspended
+        //     await audioCtx.resume().catch(e => console.warn("AudioEngine: Context resume failed during load.", e));
+        //     if (audioCtx.state !== 'running') {
+        //         throw new Error(`AudioContext could not be resumed (state: ${audioCtx.state}). User interaction might be required.`);
+        //     }
+        // }
 
         await cleanupCurrentWorklet(); // Clean up any existing worklet instance
         currentDecodedBuffer = null;
