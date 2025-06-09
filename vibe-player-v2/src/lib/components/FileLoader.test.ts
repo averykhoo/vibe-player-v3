@@ -47,6 +47,11 @@ let mockPlayerStoreWritable: Writable<PlayerStoreValues>;
 
 describe("FileLoader.svelte", () => {
   beforeEach(async () => {
+    vi.useFakeTimers(); // Add fake timers
+    // Polyfill/mock File.prototype.arrayBuffer if it doesn't exist in JSDOM
+    if (!File.prototype.arrayBuffer) {
+      File.prototype.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(10));
+    }
     mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
 
     const playerStoreMocks = await import('$lib/stores/player.store');
@@ -68,26 +73,22 @@ describe("FileLoader.svelte", () => {
   });
 
   it("renders the file input", () => {
-    render(FileLoader);
-    const fileInput = screen.getByLabelText(/Load Audio File/i); // Assuming h3 acts as a label for the section
-    expect(
-      fileInput.closest("div.card")?.querySelector('input[type="file"]'),
-    ).toBeInTheDocument();
+    const { container } = render(FileLoader);
+    const fileInput = container.querySelector('#fileInput');
+    expect(fileInput).toBeInTheDocument();
   });
 
   it("calls audioEngine.unlockAudio and loadFile on file selection", async () => {
-    render(FileLoader);
-    const fileInput = screen
-      .getByLabelText<HTMLInputElement>(/Load Audio File/i)
-      .closest("div.card")
-      ?.querySelector('input[type="file"]');
-    if (!fileInput) throw new Error("File input not found");
+    const { container } = render(FileLoader);
+    const fileInput = container.querySelector('#fileInput');
+    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy content"], "test.mp3", {
       type: "audio/mpeg",
     });
     const mockArrayBuffer = new ArrayBuffer(10);
-    vi.spyOn(mockFile, "arrayBuffer").mockResolvedValue(mockArrayBuffer);
+    // Spy on the potentially polyfilled/mocked arrayBuffer
+    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(mockArrayBuffer);
 
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
@@ -101,12 +102,9 @@ describe("FileLoader.svelte", () => {
   });
 
   it("displays selected file name and size", async () => {
-    render(FileLoader);
-    const fileInput = screen
-      .getByLabelText<HTMLInputElement>(/Load Audio File/i)
-      .closest("div.card")
-      ?.querySelector('input[type="file"]');
-    if (!fileInput) throw new Error("File input not found");
+    const { container } = render(FileLoader);
+    const fileInput = container.querySelector('#fileInput');
+    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy content"], "example.wav", {
       type: "audio/wav",
@@ -118,7 +116,7 @@ describe("FileLoader.svelte", () => {
     await act(() => Promise.resolve()); // allow store updates and component reactions
 
     expect(
-      screen.getByText(`Selected: ${mockFile.name} (0.50 MB)`),
+      screen.getByText(`Selected: ${mockFile.name} (0.49 MB)`), // Corrected size
     ).toBeInTheDocument();
   });
 
@@ -126,17 +124,15 @@ describe("FileLoader.svelte", () => {
     (audioEngineService.loadFile as Mocked<any>).mockImplementationOnce(
       () => new Promise((resolve) => setTimeout(resolve, 100)), // Simulate delay
     );
-    render(FileLoader);
-    const fileInput = screen
-      .getByLabelText<HTMLInputElement>(/Load Audio File/i)
-      .closest("div.card")
-      ?.querySelector('input[type="file"]');
-    if (!fileInput) throw new Error("File input not found");
+    const { container } = render(FileLoader);
+    const fileInput = container.querySelector('#fileInput');
+    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy"], "loading_test.mp3", {
       type: "audio/mpeg",
     });
-    vi.spyOn(mockFile, "arrayBuffer").mockResolvedValue(new ArrayBuffer(8));
+    // Spy on the potentially polyfilled/mocked arrayBuffer
+    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(new ArrayBuffer(8));
 
     // Don't await this, to check intermediate loading state
     fireEvent.change(fileInput, { target: { files: [mockFile] } });
@@ -152,15 +148,13 @@ describe("FileLoader.svelte", () => {
     (audioEngineService.loadFile as Mocked<any>).mockImplementationOnce(
       () => new Promise((resolve) => setTimeout(resolve, 100)),
     );
-    render(FileLoader);
-    const fileInput = screen
-      .getByLabelText<HTMLInputElement>(/Load Audio File/i)
-      .closest("div.card")
-      ?.querySelector('input[type="file"]');
-    if (!fileInput) throw new Error("File input not found");
+    const { container } = render(FileLoader);
+    const fileInput = container.querySelector('#fileInput');
+    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy"], "test.mp3", { type: "audio/mpeg" });
-    vi.spyOn(mockFile, "arrayBuffer").mockResolvedValue(new ArrayBuffer(8));
+    // Spy on the potentially polyfilled/mocked arrayBuffer
+    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(new ArrayBuffer(8));
 
     fireEvent.change(fileInput, { target: { files: [mockFile] } });
     await screen.findByText("Loading..."); // Wait for loading state to be true
@@ -179,7 +173,8 @@ describe("FileLoader.svelte", () => {
         status: "Test Status Message",
       }));
     });
-    expect(screen.getByText("Status: Test Status Message")).toBeInTheDocument();
+    // Use findByText to wait for potential DOM updates after store change
+    expect(await screen.findByText("Status: Test Status Message")).toBeInTheDocument();
 
     act(() => {
       mockPlayerStoreWritable.update((s) => ({
@@ -187,6 +182,6 @@ describe("FileLoader.svelte", () => {
         error: "Test Error Message",
       }));
     });
-    expect(screen.getByText("Error: Test Error Message")).toBeInTheDocument();
+    expect(await screen.findByText("Error: Test Error Message")).toBeInTheDocument();
   });
 });

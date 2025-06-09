@@ -13,25 +13,35 @@ import { playerStore } from "$lib/stores/player.store";
 import analysisService from "$lib/services/analysis.service";
 import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils"; // For message types
 import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { writable } from "svelte/store"; // Import writable
 
 // Mock Svelte stores
-vi.mock("$lib/stores/player.store", () => {
-  // Import actual store if you need to spread other properties, otherwise define explicitly
-  // const actualPlayerStore = vi.importActual("$lib/stores/player.store");
-  return {
-    playerStore: {
-      // ...actualPlayerStore.playerStore,
-      subscribe: vi.fn(() => vi.fn()), // Must return an unsubscribe function
-      set: vi.fn(),
-      update: vi.fn(),
-    },
-  };
-});
+const initialPlayerStoreState = {
+  status: "Initial",
+  fileName: null,
+  duration: 0,
+  currentTime: 0, // Ensure currentTime is part of the initial state
+  isPlaying: false,
+  isPlayable: false,
+  speed: 1,
+  pitch: 0,
+  gain: 1,
+  waveformData: undefined,
+  error: null,
+  // Add any other properties expected by the service or tests
+};
+const mockPlayerStore = writable(initialPlayerStoreState); // This line is fine
+
+vi.mock("$lib/stores/player.store", () => ({
+  // Use a getter to ensure the test always gets the current instance, esp. after beforeEach reset
+  get playerStore() { return mockPlayerStore; }
+}));
+
 vi.mock("$lib/stores/analysis.store", () => {
-  // const actualAnalysisStore = vi.importActual("$lib/stores/analysis.store");
+  // For analysisStore, if it's not directly read by get() with specific state needs in these tests,
+  // the simpler mock might be okay. If it also needs state for get(), apply similar writable pattern.
   return {
     analysisStore: {
-      // ...actualAnalysisStore.analysisStore,
       subscribe: vi.fn(() => vi.fn()), // Must return an unsubscribe function
       set: vi.fn(),
       update: vi.fn(),
@@ -96,8 +106,17 @@ describe("AudioEngineService", () => {
     mockWorkerInstance.terminate.mockClear();
     mockWorkerInstance.onmessage = null;
     mockWorkerInstance.onerror = null;
-    (playerStore.update as Mocked<any>).mockClear();
-    (playerStore.set as Mocked<any>).mockClear();
+    // Reset the mock store state before each test
+    mockPlayerStore.set(initialPlayerStoreState); // initialPlayerStoreState is defined above mockPlayerStore
+
+    // Spy on the actual store methods for each test, after resetting state
+    // Important: Clear previous spies if any, or ensure this is the first time they are spied on in this scope.
+    // vi.clearAllMocks() handles clearing general mock call history.
+    // If we need to re-spy or ensure spies are fresh:
+    vi.spyOn(mockPlayerStore, 'subscribe').mockClear(); // Clear specific spy history
+    vi.spyOn(mockPlayerStore, 'update').mockClear();
+    vi.spyOn(mockPlayerStore, 'set').mockClear();
+
     (analysisService.startSpectrogramProcessing as Mocked<any>).mockClear();
 
     // Reset AudioContext instance mocks
@@ -147,14 +166,13 @@ describe("AudioEngineService", () => {
       });
       expect(mockWorkerInstance.onmessage).not.toBeNull();
 
-      // Simulate worker sending INIT_SUCCESS
       const mockEvent = {
         data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "rb_msg_0" },
       } as MessageEvent;
-      mockWorkerInstance.onmessage!(mockEvent);
+      if (mockWorkerInstance.onmessage) mockWorkerInstance.onmessage(mockEvent);
 
-      await promise; // Ensure init promise resolves
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      await promise;
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
 
     it("should update playerStore on INIT_ERROR", async () => {
@@ -166,7 +184,6 @@ describe("AudioEngineService", () => {
       });
       expect(mockWorkerInstance.onmessage).not.toBeNull();
 
-      // Simulate worker sending INIT_ERROR
       const mockErrorEvent = {
         data: {
           type: RB_WORKER_MSG_TYPE.INIT_ERROR,
@@ -174,10 +191,10 @@ describe("AudioEngineService", () => {
           messageId: "rb_msg_0",
         },
       } as MessageEvent;
-      mockWorkerInstance.onmessage!(mockErrorEvent);
+      if (mockWorkerInstance.onmessage) mockWorkerInstance.onmessage(mockErrorEvent);
 
-      await promise; // Should resolve even on handled error (or reject if designed to)
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      await promise;
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
   });
 
@@ -222,7 +239,7 @@ describe("AudioEngineService", () => {
 
     it("should update playerStore with decoded audio information", async () => {
       await audioEngineService.loadFile(mockArrayBuffer, mockFileName);
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
 
     it("should call analysisService.startSpectrogramProcessing with the decoded buffer", async () => {
@@ -239,7 +256,7 @@ describe("AudioEngineService", () => {
       await expect(
         audioEngineService.loadFile(mockArrayBuffer, mockFileName),
       ).rejects.toThrow(decodeError.message);
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
   });
 
@@ -282,21 +299,22 @@ describe("AudioEngineService", () => {
         1,
       );
       expect(mockBufferSourceNode.start).toHaveBeenCalledTimes(1);
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
 
     it("pause should stop playback (effectively) and update store", () => {
       audioEngineService.play(); // Start playing first
       audioEngineService.pause();
       expect(mockBufferSourceNode.stop).toHaveBeenCalledTimes(1); // Stop is called
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
 
     it("stop should stop playback, reset currentTime and update store", () => {
       audioEngineService.play(); // Start playing first
       audioEngineService.stop();
-      expect(mockBufferSourceNode.stop).toHaveBeenCalledTimes(1);
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      // play() calls stop() once, then stop() calls stop() again.
+      expect(mockBufferSourceNode.stop).toHaveBeenCalledTimes(2);
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
   });
 
@@ -319,7 +337,7 @@ describe("AudioEngineService", () => {
       audioEngineService.dispose();
       expect(mockWorkerInstance.terminate).toHaveBeenCalled();
       expect(mockAudioContextInstance.close).toHaveBeenCalled();
-      expect(playerStore.update).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
   });
 });
