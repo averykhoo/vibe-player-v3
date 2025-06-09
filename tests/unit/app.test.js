@@ -361,7 +361,17 @@ describe('AudioApp (app.js logic)', () => {
     const MOCK_REDEMPTION_FRAMES = global.Constants.VAD.REDEMPTION_FRAMES; // e.g., 3
 
     // Helper to calculate duration of N frames
-    const frameDuration = (numFrames) => (numFrames * MOCK_FRAME_SAMPLES) / MOCK_SAMPLE_RATE;
+    // Directly uses global.Constants.VAD to ensure values are picked up after mock setup.
+    const frameDuration = (numFrames) => {
+      const sampleRate = global.Constants.VAD.SAMPLE_RATE;
+      const frameSamples = global.Constants.VAD.DEFAULT_FRAME_SAMPLES;
+      if (typeof sampleRate !== 'number' || typeof frameSamples !== 'number' || sampleRate === 0) {
+        // This case should ideally not be hit if Constants.VAD is mocked correctly.
+        console.error('frameDuration: Invalid sampleRate or frameSamples from global.Constants.VAD', global.Constants.VAD);
+        return NaN;
+      }
+      return (numFrames * frameSamples) / sampleRate;
+    };
 
     beforeAll(() => {
       // Ensure app.js is loaded and testExports is available
@@ -373,26 +383,35 @@ describe('AudioApp (app.js logic)', () => {
     });
 
     test('should detect a basic speech segment correctly', () => {
-      const probabilities = new Float32Array([0.1, 0.2, 0.8, 0.9, 0.7, 0.2, 0.1]); // Speech from frame 2 to 4
+      const probabilities = new Float32Array([0.1, 0.2, 0.8, 0.9, 0.7, 0.2, 0.1]);
       const options = {
-        frameSamples: MOCK_FRAME_SAMPLES,
-        sampleRate: MOCK_SAMPLE_RATE,
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES, // Use global directly here too for clarity
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,         // Use global directly
         positiveSpeechThreshold: 0.5,
         negativeSpeechThreshold: 0.3,
-        redemptionFrames: MOCK_REDEMPTION_FRAMES,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES, // Use global directly
       };
+
+      // DEBUGGING LOGS START
+      console.log('TEST: Running "should detect a basic speech segment correctly"');
+      console.log('TEST: Probabilities length:', probabilities ? probabilities.length : 'null');
+      // console.log('TEST: Probabilities content:', probabilities); // Might be too verbose
+      console.log('TEST: Options:', JSON.stringify(options));
+      console.log('TEST: Constants.VAD.SAMPLE_RATE for frameDuration:', global.Constants.VAD.SAMPLE_RATE);
+      console.log('TEST: Constants.VAD.DEFAULT_FRAME_SAMPLES for frameDuration:', global.Constants.VAD.DEFAULT_FRAME_SAMPLES);
+      console.log('TEST: frameDuration(1):', frameDuration(1));
+      console.log('TEST: frameDuration(2):', frameDuration(2));
+      console.log('TEST: frameDuration(5):', frameDuration(5));
+      console.log('TEST: Constants.VAD.SPEECH_PAD_MS:', global.Constants.VAD.SPEECH_PAD_MS);
+      // DEBUGGING LOGS END
+
       const regions = generateFunc(probabilities, options);
-      // Expected: Frames 2,3,4 are speech. Start = 2 * frameDur. End = (4+1) * frameDur = 5 * frameDur
-      // Before padding: start=frameDuration(2), end=frameDuration(5)
-      // Padded by SPEECH_PAD_MS (e.g., 50ms).
-      // Min duration: MIN_SPEECH_DURATION_MS (e.g., 100ms)
-      // Frame duration example: 512/16000 = 0.032s = 32ms
-      // Original segment: start=0.064s, end=0.160s, duration=0.096s (96ms)
-      // Padded: start=max(0, 0.064-0.050)=0.014, end=0.160+0.050=0.210. Duration=0.196s (196ms)
-      // This should pass MIN_SPEECH_DURATION_MS.
+
+      console.log('TEST: Regions received:', JSON.stringify(regions)); // Log received regions
+
       expect(regions.length).toBe(1);
-      expect(regions[0].start).toBeCloseTo(Math.max(0, frameDuration(2) - (Constants.VAD.SPEECH_PAD_MS / 1000)));
-      expect(regions[0].end).toBeCloseTo(Math.min(frameDuration(probabilities.length), frameDuration(5) + (Constants.VAD.SPEECH_PAD_MS / 1000)));
+      expect(regions[0].start).toBeCloseTo(Math.max(0, frameDuration(2) - (global.Constants.VAD.SPEECH_PAD_MS / 1000)));
+      expect(regions[0].end).toBeCloseTo(Math.min(frameDuration(probabilities.length), frameDuration(5) + (global.Constants.VAD.SPEECH_PAD_MS / 1000)));
     });
 
     test('should not detect speech if probabilities are below positive threshold', () => {
