@@ -5,7 +5,7 @@ const path = require('path');
 exports.PlayerPage = class PlayerPage {
   constructor(page) {
     this.page = page;
-    this.devServerUrl = 'http://localhost:5173/'; // SvelteKit default
+    this.devServerUrl = 'http://localhost:4173/'; // CHANGED TO 4173
 
     this.appBarTitle = page.locator('header nav strong.text-xl.uppercase');
 

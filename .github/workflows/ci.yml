@@ -44,16 +44,24 @@ jobs:
       - name: Install Playwright Browsers and dependencies
         run: npx playwright install --with-deps
 
-      - name: Start test server
-        run: npm run serve-for-test &
-        # Add a small delay to ensure server starts before tests
-        # Note: In a real-world scenario, a more robust wait strategy might be needed
-        # e.g., using wait-on or a custom script to check if the server is responsive.
+      - name: Start preview server for E2E tests
+        run: npm run serve-for-test & # Assuming this is the preview command
+        env:
+          HOST: '0.0.0.0'
+          PORT: 4173
 
-      - name: Run E2E tests
-        run: |
-          sleep 5 # Wait for server to start
-          ./node_modules/.bin/playwright test # Changed command
+      - name: Echo Preview Server URL
+        run: echo "Preview server expected at http://localhost:4173"
+
+      - name: Wait for Preview Server
+        run: npx wait-on http://localhost:4173 --timeout 60000
+
+      - name: List Listening Ports (Diagnostics)
+        run: sudo ss -tulnp | grep 'LISTEN' || echo "ss command failed or no listening ports found by grep"
+        continue-on-error: true
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test # Standardized playwright command
 
       - name: Upload Playwright report
         if: always() # Run this step even if previous steps fail, to get reports
