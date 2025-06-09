@@ -825,29 +825,37 @@ var AudioApp = AudioApp || {};
             sampleRate,
             positiveSpeechThreshold,
             negativeSpeechThreshold,
-            redemptionFrames
+            redemptionFrames,
+            minSpeechDurationMs, // New option
+            speechPadMs          // New option
         } = options;
 
-        if (typeof Constants === 'undefined' || !Constants.VAD) {
-            console.error("App.generateSpeechRegionsFromProbs: Constants or Constants.VAD not available.");
-            return [];
-        }
+        // Removed check for global Constants here as these are now passed in.
+        // We still need global Constants for Constants.VAD.SAMPLE_RATE if we want to keep that safety check.
+        // However, sampleRate is passed in options, so direct comparison can be done if needed.
+        // For now, assuming options.sampleRate is the one to be used.
 
         if (typeof probabilities === 'undefined' || probabilities === null ||
-            typeof probabilities.length !== 'number' || // Ensure it's array-like
+            typeof probabilities.length !== 'number' ||
             typeof frameSamples !== 'number' || typeof sampleRate !== 'number' || sampleRate === 0 ||
-            typeof positiveSpeechThreshold !== 'number' || typeof negativeSpeechThreshold !== 'number' || typeof redemptionFrames !== 'number') {
+            typeof positiveSpeechThreshold !== 'number' || typeof negativeSpeechThreshold !== 'number' ||
+            typeof redemptionFrames !== 'number' ||
+            typeof minSpeechDurationMs !== 'number' || // Validate new options
+            typeof speechPadMs !== 'number') {       // Validate new options
             console.warn("App.generateSpeechRegionsFromProbs: Invalid arguments (e.g., probabilities not an array, or critical options missing/invalid). Returning empty array. Options:", options, "Probabilities length:", probabilities ? probabilities.length : 'N/A');
             return [];
         }
 
-        if (probabilities.length === 0) { // Explicitly handle empty probabilities array after other checks
+        if (probabilities.length === 0) {
              return [];
         }
 
-        if (sampleRate !== Constants.VAD.SAMPLE_RATE) {
-            console.warn(`App.generateSpeechRegionsFromProbs: Recalculating with sample rate ${sampleRate}, which differs from expected VAD constant ${Constants.VAD.SAMPLE_RATE}. This may lead to incorrect timing.`);
-        }
+        // Optional: Keep a safety check if options.sampleRate should align with a global constant,
+        // but this makes the function less pure if Constants is from global scope.
+        // For now, we trust options.sampleRate.
+        // if (sampleRate !== Constants.VAD.SAMPLE_RATE) {
+        //     console.warn(`App.generateSpeechRegionsFromProbs: Processing with sample rate ${sampleRate}. Ensure this is intended.`);
+        // }
 
         const newRegions = [];
         let inSpeech = false;
@@ -875,8 +883,6 @@ var AudioApp = AudioApp || {};
                         newRegions.push({ start: regionStart, end: Math.max(regionStart, actualEnd) });
                         inSpeech = false;
                         redemptionCounter = 0;
-                        // Reset lastPositiveFrameIndex as this speech segment has ended.
-                        // Though it's not strictly needed as it'll be updated when new speech starts.
                         lastPositiveFrameIndex = -1;
                     }
                 } else {
@@ -891,8 +897,8 @@ var AudioApp = AudioApp || {};
             newRegions.push({ start: regionStart, end: Math.max(regionStart, finalEnd) });
         }
 
-        const minSpeechDuration = (Constants.VAD.MIN_SPEECH_DURATION_MS || 250) / 1000.0;
-        const speechPad = (Constants.VAD.SPEECH_PAD_MS || 100) / 1000.0;
+        const minSpeechDuration = minSpeechDurationMs / 1000.0; // Use from options
+        const speechPad = speechPadMs / 1000.0;               // Use from options
 
         const paddedAndFilteredRegions = [];
         for (const region of newRegions) {
