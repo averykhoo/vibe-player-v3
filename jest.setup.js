@@ -80,23 +80,30 @@ const loadScriptInJsdom = (scriptPathFromAppRoot, isCritical = false) => {
   }
 };
 
-// List all scripts in a sensible dependency order
+// A corrected version of the orderedScripts array for jest.setup.js
 const orderedScripts = [
+  // 1. Foundational modules with no dependencies on other app logic
   { path: 'js/state/constants.js', critical: true },
-  { path: 'js/state/appState.js', critical: true },
   { path: 'js/utils.js', critical: true },
-  { path: 'js/goertzel.js', critical: true }, // Defines AudioApp.DTMFParser
-  { path: 'js/app.js', critical: true },      // Instantiates AppState, defines AudioApp.state
+
+  // 2. State management
+  { path: 'js/state/appState.js', critical: true }, // Depends on Constants
+
+  // 3. All other feature modules that attach to AudioApp
+  { path: 'js/goertzel.js', critical: true },
   { path: 'js/uiManager.js', critical: false },
   { path: 'js/player/audioEngine.js', critical: false },
+  { path: 'js/vad/sileroWrapper.js', critical: false },
+  { path: 'js/vad/sileroProcessor.js', critical: false },
   { path: 'js/vad/RemoteApiStrategy.js', critical: false },
-  { path: 'js/vad/sileroWrapper.js', critical: false }, // Uses self.ort
-  { path: 'js/vad/sileroProcessor.js', critical: false }, // Uses Constants, Utils, AudioApp.sileroWrapper
-  { path: 'js/vad/LocalWorkerStrategy.js', critical: false }, // Uses Constants
+  { path: 'js/vad/LocalWorkerStrategy.js', critical: false },
   { path: 'js/vad/vadAnalyzer.js', critical: false },
   { path: 'js/visualizers/waveformVisualizer.js', critical: false },
-  { path: 'js/visualizers/spectrogramVisualizer.js', critical: false }, // Uses window.FFT
-  { path: 'js/sparkles.js', critical: false } // Uses window, document
+  { path: 'js/visualizers/spectrogramVisualizer.js', critical: false },
+  { path: 'js/sparkles.js', critical: false },
+
+  // 4. Main application controller, loaded LAST
+  { path: 'js/app.js', critical: true }
 ];
 
 console.log("Loading application scripts for Jest environment using JSDOM script execution...");

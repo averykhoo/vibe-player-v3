@@ -828,27 +828,32 @@ var AudioApp = AudioApp || {};
             redemptionFrames
         } = options;
 
-        // Ensure Constants is available, especially Constants.VAD.SAMPLE_RATE for safety check
         if (typeof Constants === 'undefined' || !Constants.VAD) {
             console.error("App.generateSpeechRegionsFromProbs: Constants or Constants.VAD not available.");
             return [];
+        }
+
+        if (typeof probabilities === 'undefined' || probabilities === null ||
+            typeof probabilities.length !== 'number' || // Ensure it's array-like
+            typeof frameSamples !== 'number' || typeof sampleRate !== 'number' || sampleRate === 0 ||
+            typeof positiveSpeechThreshold !== 'number' || typeof negativeSpeechThreshold !== 'number' || typeof redemptionFrames !== 'number') {
+            console.warn("App.generateSpeechRegionsFromProbs: Invalid arguments (e.g., probabilities not an array, or critical options missing/invalid). Returning empty array. Options:", options, "Probabilities length:", probabilities ? probabilities.length : 'N/A');
+            return [];
+        }
+
+        if (probabilities.length === 0) { // Explicitly handle empty probabilities array after other checks
+             return [];
         }
 
         if (sampleRate !== Constants.VAD.SAMPLE_RATE) {
             console.warn(`App.generateSpeechRegionsFromProbs: Recalculating with sample rate ${sampleRate}, which differs from expected VAD constant ${Constants.VAD.SAMPLE_RATE}. This may lead to incorrect timing.`);
         }
 
-        if (!probabilities || probabilities.length === 0 || !frameSamples || !sampleRate ||
-            positiveSpeechThreshold === undefined || negativeSpeechThreshold === undefined || redemptionFrames === undefined) {
-            console.warn("App.generateSpeechRegionsFromProbs: Invalid arguments. Returning empty array.", options);
-            return [];
-        }
-
         const newRegions = [];
         let inSpeech = false;
         let regionStart = 0.0;
         let redemptionCounter = 0;
-        let lastPositiveFrameIndex = -1; // Track the index of the last frame meeting positiveSpeechThreshold
+        let lastPositiveFrameIndex = -1;
 
         for (let i = 0; i < probabilities.length; i++) {
             const probability = probabilities[i];
@@ -860,42 +865,34 @@ var AudioApp = AudioApp || {};
                     regionStart = frameStartTime;
                 }
                 redemptionCounter = 0;
-                lastPositiveFrameIndex = i; // Update last positive frame index
+                lastPositiveFrameIndex = i;
             } else if (inSpeech) {
                 if (probability < negativeSpeechThreshold) {
                     redemptionCounter++;
                     if (redemptionCounter >= redemptionFrames) {
-                        // End of speech segment detected
-                        // The segment effectively ends at the START of the (i - redemptionFrames + 1)th frame.
-                        // So, the speech part includes frames up to (i - redemptionFrames).
-                        // The end time is the start of this 'firstBadFrameIndex'.
                         const firstBadFrameIndex = i - redemptionFrames + 1;
                         const actualEnd = (firstBadFrameIndex * frameSamples) / sampleRate;
                         newRegions.push({ start: regionStart, end: Math.max(regionStart, actualEnd) });
                         inSpeech = false;
                         redemptionCounter = 0;
-                        // lastPositiveFrameIndex is implicitly reset by speech ending
+                        // Reset lastPositiveFrameIndex as this speech segment has ended.
+                        // Though it's not strictly needed as it'll be updated when new speech starts.
+                        lastPositiveFrameIndex = -1;
                     }
                 } else {
-                    // Probability is between negative and positive threshold. Speech continues.
                     redemptionCounter = 0;
-                    // lastPositiveFrameIndex remains as is, as this frame is not >= positiveSpeechThreshold
                 }
             }
         }
 
         if (inSpeech) {
-            // If still in speech, the segment ends after the last frame that was >= positiveSpeechThreshold.
-            // The end time is (lastPositiveFrameIndex + 1) * frameSamples / sampleRate.
-            // If lastPositiveFrameIndex was never set (e.g. all probs < positiveThreshold but somehow inSpeech - defensive)
-            // then fallback to probability length, though this state should ideally not be reached.
-            const endFrameIndexPlusOne = lastPositiveFrameIndex !== -1 ? lastPositiveFrameIndex + 1 : probabilities.length;
+            const endFrameIndexPlusOne = (lastPositiveFrameIndex !== -1 && lastPositiveFrameIndex < probabilities.length) ? lastPositiveFrameIndex + 1 : probabilities.length;
             const finalEnd = (endFrameIndexPlusOne * frameSamples) / sampleRate;
             newRegions.push({ start: regionStart, end: Math.max(regionStart, finalEnd) });
         }
 
-        const minSpeechDuration = (Constants.VAD.MIN_SPEECH_DURATION_MS || 250) / 1000;
-        const speechPad = (Constants.VAD.SPEECH_PAD_MS || 100) / 1000;
+        const minSpeechDuration = (Constants.VAD.MIN_SPEECH_DURATION_MS || 250) / 1000.0;
+        const speechPad = (Constants.VAD.SPEECH_PAD_MS || 100) / 1000.0;
 
         const paddedAndFilteredRegions = [];
         for (const region of newRegions) {
