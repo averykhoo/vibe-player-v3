@@ -848,6 +848,7 @@ var AudioApp = AudioApp || {};
         let inSpeech = false;
         let regionStart = 0.0;
         let redemptionCounter = 0;
+        let lastPositiveFrameIndex = -1; // Track the index of the last frame meeting positiveSpeechThreshold
 
         for (let i = 0; i < probabilities.length; i++) {
             const probability = probabilities[i];
@@ -858,46 +859,54 @@ var AudioApp = AudioApp || {};
                     inSpeech = true;
                     regionStart = frameStartTime;
                 }
-                redemptionCounter = 0; // Reset redemption if speech detected
-            } else if (inSpeech) { // Only apply redemption logic if we were in speech
+                redemptionCounter = 0;
+                lastPositiveFrameIndex = i; // Update last positive frame index
+            } else if (inSpeech) {
                 if (probability < negativeSpeechThreshold) {
                     redemptionCounter++;
                     if (redemptionCounter >= redemptionFrames) {
                         // End of speech segment detected
-                        const triggerFrameIndex = i - redemptionFrames + 1; // Frame that triggered end
-                        const actualEnd = (triggerFrameIndex * frameSamples) / sampleRate;
-                        const finalEnd = Math.max(regionStart, actualEnd); // Ensure end is not before start
-                        newRegions.push({ start: regionStart, end: finalEnd });
+                        // The segment effectively ends at the START of the (i - redemptionFrames + 1)th frame.
+                        // So, the speech part includes frames up to (i - redemptionFrames).
+                        // The end time is the start of this 'firstBadFrameIndex'.
+                        const firstBadFrameIndex = i - redemptionFrames + 1;
+                        const actualEnd = (firstBadFrameIndex * frameSamples) / sampleRate;
+                        newRegions.push({ start: regionStart, end: Math.max(regionStart, actualEnd) });
                         inSpeech = false;
                         redemptionCounter = 0;
+                        // lastPositiveFrameIndex is implicitly reset by speech ending
                     }
-                } else { // Probability is between negative and positive thresholds
-                    redemptionCounter = 0; // Reset redemption if not strictly below negative threshold
+                } else {
+                    // Probability is between negative and positive threshold. Speech continues.
+                    redemptionCounter = 0;
+                    // lastPositiveFrameIndex remains as is, as this frame is not >= positiveSpeechThreshold
                 }
             }
         }
-        if (inSpeech) { // If speech segment was active at the end of probabilities
-            const finalEnd = (probabilities.length * frameSamples) / sampleRate;
-            newRegions.push({ start: regionStart, end: finalEnd });
+
+        if (inSpeech) {
+            // If still in speech, the segment ends after the last frame that was >= positiveSpeechThreshold.
+            // The end time is (lastPositiveFrameIndex + 1) * frameSamples / sampleRate.
+            // If lastPositiveFrameIndex was never set (e.g. all probs < positiveThreshold but somehow inSpeech - defensive)
+            // then fallback to probability length, though this state should ideally not be reached.
+            const endFrameIndexPlusOne = lastPositiveFrameIndex !== -1 ? lastPositiveFrameIndex + 1 : probabilities.length;
+            const finalEnd = (endFrameIndexPlusOne * frameSamples) / sampleRate;
+            newRegions.push({ start: regionStart, end: Math.max(regionStart, finalEnd) });
         }
 
-        // Additional processing for min_speech_duration_ms and speech_pad_ms from Constants
-        // This part is often present in full VAD pipelines.
-        // Let's add it here for more robust region calculation.
-        const minSpeechDuration = (Constants.VAD.MIN_SPEECH_DURATION_MS || 250) / 1000; // Default 250ms
-        const speechPad = (Constants.VAD.SPEECH_PAD_MS || 100) / 1000; // Default 100ms
+        const minSpeechDuration = (Constants.VAD.MIN_SPEECH_DURATION_MS || 250) / 1000;
+        const speechPad = (Constants.VAD.SPEECH_PAD_MS || 100) / 1000;
 
         const paddedAndFilteredRegions = [];
         for (const region of newRegions) {
             const start = Math.max(0, region.start - speechPad);
-            const end = region.end + speechPad; // Padding at the end, total duration will be checked next
+            const end = region.end + speechPad;
 
             if ((end - start) >= minSpeechDuration) {
                 paddedAndFilteredRegions.push({ start: start, end: end });
             }
         }
 
-        // Merge overlapping regions after padding
         if (paddedAndFilteredRegions.length === 0) {
             return [];
         }
@@ -907,26 +916,31 @@ var AudioApp = AudioApp || {};
 
         for (let i = 1; i < paddedAndFilteredRegions.length; i++) {
             const nextRegion = paddedAndFilteredRegions[i];
-            if (nextRegion.start < currentRegion.end) { // Overlap or contiguous
+            if (nextRegion.start < currentRegion.end) {
                 currentRegion.end = Math.max(currentRegion.end, nextRegion.end);
             } else {
                 mergedRegions.push(currentRegion);
                 currentRegion = { ...nextRegion };
             }
         }
-        mergedRegions.push(currentRegion); // Add the last processed region
+        mergedRegions.push(currentRegion);
 
-        // Ensure end times do not exceed total audio duration if that info were available here.
-        // For now, this function only knows about the duration covered by probabilities.
         const maxProbTime = (probabilities.length * frameSamples) / sampleRate;
         return mergedRegions.map(region => ({
             start: region.start,
-            end: Math.min(region.end, maxProbTime) // Cap end times at max duration known from probs
+            end: Math.min(region.end, maxProbTime)
         }));
     }
 
     // --- REFACTORED: Attach init function to the passed-in 'app' object ---
     app.init = init;
+
+    // For testing purposes only
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test') {
+        app.testExports = {
+            generateSpeechRegionsFromProbs
+        };
+    }
 
 })(AudioApp); // Immediately execute, passing the global AudioApp object.
 // --- /vibe-player/js/app.js ---
