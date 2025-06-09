@@ -5,7 +5,8 @@ import type {
   RubberbandInitPayload,
   RubberbandProcessResultPayload,
 } from "$lib/types/worker.types";
-import { RB_WORKER_MSG_TYPE, AUDIO_ENGINE_CONSTANTS } from "$lib/utils"; // Assuming AUDIO_ENGINE_CONSTANTS is in utils/index
+import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils"; // Assuming AUDIO_ENGINE_CONSTANTS is in utils/index
+import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { playerStore } from "$lib/stores/player.store"; // Assuming playerStore exists
 import analysisService from "$lib/services/analysis.service";
 
@@ -548,6 +549,7 @@ class AudioEngineService {
       });
     }
     this.pendingRequests.clear();
+    this.nextMessageId = 0; // Reset message ID counter
     serviceState.set(initialAudioEngineState); // Reset service state
     playerStore.update((s) => ({
       ...s,

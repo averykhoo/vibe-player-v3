@@ -7,7 +7,26 @@ import { playerStore } from "$lib/stores/player.store";
 import { analysisStore } from "$lib/stores/analysis.store";
 import { writable, type Writable } from "svelte/store";
 
-// Mock services
+// Hoisted Mocks for store structure
+vi.mock('$lib/stores/player.store', () => ({
+  playerStore: {
+    subscribe: vi.fn(),
+    update: vi.fn(),
+    set: vi.fn(),
+  },
+  // any other named exports from player.store that might be used by the component
+}));
+
+vi.mock('$lib/stores/analysis.store', () => ({
+  analysisStore: {
+    subscribe: vi.fn(),
+    update: vi.fn(),
+    set: vi.fn(),
+  },
+  // any other named exports from analysis.store
+}));
+
+// Mock services (can remain as they are if not causing hoisting issues)
 vi.mock("$lib/services/audioEngine.service", () => ({
   default: {
     unlockAudio: vi.fn(),
@@ -24,54 +43,80 @@ vi.mock("$lib/services/audioEngine.service", () => ({
 
 vi.mock("$lib/services/analysis.service", () => ({
   default: {
-    // Mock methods if Controls directly calls them. Currently, it updates analysisStore.
     initialize: vi.fn(),
     dispose: vi.fn(),
-    // setVadThresholds: vi.fn(), // Example if it were called directly
   },
 }));
 
-// Mock stores
-let mockPlayerStoreValues: {
-  speed: number;
-  pitch: number;
-  gain: number;
-  [key: string]: any;
-};
-let mockPlayerStoreWritable: Writable<typeof mockPlayerStoreValues>;
-vi.mock("$lib/stores/player.store", async () => {
-  const { writable: actualWritable } = await import("svelte/store");
-  mockPlayerStoreValues = { speed: 1.0, pitch: 0.0, gain: 1.0 }; // Default initial values
-  mockPlayerStoreWritable = actualWritable(mockPlayerStoreValues);
-  return { playerStore: mockPlayerStoreWritable };
-});
 
-let mockAnalysisStoreValues: {
-  vadPositiveThreshold: number;
-  vadNegativeThreshold: number;
-  [key: string]: any;
+// Declare types for store values (optional but good practice)
+type PlayerStoreValues = { speed: number; pitch: number; gain: number; [key: string]: any };
+type AnalysisStoreValues = { vadPositiveThreshold: number; vadNegativeThreshold: number; [key: string]: any };
+
+// Original initial values
+const initialMockPlayerStoreValues: PlayerStoreValues = { speed: 1.0, pitch: 0.0, gain: 1.0 };
+const initialMockAnalysisStoreValues: AnalysisStoreValues = {
+  vadPositiveThreshold: 0.5,
+  vadNegativeThreshold: 0.35,
 };
-let mockAnalysisStoreWritable: Writable<typeof mockAnalysisStoreValues>;
-vi.mock("$lib/stores/analysis.store", async () => {
-  const { writable: actualWritable } = await import("svelte/store");
-  mockAnalysisStoreValues = {
-    vadPositiveThreshold: 0.5,
-    vadNegativeThreshold: 0.35,
-  }; // Default initial values
-  mockAnalysisStoreWritable = actualWritable(mockAnalysisStoreValues);
-  return { analysisStore: mockAnalysisStoreWritable };
-});
+
+// These will hold the actual writable store instances, created in beforeEach
+let mockPlayerStoreWritable: Writable<PlayerStoreValues>;
+let mockAnalysisStoreWritable: Writable<AnalysisStoreValues>;
+
 
 describe("Controls.svelte", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    // Dynamically import the mocked stores here to get access to the vi.fn() mocks
+    // We need to do this *after* vi.mock has run but *before* tests use the stores.
+    // This is a bit advanced; simpler might be to re-assign within beforeEach if tests allow.
+    // For this strategy, we create writables and then assign their methods to the vi.fn() mocks.
+
+    mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
+    mockAnalysisStoreWritable = writable(initialMockAnalysisStoreValues);
+
+    // Now, link the vi.fn() mocks to the methods of these writable instances
+    // This requires playerStore and analysisStore to be imported *after* vi.mock has set them up as objects with vi.fn()
+    // This is tricky. A more direct approach:
+    // Instead of vi.mocking with simple vi.fn(), then re-assigning,
+    // the getter approach in the previous attempt was better if it could be made to work.
+
+    // Let's try re-importing the mocked store objects to assign their mocked methods.
+    // This is complex due to ESM module caching.
+
+    // Simpler approach for this strategy:
+    // The vi.mock calls above already set up playerStore.subscribe etc. as vi.fn().
+    // In beforeEach, we configure what these vi.fn() mocks do by linking them to our writable instances.
+    const playerStoreMocks = await import('$lib/stores/player.store');
+    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(mockPlayerStoreWritable.subscribe);
+    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(mockPlayerStoreWritable.update);
+    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(mockPlayerStoreWritable.set);
+
+    const analysisStoreMocks = await import('$lib/stores/analysis.store');
+    vi.mocked(analysisStoreMocks.analysisStore.subscribe).mockImplementation(mockAnalysisStoreWritable.subscribe);
+    vi.mocked(analysisStoreMocks.analysisStore.update).mockImplementation(mockAnalysisStoreWritable.update);
+    vi.mocked(analysisStoreMocks.analysisStore.set).mockImplementation(mockAnalysisStoreWritable.set);
+
+    // Reset store states to initial values for each test
     act(() => {
-      mockPlayerStoreWritable.set({ speed: 1.0, pitch: 0.0, gain: 1.0 });
-      mockAnalysisStoreWritable.set({
-        vadPositiveThreshold: 0.5,
-        vadNegativeThreshold: 0.35,
-      });
+      mockPlayerStoreWritable.set(initialMockPlayerStoreValues);
+      mockAnalysisStoreWritable.set(initialMockAnalysisStoreValues);
     });
+
+    vi.clearAllMocks(); // Clear call history for service mocks etc.
+    // Note: vi.clearAllMocks() will also clear the .mockImplementation above.
+    // So, mock implementations must be re-applied *after* vi.clearAllMocks if needed,
+    // or clear mocks more selectively.
+
+    // Re-apply implementations after clearAllMocks:
+    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(mockPlayerStoreWritable.subscribe);
+    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(mockPlayerStoreWritable.update);
+    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(mockPlayerStoreWritable.set);
+    vi.mocked(analysisStoreMocks.analysisStore.subscribe).mockImplementation(mockAnalysisStoreWritable.subscribe);
+    vi.mocked(analysisStoreMocks.analysisStore.update).mockImplementation(mockAnalysisStoreWritable.update);
+    vi.mocked(analysisStoreMocks.analysisStore.set).mockImplementation(mockAnalysisStoreWritable.set);
+
+
   });
 
   it("renders all control buttons and sliders", () => {

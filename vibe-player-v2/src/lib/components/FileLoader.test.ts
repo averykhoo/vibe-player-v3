@@ -5,54 +5,66 @@ import audioEngineService from "$lib/services/audioEngine.service";
 import { playerStore } from "$lib/stores/player.store";
 import { writable, type Writable } from "svelte/store";
 
+// Hoisted Mocks for store structure
+vi.mock('$lib/stores/player.store', () => ({
+  playerStore: {
+    subscribe: vi.fn(),
+    update: vi.fn(),
+    set: vi.fn(),
+  },
+}));
+
 // Mock services
 vi.mock("$lib/services/audioEngine.service", () => ({
   default: {
     unlockAudio: vi.fn(() => Promise.resolve()),
     loadFile: vi.fn(() => Promise.resolve()),
-    // Add other methods if they are ever called directly or indirectly by FileLoader
     initialize: vi.fn(),
     dispose: vi.fn(),
   },
 }));
 
-// Mock stores
-let mockPlayerStoreValues: {
+// Declare types for store values
+type PlayerStoreValues = {
   fileName: string | null;
   error: string | null;
   status: string;
   isPlayable: boolean;
   isLoadingViaStore?: boolean;
-}; // isLoadingViaStore is for testing component reaction
-let mockPlayerStoreWritable: Writable<typeof mockPlayerStoreValues>;
+};
 
-vi.mock("$lib/stores/player.store", async () => {
-  // Actual svelte/store is needed for the writable instance
-  const { writable: actualWritable } = await import("svelte/store");
-  mockPlayerStoreValues = {
-    fileName: null,
-    error: null,
-    status: "Ready",
-    isPlayable: false,
-    isLoadingViaStore: false,
-  };
-  mockPlayerStoreWritable = actualWritable(mockPlayerStoreValues);
-  return { playerStore: mockPlayerStoreWritable };
-});
+// Original initial values
+const initialMockPlayerStoreValues: PlayerStoreValues = {
+  fileName: null,
+  error: null,
+  status: "Ready",
+  isPlayable: false,
+  isLoadingViaStore: false,
+};
+
+// This will hold the actual writable store instance, created in beforeEach
+let mockPlayerStoreWritable: Writable<PlayerStoreValues>;
 
 describe("FileLoader.svelte", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Reset store to default values before each test
+  beforeEach(async () => {
+    mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
+
+    const playerStoreMocks = await import('$lib/stores/player.store');
+    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(mockPlayerStoreWritable.subscribe);
+    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(mockPlayerStoreWritable.update);
+    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(mockPlayerStoreWritable.set);
+
+    // Reset store state
     act(() => {
-      mockPlayerStoreWritable.set({
-        fileName: null,
-        error: null,
-        status: "Ready",
-        isPlayable: false,
-        isLoadingViaStore: false,
-      });
+      mockPlayerStoreWritable.set(initialMockPlayerStoreValues);
     });
+
+    vi.clearAllMocks(); // Clear service mocks etc.
+
+    // Re-apply store mock implementations after vi.clearAllMocks()
+    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(mockPlayerStoreWritable.subscribe);
+    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(mockPlayerStoreWritable.update);
+    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(mockPlayerStoreWritable.set);
   });
 
   it("renders the file input", () => {

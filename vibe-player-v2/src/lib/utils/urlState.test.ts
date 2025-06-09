@@ -6,56 +6,67 @@ import { playerStore } from "../stores/player.store";
 import { analysisStore } from "../stores/analysis.store";
 import { UI_CONSTANTS, URL_HASH_KEYS } from "./constants";
 import type { Writable } from "svelte/store";
+import { writable } from "svelte/store"; // Import writable
 
 // Mocks
+// Create a real writable store for the page mock
+const mockPageData = {
+  url: { searchParams: new URLSearchParams(), pathname: "/" },
+  // Add other initial properties if your code uses them
+};
+const mockPageStoreInstance = writable(mockPageData);
+
 vi.mock("$app/stores", () => ({
-  page: vi.fn(),
+  get page() { // Use a getter to ensure the mock instance is used
+    return mockPageStoreInstance;
+  },
 }));
 
 vi.mock("$app/navigation", () => ({
   goto: vi.fn(),
 }));
 
-vi.mock("../stores/player.store", () => ({
-  playerStore: {
-    subscribe: vi.fn(),
-    update: vi.fn(),
-  },
-}));
+vi.mock("../stores/player.store", () => {
+  const actualStore = vi.importActual("../stores/player.store");
+  return {
+    playerStore: {
+      ...actualStore.playerStore, // Spread actual store if it has other members
+      subscribe: vi.fn(() => vi.fn()), // Ensure subscribe returns a mock unsubscribe function
+      update: vi.fn(),
+    },
+  };
+});
 
 vi.mock("../stores/analysis.store", () => ({
   analysisStore: {
-    subscribe: vi.fn(),
+    subscribe: vi.fn(() => vi.fn()), // Ensure subscribe returns a mock unsubscribe function
     update: vi.fn(),
   },
 }));
 
-// Helper to mock Svelte's page store
-function mockPageStore(searchParams: URLSearchParams) {
-  const { writable } = require("svelte/store"); // Use require here if actual svelte/store is problematic in test setup
-  const mockPageValue = {
+// Helper to update the mock Svelte's page store
+async function updateMockPageStore(searchParams: URLSearchParams) {
+  const newPageValue = {
     url: {
       searchParams,
       pathname: "/", // Default pathname
     },
     // Add other properties if your code uses them
   };
-  (page as Writable<any>).set(mockPageValue); // For initial get(page)
-  // Mock subscribe if page itself is a store
-  (page as any).subscribe = (subscriber: (value: any) => void) => {
-    subscriber(mockPageValue); // Immediately call with mock value
-    return () => {}; // Return unsubscribe function
-  };
+  mockPageStoreInstance.set(newPageValue); // Use the .set method of the writable store
 }
 
 describe("urlState utilities", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     // Reset mocks for stores if they are stateful or accumulate calls
     vi.clearAllMocks();
-
+    // Reset the store to default for each test
+    mockPageStoreInstance.set({
+      url: { searchParams: new URLSearchParams(), pathname: "/" },
+    });
     // Default mock for page store for each test
-    mockPageStore(new URLSearchParams());
+    // await mockPageStore(new URLSearchParams()); // No longer calling the old helper this way
   });
 
   afterEach(() => {
@@ -63,10 +74,10 @@ describe("urlState utilities", () => {
   });
 
   describe("loadStateFromUrl", () => {
-    it("should call playerStore.update with parsed speed from URL", () => {
+    it("should call playerStore.update with parsed speed from URL", async () => {
       const params = new URLSearchParams();
       params.set(URL_HASH_KEYS.SPEED, "1.75");
-      mockPageStore(params);
+      await updateMockPageStore(params);
 
       loadStateFromUrl();
 
@@ -77,11 +88,11 @@ describe("urlState utilities", () => {
       expect(newState.speed).toBe(1.75);
     });
 
-    it("should call analysisStore.update with parsed VAD thresholds from URL", () => {
+    it("should call analysisStore.update with parsed VAD thresholds from URL", async () => {
       const params = new URLSearchParams();
       params.set(URL_HASH_KEYS.VAD_POSITIVE, "0.8");
       params.set(URL_HASH_KEYS.VAD_NEGATIVE, "0.2");
-      mockPageStore(params);
+      await updateMockPageStore(params);
 
       loadStateFromUrl();
 
@@ -93,8 +104,8 @@ describe("urlState utilities", () => {
       expect(newState.vadNegativeThreshold).toBe(0.2);
     });
 
-    it("should use undefined for missing parameters for playerStore", () => {
-      mockPageStore(new URLSearchParams()); // Empty params
+    it("should use undefined for missing parameters for playerStore", async () => {
+      await updateMockPageStore(new URLSearchParams()); // Empty params
       loadStateFromUrl();
 
       expect(playerStore.update).toHaveBeenCalled();

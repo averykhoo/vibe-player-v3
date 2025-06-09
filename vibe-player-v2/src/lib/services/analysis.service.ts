@@ -9,12 +9,8 @@ import type {
   SpectrogramResultPayload,
   SpectrogramProcessPayload,
 } from "$lib/types/worker.types";
-import {
-  VAD_WORKER_MSG_TYPE,
-  VAD_CONSTANTS,
-  SPEC_WORKER_MSG_TYPE,
-  VISUALIZER_CONSTANTS,
-} from "$lib/utils"; // Assuming VAD_CONSTANTS is in utils/index
+import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils"; // Assuming VAD_CONSTANTS is in utils/index
+import { VAD_WORKER_MSG_TYPE, SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { analysisStore } from "$lib/stores/analysis.store"; // Assuming analysisStore exists
 
 import SileroVadWorker from "$lib/workers/sileroVad.worker?worker";
@@ -269,6 +265,7 @@ class AnalysisService {
       this.worker = null;
     }
     this.pendingRequests.clear();
+    this.nextMessageId = 0; // Reset message ID counter
     serviceState.set(initialServiceState);
     analysisStore.update((s) => ({
       ...s,
@@ -421,6 +418,7 @@ class AnalysisService {
       this.spectrogramWorker = null;
       this.spectrogramInitialized.set(false);
       this.pendingSpecRequests.clear();
+      this.nextSpecMessageId = 0; // Reset spec message ID counter
       analysisStore.update((s) => ({
         ...s,
         spectrogramStatus: "Spectrogram worker disposed.",
