@@ -1,7 +1,12 @@
 // vibe-player-v2/src/lib/workers/sileroVad.worker.ts
-import * as ort from 'onnxruntime-web';
-import type { WorkerMessage, SileroVadInitPayload, SileroVadProcessPayload, SileroVadProcessResultPayload } from '../types/worker.types';
-import { VAD_WORKER_MSG_TYPE } from '../types/worker.types';
+import * as ort from "onnxruntime-web";
+import type {
+  WorkerMessage,
+  SileroVadInitPayload,
+  SileroVadProcessPayload,
+  SileroVadProcessResultPayload,
+} from "../types/worker.types";
+import { VAD_WORKER_MSG_TYPE } from "../types/worker.types";
 
 let vadSession: ort.InferenceSession | null = null;
 let sampleRate: number = 16000; // Default, set by init
@@ -17,86 +22,118 @@ let _c: ort.Tensor | null = null;
 const srData = new Int32Array(1);
 let srTensor: ort.Tensor | null = null;
 
-
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-    const { type, payload, messageId } = event.data;
+  const { type, payload, messageId } = event.data;
 
-    try {
-        switch (type) {
-            case VAD_WORKER_MSG_TYPE.INIT:
-                const initPayload = payload as SileroVadInitPayload;
-                sampleRate = initPayload.sampleRate;
-                frameSamples = initPayload.frameSamples; // Make sure this matches model expectations
-                positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
-                negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
+  try {
+    switch (type) {
+      case VAD_WORKER_MSG_TYPE.INIT:
+        const initPayload = payload as SileroVadInitPayload;
+        sampleRate = initPayload.sampleRate;
+        frameSamples = initPayload.frameSamples; // Make sure this matches model expectations
+        positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
+        negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
 
-                // It's crucial that ORT WASM files are served from the expected path.
-                // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
-                // Default path for ORT Web is usually the root of where the script is served.
-                ort.env.wasm.wasmPaths = '/'; // Adjust if your static copy path is different e.g. '/wasmfiles/'
-                // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
+        // It's crucial that ORT WASM files are served from the expected path.
+        // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
+        // Default path for ORT Web is usually the root of where the script is served.
+        ort.env.wasm.wasmPaths = "/"; // Adjust if your static copy path is different e.g. '/wasmfiles/'
+        // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
 
-                vadSession = await ort.InferenceSession.create(initPayload.onnxModelPath);
+        vadSession = await ort.InferenceSession.create(
+          initPayload.onnxModelPath,
+        );
 
-                // Initialize h, c, sr tensors
-                _h = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]); // 2 layers, 1 batch, 64 hidden_size
-                _c = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-                srData[0] = sampleRate;
-                srTensor = new ort.Tensor('int32', srData, [1]);
+        // Initialize h, c, sr tensors
+        _h = new ort.Tensor(
+          "float32",
+          new Float32Array(2 * 1 * 64),
+          [2, 1, 64],
+        ); // 2 layers, 1 batch, 64 hidden_size
+        _c = new ort.Tensor(
+          "float32",
+          new Float32Array(2 * 1 * 64),
+          [2, 1, 64],
+        );
+        srData[0] = sampleRate;
+        srTensor = new ort.Tensor("int32", srData, [1]);
 
+        self.postMessage({ type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
+        break;
 
-                self.postMessage({ type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
-                break;
-
-            case VAD_WORKER_MSG_TYPE.PROCESS:
-                if (!vadSession || !_h || !_c || !srTensor) {
-                    throw new Error('VAD worker not initialized or tensors not ready.');
-                }
-                const processPayload = payload as SileroVadProcessPayload;
-                const audioFrame = processPayload.audioFrame; // Should be Float32Array of frameSamples length
-
-                if (audioFrame.length !== frameSamples) {
-                     throw new Error(`Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`);
-                }
-
-                const inputTensor = new ort.Tensor('float32', audioFrame, [1, audioFrame.length]);
-                const feeds: Record<string, ort.Tensor> = {
-                    input: inputTensor,
-                    sr: srTensor,
-                    h: _h,
-                    c: _c,
-                };
-
-                const results = await vadSession.run(feeds);
-                const outputScore = (results.output.data as Float32Array)[0];
-                _h = results.hn; // Update state for next frame
-                _c = results.cn;
-
-                const isSpeech = outputScore >= positiveThreshold;
-                // Could add hysteresis logic here using negativeThreshold if needed
-
-                const resultPayload: SileroVadProcessResultPayload = {
-                    isSpeech: isSpeech,
-                    timestamp: payload.timestamp || 0, // Pass through timestamp if provided
-                    score: outputScore
-                };
-                self.postMessage({ type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT, payload: resultPayload, messageId });
-                break;
-
-            case VAD_WORKER_MSG_TYPE.RESET:
-                if (_h && _c) {
-                    _h.data.fill(0); // Reset tensor data
-                    _c.data.fill(0);
-                }
-                self.postMessage({ type: `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`, messageId });
-                break;
-
-            default:
-                console.warn(`SileroVadWorker: Unknown message type: ${type}`);
-                self.postMessage({ type: 'unknown_message', error: `Unknown message type: ${type}`, messageId });
+      case VAD_WORKER_MSG_TYPE.PROCESS:
+        if (!vadSession || !_h || !_c || !srTensor) {
+          throw new Error("VAD worker not initialized or tensors not ready.");
         }
-    } catch (error: any) {
-        console.error(`Error in SileroVadWorker (type: ${type}):`, error, error.stack);
-        self.postMessage({ type: `${type}_ERROR` as string, error: error.message, messageId });
+        const processPayload = payload as SileroVadProcessPayload;
+        const audioFrame = processPayload.audioFrame; // Should be Float32Array of frameSamples length
+
+        if (audioFrame.length !== frameSamples) {
+          throw new Error(
+            `Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`,
+          );
+        }
+
+        const inputTensor = new ort.Tensor("float32", audioFrame, [
+          1,
+          audioFrame.length,
+        ]);
+        const feeds: Record<string, ort.Tensor> = {
+          input: inputTensor,
+          sr: srTensor,
+          h: _h,
+          c: _c,
+        };
+
+        const results = await vadSession.run(feeds);
+        const outputScore = (results.output.data as Float32Array)[0];
+        _h = results.hn; // Update state for next frame
+        _c = results.cn;
+
+        const isSpeech = outputScore >= positiveThreshold;
+        // Could add hysteresis logic here using negativeThreshold if needed
+
+        const resultPayload: SileroVadProcessResultPayload = {
+          isSpeech: isSpeech,
+          timestamp: payload.timestamp || 0, // Pass through timestamp if provided
+          score: outputScore,
+        };
+        self.postMessage({
+          type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT,
+          payload: resultPayload,
+          messageId,
+        });
+        break;
+
+      case VAD_WORKER_MSG_TYPE.RESET:
+        if (_h && _c) {
+          _h.data.fill(0); // Reset tensor data
+          _c.data.fill(0);
+        }
+        self.postMessage({
+          type: `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`,
+          messageId,
+        });
+        break;
+
+      default:
+        console.warn(`SileroVadWorker: Unknown message type: ${type}`);
+        self.postMessage({
+          type: "unknown_message",
+          error: `Unknown message type: ${type}`,
+          messageId,
+        });
     }
+  } catch (error: any) {
+    console.error(
+      `Error in SileroVadWorker (type: ${type}):`,
+      error,
+      error.stack,
+    );
+    self.postMessage({
+      type: `${type}_ERROR` as string,
+      error: error.message,
+      messageId,
+    });
+  }
 };
