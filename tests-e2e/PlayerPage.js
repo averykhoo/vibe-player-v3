@@ -5,52 +5,69 @@ const path = require('path');
 exports.PlayerPage = class PlayerPage {
   constructor(page) {
     this.page = page;
+    this.devServerUrl = 'http://localhost:5173/'; // SvelteKit default
 
-    // --- Define UI Element Locators Here ---
-    this.playPauseButton = page.locator('#playPause');
-    this.fileNameDisplay = page.locator('#fileNameDisplay');
-    this.dtmfDisplay = page.locator('#dtmfDisplay');
-    this.cptDisplay = page.locator('#cpt-display-content');
-    this.chooseFileButton = page.locator('#chooseFileButton');
-    this.hiddenFileInput = page.locator('#hiddenAudioFile');
-    // ADDED: Locator for the file info status text
-    this.fileInfoStatus = page.locator('#fileInfo');
-    this.timeDisplay = page.locator('#timeDisplay');
-    this.seekBar = page.locator('#seekBar');
-    this.jumpBack = page.locator('#jumpBack');
-    this.jumpForward = page.locator('#jumpForward');
-    this.jumpTimeInput = page.locator('#jumpTime');
+    this.appBarTitle = page.locator('header nav strong.text-xl.uppercase');
+
+    // FileLoader.svelte locators (assuming data-testid attributes will be added)
+    this.fileInput = page.locator('input[type="file"]'); // General locator, refine if possible
+    this.fileNameDisplay = page.getByTestId('file-name-display');
+    this.fileStatusDisplay = page.getByTestId('file-status-display');
+    this.fileErrorDisplay = page.getByTestId('file-error-display');
+
+    // Controls.svelte locators (assuming data-testid attributes)
+    this.playButton = page.getByTestId('play-button'); // Should toggle text Play/Pause
+    this.stopButton = page.getByTestId('stop-button');
+    this.timeDisplay = page.getByTestId('time-display');
+
+    this.seekSliderInput = page.getByTestId('seek-slider-input');
+
+    this.speedSliderInput = page.getByTestId('speed-slider-input');
+    this.speedValueDisplay = page.getByTestId('speed-value');
+
+    this.pitchSliderInput = page.getByTestId('pitch-slider-input');
+    this.pitchValueDisplay = page.getByTestId('pitch-value');
+
+    this.gainSliderInput = page.getByTestId('gain-slider-input');
+    this.gainValueDisplay = page.getByTestId('gain-value');
+
+    this.vadPositiveSliderInput = page.getByTestId('vad-positive-slider-input');
+    this.vadPositiveValueDisplay = page.getByTestId('vad-positive-value');
+
+    this.vadNegativeSliderInput = page.getByTestId('vad-negative-slider-input');
+    this.vadNegativeValueDisplay = page.getByTestId('vad-negative-value');
   }
 
-  // --- Define User Actions Here ---
   async goto() {
-    // Assumes server is running on localhost:8080
-    await this.page.goto('http://localhost:8080/');
-    // REFACTORED: Wait for a more reliable signal of app initialization.
-    // The uiManager sets this text to "No file selected." once it's fully ready.
-    // This is much more robust than waiting for a static element to be visible.
-    await expect(this.fileInfoStatus).toHaveText("No file selected.", { timeout: 10000 });
+    await this.page.goto(this.devServerUrl);
+    await expect(this.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
+    // Wait for the file input to be visible as a sign of FileLoader.svelte being ready
+    await expect(this.fileInput).toBeVisible({timeout: 10000});
   }
 
   async loadAudioFile(fileName) {
-    // This is the idiomatic and more robust way to handle file uploads in Playwright.
-    // It targets the hidden input element directly and doesn't rely on clicking
-    // the proxy button, which avoids the timeout issue.
-    // Playwright's setInputFiles will correctly trigger the 'change' event
-    // on the input that the application's uiManager is listening for.
-    await this.hiddenFileInput.setInputFiles(path.join(__dirname, `../test-audio/${fileName}`));
+    const filePath = path.resolve(__dirname, '../../test-audio/', fileName); // Path relative to PlayerPage.js
+    await this.fileInput.setInputFiles(filePath);
+    // Add a small wait for file processing to start, if necessary
+    await this.page.waitForTimeout(200);
   }
 
-  // --- Define Test Assertions Here ---
-  async expectControlsToBeEnabled() {
-    await expect(this.playPauseButton).toBeEnabled({ timeout: 20000 });
+  async expectControlsToBeReadyForPlayback() {
+    await expect(this.playButton).toBeEnabled({ timeout: 20000 });
   }
 
-  async expectFileName(fileName) {
-    await expect(this.fileNameDisplay).toHaveText(fileName);
+  async getPlayButtonText() {
+    return this.playButton.textContent(); // Assumes button text changes Play/Pause
   }
 
-  async seekToMiddle() {
-    await this.seekBar.click(); // Playwright clicks in the center by default
+  async setSliderValue(sliderInputLocator, value) {
+    await sliderInputLocator.fill(String(value));
+    await sliderInputLocator.dispatchEvent('input'); // For live updates if component listens to input
+    await sliderInputLocator.dispatchEvent('change'); // For final value commit
+    await this.page.waitForTimeout(150); // Allow UI to react
+  }
+
+  async getSliderInputValue(sliderInputLocator) { // Renamed to avoid conflict with Playwright's own getValue
+    return sliderInputLocator.inputValue();
   }
 };

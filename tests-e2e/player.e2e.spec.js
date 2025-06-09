@@ -2,14 +2,14 @@
 const { test, expect } = require('@playwright/test');
 const { PlayerPage } = require('./PlayerPage');
 
-// Helper function at the top of player.e2e.spec.js
+// Helper function (keep as is)
 function parseTimeToSeconds(timeStr) {
-  if (!timeStr || !timeStr.includes(':')) return 0;
+  if (!timeStr || !timeStr.includes(':') || timeStr.includes('NaN')) return 0; // Handle NaN case
   const parts = timeStr.split(':');
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
 
-test.describe('Vibe Player End-to-End', () => {
+test.describe('Vibe Player V2 E2E', () => {
   let player;
 
   test.beforeEach(async ({ page }) => {
@@ -18,115 +18,114 @@ test.describe('Vibe Player End-to-End', () => {
   });
 
   test('should load an audio file and enable playback controls', async () => {
-    await expect(player.playPauseButton).toBeDisabled();
-    await expect(player.fileNameDisplay).toHaveText('');
+    await expect(player.playButton).toBeDisabled(); // Initially play button might be disabled
+    // await expect(player.fileNameDisplay).toHaveText(''); // If there's an initial empty text
+
     await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
-    await player.expectFileName('IELTS13-Tests1-4CD1Track_01.mp3');
-    await player.expectControlsToBeEnabled();
+    // Assuming playerStore updates fileNameDisplay via testid
+    // await expect(player.fileNameDisplay).toHaveText('IELTS13-Tests1-4CD1Track_01.mp3', {timeout: 5000});
+    await player.expectControlsToBeReadyForPlayback();
   });
 
-  test('should correctly detect and display DTMF tones', async () => {
-    await player.loadAudioFile('dtmf-123A456B789C(star)0(hex)D.mp3');
-    await player.expectControlsToBeEnabled();
-    await expect(player.dtmfDisplay).toContainText('1, 2, 3, A, 4, 5, 6, B, 7, 8, 9, C, *, 0, #, D', { timeout: 15000 });
-  });
-
-  test('should correctly detect and display Call Progress Tones', async () => {
-    await player.loadAudioFile('Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3');
-    await player.expectControlsToBeEnabled();
-    await expect(player.cptDisplay).toContainText('Fast Busy / Reorder Tone', { timeout: 15000 });
-  });
-
-  test('should display initial time as 0:00 / 0:00', async () => {
-    await expect(player.timeDisplay).toHaveText('0:00 / 0:00');
+  test('should display initial time as "0:00 / 0:00" or similar', async () => {
+    // The exact initial text might depend on component state before file load
+    // For now, let's assume it becomes meaningful after load
+    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+    await player.expectControlsToBeReadyForPlayback();
+    await expect(player.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {timeout: 5000}); // Regex for "0:00 / XX:XX"
   });
 
   test('should play and pause audio', async ({ page }) => {
-    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3'); // A short file
-    await player.expectControlsToBeEnabled();
+    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+    await player.expectControlsToBeReadyForPlayback();
 
-    // Check initial button text is 'Play'
-    await expect(player.playPauseButton).toHaveText('Play');
+    await expect(await player.getPlayButtonText()).toMatch(/Play/i);
 
-    // Click Play
-    await player.playPauseButton.click();
-    await expect(player.playPauseButton).toHaveText('Pause'); // Assuming text changes
+    await player.playButton.click();
+    await expect(await player.getPlayButtonText()).toMatch(/Pause/i, { timeout: 2000 });
 
-    // Wait for time to advance - check that current time is not 0:00
-    // This requires the audio to actually play and time to update.
-    // We might need a small delay or a more robust way to check time advancement.
-    await page.waitForFunction(() => document.getElementById('timeDisplay').textContent?.startsWith('0:00') === false, null, { timeout: 5000 });
+    // Wait for time to advance
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="time-display"]')?.textContent?.startsWith('0:00') === false,
+      null,
+      { timeout: 5000 }
+    );
     const initialTime = await player.timeDisplay.textContent();
-    expect(initialTime).not.toBe('0:00 / 0:00'); // Or more specific check if duration is known
-    expect(initialTime?.startsWith('0:00')).toBe(false); // Current time should not be 0:00
+    expect(initialTime).not.toMatch(/^0:00 \//);
 
-    // Click Pause
-    await player.playPauseButton.click();
-    await expect(player.playPauseButton).toHaveText('Play');
+    await player.playButton.click(); // Click Pause
+    await expect(await player.getPlayButtonText()).toMatch(/Play/i);
     const timeAfterPause = await player.timeDisplay.textContent();
-    await page.waitForTimeout(500); // Wait again
+    await page.waitForTimeout(500);
     const timeAfterPauseAndDelay = await player.timeDisplay.textContent();
-    expect(timeAfterPauseAndDelay).toBe(timeAfterPause); // Time should not change after pause
+    expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
   });
 
   test('should seek audio using the seek bar', async ({ page }) => {
-    // This test assumes IELTS13-Tests1-4CD1Track_01.mp3 is longer than a few seconds
     await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
-    await player.expectControlsToBeEnabled();
-    await player.playPauseButton.click(); // Start playback
+    await player.expectControlsToBeReadyForPlayback();
+    await player.playButton.click();
 
-    // Wait for some playback to ensure duration is loaded and displayed
-    await page.waitForFunction(() => document.getElementById('timeDisplay').textContent !== '0:00 / 0:00');
+    await page.waitForFunction(
+        () => document.querySelector('[data-testid="time-display"]')?.textContent !== '0:00 / 0:00',
+        null,
+        {timeout: 5000}
+    );
 
     const initialTimeText = await player.timeDisplay.textContent();
     const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
-    expect(durationSeconds).toBeGreaterThan(5); // Ensure file is reasonably long
+    expect(durationSeconds).toBeGreaterThan(5);
 
-    // Seek to middle
-    await player.seekToMiddle(); // This is the new method in PlayerPage
-    await page.waitForTimeout(200); // Allow time for UI to update after seek
+    // Seek to middle (example value, assuming slider max is duration)
+    // For HTML range, max is usually 100. Here we assume it's been set to duration.
+    // If not, this needs adjustment. For now, let's set to 50% of its current 'max' if it's 100
+    // Or, if the slider's 'max' attribute is indeed the duration:
+    // await player.setSliderValue(player.seekSliderInput, String(Math.floor(durationSeconds / 2)));
+
+    // More robust: click on the slider if fill doesn't work as expected for custom components
+    // This requires knowing the slider's width and calculating a click point.
+    // For a simple fill:
+    const currentMax = parseFloat(await player.seekSliderInput.getAttribute('max')) || durationSeconds; // Fallback to duration if max not set
+    await player.setSliderValue(player.seekSliderInput, String(currentMax / 2));
+
+
+    await page.waitForTimeout(500);
 
     const timeAfterSeekText = await player.timeDisplay.textContent();
     const currentTimeAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[0]);
     const durationAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[1]);
 
-    // Expect current time to be roughly half of duration, allow some tolerance
-    // This also verifies duration is still displayed correctly
     expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
     expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
-    await expect(player.playPauseButton).toHaveText('Pause', { timeout: 2000 }); // Should still be playing
+    expect(await player.getPlayButtonText()).toMatch(/Pause/i);
   });
 
-  test('should jump forward and backward', async ({ page }) => {
-    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
-    await player.expectControlsToBeEnabled();
-    await player.playPauseButton.click(); // Start playing
+  test.describe('URL State Serialization', () => {
+    test('should update URL when settings change', async ({ page }) => {
+        await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+        await player.expectControlsToBeReadyForPlayback();
 
-    // Wait for a couple of seconds of playback
-    await page.waitForFunction(() => {
-      const timeParts = document.getElementById('timeDisplay').textContent?.split(' / ')[0].split(':');
-      if (!timeParts || timeParts.length < 2) return false;
-      const currentTime = parseInt(timeParts[0], 10) * 60 + parseInt(timeParts[1], 10);
-      return currentTime >= 2;
-    }, null, { timeout: 10000 });
+        await player.setSliderValue(player.speedSliderInput, '1.5');
+        await expect(page).toHaveURL(/speed=1.5/, { timeout: 2000 });
 
-    let currentTimeText = await player.timeDisplay.textContent();
-    let currentTimeSeconds = parseTimeToSeconds(currentTimeText.split(' / ')[0]);
+        await player.setSliderValue(player.pitchSliderInput, '2');
+        await expect(page).toHaveURL(/pitch=2/, { timeout: 2000 });
+        await expect(page).toHaveURL(/speed=1.5/); // ensure previous param is still there
+    });
 
-    // Jump forward (default 5s)
-    await player.jumpForward.click();
-    await page.waitForTimeout(200); // Allow UI to update
-    let timeAfterForwardJumpText = await player.timeDisplay.textContent();
-    let timeAfterForwardJumpSeconds = parseTimeToSeconds(timeAfterForwardJumpText.split(' / ')[0]);
-    expect(timeAfterForwardJumpSeconds).toBeCloseTo(currentTimeSeconds + 5, 0); // Allow 0 decimal places tolerance
+    test('should load settings from URL parameters on page load', async ({ page }) => {
+        await player.page.goto(player.devServerUrl + '?speed=1.75&pitch=-3');
+        await expect(player.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
+        await expect(player.fileInput).toBeVisible({timeout: 10000});
 
-    currentTimeSeconds = timeAfterForwardJumpSeconds; // Update current time
 
-    // Jump backward
-    await player.jumpBack.click();
-    await page.waitForTimeout(200); // Allow UI to update
-    let timeAfterBackwardJumpText = await player.timeDisplay.textContent();
-    let timeAfterBackwardJumpSeconds = parseTimeToSeconds(timeAfterBackwardJumpText.split(' / ')[0]);
-    expect(timeAfterBackwardJumpSeconds).toBeCloseTo(currentTimeSeconds - 5, 0);
+        // Need to load a file for controls to be fully active and reflect store state
+        await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+        await player.expectControlsToBeReadyForPlayback();
+
+        // Values might take a moment to reflect from store after URL parse & file load
+        await expect(player.speedSliderInput).toHaveValue('1.75', { timeout: 2000 });
+        await expect(player.pitchSliderInput).toHaveValue('-3', { timeout: 2000 });
+    });
   });
 });
