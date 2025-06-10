@@ -686,9 +686,9 @@ var AudioApp = AudioApp || {};
             // Optionally, still update the VAD display to show N/A or the current slider values
             // if no audio is loaded or VAD hasn't run.
             if (!currentAudioBuffer) {
-                 app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, true); // true for N/A
+                app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, true); // true for N/A
             } else {
-                 app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, false);
+                app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, false);
             }
         }
 
@@ -838,19 +838,89 @@ var AudioApp = AudioApp || {};
         // However, sampleRate is passed in options, so direct comparison can be done if needed.
         // For now, assuming options.sampleRate is the one to be used.
 
-        if (typeof probabilities === 'undefined' || probabilities === null ||
-            typeof probabilities.length !== 'number' ||
-            typeof frameSamples !== 'number' || typeof sampleRate !== 'number' || sampleRate === 0 ||
-            typeof positiveSpeechThreshold !== 'number' || typeof negativeSpeechThreshold !== 'number' ||
-            typeof redemptionFrames !== 'number' ||
-            typeof minSpeechDurationMs !== 'number' || // Validate new options
-            typeof speechPadMs !== 'number') {       // Validate new options
-            console.warn("App.generateSpeechRegionsFromProbs: Invalid arguments (e.g., probabilities not an array, or critical options missing/invalid). Returning empty array. Options:", options, "Probabilities length:", probabilities ? probabilities.length : 'N/A');
+        // if (typeof probabilities === 'undefined' || probabilities === null ||
+        //     typeof probabilities.length !== 'number' ||
+        //     typeof frameSamples !== 'number' || typeof sampleRate !== 'number' || sampleRate === 0 ||
+        //     typeof positiveSpeechThreshold !== 'number' || typeof negativeSpeechThreshold !== 'number' ||
+        //     typeof redemptionFrames !== 'number' ||
+        //     typeof minSpeechDurationMs !== 'number' || // Validate new options
+        //     typeof speechPadMs !== 'number') {       // Validate new options
+        //     console.warn("App.generateSpeechRegionsFromProbs: Invalid arguments (e.g., probabilities not an array, or critical options missing/invalid). Returning empty array. Options:", options, "Probabilities length:", probabilities ? probabilities.length : 'N/A');
+        //     return [];
+        // }
+
+        // 1. Must have a non-null/undefined probabilities
+        if (probabilities == null) {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `probabilities` is null or undefined.",
+                {options: arguments[1]}
+            );
+            return [];
+        }
+
+        // 2. probabilities must be array-like
+        if (typeof probabilities.length !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `probabilities.length` is not a number.",
+                {length: probabilities.length}
+            );
+            return [];
+        }
+
+        // 3. Numeric options
+        if (typeof frameSamples !== "number") {
+            console.warn("generateSpeechRegionsFromProbs: `frameSamples` is not a number.", {frameSamples});
+            return [];
+        }
+
+        if (typeof sampleRate !== "number" || sampleRate === 0) {
+            console.warn("generateSpeechRegionsFromProbs: `sampleRate` must be a non-zero number.", {sampleRate});
+            return [];
+        }
+
+        if (typeof positiveSpeechThreshold !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `positiveSpeechThreshold` is not a number.",
+                {positiveSpeechThreshold}
+            );
+            return [];
+        }
+
+        if (typeof negativeSpeechThreshold !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `negativeSpeechThreshold` is not a number.",
+                {negativeSpeechThreshold}
+            );
+            return [];
+        }
+
+        if (typeof redemptionFrames !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `redemptionFrames` is not a number.",
+                {redemptionFrames}
+            );
+            return [];
+        }
+
+        // 4. New timing-related options
+        if (typeof minSpeechDurationMs !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `minSpeechDurationMs` is not a number.",
+                {minSpeechDurationMs}
+            );
+            return [];
+        }
+
+        if (typeof speechPadMs !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `speechPadMs` is not a number.",
+                {speechPadMs}
+            );
             return [];
         }
 
         if (probabilities.length === 0) {
-             return [];
+            return [];
         }
 
         // Optional: Keep a safety check if options.sampleRate should align with a global constant,
@@ -883,7 +953,7 @@ var AudioApp = AudioApp || {};
                     if (redemptionCounter >= redemptionFrames) {
                         const firstBadFrameIndex = i - redemptionFrames + 1;
                         const actualEnd = (firstBadFrameIndex * frameSamples) / sampleRate;
-                        newRegions.push({ start: regionStart, end: Math.max(regionStart, actualEnd) });
+                        newRegions.push({start: regionStart, end: Math.max(regionStart, actualEnd)});
                         inSpeech = false;
                         redemptionCounter = 0;
                         lastPositiveFrameIndex = -1;
@@ -897,7 +967,7 @@ var AudioApp = AudioApp || {};
         if (inSpeech) {
             const endFrameIndexPlusOne = (lastPositiveFrameIndex !== -1 && lastPositiveFrameIndex < probabilities.length) ? lastPositiveFrameIndex + 1 : probabilities.length;
             const finalEnd = (endFrameIndexPlusOne * frameSamples) / sampleRate;
-            newRegions.push({ start: regionStart, end: Math.max(regionStart, finalEnd) });
+            newRegions.push({start: regionStart, end: Math.max(regionStart, finalEnd)});
         }
 
         const minSpeechDuration = minSpeechDurationMs / 1000.0; // Use from options
@@ -909,7 +979,7 @@ var AudioApp = AudioApp || {};
             const end = region.end + speechPad;
 
             if ((end - start) >= minSpeechDuration) {
-                paddedAndFilteredRegions.push({ start: start, end: end });
+                paddedAndFilteredRegions.push({start: start, end: end});
             }
         }
 
@@ -918,7 +988,7 @@ var AudioApp = AudioApp || {};
         }
 
         const mergedRegions = [];
-        let currentRegion = { ...paddedAndFilteredRegions[0] };
+        let currentRegion = {...paddedAndFilteredRegions[0]};
 
         for (let i = 1; i < paddedAndFilteredRegions.length; i++) {
             const nextRegion = paddedAndFilteredRegions[i];
@@ -926,7 +996,7 @@ var AudioApp = AudioApp || {};
                 currentRegion.end = Math.max(currentRegion.end, nextRegion.end);
             } else {
                 mergedRegions.push(currentRegion);
-                currentRegion = { ...nextRegion };
+                currentRegion = {...nextRegion};
             }
         }
         mergedRegions.push(currentRegion);
