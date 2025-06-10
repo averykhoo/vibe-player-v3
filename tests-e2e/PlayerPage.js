@@ -7,7 +7,8 @@ exports.PlayerPage = class PlayerPage {
     this.page = page;
     this.devServerUrl = 'http://localhost:4173/'; // CHANGED TO 4173
 
-    this.appBarTitle = page.locator('header nav strong.text-xl.uppercase');
+    // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
+    this.appBarTitle = page.getByTestId('app-bar-title');
 
     // FileLoader.svelte locators (assuming data-testid attributes will be added)
     this.fileInput = page.locator('input[type="file"]'); // General locator, refine if possible
