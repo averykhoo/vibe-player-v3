@@ -1,3 +1,5 @@
+# File: .github/workflows/ci.yml
+
 name: Vibe Player CI
 
 on:
@@ -15,80 +17,81 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      # 1. Setup Node.js and configure caching for npm packages
+      # This step handles caching for both the root and the /vibe-player-v2 directories
+      # by looking at both package-lock.json files.
       - name: Use Node.js 18.x
         uses: actions/setup-node@v4
         with:
           node-version: '18.x'
           cache: 'npm'
-          # Cache path should ideally point to vibe-player-v2's package-lock if that's where npm install for it runs
-          cache-dependency-path: vibe-player-v2/package-lock.json # Adjusted for V2
+          cache-dependency-path: '**/package-lock.json'
 
-      # Note: The original plan mentioned linting and unit tests for V2.
-      # These should run against vibe-player-v2.
-      # Assuming these steps are correctly placed or will be adjusted:
+      # 2. Install dependencies for the V2 app and the root project.
+      # The `setup-node` action automatically handles skipping this if the cache was restored.
       - name: Install V2 dependencies
         working-directory: ./vibe-player-v2
         run: npm install
 
+      - name: Install root dependencies
+        run: npm install
+
+      # 3. Run all tests and builds as before
       - name: Lint V2
         working-directory: ./vibe-player-v2
         run: npm run lint
 
       - name: Run V2 unit and component tests
         working-directory: ./vibe-player-v2
-        run: npm run test:unit # Assuming this is the script for V2 tests
+        run: npm run test:unit
 
-      # --- NEW: Build the V2 application first ---
       - name: Build Vibe Player V2
         working-directory: ./vibe-player-v2
         run: npm run build
 
-      # --- CORRECTED: Start the preview server ---
-      - name: Start V2 preview server for E2E tests
+      # Start the preview server for E2E tests
+      - name: Start V2 preview server
         working-directory: ./vibe-player-v2
-        run: npm run preview & # The standard command is `npm run preview`. Run it in the background.
+        run: npm run preview &
         env:
           HOST: '0.0.0.0'
           PORT: 4173
 
-      - name: Echo Preview Server URL
-        run: echo "Preview server expected at http://localhost:4173"
-
       - name: Wait for Preview Server
         run: npx wait-on http://localhost:4173 --timeout 60000
 
-      - name: List Listening Ports (Diagnostics)
-        run: sudo ss -tulnp | grep 'LISTEN' || echo "ss command failed or no listening ports found by grep"
-        continue-on-error: true
-
-      - name: Install root dependencies for Playwright
-        run: npm install
-
-      # The E2E tests are configured to run from the root, which is fine as PlayerPage.js targets the correct URL.
+      # 4. Implement caching for Playwright browsers
+      # Step 4a: Attempt to restore the browser cache.
       - name: Cache Playwright browsers
         id: cache-playwright-browsers
         uses: actions/cache@v4
         with:
+          # The directory where Playwright stores its browser binaries
           path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          # A unique key for the cache. If package-lock.json changes, this key changes,
+          # which "busts" the cache and forces a new install.
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          # A fallback key to use the latest available cache if the exact key isn't found
           restore-keys: |
             playwright-browsers-${{ runner.os }}-
-      - name: Install Playwright Browsers and dependencies # Moved here, as it's for E2E
+
+      # Step 4b: Install browsers ONLY if the cache was not found in the previous step.
+      - name: Install Playwright Browsers and dependencies
         if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
+      # 5. Run the E2E tests, which will now use the cached browsers
       - name: Run Playwright E2E tests
-        working-directory: . # Playwright is configured at root
         run: npx playwright test
-        # If Playwright needs display server on Linux CI: add `xvfb-run --auto-servernum` before npx playwright test
 
-      - name: Stop preview server # Added step to stop server
-        if: always() # Ensure it runs even if tests fail
+      # 6. Cleanup and Reporting
+      - name: Stop preview server
+        if: always()
         run: pkill -f "vite preview" || echo "Preview server already stopped or not found."
         continue-on-error: true
 
       - name: Upload Playwright report
-        if: always() # Run this step even if previous steps fail, to get reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
