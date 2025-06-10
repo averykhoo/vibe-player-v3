@@ -55,7 +55,15 @@ exports.PlayerPage = class PlayerPage {
   }
 
   async expectControlsToBeReadyForPlayback() {
-    await expect(this.playButton).toBeEnabled({ timeout: 20000 });
+    // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
+    // This directly tests the #if block condition becoming true.
+    // Only after it's attached can we check if it's enabled.
+    // Using .first() ensures Playwright doesn't complain if the locator resolves to multiple items,
+    // and .waitFor() is the explicit way to wait for an element to appear.
+    await this.playButton.first().waitFor({ state: 'attached', timeout: 20000 });
+
+    // Now that we know the button exists, we can safely check if it's enabled.
+    await expect(this.playButton).toBeEnabled({ timeout: 1000 }); // Short timeout is fine now
   }
 
   async getPlayButtonText() {
