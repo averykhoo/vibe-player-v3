@@ -65,7 +65,16 @@ jobs:
         run: npm install
 
       # The E2E tests are configured to run from the root, which is fine as PlayerPage.js targets the correct URL.
+      - name: Cache Playwright browsers
+        id: cache-playwright-browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            playwright-browsers-${{ runner.os }}-
       - name: Install Playwright Browsers and dependencies # Moved here, as it's for E2E
+        if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
       - name: Run Playwright E2E tests
