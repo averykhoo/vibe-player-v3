@@ -419,7 +419,6 @@ var AudioApp = AudioApp || {};
             });
             app.state.updateRuntime('currentVadResults', vadResults);
             const speechRegions = vadResults.regions || [];
-            app.uiManager.updateVadDisplay(vadResults.initialPositiveThreshold, vadResults.initialNegativeThreshold);
             app.uiManager.setSpeechRegionsText(speechRegions);
             app.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions);
             app.uiManager.updateVadProgress(100);
