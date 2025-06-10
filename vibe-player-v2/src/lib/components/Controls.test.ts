@@ -191,17 +191,16 @@ describe("Controls.svelte", () => {
   });
 
   it("updates analysisStore when VAD Positive Threshold slider changes", async () => {
-    const mockUpdate = vi.spyOn(mockAnalysisStoreWritable, "update");
     render(Controls);
     const vadSlider = screen.getByLabelText<HTMLInputElement>(
       /VAD Positive Threshold/i,
     );
     await fireEvent.input(vadSlider, { target: { value: "0.85" } });
 
-    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(analysisStore.update).toHaveBeenCalledTimes(1);
     // Check that the update function sets the value correctly
     act(() => {
-      const updater = mockUpdate.mock.calls[0][0];
+      const updater = vi.mocked(analysisStore.update).mock.calls[0][0];
       updater({ vadPositiveThreshold: 0.5, vadNegativeThreshold: 0.35 }); // Simulate current store state
     });
     // Value is updated in component state first due to bind:value, then store is updated
@@ -213,14 +212,13 @@ describe("Controls.svelte", () => {
   });
 
   it("updates analysisStore when VAD Negative Threshold slider changes", async () => {
-    const mockUpdate = vi.spyOn(mockAnalysisStoreWritable, "update");
     render(Controls);
     const vadSlider = screen.getByLabelText<HTMLInputElement>(
       /VAD Negative Threshold/i,
     );
     await fireEvent.input(vadSlider, { target: { value: "0.25" } });
 
-    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(analysisStore.update).toHaveBeenCalledTimes(1);
     expect(
       screen.getByLabelText(/VAD Negative Threshold: 0.25/i),
     ).toBeInTheDocument();
