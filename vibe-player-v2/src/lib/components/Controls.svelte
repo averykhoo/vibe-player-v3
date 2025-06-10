@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Button, RangeSlider } from '@skeletonlabs/skeleton';
+    import { RangeSlider } from '@skeletonlabs/skeleton';
     import audioEngine from '$lib/services/audioEngine.service';
     import analysisService from '$lib/services/analysis.service';
     import { playerStore } from '$lib/stores/player.store'; // For speed, pitch, gain
@@ -53,9 +53,9 @@
 <div class="card p-4 space-y-4">
     <h3 class="h3">Controls</h3>
     <div class="flex space-x-2">
-        <Button on:click={handlePlay}>Play</Button>
-        <Button on:click={handlePause}>Pause</Button>
-        <Button on:click={handleStop}>Stop</Button>
+        <button type="button" class="btn" on:click={handlePlay}>Play</button>
+        <button type="button" class="btn" on:click={handlePause}>Pause</button>
+        <button type="button" class="btn" on:click={handleStop}>Stop</button>
     </div>
 
     <div>
