@@ -145,3 +145,8 @@ export function subscribeToStoresForUrlUpdate(): () => void {
     unsubAnalysis();
   };
 }
+
+// THIS FUNCTION IS FOR TESTING PURPOSES ONLY
+export function _resetUrlStateInitializationFlagForTesting() {
+  hasInitializedFromUrl = false;
+}

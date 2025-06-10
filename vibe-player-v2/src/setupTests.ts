@@ -30,3 +30,42 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 console.log('Test setup file loaded: @testing-library/svelte/vitest imported, jest-dom matchers extended, $app/environment mocked, and window.matchMedia mocked.');
+
+// Mock all @skeletonlabs/skeleton components with a generic one
+// IMPORTANT: Adjust the path to Generic.svelte if your __mocks__ directory is elsewhere.
+// Assuming Generic.svelte is in src/lib/components/__mocks__/Generic.svelte
+// and setupTests.ts is in src/
+vi.mock('@skeletonlabs/skeleton', async () => {
+  const GenericSvelteMock = await import('./lib/components/__mocks__/Generic.svelte');
+  const ButtonMock = await import('./lib/components/__mocks__/Button.svelte');
+  const RangeSliderMock = await import('./lib/components/__mocks__/RangeSlider.svelte');
+  const ProgressBarMock = await import('./lib/components/__mocks__/ProgressBar.svelte');
+
+  console.log('(setupTests.ts) Loaded specific mocks. GenericSvelteMock.default:', GenericSvelteMock.default);
+
+  const specificMocks = {
+    Button: ButtonMock.default,
+    RangeSlider: RangeSliderMock.default,
+    ProgressBar: ProgressBarMock.default,
+    storePopup: vi.fn(), // Example utility
+  };
+
+  return new Proxy(specificMocks, {
+    get: (target, propKey) => {
+      const prop = String(propKey);
+      if (prop in target) {
+        return target[prop];
+      }
+      // Fallback for any other Svelte component (PascalCase) to GenericSvelteMock
+      if (prop[0] >= 'A' && prop[0] <= 'Z') {
+        // console.warn(`(setupTests.ts)   --> Fallback: Returning GenericSvelteMock.default for ${prop}`);
+        return GenericSvelteMock.default;
+      }
+      // console.warn(`(setupTests.ts) Accessing undefined Skeleton export: ${prop}`);
+      return undefined; // Or vi.fn() for non-component functions
+    }
+  });
+});
+
+// Add a new console log to confirm this specific mock is applied.
+console.log('Global Skeleton mock via specific mocks + Generic fallback is NOW ENABLED.');

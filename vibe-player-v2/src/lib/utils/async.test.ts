@@ -95,24 +95,15 @@ describe("async utilities", () => {
     });
 
     it("should maintain `this` context for the debounced function", () => {
-      const obj = { method: mockFn };
+      const obj = { method: mockFn, name: 'testObject' };
       const debouncedFn = debounce(obj.method, 100);
-      // const debouncedFn = debounce(function(this: any) { mockFn.apply(this, arguments) }, 100);
 
-      // Need to call it in a way that `this` is bound to obj
-      // This is tricky with how `debounce` is written if it doesn't preserve `this` from the calling site.
-      // The current implementation of debounce uses `const context = this;` which refers to the `debounce`'s `this`,
-      // not the `this` of where `executedFunction` is called from. This needs adjustment in `debounce` or test.
-
-      // Assuming debounce is modified to correctly capture `this` of the `executedFunction` caller
-      // For now, let's test with a direct call, which might not fully test `this` in all scenarios.
-      // A common way to handle this is func.apply(context, args) where context is captured.
-      // The provided debounce implementation *does* capture context.
-
-      const boundDebouncedFn = debouncedFn.bind(obj); // Bind `this` for the executedFunction
-      boundDebouncedFn();
+      // Call it in a way that sets the `this` context to `obj`
+      debouncedFn.call(obj);
 
       vi.advanceTimersByTime(100);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+      // Check that the context (`this`) inside the mock call was indeed `obj`
       expect(mockFn.mock.contexts[0]).toBe(obj);
     });
   });

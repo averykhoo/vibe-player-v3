@@ -9,15 +9,15 @@ import { writable, type Writable } from "svelte/store";
 
 // Mock Skeleton UI components
 // Ensure this path is correct relative to this test file
-vi.mock('@skeletonlabs/skeleton', async (importOriginal) => {
-  const original = await importOriginal(); // Import actual to allow spread of other exports
-  return {
-    ...original, // Spread all other exports from skeleton
-    Button: (await import('./__mocks__/Button.svelte')).default,
-    RangeSlider: (await import('./__mocks__/RangeSlider.svelte')).default,
-    // If other specific components from Skeleton are used in Controls.svelte, mock them here too.
-  };
-});
+// vi.mock('@skeletonlabs/skeleton', async (importOriginal) => {
+//   const original = await importOriginal(); // Import actual to allow spread of other exports
+//   return {
+//     ...original, // Spread all other exports from skeleton
+//     Button: (await import('./__mocks__/Button.svelte')).default,
+//     RangeSlider: (await import('./__mocks__/RangeSlider.svelte')).default,
+//     // If other specific components from Skeleton are used in Controls.svelte, mock them here too.
+//   };
+// });
 
 // Hoisted Mocks for store structure
 vi.mock('$lib/stores/player.store', () => ({

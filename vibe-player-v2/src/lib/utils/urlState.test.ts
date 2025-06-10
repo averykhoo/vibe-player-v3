@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadStateFromUrl, subscribeToStoresForUrlUpdate } from "./urlState";
+import { loadStateFromUrl, subscribeToStoresForUrlUpdate, _resetUrlStateInitializationFlagForTesting } from "./urlState";
 import { page } from "$app/stores";
 import { goto } from "$app/navigation";
 import { playerStore } from "../stores/player.store";
@@ -81,9 +81,15 @@ async function updateMockPageStore(searchParams: URLSearchParams) {
 
 describe("urlState utilities", () => {
   beforeEach(async () => {
+    // Reset module state FIRST
+    _resetUrlStateInitializationFlagForTesting();
+
+    // Then setup timers
     vi.useFakeTimers();
-    // Reset mocks for stores if they are stateful or accumulate calls
-    // vi.clearAllMocks(); // Clearing all mocks also clears spies on store methods. Let's be more selective or re-spy.
+
+    // Then clear any pending microtasks from previous tests that might have been queued *before* this beforeEach
+    // This ensures that if a previous test did loadStateFromUrl(), its Promise.resolve().then() is flushed.
+    vi.runAllTimers(); // This is crucial for the hasInitializedFromUrl flag
 
     // Reset the store to default for each test
     mockPageStoreInstance.set({ url: { searchParams: new URLSearchParams(), pathname: "/" } });
@@ -93,13 +99,14 @@ describe("urlState utilities", () => {
     // Clear specific mocks if necessary, e.g., goto
     vi.mocked(goto).mockClear();
 
-    // Spy on the actual store methods for each test
+    // Re-spy on store methods as vi.restoreAllMocks() in afterEach clears them
+    // (or if vi.clearAllMocks() was used above, which it is not currently)
     vi.spyOn(mockPlayerStoreInstance, 'update');
     vi.spyOn(mockPlayerStoreInstance, 'subscribe');
-    vi.spyOn(mockPlayerStoreInstance, 'set'); // if playerStore.set is ever called directly by urlState
+    vi.spyOn(mockPlayerStoreInstance, 'set');
     vi.spyOn(mockAnalysisStoreInstance, 'update');
     vi.spyOn(mockAnalysisStoreInstance, 'subscribe');
-    vi.spyOn(mockAnalysisStoreInstance, 'set'); // if analysisStore.set is ever called
+    vi.spyOn(mockAnalysisStoreInstance, 'set');
   });
 
   afterEach(() => {
@@ -172,10 +179,11 @@ describe("urlState utilities", () => {
       expect(analysisStore.subscribe).toHaveBeenCalled();
     });
 
-    it("debounced URL updater should call goto eventually after store change (if initialized)", () => {
+    it("debounced URL updater should call goto eventually after store change (if initialized)", async () => {
       // First, simulate initialization
       loadStateFromUrl();
-      vi.runAllTimers(); // Ensure hasInitializedFromUrl is true
+      // Ensure the microtask from loadStateFromUrl (setting hasInitializedFromUrl = true) completes
+      await vi.advanceTimersByTimeAsync(0);
 
       // let playerStoreSubscriber: (state: any) => void = () => {};
       // (playerStore.subscribe as ReturnType<typeof vi.fn>).mockImplementation( // Not needed with real store
