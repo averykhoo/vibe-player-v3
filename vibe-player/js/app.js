@@ -663,7 +663,10 @@ var AudioApp = AudioApp || {};
                 sampleRate: vadResults.sampleRate,
                 positiveSpeechThreshold: app.state.params.vadPositive,
                 negativeSpeechThreshold: app.state.params.vadNegative,
-                redemptionFrames: vadResults.redemptionFrames
+                redemptionFrames: vadResults.redemptionFrames,
+                // Add the missing parameters from Constants
+                minSpeechDurationMs: Constants.VAD.MIN_SPEECH_DURATION_MS,
+                speechPadMs: Constants.VAD.SPEECH_PAD_MS
             });
 
             // Update the UI text for speech regions
