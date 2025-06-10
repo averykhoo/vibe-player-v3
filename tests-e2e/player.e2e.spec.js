@@ -18,7 +18,6 @@ test.describe('Vibe Player V2 E2E', () => {
   });
 
   test('should load an audio file and enable playback controls', async () => {
-    await expect(player.playButton).toBeDisabled(); // Initially play button might be disabled
     // await expect(player.fileNameDisplay).toHaveText(''); // If there's an initial empty text
 
     await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');

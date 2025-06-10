@@ -47,7 +47,8 @@ exports.PlayerPage = class PlayerPage {
   }
 
   async loadAudioFile(fileName) {
-    const filePath = path.resolve(__dirname, '../../test-audio/', fileName); // Path relative to PlayerPage.js
+    // FIX: Corrected relative path from `../../` to `../`
+    const filePath = path.resolve(__dirname, '../test-audio/', fileName); // Path relative to PlayerPage.js
     await this.fileInput.setInputFiles(filePath);
     // Add a small wait for file processing to start, if necessary
     await this.page.waitForTimeout(200);
