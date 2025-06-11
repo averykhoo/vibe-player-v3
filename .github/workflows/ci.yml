@@ -60,29 +60,10 @@ jobs:
       - name: Wait for Preview Server
         run: npx wait-on http://localhost:4173 --timeout 60000
 
-      # 4. Implement caching for Playwright browsers
-      # Step 4a: Attempt to restore the browser cache.
-      - name: Cache Playwright browsers
-        id: cache-playwright-browsers
-        uses: actions/cache@v4
+      - name: Run Playwright tests
+        uses: microsoft/playwright-github-action@v1
         with:
-          # The directory where Playwright stores its browser binaries
-          path: ~/.cache/ms-playwright
-          # A unique key for the cache. If package-lock.json changes, this key changes,
-          # which "busts" the cache and forces a new install.
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          # A fallback key to use the latest available cache if the exact key isn't found
-          restore-keys: |
-            playwright-browsers-${{ runner.os }}-
-
-      # Step 4b: Install browsers ONLY if the cache was not found in the previous step.
-      - name: Install Playwright Browsers and dependencies
-        if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps
-
-      # 5. Run the E2E tests, which will now use the cached browsers
-      - name: Run Playwright E2E tests
-        run: npx playwright test
+          run: npx playwright test
 
       # 6. Cleanup and Reporting
       - name: Stop preview server
