@@ -24,11 +24,7 @@ jobs:
 
       - name: Build the zip archive
         run: |
-          echo "Creating zip for tag ${{ env.TAG_NAME }}"
-          cd vibe-player # Move into the target directory
-          # Use standard 'zip' command available on ubuntu runners
-          zip -r ../vibe-player-${{ env.TAG_NAME }}.zip .
-          cd .. # Move back to the root
+          zip -r vibe-player-${{ env.TAG_NAME }}.zip ./vibe-player -x "./vibe-player/.DS_Store"
         # Standard shell commands
 
       - name: Create GitHub Release
