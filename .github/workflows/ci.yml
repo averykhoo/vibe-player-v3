@@ -29,12 +29,10 @@ jobs:
 
       # 2. Install dependencies for the V2 app and the root project.
       # The `setup-node` action automatically handles skipping this if the cache was restored.
-      - name: Install V2 dependencies
-        working-directory: ./vibe-player-v2
-        run: npm install
-
-      - name: Install root dependencies
-        run: npm install
+      - name: Install root and V2 dependencies
+        run: |
+          npm ci
+          cd vibe-player-v2 && npm ci && cd ..
 
       # 3. Run all tests and builds as before
       - name: Lint V2
@@ -49,6 +47,19 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npm run build
 
+      - name: Cache OS-level dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-playwright-deps-${{ hashFiles('package-lock.json') }}-${{ hashFiles('vibe-player-v2/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-deps-
+
+      - name: Install Playwright and its dependencies
+        run: npx playwright install --with-deps
+
       # Start the preview server for E2E tests
       - name: Start V2 preview server
         working-directory: ./vibe-player-v2
@@ -60,10 +71,8 @@ jobs:
       - name: Wait for Preview Server
         run: npx wait-on http://localhost:4173 --timeout 60000
 
-      - name: Run Playwright tests
-        uses: microsoft/playwright-github-action@v1
-        with:
-          run: npx playwright test
+      - name: Run Playwright E2E tests
+        run: npx playwright test
 
       # 6. Cleanup and Reporting
       - name: Stop preview server
