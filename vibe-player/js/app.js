@@ -340,11 +340,6 @@ var AudioApp = AudioApp || {};
         app.waveformVisualizer.updateProgressIndicator(0, audioBuffer.duration);
         app.spectrogramVisualizer.updateProgressIndicator(0, audioBuffer.duration);
         app.state.updateRuntime('playbackStartSourceTime', 0.0);
-        if (app.audioEngine) {
-            app.audioEngine.setSpeed(app.state.params.speed);
-            app.audioEngine.setPitch(app.state.params.pitch);
-            app.audioEngine.setGain(app.state.params.gain);
-        }
         await app.waveformVisualizer.computeAndDrawWaveform(audioBuffer, []);
         console.log("App: Kicking off Spectrogram, VAD, and Tone analysis in parallel.");
         app.spectrogramVisualizer.computeAndDrawSpectrogram(audioBuffer);
