@@ -243,11 +243,40 @@ describe("AudioEngineService", () => {
       expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
     });
 
-    it("should call analysisService.startSpectrogramProcessing with the decoded buffer", async () => {
+    it("should update playerStore with isPlayable true and audioBuffer, and not call analysisService", async () => {
+      // analysisService is mocked, so we can check its calls
+      const mockedAnalysisService = analysisService as Mocked<typeof analysisService>;
+
       await audioEngineService.loadFile(mockArrayBuffer, mockFileName);
-      expect(analysisService.startSpectrogramProcessing).toHaveBeenCalledWith(
-        mockDecodedBuffer,
-      );
+
+      // Verify the playerStore.update was called
+      // playerStore itself is the mock instance from vi.mock
+      expect(playerStore.update).toHaveBeenCalled();
+
+      // Get the update function passed to playerStore.update in the last call
+      const updateFunction = (playerStore.update as Mocked<typeof playerStore.update>).mock.calls.slice(-1)[0][0];
+
+      // Define a representative current state that the update function would operate on
+      // This should ideally match the state just before this specific update is meant to occur
+      const previousState = {
+        ...initialPlayerStoreState, // from test setup
+        status: `Decoding ${mockFileName}...`, // Reflects state after initial update in loadFile
+        fileName: mockFileName,
+        error: null
+      };
+
+      const newState = updateFunction(previousState);
+
+      // Assertions on the new state
+      expect(newState.isPlayable).toBe(true);
+      expect(newState.audioBuffer).toEqual(mockDecodedBuffer); // mockDecodedBuffer is defined in the test setup
+      expect(newState.duration).toBe(mockDecodedBuffer.duration);
+      expect(newState.channels).toBe(mockDecodedBuffer.numberOfChannels);
+      expect(newState.sampleRate).toBe(mockDecodedBuffer.sampleRate);
+      expect(newState.waveformData).toBeDefined(); // Check that waveformData is part of the update
+
+      // Ensure analysisService.startSpectrogramProcessing was NOT called from loadFile
+      expect(mockedAnalysisService.startSpectrogramProcessing).not.toHaveBeenCalled();
     });
 
     it("should update playerStore on decoding error", async () => {

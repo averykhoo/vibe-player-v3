@@ -4,7 +4,7 @@ const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
   testDir: './tests-e2e', // Specify the directory for E2E tests
   webServer: {
-    command: 'npm run dev --prefix vibe-player-v2', // Runs the dev script from package.json in vibe-player-v2
+    command: 'npm run dev', // Runs the dev script from package.json in vibe-player-v2
     url: 'http://localhost:5173', // URL to poll for server readiness
     reuseExistingServer: !process.env.CI, // Reuse dev server locally, new one in CI
     timeout: 120 * 1000, // Timeout for server to start (ms)

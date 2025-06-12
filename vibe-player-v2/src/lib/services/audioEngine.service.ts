@@ -307,6 +307,7 @@ class AudioEngineService {
         sampleRate: this.originalAudioBuffer.sampleRate,
         waveformData: waveformDisplayData, // Add waveform data to store
         isPlayable: true,
+        audioBuffer: this.originalAudioBuffer, // Key addition
       }));
       console.log(
         "Decoded audio and extracted waveform data:",
