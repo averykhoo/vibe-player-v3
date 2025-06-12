@@ -314,11 +314,6 @@ class AudioEngineService {
       );
 
       // --- BEGIN NEW: Trigger Spectrogram Processing ---
-      if (this.originalAudioBuffer) {
-        // analysisService.initializeSpectrogramWorker might need to be called here if not already
-        // For now, assume it's initialized or will be by startSpectrogramProcessing
-        analysisService.startSpectrogramProcessing(this.originalAudioBuffer);
-      }
       // --- END NEW: Trigger Spectrogram Processing ---
 
       // Auto-initialize worker if sample rate or channels change, or if not initialized

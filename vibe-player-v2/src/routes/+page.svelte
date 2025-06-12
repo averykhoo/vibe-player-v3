@@ -5,6 +5,7 @@
     // Services
     import audioEngine from '$lib/services/audioEngine.service';
     import analysisService from '$lib/services/analysis.service';
+    import { playerStore } from '$lib/stores/player.store';
 
     // URL State Utilities
     import { loadStateFromUrl, subscribeToStoresForUrlUpdate } from '$lib/utils/urlState';
@@ -60,6 +61,15 @@
         }
         console.log('+page.svelte destroyed, services disposed.');
     });
+
+    $: {
+      if ($playerStore.isPlayable && $playerStore.audioBuffer) {
+        // A file has been successfully decoded and is ready to play.
+        // Now, we can kick off the heavy analysis tasks in the background.
+        console.log('UI Layer: isPlayable is true, starting background analysis.');
+        analysisService.startSpectrogramProcessing($playerStore.audioBuffer);
+      }
+    }
 </script>
 
 <!-- Base page layout using Skeleton UI -->
