@@ -203,7 +203,7 @@ describe("SpectrogramService", () => {
 
   describe("dispose", () => {
     it("should terminate worker and update store", async () => {
-      // Initialize first
+      // Initialize first to ensure there's a worker to terminate
       const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
       const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
       if (mockSpecWorkerInstance.onmessage) {
@@ -212,20 +212,32 @@ describe("SpectrogramService", () => {
         } as MessageEvent);
       }
       await initPromise;
-      (analysisStore.update as Mocked<any>).mockClear(); // Clear init updates
+      // Clear mocks from the initialization phase
+      (analysisStore.update as Mocked<any>).mockClear();
 
+      // --- Act ---
       spectrogramService.dispose();
 
+      // --- Assert ---
       expect(mockSpecWorkerInstance.terminate).toHaveBeenCalledTimes(1);
+
+      // Check that the store was updated to a 'Disposed' state
       expect(analysisStore.update).toHaveBeenCalledTimes(1);
-      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls[0][0];
-      const mockState = {
+
+      // Get the updater function from the mock call
+      const updater = (analysisStore.update as Mocked<any>).mock.calls[0][0];
+
+      // Define a previous state to test the updater function's logic
+      const prevState = {
         spectrogramStatus: 'Was processing',
-        spectrogramData: new Float32Array([1,2,3]),
+        spectrogramData: [new Float32Array([1,2,3])], // Use correct type
         spectrogramInitialized: true,
         spectrogramError: 'old error'
       };
-      const newState = lastUpdateCall[0](mockState);
+
+      // Execute the updater function and check the new state
+      const newState = updater(prevState);
+
       expect(newState.spectrogramStatus).toBe('Disposed');
       expect(newState.spectrogramData).toBeNull();
       expect(newState.spectrogramInitialized).toBe(false);

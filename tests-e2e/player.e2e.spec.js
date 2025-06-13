@@ -11,7 +11,7 @@ function parseTimeToSeconds(timeStr) {
 
 // FIX: Changed the test file from a .mp3 to a .wav for better CI compatibility
 const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
-+const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
+const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
 
 test.describe('Vibe Player V2 E2E', () => {
   let playerPage;
@@ -92,20 +92,20 @@ test.describe('Vibe Player V2 E2E', () => {
     expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
   });
 
-+ test('should detect and display DTMF tones', async ({ page }) => {
-+   await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
-+   await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
-+
-+   // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
-+   const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
-+   const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
-+
-+   const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
-+
-+   // Wait for the text to appear, giving time for audio processing and UI update
-+   await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
-+ });
-+
+  test('should detect and display DTMF tones', async ({ page }) => {
+    await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
+
+    // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
+    const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
+    const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
+
+    const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
+
+    // Wait for the text to appear, giving time for audio processing and UI update
+    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
+  });
+
   test.describe('URL State Serialization', () => {
     test('should update URL when settings change', async ({ page }) => {
         await playerPage.loadAudioFile(TEST_AUDIO_FILE);
