@@ -95,6 +95,8 @@ export const SPEC_WORKER_MSG_TYPE = {
 };
 
 export interface SpectrogramInitPayload {
+  origin: string;
+  fftPath: string;
     sampleRate: number;
     fftSize: number;
     hopLength: number;

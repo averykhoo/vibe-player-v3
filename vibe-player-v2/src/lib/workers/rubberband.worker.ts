@@ -39,8 +39,16 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         lastKnownPitchScale = Math.pow(2, (initPayload.initialPitch || 0) / 12.0);
 
         // 1. Load the custom loader script. This defines the global `Rubberband` function.
-        self.importScripts(initPayload.loaderPath);
+        // --- FIX START ---
+        // Construct the full, absolute URL for the loader script
+        if (!initPayload.origin) {
+          throw new Error("RubberbandWorker INIT: origin is missing in payload");
+        }
+        const loaderUrl = new URL(initPayload.loaderPath, initPayload.origin).href;
 
+        // 1. Load the custom loader script using the full URL
+        self.importScripts(loaderUrl);
+        // --- FIX END ---
         // 2. Fetch the WASM binary itself. The worker needs to do this.
         const wasmBinaryResponse = await fetch(initPayload.wasmPath);
         if (!wasmBinaryResponse.ok) {

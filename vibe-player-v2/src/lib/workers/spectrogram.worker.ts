@@ -41,9 +41,19 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         sampleRate = initPayload.sampleRate;
         fftSize = initPayload.fftSize;
         hopLength = initPayload.hopLength;
-        // --- END MODIFICATION ---
 
-        self.importScripts("../fft.js");
+        // --- FIX START ---
+        // Construct the full, absolute URL for the FFT script
+        if (!initPayload.origin) {
+          throw new Error("SpectrogramWorker INIT: origin is missing in payload.");
+        }
+        // NOTE: The worker itself is at `.../src/lib/workers/spectrogram.worker.ts`
+        // So `new URL('../fft.js', ...)` resolves correctly relative to the worker's own location.
+        const fftUrl = new URL(initPayload.fftPath, initPayload.origin).href;
+
+        self.importScripts(fftUrl);
+        // --- FIX END ---
+
         if (typeof FFT === "undefined") {
           throw new Error("FFT class not loaded. Check path to fft.js.");
         }
