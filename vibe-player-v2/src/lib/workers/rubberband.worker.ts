@@ -32,7 +32,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     switch (type) {
-      case RB_WORKER_MSG_TYPE.INIT:
+      case RB_WORKER_MSG_TYPE.INIT: { // Using a block scope for clarity
         const initPayload = payload as RubberbandInitPayload;
         sampleRate = initPayload.sampleRate;
         channels = initPayload.channels;
@@ -101,6 +101,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         self.postMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
         break;
+      }
 
       case RB_WORKER_MSG_TYPE.SET_SPEED:
         if (wasmModule && rubberbandStretcher && payload?.speed !== undefined) {

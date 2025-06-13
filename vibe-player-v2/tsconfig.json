@@ -1,3 +1,5 @@
+// vibe-player-v2/tsconfig.json
+
 {
   "extends": "./.svelte-kit/tsconfig.json",
   "compilerOptions": {
@@ -9,7 +11,17 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
-    "moduleResolution": "bundler"
+    "module": "esnext",
+    "moduleResolution": "bundler",
+
+    // Change the target to a modern version that supports async/await natively.
+    // "es2017" is a safe and widely supported choice.
+    "target": "es2017",
+
+    // Add "webworker" to the library list. This provides the correct
+    // global types for your worker files (like `self`, `importScripts`, etc.)
+    // and ensures "Promise" is available.
+    "lib": ["es2017", "dom", "webworker"]
   }
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
