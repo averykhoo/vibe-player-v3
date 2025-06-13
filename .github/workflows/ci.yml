@@ -58,26 +58,10 @@ jobs:
         if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
-      # Start the preview server for E2E tests
-      - name: Start V2 preview server
-        working-directory: ./vibe-player-v2
-        run: npm run preview &
-        env:
-          HOST: '0.0.0.0'
-          PORT: 4173
-
-      - name: Wait for Preview Server
-        run: npx wait-on http://localhost:4173 --timeout 60000
-
       - name: Run Playwright E2E tests
         run: npx playwright test
 
       # 6. Cleanup and Reporting
-      - name: Stop preview server
-        if: always()
-        run: pkill -f "vite preview" || echo "Preview server already stopped or not found."
-        continue-on-error: true
-
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4

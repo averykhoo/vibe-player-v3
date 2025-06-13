@@ -31,4 +31,12 @@ module.exports = defineConfig({
     trace: 'on-first-retry',
     headless: true, // Run tests in headless mode
   },
+
+  // Configure the web server for E2E tests
+  webServer: {
+    command: 'npm run preview --prefix vibe-player-v2 -- --host 0.0.0.0 --port 4173',
+    url: 'http://localhost:4173',
+    reuseExistingServer: !process.env.CI, // Reuse server locally, not in CI
+    timeout: 180 * 1000, // Increase timeout for server to start
+  },
 });
