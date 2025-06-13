@@ -373,7 +373,7 @@ class AnalysisService {
     const initPayload: SpectrogramInitPayload = {
       // --- ADD origin and fftPath ---
       origin: location.origin,
-      fftPath: '../fft.js', // This path is relative from the worker file location in source
+      fftPath: '/fft.js', // This path is relative from the worker file location in source
       // --- END ADD ---
       sampleRate: options.sampleRate,
       fftSize: options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,

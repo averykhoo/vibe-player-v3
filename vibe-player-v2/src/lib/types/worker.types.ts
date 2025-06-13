@@ -27,6 +27,11 @@ export const RB_WORKER_MSG_TYPE = {
 export interface RubberbandInitPayload {
     wasmPath: string; // Path to rubberband.wasm
     loaderPath: string; // Path to rubberband-loader.js
+
+  // --- ADD THIS LINE ---
+  origin: string; // The origin of the main document (e.g., http://localhost:4173)
+  // --- END ADDITION ---
+
     sampleRate: number;
     channels: number;
     initialSpeed: number;
