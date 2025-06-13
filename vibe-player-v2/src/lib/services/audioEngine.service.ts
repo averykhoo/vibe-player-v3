@@ -208,7 +208,7 @@ class AudioEngineService {
 
     const initPayload: RubberbandInitPayload = {
       wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL, // e.g., '/rubberband.wasm'
-      // loaderPath will be constructed in the worker from origin
+      loaderPath: AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
       origin: location.origin,
       sampleRate: options.sampleRate,
       channels: options.channels,

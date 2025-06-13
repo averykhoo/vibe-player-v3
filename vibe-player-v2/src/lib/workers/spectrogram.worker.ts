@@ -1,15 +1,12 @@
 // vibe-player-v2/src/lib/workers/spectrogram.worker.ts
-// Add to imports:
-// Option 1: If dsp.ts is simple and can be imported directly (Vite might make this work)
-// import { hannWindow as generateHannWindow } from '../utils/dsp';
-
-// Option 2: If dsp.ts is part of a larger utils/index.ts bundle that's hard to tree-shake for worker
-// Or if importScripts is more reliable for fft.js, we might need a separate hann.js or include source here.
-// For now, assume we can load it via importScripts if it's a separate utility, or define it here.
-
-// To ensure hannWindow is available, let's define a basic version here or ensure it's loaded.
-// For simplicity in this step, let's copy a basic hannWindow here.
-// A better long-term solution is modular import or `importScripts` for a dedicated DSP util file.
+import type {
+  WorkerMessage,
+  SpectrogramInitPayload,
+  SpectrogramProcessPayload,
+  SpectrogramResultPayload,
+} from "../types/worker.types";
+import { SPEC_WORKER_MSG_TYPE } from "../types/worker.types";
+declare var FFT: any;
 
 function generateHannWindow(length: number): number[] | null {
   if (length <= 0 || !Number.isInteger(length)) return null;
@@ -25,23 +22,11 @@ function generateHannWindow(length: number): number[] | null {
   return windowArr;
 }
 
-// Existing imports:
-import type {
-  WorkerMessage,
-  SpectrogramInitPayload,
-  SpectrogramProcessPayload,
-  SpectrogramResultPayload,
-} from "../types/worker.types";
-import { SPEC_WORKER_MSG_TYPE } from "../types/worker.types";
-declare var FFT: any;
-
-// Add:
+let fftInstance: any = null;
+let sampleRate: number;
+let fftSize: number;
+let hopLength: number;
 let hannWindow: number[] | null = null;
-
-// let fftInstance: any = null; // Already declared in previous version
-// let sampleRate: number = 44100; // Already declared
-// let fftSize: number = 2048; // Already declared
-// let hopLength: number = 512; // Already declared
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const { type, payload, messageId } = event.data;
@@ -50,9 +35,13 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     switch (type) {
       case SPEC_WORKER_MSG_TYPE.INIT:
         const initPayload = payload as SpectrogramInitPayload;
-        sampleRate = initPayload.sampleRate; // These were implicitly global, ensure they are correctly scoped if not already
-        fftSize = initPayload.fftSize || fftSize;
-        hopLength = initPayload.hopLength || Math.floor(fftSize / 4);
+
+        // --- MODIFIED: Direct assignment, no fallback logic needed ---
+        // The service is responsible for providing these values.
+        sampleRate = initPayload.sampleRate;
+        fftSize = initPayload.fftSize;
+        hopLength = initPayload.hopLength;
+        // --- END MODIFICATION ---
 
         self.importScripts("../fft.js");
         if (typeof FFT === "undefined") {
