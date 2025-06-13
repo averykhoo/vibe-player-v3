@@ -145,7 +145,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   │       ├── .gitkeep
     │   │   │       ├── Spectrogram.svelte
     │   │   │       └── Waveform.svelte
-    │   │   ├── fft.js
     │   │   ├── index.ts
     │   │   ├── services
     │   │   │   ├── .gitkeep
@@ -161,6 +160,9 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   │   └── status.store.ts
     │   │   ├── types
     │   │   │   ├── .gitkeep
+    │   │   │   ├── analysis.types.ts
+    │   │   │   ├── player.types.ts
+    │   │   │   ├── status.types.ts
     │   │   │   └── worker.types.ts
     │   │   ├── utils
     │   │   │   ├── .gitkeep
@@ -186,6 +188,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   └── setupTests.ts
     ├── static
     │   ├── favicon.png
+    │   ├── fft.js
     │   ├── rubberband-loader.js
     │   ├── rubberband.wasm
     │   └── silero_vad.onnx
@@ -12110,404 +12113,6 @@ describe("FileLoader.svelte", () => {
 
 ````
 --- End of File: vibe-player-v2/src/lib/components/FileLoader.test.ts ---
---- File: vibe-player-v2/src/lib/fft.js ---
-````javascript
-// --- /vibe-player/lib/fft.js ---
-// NOTE: This is 3rd party code (adapted). JSDoc annotations not added here.
-"use strict";
-
-// =============================================
-// == Fast Fourier Transform (FFT) Library ==
-// Based on https://github.com/indutny/fft.js
-// Creates a global FFT constructor.
-// =============================================
-
-function FFT(size) {
-  this.size = size | 0;
-  if (this.size <= 1 || (this.size & (this.size - 1)) !== 0)
-    throw new Error("FFT size must be a power of two and bigger than 1");
-
-  this._csize = size << 1;
-
-  var table = new Array(this.size * 2);
-  for (var i = 0; i < table.length; i += 2) {
-    const angle = (Math.PI * i) / this.size;
-    table[i] = Math.cos(angle);
-    table[i + 1] = -Math.sin(angle);
-  }
-  this.table = table;
-
-  var power = 0;
-  for (var t = 1; this.size > t; t <<= 1) power++;
-
-  this._width = power % 2 === 0 ? power - 1 : power;
-
-  this._bitrev = new Array(1 << this._width);
-  for (var j = 0; j < this._bitrev.length; j++) {
-    this._bitrev[j] = 0;
-    for (var shift = 0; shift < this._width; shift += 2) {
-      var revShift = this._width - shift - 2;
-      this._bitrev[j] |= ((j >>> shift) & 3) << revShift;
-    }
-  }
-
-  this._out = null;
-  this._data = null;
-  this._inv = 0;
-}
-
-FFT.prototype.fromComplexArray = function fromComplexArray(complex, storage) {
-  var res = storage || new Array(complex.length >>> 1);
-  for (var i = 0; i < complex.length; i += 2) res[i >>> 1] = complex[i];
-  return res;
-};
-
-FFT.prototype.createComplexArray = function createComplexArray() {
-  const res = new Array(this._csize);
-  for (var i = 0; i < res.length; i++) res[i] = 0;
-  return res;
-};
-
-FFT.prototype.toComplexArray = function toComplexArray(input, storage) {
-  var res = storage || this.createComplexArray();
-  for (var i = 0; i < res.length; i += 2) {
-    res[i] = input[i >>> 1];
-    res[i + 1] = 0;
-  }
-  return res;
-};
-
-FFT.prototype.completeSpectrum = function completeSpectrum(spectrum) {
-  var size = this._csize;
-  var half = size >>> 1;
-  for (var i = 2; i < half; i += 2) {
-    spectrum[size - i] = spectrum[i];
-    spectrum[size - i + 1] = -spectrum[i + 1];
-  }
-};
-
-FFT.prototype.transform = function transform(out, data) {
-  if (out === data)
-    throw new Error("Input and output buffers must be different");
-  this._out = out;
-  this._data = data;
-  this._inv = 0;
-  this._transform4();
-  this._out = null;
-  this._data = null;
-};
-
-FFT.prototype.realTransform = function realTransform(out, data) {
-  if (out === data)
-    throw new Error("Input and output buffers must be different");
-  this._out = out;
-  this._data = data;
-  this._inv = 0;
-  this._realTransform4();
-  this._out = null;
-  this._data = null;
-};
-
-FFT.prototype.inverseTransform = function inverseTransform(out, data) {
-  if (out === data)
-    throw new Error("Input and output buffers must be different");
-  this._out = out;
-  this._data = data;
-  this._inv = 1;
-  this._transform4();
-  for (var i = 0; i < out.length; i++) out[i] /= this.size;
-  this._out = null;
-  this._data = null;
-};
-
-FFT.prototype._transform4 = function _transform4() {
-  var out = this._out,
-    size = this._csize,
-    width = this._width;
-  var step = 1 << width,
-    len = (size / step) << 1,
-    bitrev = this._bitrev;
-  var outOff, t;
-  if (len === 4) {
-    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
-      this._singleTransform2(outOff, bitrev[t], step);
-  } else {
-    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
-      this._singleTransform4(outOff, bitrev[t], step);
-  }
-  var inv = this._inv ? -1 : 1,
-    table = this.table;
-  for (step >>= 2; step >= 2; step >>= 2) {
-    len = (size / step) << 1;
-    var quarterLen = len >>> 2;
-    for (outOff = 0; outOff < size; outOff += len) {
-      var limit = outOff + quarterLen;
-      for (var i = outOff, k = 0; i < limit; i += 2, k += step) {
-        const A = i,
-          B = A + quarterLen,
-          C = B + quarterLen,
-          D = C + quarterLen;
-        const Ar = out[A],
-          Ai = out[A + 1],
-          Br = out[B],
-          Bi = out[B + 1],
-          Cr = out[C],
-          Ci = out[C + 1],
-          Dr = out[D],
-          Di = out[D + 1];
-        const MAr = Ar,
-          MAi = Ai;
-        const tableBr = table[k],
-          tableBi = inv * table[k + 1];
-        const MBr = Br * tableBr - Bi * tableBi,
-          MBi = Br * tableBi + Bi * tableBr;
-        const tableCr = table[2 * k],
-          tableCi = inv * table[2 * k + 1];
-        const MCr = Cr * tableCr - Ci * tableCi,
-          MCi = Cr * tableCi + Ci * tableCr;
-        const tableDr = table[3 * k],
-          tableDi = inv * table[3 * k + 1];
-        const MDr = Dr * tableDr - Di * tableDi,
-          MDi = Dr * tableDi + Di * tableDr;
-        const T0r = MAr + MCr,
-          T0i = MAi + MCi,
-          T1r = MAr - MCr,
-          T1i = MAi - MCi;
-        const T2r = MBr + MDr,
-          T2i = MBi + MDi,
-          T3r = inv * (MBr - MDr),
-          T3i = inv * (MBi - MDi);
-        const FAr = T0r + T2r,
-          FAi = T0i + T2i,
-          FCr = T0r - T2r,
-          FCi = T0i - T2i;
-        const FBr = T1r + T3i,
-          FBi = T1i - T3r,
-          FDr = T1r - T3i,
-          FDi = T1i + T3r;
-        out[A] = FAr;
-        out[A + 1] = FAi;
-        out[B] = FBr;
-        out[B + 1] = FBi;
-        out[C] = FCr;
-        out[C + 1] = FCi;
-        out[D] = FDr;
-        out[D + 1] = FDi;
-      }
-    }
-  }
-};
-FFT.prototype._singleTransform2 = function _singleTransform2(
-  outOff,
-  off,
-  step,
-) {
-  const out = this._out,
-    data = this._data;
-  const evenR = data[off],
-    evenI = data[off + 1];
-  const oddR = data[off + step],
-    oddI = data[off + step + 1];
-  const leftR = evenR + oddR,
-    leftI = evenI + oddI;
-  const rightR = evenR - oddR,
-    rightI = evenI - oddI;
-  out[outOff] = leftR;
-  out[outOff + 1] = leftI;
-  out[outOff + 2] = rightR;
-  out[outOff + 3] = rightI;
-};
-FFT.prototype._singleTransform4 = function _singleTransform4(
-  outOff,
-  off,
-  step,
-) {
-  const out = this._out,
-    data = this._data;
-  const inv = this._inv ? -1 : 1;
-  const step2 = step * 2,
-    step3 = step * 3;
-  const Ar = data[off],
-    Ai = data[off + 1],
-    Br = data[off + step],
-    Bi = data[off + step + 1],
-    Cr = data[off + step2],
-    Ci = data[off + step2 + 1],
-    Dr = data[off + step3],
-    Di = data[off + step3 + 1];
-  const T0r = Ar + Cr,
-    T0i = Ai + Ci,
-    T1r = Ar - Cr,
-    T1i = Ai - Ci;
-  const T2r = Br + Dr,
-    T2i = Bi + Di,
-    T3r = inv * (Br - Dr),
-    T3i = inv * (Bi - Di);
-  const FAr = T0r + T2r,
-    FAi = T0i + T2i,
-    FBr = T1r + T3i,
-    FBi = T1i - T3r;
-  const FCr = T0r - T2r,
-    FCi = T0i - T2i,
-    FDr = T1r - T3i,
-    FDi = T1i + T3r;
-  out[outOff] = FAr;
-  out[outOff + 1] = FAi;
-  out[outOff + 2] = FBr;
-  out[outOff + 3] = FBi;
-  out[outOff + 4] = FCr;
-  out[outOff + 5] = FCi;
-  out[outOff + 6] = FDr;
-  out[outOff + 7] = FDi;
-};
-FFT.prototype._realTransform4 = function _realTransform4() {
-  var out = this._out,
-    size = this._csize,
-    width = this._width;
-  var step = 1 << width,
-    len = (size / step) << 1,
-    bitrev = this._bitrev;
-  var outOff, t;
-  if (len === 4) {
-    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
-      this._singleRealTransform2(outOff, bitrev[t] >>> 1, step >>> 1);
-  } else {
-    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
-      this._singleRealTransform4(outOff, bitrev[t] >>> 1, step >>> 1);
-  }
-  var inv = this._inv ? -1 : 1,
-    table = this.table;
-  for (step >>= 2; step >= 2; step >>= 2) {
-    len = (size / step) << 1;
-    var halfLen = len >>> 1,
-      quarterLen = halfLen >>> 1,
-      hquarterLen = quarterLen >>> 1;
-    for (outOff = 0; outOff < size; outOff += len) {
-      for (var i = 0, k = 0; i <= hquarterLen; i += 2, k += step) {
-        var A = outOff + i,
-          B = A + quarterLen,
-          C = B + quarterLen,
-          D = C + quarterLen;
-        var Ar = out[A],
-          Ai = out[A + 1],
-          Br = out[B],
-          Bi = out[B + 1],
-          Cr = out[C],
-          Ci = out[C + 1],
-          Dr = out[D],
-          Di = out[D + 1];
-        var MAr = Ar,
-          MAi = Ai;
-        var tableBr = table[k],
-          tableBi = inv * table[k + 1];
-        var MBr = Br * tableBr - Bi * tableBi,
-          MBi = Br * tableBi + Bi * tableBr;
-        var tableCr = table[2 * k],
-          tableCi = inv * table[2 * k + 1];
-        var MCr = Cr * tableCr - Ci * tableCi,
-          MCi = Cr * tableCi + Ci * tableCr;
-        var tableDr = table[3 * k],
-          tableDi = inv * table[3 * k + 1];
-        var MDr = Dr * tableDr - Di * tableDi,
-          MDi = Dr * tableDi + Di * tableDr;
-        var T0r = MAr + MCr,
-          T0i = MAi + MCi,
-          T1r = MAr - MCr,
-          T1i = MAi - MCi;
-        var T2r = MBr + MDr,
-          T2i = MBi + MDi,
-          T3r = inv * (MBr - MDr),
-          T3i = inv * (MBi - MDi);
-        var FAr = T0r + T2r,
-          FAi = T0i + T2i,
-          FBr = T1r + T3i,
-          FBi = T1i - T3r;
-        out[A] = FAr;
-        out[A + 1] = FAi;
-        out[B] = FBr;
-        out[B + 1] = FBi;
-        if (i === 0) {
-          var FCr = T0r - T2r,
-            FCi = T0i - T2i;
-          out[C] = FCr;
-          out[C + 1] = FCi;
-          continue;
-        }
-        if (i === hquarterLen) continue;
-        var ST0r = T1r,
-          ST0i = -T1i,
-          ST1r = T0r,
-          ST1i = -T0i;
-        var ST2r = -inv * T3i,
-          ST2i = -inv * T3r,
-          ST3r = -inv * T2i,
-          ST3i = -inv * T2r;
-        var SFAr = ST0r + ST2r,
-          SFAi = ST0i + ST2i,
-          SFBr = ST1r + ST3i,
-          SFBi = ST1i - ST3r;
-        var SA = outOff + quarterLen - i,
-          SB = outOff + halfLen - i;
-        out[SA] = SFAr;
-        out[SA + 1] = SFAi;
-        out[SB] = SFBr;
-        out[SB + 1] = SFBi;
-      }
-    }
-  }
-};
-FFT.prototype._singleRealTransform2 = function _singleRealTransform2(
-  outOff,
-  off,
-  step,
-) {
-  const out = this._out,
-    data = this._data;
-  const evenR = data[off],
-    oddR = data[off + step];
-  const leftR = evenR + oddR,
-    rightR = evenR - oddR;
-  out[outOff] = leftR;
-  out[outOff + 1] = 0;
-  out[outOff + 2] = rightR;
-  out[outOff + 3] = 0;
-};
-FFT.prototype._singleRealTransform4 = function _singleRealTransform4(
-  outOff,
-  off,
-  step,
-) {
-  const out = this._out,
-    data = this._data;
-  const inv = this._inv ? -1 : 1;
-  const step2 = step * 2,
-    step3 = step * 3;
-  const Ar = data[off],
-    Br = data[off + step],
-    Cr = data[off + step2],
-    Dr = data[off + step3];
-  const T0r = Ar + Cr,
-    T1r = Ar - Cr,
-    T2r = Br + Dr,
-    T3r = inv * (Br - Dr);
-  const FAr = T0r + T2r,
-    FBr = T1r,
-    FBi = -T3r,
-    FCr = T0r - T2r,
-    FDr = T1r,
-    FDi = T3r;
-  out[outOff] = FAr;
-  out[outOff + 1] = 0;
-  out[outOff + 2] = FBr;
-  out[outOff + 3] = FBi;
-  out[outOff + 4] = FCr;
-  out[outOff + 5] = 0;
-  out[outOff + 6] = FDr;
-  out[outOff + 7] = FDi;
-};
-
-````
---- End of File: vibe-player-v2/src/lib/fft.js ---
 --- File: vibe-player-v2/src/lib/index.ts ---
 ````typescript
 // place files you want to import through the `$lib` alias in this folder.
@@ -12804,488 +12409,563 @@ describe("AnalysisService", () => {
 --- File: vibe-player-v2/src/lib/services/analysis.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/analysis.service.ts
-import { writable, get } from "svelte/store";
+import {get} from "svelte/store";
 import type {
-  WorkerMessage,
-  SileroVadInitPayload,
-  SileroVadProcessResultPayload,
-  SileroVadProcessPayload,
-  SpectrogramInitPayload,
-  SpectrogramResultPayload,
-  SpectrogramProcessPayload,
+    SileroVadInitPayload,
+    SileroVadProcessPayload,
+    SileroVadProcessResultPayload,
+    SpectrogramInitPayload,
+    SpectrogramProcessPayload,
+    SpectrogramResultPayload,
+    WorkerMessage,
 } from "$lib/types/worker.types";
-import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils"; // Assuming VAD_CONSTANTS is in utils/index
-import { VAD_WORKER_MSG_TYPE, SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
-import { analysisStore } from "$lib/stores/analysis.store"; // Assuming analysisStore exists
-
+import {SPEC_WORKER_MSG_TYPE, VAD_WORKER_MSG_TYPE} from "$lib/types/worker.types";
+import {VAD_CONSTANTS, VISUALIZER_CONSTANTS} from "$lib/utils";
+import {type AnalysisState, analysisStore} from "$lib/stores/analysis.store";
+// import type { PlayerState } from '$lib/types/player.types'; // AudioBuffer is used
 import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
 import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
 interface AnalysisServiceState {
-  isInitialized: boolean;
-  isInitializing: boolean;
-  error: string | null;
-  // Add other relevant state properties
+    isInitialized: boolean; // For VAD worker
+    isInitializing: boolean; // For VAD worker
+    error: string | null; // For VAD worker
+}
+
+interface PendingRequest {
+    resolve: (value: unknown) => void;
+    reject: (reason?: unknown) => void;
+}
+
+interface AnalysisServiceInitializeOptions {
+    positiveThreshold?: number;
+    negativeThreshold?: number;
+}
+
+interface SpectrogramWorkerInitializeOptions {
+    sampleRate: number;
+    fftSize?: number;
+    hopLength?: number;
 }
 
 const initialServiceState: AnalysisServiceState = {
-  isInitialized: false,
-  isInitializing: false,
-  error: null,
+    isInitialized: false,
+    isInitializing: false,
+    error: null,
 };
 
 const serviceState = writable<AnalysisServiceState>(initialServiceState);
 
 class AnalysisService {
-  private static instance: AnalysisService;
-  private worker: Worker | null = null;
-  private nextMessageId = 0;
-  private pendingRequests = new Map<
-    string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
-  >();
+    private static instance: AnalysisService;
+    private worker: Worker | null = null; // SileroVadWorker
+    private nextMessageId = 0;
+    private pendingRequests = new Map<string, PendingRequest>();
 
-  // Add to AnalysisService class:
-  private spectrogramWorker: Worker | null = null;
-  private spectrogramInitialized = writable(false);
-  private nextSpecMessageId = 0;
-  private pendingSpecRequests = new Map<
-    string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
-  >();
+    private spectrogramWorker: Worker | null = null;
+  private isSpectrogramInitialized = false;
+    private nextSpecMessageId = 0;
+    private pendingSpecRequests = new Map<string, PendingRequest>();
 
-  private constructor() {}
-
-  public static getInstance(): AnalysisService {
-    if (!AnalysisService.instance) {
-      AnalysisService.instance = new AnalysisService();
+    private constructor() {
     }
-    return AnalysisService.instance;
-  }
 
-  private generateMessageId(): string {
-    return `vad_msg_${this.nextMessageId++}`;
-  }
-
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (!this.worker) {
-        reject(new Error("VAD Worker not initialized."));
-        return;
-      }
-      const messageId = this.generateMessageId();
-      this.pendingRequests.set(messageId, { resolve, reject });
-      this.worker.postMessage({ ...message, messageId });
-    });
-  }
-
-  public async initialize(options?: {
-    positiveThreshold?: number;
-    negativeThreshold?: number;
-  }): Promise<void> {
-    if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
-      console.warn("AnalysisService already initialized or initializing.");
-      return;
+    public static getInstance(): AnalysisService {
+        if (!AnalysisService.instance) {
+            AnalysisService.instance = new AnalysisService();
+        }
+        return AnalysisService.instance;
     }
-    serviceState.update((s) => ({ ...s, isInitializing: true, error: null }));
-    analysisStore.update((s) => ({
-      ...s,
-      status: "VAD service initializing...",
-    }));
 
-    this.worker = new SileroVadWorker();
+    private generateMessageId(): string {
+        return `vad_msg_${this.nextMessageId++}`;
+    }
 
-    this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      const { type, payload, error, messageId } = event.data;
-      const request = messageId
-        ? this.pendingRequests.get(messageId)
-        : undefined;
+    private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+        return new Promise((resolve, reject) => {
+            if (!this.worker) {
+                reject(new Error("VAD Worker not initialized."));
+                return;
+            }
+            const messageId = this.generateMessageId();
+            this.pendingRequests.set(messageId, {
+                resolve: (value: unknown) => resolve(value as R),
+                reject
+            });
+            this.worker.postMessage({...message, messageId});
+        });
+    }
 
-      if (error) {
-        console.error(`AnalysisService Worker Error (type ${type}):`, error);
-        serviceState.update((s) => ({
-          ...s,
-          error: `VAD Worker error: ${error}`,
+    public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
+        console.log('[AnalysisService] Initialize called.');
+
+        if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
+            console.warn("AnalysisService already initialized or initializing.");
+            return;
+        }
+        serviceState.update((s: AnalysisServiceState) => ({...s, isInitializing: true, error: null}));
+        analysisStore.update((s: AnalysisState) => ({
+            ...s,
+            vadStatus: "VAD service initializing...",
+            vadInitialized: false, // Explicitly set during init start
         }));
-        if (request) {
-          request.reject(error);
-          this.pendingRequests.delete(messageId!);
+
+        this.worker = new SileroVadWorker();
+
+        this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
+            const {type, payload, error, messageId} = event.data;
+            const request = messageId
+                ? this.pendingRequests.get(messageId)
+                : undefined;
+            console.log(`[AnalysisService] Received message from VAD worker: type=${type}`);
+
+            if (error) {
+                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown VAD worker message error';
+                console.error(`AnalysisService VAD Worker Error (type ${type}):`, errorMsg);
+                serviceState.update((s: AnalysisServiceState) => ({
+                    ...s,
+                    error: `VAD Worker error: ${errorMsg}`,
+                }));
+                if (request) {
+                    request.reject(errorMsg);
+                    if (messageId) this.pendingRequests.delete(messageId);
+                }
+                if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
+                    serviceState.update((s: AnalysisServiceState) => ({
+                        ...s,
+                        isInitialized: false,
+                        isInitializing: false,
+                    }));
+                    analysisStore.update((s: AnalysisState) => ({
+                        ...s,
+                        vadStatus: "Error initializing VAD service.",
+                        vadError: errorMsg,
+                        vadInitialized: false,
+                    }));
+                }
+                return;
+            }
+
+            switch (type) {
+                case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
+                    console.log('[AnalysisService] VAD Worker reported INIT_SUCCESS.');
+
+                    serviceState.update((s: AnalysisServiceState) => ({
+                        ...s,
+                        isInitialized: true,
+                        isInitializing: false,
+                    }));
+                    analysisStore.update((s: AnalysisState) => ({
+                        ...s,
+                        vadStatus: "VAD service initialized.",
+                        vadInitialized: true,
+                        vadError: null,
+                    }));
+                    if (request) request.resolve(payload);
+                    break;
+
+                case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
+                    if (payload && typeof payload === 'object') {
+                        const resultPayload = payload as SileroVadProcessResultPayload;
+                        analysisStore.update((s: AnalysisState) => ({
+                            ...s,
+                            lastVadResult: resultPayload,
+                            isSpeaking: resultPayload.isSpeech,
+                        }));
+                        if (request) request.resolve(resultPayload);
+                    }
+                    break;
+
+                case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
+                    analysisStore.update((s: AnalysisState) => ({
+                        ...s,
+                        vadStateResetted: true,
+                        lastVadResult: null,
+                        isSpeaking: false
+                    }));
+                    if (request) request.resolve(payload);
+                    break;
+
+                default:
+                    console.log(
+                        "AnalysisService received message from VAD worker:",
+                        event.data,
+                    );
+                    if (request) request.resolve(payload);
+            }
+            if (messageId && request) this.pendingRequests.delete(messageId);
+        };
+
+        this.worker.onerror = (err: Event | string) => {
+            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown VAD worker error');
+            console.error("Unhandled error in SileroVadWorker:", errorMsg);
+            serviceState.update((s: AnalysisServiceState) => ({
+                ...s,
+                error: `VAD Worker onerror: ${errorMsg}`,
+                isInitialized: false,
+                isInitializing: false,
+            }));
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                vadStatus: "Critical VAD worker error.",
+                vadError: errorMsg,
+                vadInitialized: false,
+            }));
+            this.pendingRequests.forEach((req) =>
+                req.reject(new Error(`VAD Worker failed critically: ${errorMsg}`)),
+            );
+            this.pendingRequests.clear();
+        };
+
+        const initPayload: SileroVadInitPayload = {
+            origin: location.origin,
+            onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL, // Use constant
+            sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
+            frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
+            positiveThreshold:
+                options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
+            negativeThreshold:
+                options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
+        };
+
+        try {
+            console.log('[AnalysisService] Posting INIT message to VAD worker.');
+
+            await this.postMessageToWorker<SileroVadInitPayload>({
+                type: VAD_WORKER_MSG_TYPE.INIT,
+                payload: initPayload,
+            });
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            serviceState.update((s: AnalysisServiceState) => ({
+                ...s,
+                error: errorMessage || "VAD Initialization failed",
+                isInitialized: false,
+                isInitializing: false,
+            }));
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                vadStatus: "Error sending VAD init to worker.",
+                vadError: errorMessage,
+                vadInitialized: false,
+            }));
         }
-        if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
-          serviceState.update((s) => ({
-            ...s,
-            isInitialized: false,
-            isInitializing: false,
-          }));
-          analysisStore.update((s) => ({
-            ...s,
-            status: "Error initializing VAD service.",
-          }));
+    }
+
+    public async analyzeAudioFrame(
+        audioFrame: Float32Array,
+        timestamp?: number,
+    ): Promise<SileroVadProcessResultPayload | null> {
+        if (!this.worker || !get(serviceState).isInitialized) {
+            const errorMsg = "VAD Service not initialized or worker unavailable.";
+            console.error(errorMsg);
+            analysisStore.update((s: AnalysisState) => ({...s, vadError: errorMsg}));
+            throw new Error(errorMsg);
         }
-        return;
-      }
+        const payload: SileroVadProcessPayload = {audioFrame, timestamp};
+        try {
+            const result = await this.postMessageToWorker<SileroVadProcessPayload>({
+                type: VAD_WORKER_MSG_TYPE.PROCESS,
+                payload,
+            });
+            return result as SileroVadProcessResultPayload;
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error("Error processing VAD frame:", errorMessage);
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                vadError: `Error processing VAD frame: ${errorMessage}`,
+            }));
+            return null;
+        }
+    }
 
-      switch (type) {
-        case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
-          serviceState.update((s) => ({
+    public async resetVadState(): Promise<void> {
+        if (!this.worker || !get(serviceState).isInitialized) {
+            const errorMsg = "VAD Service not initialized or worker unavailable for reset.";
+            console.error(errorMsg);
+            analysisStore.update((s: AnalysisState) => ({...s, vadError: errorMsg}));
+            throw new Error(errorMsg);
+        }
+        try {
+            await this.postMessageToWorker<undefined>({type: VAD_WORKER_MSG_TYPE.RESET});
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error("Error resetting VAD state:", errorMessage);
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                vadError: `Error resetting VAD state: ${errorMessage}`,
+            }));
+        }
+    }
+
+    public detectDTMF(
+        audioFrame: Float32Array,
+        sampleRate: number,
+    ): string | null {
+        // TODO: Implement Goertzel algorithm for DTMF frequencies
+        console.log("DTMF detection not yet implemented.");
+        return null;
+    }
+
+    public dispose(): void {
+        if (this.worker) {
+            this.worker.terminate();
+            this.worker = null;
+        }
+        this.pendingRequests.clear();
+        this.nextMessageId = 0;
+        serviceState.set(initialServiceState); // Reset VAD specific state
+        analysisStore.update((s: AnalysisState) => ({
             ...s,
-            isInitialized: true,
-            isInitializing: false,
-          }));
-          analysisStore.update((s) => ({
-            ...s,
-            status: "VAD service initialized.",
-          }));
-          if (request) request.resolve(payload);
-          break;
-
-        case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
-          const resultPayload = payload as SileroVadProcessResultPayload;
-          analysisStore.update((s) => ({
-            ...s,
-            lastVadResult: resultPayload,
-            isSpeaking: resultPayload.isSpeech, // Example update
-          }));
-          if (request) request.resolve(resultPayload);
-          break;
-
-        case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
-          analysisStore.update((s) => ({ ...s, vadStateResetted: true }));
-          if (request) request.resolve(payload);
-          break;
-
-        default:
-          console.log(
-            "AnalysisService received message from VAD worker:",
-            event.data,
-          );
-          if (request) request.resolve(payload); // Generic resolve
-      }
-      if (messageId && request) this.pendingRequests.delete(messageId);
-    };
-
-    this.worker.onerror = (err) => {
-      console.error("Unhandled error in SileroVadWorker:", err);
-      serviceState.update((s) => ({
-        ...s,
-        error: `VAD Worker onerror: ${err.message}`,
-        isInitialized: false,
-        isInitializing: false,
-      }));
-      analysisStore.update((s) => ({
-        ...s,
-        status: "Critical VAD worker error.",
-      }));
-      this.pendingRequests.forEach((req) =>
-        req.reject(new Error("VAD Worker failed critically.")),
-      );
-      this.pendingRequests.clear();
-    };
-
-    const initPayload: SileroVadInitPayload = {
-      origin: location.origin, // Added for dynamic WASM path resolution
-      onnxModelPath: "/silero_vad.onnx", // Assuming model is in static root
-      sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
-      frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
-      positiveThreshold:
-        options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
-      negativeThreshold:
-        options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
-    };
-
-    try {
-      await this.postMessageToWorker({
-        type: VAD_WORKER_MSG_TYPE.INIT,
-        payload: initPayload,
-      });
-    } catch (err: any) {
-      serviceState.update((s) => ({
-        ...s,
-        error: err.message || "VAD Initialization failed",
-        isInitialized: false,
-        isInitializing: false,
-      }));
-      analysisStore.update((s) => ({
-        ...s,
-        status: "Error sending VAD init to worker.",
-      }));
-    }
-  }
-
-  public async analyzeAudioFrame(
-    audioFrame: Float32Array,
-    timestamp?: number,
-  ): Promise<SileroVadProcessResultPayload | null> {
-    if (!get(serviceState).isInitialized || !this.worker) {
-      // console.error('VAD Service not initialized.');
-      // throw new Error('VAD Service not initialized.');
-      // Silently fail or queue if not initialized? For now, throw.
-      throw new Error("VAD Service not initialized.");
-    }
-    const payload: SileroVadProcessPayload = { audioFrame, timestamp };
-    try {
-      const result = await this.postMessageToWorker({
-        type: VAD_WORKER_MSG_TYPE.PROCESS,
-        payload,
-      });
-      return result as SileroVadProcessResultPayload;
-    } catch (error) {
-      console.error("Error processing VAD frame:", error);
-      analysisStore.update((s) => ({
-        ...s,
-        error: "Error processing VAD frame",
-      }));
-      return null;
-    }
-  }
-
-  public async resetVadState(): Promise<void> {
-    if (!get(serviceState).isInitialized || !this.worker)
-      throw new Error("VAD Service not initialized.");
-    try {
-      await this.postMessageToWorker({ type: VAD_WORKER_MSG_TYPE.RESET });
-    } catch (error) {
-      console.error("Error resetting VAD state:", error);
-      analysisStore.update((s) => ({
-        ...s,
-        error: "Error resetting VAD state",
-      }));
-    }
-  }
-
-  // Placeholder for Goertzel DTMF detection logic
-  // This would likely operate on raw audio frames or chunks
-  public detectDTMF(
-    audioFrame: Float32Array,
-    sampleRate: number,
-  ): string | null {
-    // TODO: Implement Goertzel algorithm for DTMF frequencies
-    // This is a highly simplified placeholder
-    console.log("DTMF detection not yet implemented.");
-    return null;
-  }
-
-  public dispose(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-    this.pendingRequests.clear();
-    this.nextMessageId = 0; // Reset message ID counter
-    serviceState.set(initialServiceState);
-    analysisStore.update((s) => ({
-      ...s,
-      status: "VAD service disposed.",
-      isInitialized: false,
-    }));
-    // ... (existing VAD worker disposal) ...
-    this.disposeSpectrogramWorker();
-    // ... (rest of existing dispose) ...
-    console.log("AnalysisService (and Spectrogram worker) disposed.");
-  }
-
-  private generateSpecMessageId(): string {
-    return `spec_msg_${this.nextSpecMessageId++}`;
-  }
-
-  private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (!this.spectrogramWorker) {
-        reject(new Error("Spectrogram Worker not initialized."));
-        return;
-      }
-      const messageId = this.generateSpecMessageId();
-      this.pendingSpecRequests.set(messageId, { resolve, reject });
-      this.spectrogramWorker.postMessage({ ...message, messageId });
-    });
-  }
-
-  public async initializeSpectrogramWorker(options: {
-    sampleRate: number;
-    fftSize?: number;
-    hopLength?: number;
-  }): Promise<void> {
-    if (get(this.spectrogramInitialized)) {
-      console.warn("Spectrogram worker already initialized.");
-      return;
-    }
-
-    this.spectrogramWorker = new SpectrogramWorker();
-    analysisStore.update((s) => ({
-      ...s,
-      spectrogramStatus: "Spectrogram worker initializing...",
-    }));
-
-    this.spectrogramWorker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      const { type, payload, error, messageId } = event.data;
-      const request = messageId
-        ? this.pendingSpecRequests.get(messageId)
-        : undefined;
-
-      if (error) {
-        console.error(`Spectrogram Worker Error (type ${type}):`, error);
-        analysisStore.update((s) => ({
-          ...s,
-          spectrogramError: `Worker error: ${error}`,
+            vadStatus: "VAD service disposed.",
+            vadInitialized: false,
+            lastVadResult: null,
+            isSpeaking: undefined,
+            vadError: null,
         }));
-        if (request) {
-          request.reject(error);
-          this.pendingSpecRequests.delete(messageId!);
+        this.disposeSpectrogramWorker(); // Ensure spec worker is also disposed
+        console.log("AnalysisService (VAD and Spectrogram workers) disposed.");
+    }
+
+    private generateSpecMessageId(): string {
+        return `spec_msg_${this.nextSpecMessageId++}`;
+    }
+
+    private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+        return new Promise((resolve, reject) => {
+            if (!this.spectrogramWorker) {
+                reject(new Error("Spectrogram Worker not initialized."));
+                return;
+            }
+            const messageId = this.generateSpecMessageId();
+            this.pendingSpecRequests.set(messageId, {
+                resolve: (value: unknown) => resolve(value as R),
+                reject
+            });
+            this.spectrogramWorker.postMessage({...message, messageId});
+        });
+    }
+
+    public async initializeSpectrogramWorker(options: SpectrogramWorkerInitializeOptions): Promise<void> {
+    if (this.isSpectrogramInitialized) {
+            console.warn("Spectrogram worker already initialized.");
+            return;
         }
-        if (type === SPEC_WORKER_MSG_TYPE.INIT_ERROR) {
-          this.spectrogramInitialized.set(false);
+
+        this.spectrogramWorker = new SpectrogramWorker();
+        analysisStore.update((s: AnalysisState) => ({
+            ...s,
+            spectrogramStatus: "Spectrogram worker initializing...",
+            spectrogramInitialized: false,
+        }));
+
+        this.spectrogramWorker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
+            const {type, payload, error, messageId} = event.data;
+            const request = messageId
+                ? this.pendingSpecRequests.get(messageId)
+                : undefined;
+
+            if (error) {
+                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown Spectrogram worker message error';
+                console.error(`Spectrogram Worker Error (type ${type}):`, errorMsg);
+                analysisStore.update((s: AnalysisState) => ({
+                    ...s,
+                    spectrogramError: `Worker error: ${errorMsg}`,
+                    spectrogramInitialized: false,
+                }));
+                if (request) {
+                    request.reject(errorMsg);
+                    if (messageId) this.pendingSpecRequests.delete(messageId);
+                }
+                if (type === SPEC_WORKER_MSG_TYPE.INIT_ERROR) {
+                    this.spectrogramInitialized.set(false); // Already set in analysisStore update
+                }
+                return;
+            }
+
+            switch (type) {
+                case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
+          // --- MODIFICATION: Set the boolean property ---
+          this.isSpectrogramInitialized = true;
+          analysisStore.update((s) => ({
+                        ...s,
+                        spectrogramStatus: "Spectrogram worker initialized.",
+                        spectrogramInitialized: true,
+                        spectrogramError: null,
+                    }));
+                    if (request) request.resolve(payload);
+                    break;
+                case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
+                    if (payload && typeof payload === 'object') {
+                        const specResult = payload as SpectrogramResultPayload;
+                        analysisStore.update((s: AnalysisState) => ({
+                            ...s,
+                            spectrogramData: specResult.magnitudes,
+                        }));
+                        if (request) request.resolve(specResult);
+                    }
+                    break;
+                default:
+                    if (request) request.resolve(payload);
+            }
+            if (messageId && request) this.pendingSpecRequests.delete(messageId);
+        };
+
+        this.spectrogramWorker.onerror = (err: Event | string) => {
+            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown Spectrogram worker error');
+            console.error("Unhandled error in SpectrogramWorker:", errorMsg);
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                spectrogramError: `Worker onerror: ${errorMsg}`,
+                spectrogramInitialized: false,
+                spectrogramStatus: "Spectrogram worker error."
+            }));
+            this.pendingSpecRequests.forEach((req) =>
+                req.reject(new Error(`Spectrogram Worker failed critically: ${errorMsg}`)),
+            );
+            this.pendingSpecRequests.clear();
+      this.isSpectrogramInitialized = false;
+        };
+
+        const initPayload: SpectrogramInitPayload = {
+            origin: location.origin,
+            fftPath: VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL,
+            sampleRate: options.sampleRate,
+            fftSize: options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
+            hopLength:
+                options.hopLength ||
+                Math.floor(
+                    (options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE) / 4,
+                ),
+        };
+        try {
+            await this.postMessageToSpecWorker<SpectrogramInitPayload>({
+                type: SPEC_WORKER_MSG_TYPE.INIT,
+                payload: initPayload,
+            });
+        } catch (e: unknown) {
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                spectrogramError: errorMessage || "Spectrogram init failed",
+                spectrogramInitialized: false,
+                spectrogramStatus: "Error sending Spectrogram init to worker."
+            }));
+            this.spectrogramInitialized.set(false); // Ensure internal writable is also false
         }
-        return;
-      }
+    }
 
-      switch (type) {
-        case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
-          this.spectrogramInitialized.set(true);
-          analysisStore.update((s) => ({
+    public async processAudioForSpectrogram(
+        audioData: Float32Array,
+    ): Promise<SpectrogramResultPayload | null> {
+        if (!this.spectrogramWorker || !get(this.spectrogramInitialized)) {
+            const errorMsg = "Spectrogram worker not initialized or unavailable.";
+            console.error(errorMsg);
+            analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: errorMsg}));
+            throw new Error(errorMsg);
+        }
+        const payload: SpectrogramProcessPayload = {audioData};
+        try {
+            const result = await this.postMessageToSpecWorker<SpectrogramProcessPayload>({
+                type: SPEC_WORKER_MSG_TYPE.PROCESS,
+                payload,
+            });
+            return result as SpectrogramResultPayload;
+        } catch (e: unknown) {
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            console.error("Error processing audio for spectrogram:", errorMessage);
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                spectrogramError: `Error processing for spectrogram: ${errorMessage}`
+            }));
+            return null;
+        }
+    }
+
+    public disposeSpectrogramWorker(): void {
+        if (this.spectrogramWorker) {
+            this.spectrogramWorker.terminate();
+            this.spectrogramWorker = null;
+      // --- MODIFICATION: Set the boolean property ---
+      this.isSpectrogramInitialized = false;
+      // ...
+        }
+        this.spectrogramInitialized.set(false);
+        this.pendingSpecRequests.clear();
+        this.nextSpecMessageId = 0;
+        analysisStore.update((s: AnalysisState) => ({
             ...s,
-            spectrogramStatus: "Spectrogram worker initialized.",
-          }));
-          if (request) request.resolve(payload);
-          break;
-        case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
-          const specResult = payload as SpectrogramResultPayload;
-          analysisStore.update((s) => ({
-            ...s,
-            spectrogramData: specResult.magnitudes,
-          }));
-          if (request) request.resolve(specResult);
-          break;
-        default:
-          if (request) request.resolve(payload);
-      }
-      if (messageId && request) this.pendingSpecRequests.delete(messageId);
-    };
-
-    this.spectrogramWorker.onerror = (err) => {
-      /* similar to vad worker onerror */
-      console.error("Unhandled error in SpectrogramWorker:", err);
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramError: `Worker onerror: ${err.message}`,
-      }));
-      this.pendingSpecRequests.forEach((req) =>
-        req.reject(new Error("Spectrogram Worker failed critically.")),
-      );
-      this.pendingSpecRequests.clear();
-      this.spectrogramInitialized.set(false);
-    };
-
-    const initPayload: SpectrogramInitPayload = {
-      sampleRate: options.sampleRate,
-      fftSize: options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
-      hopLength:
-        options.hopLength ||
-        Math.floor(
-          (options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE) / 4,
-        ),
-    };
-    try {
-      await this.postMessageToSpecWorker({
-        type: SPEC_WORKER_MSG_TYPE.INIT,
-        payload: initPayload,
-      });
-    } catch (e: any) {
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramError: e.message || "Spectrogram init failed",
-      }));
-      this.spectrogramInitialized.set(false);
-    }
-  }
-
-  public async processAudioForSpectrogram(
-    audioData: Float32Array,
-  ): Promise<SpectrogramResultPayload | null> {
-    if (!get(this.spectrogramInitialized))
-      throw new Error("Spectrogram worker not initialized.");
-    const payload: SpectrogramProcessPayload = { audioData };
-    try {
-      // This sends the whole audio data at once. For large files, chunking would be better.
-      const result = await this.postMessageToSpecWorker({
-        type: SPEC_WORKER_MSG_TYPE.PROCESS,
-        payload,
-      });
-      return result as SpectrogramResultPayload;
-    } catch (e: any) {
-      console.error("Error processing audio for spectrogram:", e);
-      analysisStore.update((s) => ({ ...s, spectrogramError: e.message }));
-      return null;
-    }
-  }
-
-  public disposeSpectrogramWorker(): void {
-    if (this.spectrogramWorker) {
-      this.spectrogramWorker.terminate();
-      this.spectrogramWorker = null;
-      this.spectrogramInitialized.set(false);
-      this.pendingSpecRequests.clear();
-      this.nextSpecMessageId = 0; // Reset spec message ID counter
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "Spectrogram worker disposed.",
-        spectrogramData: null,
-      }));
-    }
-  }
-
-  public async startSpectrogramProcessing(
-    audioBuffer: AudioBuffer,
-  ): Promise<void> {
-    if (!audioBuffer) {
-      console.warn(
-        "AnalysisService: No audio buffer provided for spectrogram processing.",
-      );
-      return;
+            spectrogramStatus: "Spectrogram worker disposed.",
+            spectrogramData: null,
+            spectrogramInitialized: false,
+            spectrogramError: null,
+        }));
     }
 
-    if (!get(this.spectrogramInitialized)) {
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "Initializing for new file...",
-      }));
-      await this.initializeSpectrogramWorker({
-        sampleRate: audioBuffer.sampleRate,
-        // fftSize and hopLength will use defaults from VISUALIZER_CONSTANTS if not specified
-      });
-    }
+    public async startSpectrogramProcessing(
+        audioBuffer: AudioBuffer, // AudioBuffer is a web Audio API type, not from player.types
+    ): Promise<void> {
+        if (!audioBuffer) {
+            console.warn(
+                "AnalysisService: No audio buffer provided for spectrogram processing.",
+            );
+            analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: "No audio buffer for spectrogram."}));
+            return;
+        }
 
-    // Ensure it's initialized after the await above
-    if (!get(this.spectrogramInitialized)) {
-      console.error(
+        // Re-initialize if needed (e.g. sample rate change) or not initialized
+    if (!this.isSpectrogramInitialized) {
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                spectrogramStatus: "Initializing spectrogram worker for new file...",
+            }));
+            await this.initializeSpectrogramWorker({
+                sampleRate: audioBuffer.sampleRate,
+            });
+        }
+
+    if (!this.isSpectrogramInitialized) {
+            onsole.error(
         "AnalysisService: Spectrogram worker failed to initialize for processing.",
       );
-      analysisStore.update((s) => ({
-        ...s,
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
         spectrogramError: "Worker init failed before processing.",
-      }));
-      return;
-    }
+                spectrogramStatus: "Spectrogram worker initialization failed."
+            }));
+            return;
+        }
 
-    // For simplicity, process the first channel for the spectrogram
-    const pcmData = audioBuffer.getChannelData(0);
-    if (pcmData && pcmData.length > 0) {
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "Processing audio for spectrogram...",
-      }));
-      await this.processAudioForSpectrogram(pcmData);
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "Spectrogram processing initiated.",
-      }));
-    } else {
-      console.warn("AnalysisService: No PCM data to process for spectrogram.");
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "No data for spectrogram.",
-      }));
+        const pcmData = audioBuffer.getChannelData(0); // Process first channel
+        if (pcmData && pcmData.length > 0) {
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                spectrogramStatus: "Processing audio for spectrogram...",
+            }));
+            try {
+                await this.processAudioForSpectrogram(pcmData);
+                analysisStore.update((s: AnalysisState) => ({
+                    ...s,
+                    spectrogramStatus: "Spectrogram processing complete.", // Or "initiated" if it's async in worker
+                }));
+            } catch (error: unknown) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                analysisStore.update((s: AnalysisState) => ({
+                    ...s,
+                    spectrogramStatus: "Spectrogram processing failed.",
+                    spectrogramError: errorMessage,
+                }));
+            }
+        } else {
+            console.warn("AnalysisService: No PCM data to process for spectrogram.");
+            analysisStore.update((s: AnalysisState) => ({
+                ...s,
+                spectrogramStatus: "No data for spectrogram.",
+                spectrogramData: null, // Clear any old data
+            }));
+        }
     }
-  }
 }
 
 export default AnalysisService.getInstance();
@@ -13673,562 +13353,555 @@ describe("AudioEngineService", () => {
 --- File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/audioEngine.service.ts
-import { writable, get } from "svelte/store";
-import type {
-  WorkerMessage,
-  RubberbandInitPayload,
-  RubberbandProcessResultPayload,
-} from "$lib/types/worker.types";
-import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils"; // Assuming AUDIO_ENGINE_CONSTANTS is in utils/index
-import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
-import { playerStore } from "$lib/stores/player.store"; // Assuming playerStore exists
-import analysisService from "$lib/services/analysis.service";
+import {get, writable} from "svelte/store";
+import type {RubberbandInitPayload, RubberbandProcessResultPayload, WorkerMessage,} from "$lib/types/worker.types";
+import {RB_WORKER_MSG_TYPE} from "$lib/types/worker.types";
+import {AUDIO_ENGINE_CONSTANTS} from "$lib/utils"; // Assuming AUDIO_ENGINE_CONSTANTS is in utils/index
+import {type PlayerState, playerStore} from "$lib/stores/player.store"; // Assuming playerStore exists
 
 // Import worker using Vite's ?worker syntax
 import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
 
 interface AudioEngineState {
-  isInitialized: boolean;
-  isInitializing: boolean;
-  error: string | null;
-  audioContext: AudioContext | null;
-  // Add other relevant state properties: gainNode, sourceNode, etc.
+    isInitialized: boolean;
+    isInitializing: boolean;
+    error: string | null;
+    audioContext: AudioContext | null;
+    // Add other relevant state properties: gainNode, sourceNode, etc.
+}
+
+interface PendingRequest {
+    resolve: (value: unknown) => void;
+    reject: (reason?: unknown) => void;
+}
+
+interface AudioEngineInitializeOptions {
+    sampleRate: number;
+    channels: number;
+    initialSpeed: number;
+    initialPitch: number;
+    gain?: number;
 }
 
 const initialAudioEngineState: AudioEngineState = {
-  isInitialized: false,
-  isInitializing: false,
-  error: null,
-  audioContext: null,
+    isInitialized: false,
+    isInitializing: false,
+    error: null,
+    audioContext: null,
 };
 
 // Internal store for the service's own state, not directly exposed but can update public stores.
 const serviceState = writable<AudioEngineState>(initialAudioEngineState);
 
 class AudioEngineService {
-  private static instance: AudioEngineService;
-  private worker: Worker | null = null;
-  private audioContextInternal: AudioContext | null = null; // Renamed to avoid conflict with serviceState property
-  private gainNode: GainNode | null = null;
-  private originalAudioBuffer: AudioBuffer | null = null;
-  private decodedAudioPlayerNode: AudioBufferSourceNode | null = null; // For playing original/decoded audio
-  private isPlaying = writable(false); // Internal state for playback
-  private nextMessageId = 0;
-  private pendingRequests = new Map<
-    string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
-  >();
+    private static instance: AudioEngineService;
+    private worker: Worker | null = null;
+    private audioContextInternal: AudioContext | null = null; // Renamed to avoid conflict with serviceState property
+    private gainNode: GainNode | null = null;
+    private originalAudioBuffer: AudioBuffer | null = null;
+    private decodedAudioPlayerNode: AudioBufferSourceNode | null = null; // For playing original/decoded audio
+    private isPlaying = writable(false); // Internal state for playback
+    private nextMessageId = 0;
+    private pendingRequests = new Map<string, PendingRequest>();
 
-  private constructor() {
-    // Initialize serviceState if needed, or rely on default
-  }
-
-  public static getInstance(): AudioEngineService {
-    if (!AudioEngineService.instance) {
-      AudioEngineService.instance = new AudioEngineService();
-    }
-    return AudioEngineService.instance;
-  }
-
-  private _getAudioContext(): AudioContext {
-    if (!this.audioContextInternal) {
-      this.audioContextInternal = new AudioContext();
-      // Create main gain node
-      this.gainNode = this.audioContextInternal.createGain();
-      this.gainNode.connect(this.audioContextInternal.destination);
-    }
-    return this.audioContextInternal;
-  }
-
-  public async unlockAudio(): Promise<void> {
-    const ctx = this._getAudioContext();
-    if (ctx.state === "suspended") {
-      try {
-        await ctx.resume();
-        console.log("AudioContext resumed successfully.");
-        playerStore.update((s) => ({ ...s, audioContextResumed: true }));
-      } catch (e) {
-        console.error("Error resuming AudioContext:", e);
-        playerStore.update((s) => ({
-          ...s,
-          error: "Failed to resume audio context.",
-        }));
-      }
-    }
-  }
-
-  private generateMessageId(): string {
-    return `rb_msg_${this.nextMessageId++}`;
-  }
-
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (!this.worker) {
-        reject(new Error("Worker not initialized."));
-        return;
-      }
-      const messageId = this.generateMessageId();
-      this.pendingRequests.set(messageId, { resolve, reject });
-      this.worker.postMessage({ ...message, messageId });
-    });
-  }
-
-  public async initialize(options: {
-    sampleRate: number;
-    channels: number;
-    initialSpeed: number;
-    initialPitch: number;
-    gain?: number;
-  }): Promise<void> {
-    if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
-      console.warn("AudioEngineService already initialized or initializing.");
-      return;
+    private constructor() {
+        // Initialize serviceState if needed, or rely on default
     }
 
-    serviceState.update((s) => ({ ...s, isInitializing: true, error: null }));
-    playerStore.update((s) => ({
-      ...s,
-      status: "Audio engine initializing...",
-    }));
-
-    this.worker = new RubberbandWorker();
-
-    this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      const { type, payload, error, messageId } = event.data;
-      const request = messageId
-        ? this.pendingRequests.get(messageId)
-        : undefined;
-
-      if (error) {
-        console.error(`AudioEngineService Worker Error (type ${type}):`, error);
-        serviceState.update((s) => ({ ...s, error: `Worker error: ${error}` }));
-        if (request) {
-          request.reject(error);
-          this.pendingRequests.delete(messageId!);
+    public static getInstance(): AudioEngineService {
+        if (!AudioEngineService.instance) {
+            AudioEngineService.instance = new AudioEngineService();
         }
-        if (type === RB_WORKER_MSG_TYPE.INIT_ERROR) {
-          serviceState.update((s) => ({
-            ...s,
-            isInitialized: false,
-            isInitializing: false,
-          }));
-          playerStore.update((s) => ({
-            ...s,
-            status: "Error initializing audio engine.",
-          }));
+        return AudioEngineService.instance;
+    }
+
+    private _getAudioContext(): AudioContext {
+        if (!this.audioContextInternal) {
+            this.audioContextInternal = new AudioContext();
+            // Create main gain node
+            this.gainNode = this.audioContextInternal.createGain();
+            this.gainNode.connect(this.audioContextInternal.destination);
+            console.log("AudioContext and GainNode created.");
         }
-        return;
-      }
-
-      switch (type) {
-        case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
-          serviceState.update((s) => ({
-            ...s,
-            isInitialized: true,
-            isInitializing: false,
-          }));
-          playerStore.update((s) => ({
-            ...s,
-            status: "Audio engine initialized.",
-          }));
-          if (request) request.resolve(payload);
-          break;
-
-        case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
-          const resultPayload = payload as RubberbandProcessResultPayload;
-          // TODO: Handle processed audio - e.g., play it, send to visualizer, update store
-          // For now, just log it
-          console.log(
-            "Received processed audio chunk:",
-            resultPayload.outputBuffer,
-          );
-          playerStore.update((s) => ({
-            ...s,
-            lastProcessedChunk: resultPayload.outputBuffer,
-          }));
-          if (request) request.resolve(resultPayload);
-          break;
-
-        case RB_WORKER_MSG_TYPE.FLUSH_RESULT:
-          console.log("Received flushed audio:", payload);
-          if (request) request.resolve(payload);
-          break;
-
-        default:
-          console.log(
-            "AudioEngineService received message from worker:",
-            event.data,
-          );
-          if (request) request.resolve(payload); // Generic resolve for other messages
-      }
-      if (messageId && request) this.pendingRequests.delete(messageId);
-    };
-
-    this.worker.onerror = (err) => {
-      console.error("Unhandled error in RubberbandWorker:", err);
-      serviceState.update((s) => ({
-        ...s,
-        error: `Worker onerror: ${err.message}`,
-        isInitialized: false,
-        isInitializing: false,
-      }));
-      playerStore.update((s) => ({ ...s, status: "Critical worker error." }));
-      // Reject all pending requests on a critical worker error
-      this.pendingRequests.forEach((req) =>
-        req.reject(new Error("Worker failed critically.")),
-      );
-      this.pendingRequests.clear();
-    };
-
-    const initPayload: RubberbandInitPayload = {
-      wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL, // e.g., '/rubberband.wasm'
-      // loaderPath will be constructed in the worker from origin
-      origin: location.origin,
-      sampleRate: options.sampleRate,
-      channels: options.channels,
-      initialSpeed: options.initialSpeed,
-      initialPitch: options.initialPitch,
-    };
-
-    try {
-      await this.postMessageToWorker({
-        type: RB_WORKER_MSG_TYPE.INIT,
-        payload: initPayload,
-      });
-      this._getAudioContext(); // Ensure AudioContext is created after worker init
-      if (options.gain !== undefined) this.setGain(options.gain);
-    } catch (err: any) {
-      serviceState.update((s) => ({
-        ...s,
-        error: err.message || "Initialization failed",
-        isInitialized: false,
-        isInitializing: false,
-      }));
-      playerStore.update((s) => ({
-        ...s,
-        status: "Error sending init to worker.",
-      }));
-    }
-  }
-
-  // New method: loadFile
-  public async loadFile(
-    audioFileBuffer: ArrayBuffer,
-    fileName: string,
-  ): Promise<void> {
-    if (!this.audioContextInternal) {
-      this._getAudioContext(); // Ensure AudioContext exists
-      await this.unlockAudio(); // And try to resume it
-    }
-    if (!this.audioContextInternal) {
-      playerStore.update((s) => ({
-        ...s,
-        error: "AudioContext not available for decoding.",
-      }));
-      throw new Error("AudioContext not available for decoding.");
+        return this.audioContextInternal;
     }
 
-    playerStore.update((s) => ({
-      ...s,
-      status: `Decoding ${fileName}...`,
-      error: null,
-      fileName,
-    }));
-    try {
-      this.originalAudioBuffer =
-        await this.audioContextInternal.decodeAudioData(audioFileBuffer);
-
-      // --- BEGIN NEW WAVEFORM EXTRACTION ---
-      let waveformDisplayData: number[][] = [];
-      if (this.originalAudioBuffer) {
-        const targetPoints = 1000; // Or make configurable
-        for (let i = 0; i < this.originalAudioBuffer.numberOfChannels; i++) {
-          const pcmData = this.originalAudioBuffer.getChannelData(i);
-          const channelWaveform: number[] = [];
-          const step = Math.max(1, Math.floor(pcmData.length / targetPoints));
-          for (let j = 0; j < pcmData.length; j += step) {
-            // Simple approach: take the sample value directly (max value in block is better for peaks)
-            // More advanced: find min/max in the block [j, j+step-1]
-            let blockMax = -1.0;
-            for (let k = 0; k < step && j + k < pcmData.length; k++) {
-              if (Math.abs(pcmData[j + k]) > blockMax) {
-                blockMax = Math.abs(pcmData[j + k]);
-              }
+    public async unlockAudio(): Promise<void> {
+        const ctx = this._getAudioContext();
+        if (ctx.state === "suspended") {
+            try {
+                await ctx.resume();
+                console.log("AudioContext resumed successfully.");
+                playerStore.update((s: PlayerState) => ({...s, audioContextResumed: true}));
+            } catch (e: unknown) {
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                console.error("Error resuming AudioContext:", e);
+                playerStore.update((s: PlayerState) => ({
+                    ...s,
+                    error: `Failed to resume audio context: ${errorMessage}`,
+                }));
             }
-            // For simplicity, let's just push the first sample of the block, scaled by its sign for drawing
-            // A better approach is to push a value that represents the envelope (e.g. max absolute value)
-            channelWaveform.push(pcmData[j]);
-            // Or, to show positive/negative envelope:
-            // let min = pcmData[j];
-            // let max = pcmData[j];
-            // for (let k = 1; k < step && (j + k) < pcmData.length; k++) {
-            //     if (pcmData[j + k] < min) min = pcmData[j + k];
-            //     if (pcmData[j + k] > max) max = pcmData[j + k];
-            // }
-            // channelWaveform.push(min);
-            // channelWaveform.push(max);
-          }
-          waveformDisplayData.push(channelWaveform);
         }
-      }
-      // --- END NEW WAVEFORM EXTRACTION ---
-
-      playerStore.update((s) => ({
-        ...s,
-        status: `${fileName} decoded. Duration: ${this.originalAudioBuffer.duration.toFixed(2)}s`,
-        duration: this.originalAudioBuffer.duration,
-        channels: this.originalAudioBuffer.numberOfChannels,
-        sampleRate: this.originalAudioBuffer.sampleRate,
-        waveformData: waveformDisplayData, // Add waveform data to store
-        isPlayable: true,
-        audioBuffer: this.originalAudioBuffer, // Key addition
-      }));
-      console.log(
-        "Decoded audio and extracted waveform data:",
-        this.originalAudioBuffer,
-      );
-
-      // --- BEGIN NEW: Trigger Spectrogram Processing ---
-      // --- END NEW: Trigger Spectrogram Processing ---
-
-      // Auto-initialize worker if sample rate or channels change, or if not initialized
-      // This is a basic example; robust logic would compare with current worker settings
-      // Ensure options are available or passed if needed for re-initialization
-      // For example, if your initialize method signature needs specific options:
-      // const currentSpeed = get(playerStore).speed || 1.0;
-      // const currentPitch = get(playerStore).pitch || 0.0;
-      // if (!get(serviceState).isInitialized /* || check against current worker settings */) {
-      //     await this.initialize({
-      //        sampleRate: this.originalAudioBuffer.sampleRate,
-      //        channels: this.originalAudioBuffer.numberOfChannels,
-      //        initialSpeed: currentSpeed,
-      //        initialPitch: currentPitch
-      //     });
-      // }
-      console.warn(
-        "AudioEngine not re-initialized with new file parameters automatically yet. Manual re-init might be needed if SR/channels change.",
-      );
-    } catch (e: any) {
-      console.error("Error decoding audio data:", e);
-      playerStore.update((s) => ({
-        ...s,
-        status: `Error decoding ${fileName}.`,
-        error: e.message,
-        isPlayable: false,
-        waveformData: undefined,
-      })); // Clear waveform data on error
-      throw e;
     }
-  }
 
-  // New method: setGain
-  public setGain(level: number): void {
-    if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(
-        level,
-        this.audioContextInternal?.currentTime || 0,
-      );
-      playerStore.update((s) => ({ ...s, gain: level }));
+    private generateMessageId(): string {
+        return `rb_msg_${this.nextMessageId++}`;
     }
-  }
 
-  // New method stubs: play, pause, stop
-  public play(): void {
-    if (this.isPlaying && get(this.isPlaying)) {
-      console.log("AudioEngine: Already playing.");
-      return;
+    private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+        return new Promise((resolve, reject) => {
+            if (!this.worker) {
+                reject(new Error("Worker not initialized."));
+                return;
+            }
+            const messageId = this.generateMessageId();
+            this.pendingRequests.set(messageId, {resolve, reject});
+            this.worker.postMessage({...message, messageId});
+        });
     }
-    // For now, let's try to play the original decoded buffer
-    if (
-      this.originalAudioBuffer &&
-      this.audioContextInternal &&
-      this.gainNode
-    ) {
-      // Stop any existing player node
-      if (this.decodedAudioPlayerNode) {
-        this.decodedAudioPlayerNode.stop();
-        this.decodedAudioPlayerNode.disconnect();
-      }
 
-      this.decodedAudioPlayerNode =
-        this.audioContextInternal.createBufferSource();
-      this.decodedAudioPlayerNode.buffer = this.originalAudioBuffer;
-      this.decodedAudioPlayerNode.connect(this.gainNode);
-      this.decodedAudioPlayerNode.onended = () => {
-        this.isPlaying.set(false);
-        playerStore.update((s) => ({
-          ...s,
-          status: "Playback ended.",
-          isPlaying: false,
+    public async initialize(options: AudioEngineInitializeOptions): Promise<void> {
+        console.log('[AudioEngineService] Initialize called.');
+
+        if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
+            console.warn("AudioEngineService already initialized or initializing.");
+            return;
+        }
+
+        serviceState.update((s: AudioEngineState) => ({...s, isInitializing: true, error: null}));
+        playerStore.update((s: PlayerState) => ({
+            ...s,
+            status: "Audio engine initializing...",
         }));
-        this.decodedAudioPlayerNode = null; // Clear the node
-      };
-      this.decodedAudioPlayerNode.start(0, get(playerStore).currentTime || 0); // Start from current time or 0
-      this.isPlaying.set(true);
-      playerStore.update((s) => ({
-        ...s,
-        status: "Playing original audio...",
-        isPlaying: true,
-      }));
-      console.log("AudioEngine: Play called. Playing original buffer.");
-    } else {
-      playerStore.update((s) => ({
-        ...s,
-        status: "No audio loaded or engine not ready.",
-        error: "Cannot play: No audio loaded.",
-      }));
-      console.log(
-        "AudioEngine: Play called, but no original audio buffer or audio context.",
-      );
-    }
-  }
 
-  public pause(): void {
-    if (!get(this.isPlaying)) {
-      console.log("AudioEngine: Not playing.");
-      return;
-    }
-    if (this.decodedAudioPlayerNode && this.audioContextInternal) {
-      // Store current time before stopping
-      // This is tricky with AudioBufferSourceNode as it can't truly "pause"
-      // We effectively stop it and will restart from a stored currentTime.
-      // A more complex setup would involve a ScriptProcessorNode or AudioWorklet for custom playback control.
-      // FIXME: This currentTime is context time, not buffer position. Needs proper calculation.
-      const currentTime =
-        this.audioContextInternal.currentTime -
-          (this.decodedAudioPlayerNode as any)._startTime || 0;
+        this.worker = new RubberbandWorker();
 
-      playerStore.update((s) => ({
-        ...s,
-        currentTime: currentTime >= 0 ? currentTime : 0,
-      }));
-      this.decodedAudioPlayerNode.stop();
-      // this.decodedAudioPlayerNode = null; // Don't nullify here if we want to "resume" by creating a new one
-      this.isPlaying.set(false);
-      playerStore.update((s) => ({
-        ...s,
-        status: "Playback paused.",
-        isPlaying: false,
-      }));
-      console.log("AudioEngine: Pause called.");
-    } else {
-      console.log("AudioEngine: Pause called, but no active player node.");
-    }
-  }
+        this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
+            const {type, payload, error, messageId} = event.data;
+            const request = messageId
+                ? this.pendingRequests.get(messageId)
+                : undefined;
+            console.log(`[AudioEngineService] Received message from worker: type=${type}`);
 
-  public stop(): void {
-    if (this.decodedAudioPlayerNode) {
-      this.decodedAudioPlayerNode.stop();
-      this.decodedAudioPlayerNode.disconnect();
-      this.decodedAudioPlayerNode = null;
-    }
-    this.isPlaying.set(false);
-    playerStore.update((s) => ({
-      ...s,
-      status: "Playback stopped.",
-      isPlaying: false,
-      currentTime: 0,
-    }));
-    console.log("AudioEngine: Stop called.");
-  }
+            if (error) {
+                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown worker error during message processing';
+                console.error(`AudioEngineService Worker Error (type ${type}):`, errorMsg);
+                serviceState.update((s: AudioEngineState) => ({...s, error: `Worker error: ${errorMsg}`}));
+                if (request) {
+                    request.reject(errorMsg);
+                    if (messageId) this.pendingRequests.delete(messageId);
+                }
+                if (type === RB_WORKER_MSG_TYPE.INIT_ERROR) {
+                    serviceState.update((s: AudioEngineState) => ({
+                        ...s,
+                        isInitialized: false,
+                        isInitializing: false,
+                    }));
+                    playerStore.update((s: PlayerState) => ({
+                        ...s,
+                        status: "Error initializing audio engine.",
+                        error: errorMsg,
+                    }));
+                }
+                return;
+            }
 
-  public async setSpeed(speed: number): Promise<void> {
-    if (!get(serviceState).isInitialized || !this.worker)
-      throw new Error("Service not initialized.");
-    await this.postMessageToWorker({
-      type: RB_WORKER_MSG_TYPE.SET_SPEED,
-      payload: { speed },
-    });
-    playerStore.update((s) => ({ ...s, speed }));
-  }
+            switch (type) {
+                case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
+                    console.log('[AudioEngineService] Worker reported INIT_SUCCESS.');
 
-  public async setPitch(pitch: number): Promise<void> {
-    if (!get(serviceState).isInitialized || !this.worker)
-      throw new Error("Service not initialized.");
-    await this.postMessageToWorker({
-      type: RB_WORKER_MSG_TYPE.SET_PITCH,
-      payload: { pitch },
-    });
-    playerStore.update((s) => ({ ...s, pitch }));
-  }
+                    serviceState.update((s: AudioEngineState) => ({
+                        ...s,
+                        isInitialized: true,
+                        isInitializing: false,
+                    }));
+                    playerStore.update((s: PlayerState) => ({
+                        ...s,
+                        status: "Audio engine initialized.",
+                    }));
+                    if (request) request.resolve(payload);
+                    break;
 
-  public async processAudioChunk(
-    inputBuffer: Float32Array[],
-  ): Promise<RubberbandProcessResultPayload | null> {
-    if (!get(serviceState).isInitialized || !this.worker)
-      throw new Error("Service not initialized.");
-    try {
-      const result = await this.postMessageToWorker({
-        type: RB_WORKER_MSG_TYPE.PROCESS,
-        payload: { inputBuffer },
-      });
-      return result as RubberbandProcessResultPayload;
-    } catch (error) {
-      console.error("Error processing audio chunk:", error);
-      playerStore.update((s) => ({ ...s, error: "Error processing audio" }));
-      return null;
-    }
-  }
+                case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
+                    const resultPayload = payload as RubberbandProcessResultPayload;
+                    console.log(
+                        "Received processed audio chunk:",
+                        resultPayload.outputBuffer,
+                    );
+                    playerStore.update((s: PlayerState) => ({
+                        ...s,
+                        lastProcessedChunk: resultPayload.outputBuffer,
+                    }));
+                    if (request) request.resolve(resultPayload);
+                    break;
 
-  public async flush(): Promise<RubberbandProcessResultPayload | null> {
-    if (!get(serviceState).isInitialized || !this.worker)
-      throw new Error("Service not initialized.");
-    try {
-      const result = await this.postMessageToWorker({
-        type: RB_WORKER_MSG_TYPE.FLUSH,
-      });
-      return result as RubberbandProcessResultPayload;
-    } catch (error) {
-      console.error("Error flushing audio:", error);
-      playerStore.update((s) => ({ ...s, error: "Error flushing audio" }));
-      return null;
-    }
-  }
+                case RB_WORKER_MSG_TYPE.FLUSH_RESULT:
+                    console.log("Received flushed audio:", payload);
+                    if (request) request.resolve(payload as RubberbandProcessResultPayload);
+                    break;
 
-  // Basic playback example - more sophisticated playback needed for real app
-  public playAudioBuffer(buffer: Float32Array[], sampleRate: number) {
-    const ctx = this._getAudioContext();
-    if (!this.gainNode) {
-      console.error("GainNode not initialized!");
-      return;
+                default:
+                    console.log(
+                        "AudioEngineService received message from worker:",
+                        event.data,
+                    );
+                    if (request) request.resolve(payload); // Generic resolve for other messages
+            }
+            if (messageId && request) this.pendingRequests.delete(messageId);
+        };
+
+        this.worker.onerror = (err: Event | string) => {
+            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown worker error');
+            console.error("Unhandled error in RubberbandWorker:", errorMsg);
+            serviceState.update((s: AudioEngineState) => ({
+                ...s,
+                error: `Worker onerror: ${errorMsg}`,
+                isInitialized: false,
+                isInitializing: false,
+            }));
+            playerStore.update((s: PlayerState) => ({...s, status: "Critical worker error.", error: errorMsg}));
+            // Reject all pending requests on a critical worker error
+            this.pendingRequests.forEach((req) =>
+                req.reject(new Error(`Worker failed critically: ${errorMsg}`)),
+            );
+            this.pendingRequests.clear();
+        };
+
+        const initPayload: RubberbandInitPayload = {
+            wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL,
+            loaderPath: AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
+            origin: location.origin,
+            sampleRate: options.sampleRate,
+            channels: options.channels,
+            initialSpeed: options.initialSpeed,
+            initialPitch: options.initialPitch,
+        };
+
+        try {
+            console.log('[AudioEngineService] Posting INIT message to worker.');
+
+            await this.postMessageToWorker<RubberbandInitPayload>({
+                type: RB_WORKER_MSG_TYPE.INIT,
+                payload: initPayload,
+            });
+            this._getAudioContext(); // Ensure AudioContext is created after worker init
+            if (options.gain !== undefined) this.setGain(options.gain);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            serviceState.update((s: AudioEngineState) => ({
+                ...s,
+                error: errorMessage || "Initialization failed",
+                isInitialized: false,
+                isInitializing: false,
+            }));
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                status: "Error sending init to worker.",
+                error: errorMessage,
+            }));
+        }
     }
 
-    const audioBuffer = ctx.createBuffer(
-      buffer.length,
-      buffer[0].length,
-      sampleRate,
-    );
-    for (let i = 0; i < buffer.length; i++) {
-      audioBuffer.copyToChannel(buffer[i], i);
+    public async loadFile(
+        audioFileBuffer: ArrayBuffer,
+        fileName: string,
+    ): Promise<void> {
+        if (!this.audioContextInternal) {
+            this._getAudioContext();
+            await this.unlockAudio();
+        }
+        if (!this.audioContextInternal) {
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                error: "AudioContext not available for decoding.",
+            }));
+            throw new Error("AudioContext not available for decoding.");
+        }
+
+        playerStore.update((s: PlayerState) => ({
+            ...s,
+            status: `Decoding ${fileName}...`,
+            error: null,
+            fileName,
+        }));
+        try {
+            this.originalAudioBuffer =
+                await this.audioContextInternal.decodeAudioData(audioFileBuffer);
+
+            let waveformDisplayData: number[][] = [];
+            if (this.originalAudioBuffer) {
+                const targetPoints = 1000;
+                for (let i = 0; i < this.originalAudioBuffer.numberOfChannels; i++) {
+                    const pcmData = this.originalAudioBuffer.getChannelData(i);
+                    const channelWaveform: number[] = [];
+                    const step = Math.max(1, Math.floor(pcmData.length / targetPoints));
+                    for (let j = 0; j < pcmData.length; j += step) {
+                        let blockMax = 0.0; // Changed from -1.0 to 0.0 as we use Math.abs
+                        for (let k = 0; k < step && j + k < pcmData.length; k++) {
+                            if (Math.abs(pcmData[j + k]) > blockMax) {
+                                blockMax = Math.abs(pcmData[j + k]);
+                            }
+                        }
+                        // To represent both positive and negative peaks, we could store min/max or just max abs value
+                        // For simplicity, using the first sample's value, but max abs is better for waveform visualization
+                        channelWaveform.push(pcmData[j]); // Or blockMax (needs adjustment if visualizer expects signed values)
+                    }
+                    waveformDisplayData.push(channelWaveform);
+                }
+            }
+
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                status: `${fileName} decoded. Duration: ${this.originalAudioBuffer!.duration.toFixed(2)}s`,
+                duration: this.originalAudioBuffer!.duration,
+                channels: this.originalAudioBuffer!.numberOfChannels,
+                sampleRate: this.originalAudioBuffer!.sampleRate,
+                waveformData: waveformDisplayData,
+                isPlayable: true,
+                audioBuffer: this.originalAudioBuffer,
+            }));
+            console.log(
+                "Decoded audio and extracted waveform data:",
+                this.originalAudioBuffer,
+            );
+
+            console.warn(
+                "AudioEngine not re-initialized with new file parameters automatically yet. Manual re-init might be needed if SR/channels change.",
+            );
+        } catch (e: unknown) {
+            console.error("Error decoding audio data:", e);
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                status: `Error decoding ${fileName}.`,
+                error: errorMessage,
+                isPlayable: false,
+                waveformData: undefined,
+            }));
+            if (e instanceof Error) throw e; else throw new Error(String(e));
+        }
     }
 
-    const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(this.gainNode); // Connect to the main gain node
-    source.start();
-  }
+    public setGain(level: number): void {
+        if (this.gainNode && this.audioContextInternal) {
+            this.gainNode.gain.setValueAtTime(
+                level,
+                this.audioContextInternal.currentTime
+            );
+            playerStore.update((s: PlayerState) => ({...s, gain: level}));
+        } else {
+            console.warn("GainNode or AudioContext not available for setGain.");
+        }
+    }
 
-  public dispose(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
+    public play(): void {
+        if (get(this.isPlaying)) {
+            console.log("AudioEngine: Already playing.");
+            return;
+        }
+        if (this.originalAudioBuffer && this.audioContextInternal && this.gainNode) {
+            if (this.decodedAudioPlayerNode) {
+                this.decodedAudioPlayerNode.stop();
+                this.decodedAudioPlayerNode.disconnect();
+            }
+
+            this.decodedAudioPlayerNode =
+                this.audioContextInternal.createBufferSource();
+            this.decodedAudioPlayerNode.buffer = this.originalAudioBuffer;
+            this.decodedAudioPlayerNode.connect(this.gainNode);
+
+            if (this.decodedAudioPlayerNode) { // Check if node exists before setting onended
+                this.decodedAudioPlayerNode.onended = () => {
+                    this.isPlaying.set(false);
+                    playerStore.update((s: PlayerState) => ({
+                        ...s,
+                        status: "Playback ended.",
+                        isPlaying: false,
+                    }));
+                    this.decodedAudioPlayerNode = null;
+                };
+            }
+            this.decodedAudioPlayerNode.start(0, get(playerStore).currentTime || 0);
+            this.isPlaying.set(true);
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                status: "Playing original audio...",
+                isPlaying: true,
+            }));
+            console.log("AudioEngine: Play called. Playing original buffer.");
+        } else {
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                status: "No audio loaded or engine not ready.",
+                error: "Cannot play: No audio loaded or engine not ready."
+            }));
+            console.log("AudioEngine: Play called, but prerequisites not met.");
+        }
     }
-    if (this.audioContextInternal) {
-      this.audioContextInternal.close().then(() => {
-        this.audioContextInternal = null;
-        this.gainNode = null;
-      });
+
+    public pause(): void {
+        if (!get(this.isPlaying)) {
+            console.log("AudioEngine: Not playing.");
+            return;
+        }
+        if (this.decodedAudioPlayerNode && this.audioContextInternal) {
+            const nodeAsAny = this.decodedAudioPlayerNode as any;
+            let calculatedTime = 0;
+            if (typeof nodeAsAny._startTime === 'number') {
+                calculatedTime = this.audioContextInternal.currentTime - nodeAsAny._startTime;
+            } else {
+                console.warn("Could not determine node's start time for accurate pause position.");
+                calculatedTime = get(playerStore).currentTime || 0;
+            }
+
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                currentTime: calculatedTime >= 0 ? calculatedTime : 0,
+            }));
+            this.decodedAudioPlayerNode.stop();
+            this.isPlaying.set(false);
+            playerStore.update((s: PlayerState) => ({
+                ...s,
+                status: "Playback paused.",
+                isPlaying: false,
+            }));
+            console.log("AudioEngine: Pause called.");
+        } else {
+            console.log("AudioEngine: Pause called, but no active player node or audio context.");
+        }
     }
-    this.pendingRequests.clear();
-    this.nextMessageId = 0; // Reset message ID counter
-    serviceState.set(initialAudioEngineState); // Reset service state
-    playerStore.update((s) => ({
-      ...s,
-      status: "Audio engine disposed.",
-      isInitialized: false,
-    }));
-    console.log("AudioEngineService disposed.");
-  }
+
+    public stop(): void {
+        if (this.decodedAudioPlayerNode) {
+            this.decodedAudioPlayerNode.stop();
+            this.decodedAudioPlayerNode.disconnect();
+            this.decodedAudioPlayerNode = null;
+        }
+        this.isPlaying.set(false);
+        playerStore.update((s: PlayerState) => ({
+            ...s,
+            status: "Playback stopped.",
+            isPlaying: false,
+            currentTime: 0,
+        }));
+        console.log("AudioEngine: Stop called.");
+    }
+
+    public async setSpeed(speed: number): Promise<void> {
+        if (!this.worker) {
+            throw new Error("Worker not initialized.");
+        }
+        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
+        await this.postMessageToWorker<object>({ // Assuming payload is an object like { speed }
+            type: RB_WORKER_MSG_TYPE.SET_SPEED,
+            payload: {speed},
+        });
+        playerStore.update((s: PlayerState) => ({...s, speed}));
+    }
+
+    public async setPitch(pitch: number): Promise<void> {
+        if (!this.worker) {
+            throw new Error("Worker not initialized.");
+        }
+        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
+        await this.postMessageToWorker<object>({ // Assuming payload is an object like { pitch }
+            type: RB_WORKER_MSG_TYPE.SET_PITCH,
+            payload: {pitch},
+        });
+        playerStore.update((s: PlayerState) => ({...s, pitch}));
+    }
+
+    public async processAudioChunk(
+        inputBuffer: Float32Array[],
+    ): Promise<RubberbandProcessResultPayload | null> {
+        if (!this.worker) {
+            throw new Error("Worker not initialized.");
+        }
+        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
+        try {
+            const result = await this.postMessageToWorker<{ inputBuffer: Float32Array[] }>({
+                type: RB_WORKER_MSG_TYPE.PROCESS,
+                payload: {inputBuffer},
+            });
+            return result as RubberbandProcessResultPayload;
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error("Error processing audio chunk:", errorMessage);
+            playerStore.update((s: PlayerState) => ({...s, error: `Error processing audio: ${errorMessage}`}));
+            return null;
+        }
+    }
+
+    public async flush(): Promise<RubberbandProcessResultPayload | null> {
+        if (!this.worker) {
+            throw new Error("Worker not initialized.");
+        }
+        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
+        try {
+            const result = await this.postMessageToWorker<undefined>({ // No payload for flush typically
+                type: RB_WORKER_MSG_TYPE.FLUSH,
+            });
+            return result as RubberbandProcessResultPayload;
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error("Error flushing audio:", errorMessage);
+            playerStore.update((s: PlayerState) => ({...s, error: `Error flushing audio: ${errorMessage}`}));
+            return null;
+        }
+    }
+
+    public playAudioBuffer(buffer: Float32Array[], sampleRate: number): void {
+        const ctx = this._getAudioContext();
+        if (!this.gainNode) {
+            console.error("GainNode not initialized!");
+            playerStore.update((s: PlayerState) => ({...s, error: "Cannot play buffer: GainNode missing."}));
+            return;
+        }
+
+        const audioBuffer = ctx.createBuffer(
+            buffer.length, // Number of channels
+            buffer[0].length, // Length of each channel array (number of frames)
+            sampleRate,
+        );
+        for (let i = 0; i < buffer.length; i++) {
+            audioBuffer.copyToChannel(buffer[i], i);
+        }
+
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.gainNode);
+        source.start();
+    }
+
+    public dispose(): void {
+        if (this.worker) {
+            this.worker.terminate();
+            this.worker = null;
+        }
+        if (this.audioContextInternal) {
+            this.audioContextInternal.close().then(() => {
+                this.audioContextInternal = null;
+                this.gainNode = null;
+            }).catch(e => console.error("Error closing AudioContext: ", e));
+        }
+        this.pendingRequests.clear();
+        this.nextMessageId = 0;
+        serviceState.set(initialAudioEngineState);
+        playerStore.update((s: PlayerState) => ({
+            ...s,
+            status: "Audio engine disposed.",
+            isPlayable: false, // Should not be playable after dispose
+            isPlaying: false,
+            // Reset other relevant player states
+            fileName: null,
+            duration: 0,
+            currentTime: 0,
+            audioBuffer: undefined,
+            waveformData: undefined,
+            error: null,
+        }));
+        console.log("AudioEngineService disposed.");
+    }
 }
 
 export default AudioEngineService.getInstance();
@@ -14237,8 +13910,26 @@ export default AudioEngineService.getInstance();
 --- End of File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
 --- File: vibe-player-v2/src/lib/stores/analysis.store.ts ---
 ````typescript
-import { writable } from "svelte/store";
-export const analysisStore = writable({});
+import { writable } from 'svelte/store';
+import type { AnalysisState } from '$lib/types/analysis.types';
+
+const initialState: AnalysisState = {
+  vadStatus: undefined,
+  lastVadResult: null,
+  isSpeaking: undefined,
+  vadStateResetted: undefined,
+  vadError: null,
+  vadInitialized: false,
+
+  spectrogramStatus: undefined,
+  spectrogramError: null,
+  spectrogramData: null,
+  spectrogramInitialized: false,
+
+  isLoading: false,
+};
+
+export const analysisStore = writable<AnalysisState>(initialState);
 
 ````
 --- End of File: vibe-player-v2/src/lib/stores/analysis.store.ts ---
@@ -14254,149 +13945,256 @@ export const exampleDerived = derived(statusStore, ($statusStore) => ({
 --- End of File: vibe-player-v2/src/lib/stores/derived.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/player.store.ts ---
 ````typescript
-import { writable } from "svelte/store";
-export const playerStore = writable({});
+import { writable } from 'svelte/store';
+import type { PlayerState } from '$lib/types/player.types';
+
+const initialState: PlayerState = {
+  status: 'idle',
+  fileName: null,
+  duration: 0,
+  currentTime: 0,
+  isPlaying: false,
+  isPlayable: false,
+  speed: 1.0,
+  pitch: 0.0,
+  gain: 1.0,
+  waveformData: undefined,
+  error: null,
+  audioBuffer: undefined,
+  audioContextResumed: false,
+  channels: undefined,
+  sampleRate: undefined,
+  lastProcessedChunk: undefined,
+};
+
+export const playerStore = writable<PlayerState>(initialState);
 
 ````
 --- End of File: vibe-player-v2/src/lib/stores/player.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/status.store.ts ---
 ````typescript
-import { writable } from "svelte/store";
-export const statusStore = writable({});
+import { writable } from 'svelte/store';
+import type { StatusState } from '$lib/types/status.types';
+
+const initialState: StatusState = {
+  message: null,
+  type: null,
+  isLoading: false,
+  details: null,
+  progress: null,
+};
+
+export const statusStore = writable<StatusState>(initialState);
 
 ````
 --- End of File: vibe-player-v2/src/lib/stores/status.store.ts ---
+--- File: vibe-player-v2/src/lib/types/analysis.types.ts ---
+````typescript
+import type { SileroVadProcessResultPayload, SpectrogramResultPayload } from '$lib/types/worker.types';
+
+export interface AnalysisState {
+  // VAD related properties
+  vadStatus?: string; // e.g., "VAD service initializing...", "VAD service initialized."
+  lastVadResult?: SileroVadProcessResultPayload | null;
+  isSpeaking?: boolean;
+  vadStateResetted?: boolean;
+  vadError?: string | null;
+  vadInitialized?: boolean; // To track VAD worker initialization status
+
+  // Spectrogram related properties
+  spectrogramStatus?: string; // e.g., "Spectrogram worker initializing..."
+  spectrogramError?: string | null;
+  spectrogramData?: number[][] | null; // Assuming magnitudes from SpectrogramResultPayload are number[][]
+  spectrogramInitialized?: boolean; // To track Spectrogram worker initialization
+
+  // General analysis properties
+  isLoading?: boolean; // For general loading states within the analysis domain
+}
+
+````
+--- End of File: vibe-player-v2/src/lib/types/analysis.types.ts ---
+--- File: vibe-player-v2/src/lib/types/player.types.ts ---
+````typescript
+export interface PlayerState {
+  status: string;
+  fileName: string | null;
+  duration: number;
+  currentTime: number;
+  isPlaying: boolean;
+  isPlayable: boolean;
+  speed: number;
+  pitch: number;
+  gain: number;
+  waveformData?: number[][];
+  error: string | null;
+  audioBuffer?: AudioBuffer;
+  audioContextResumed?: boolean;
+  channels?: number;
+  sampleRate?: number;
+  lastProcessedChunk?: any; // TODO: Refine this type later
+}
+
+````
+--- End of File: vibe-player-v2/src/lib/types/player.types.ts ---
+--- File: vibe-player-v2/src/lib/types/status.types.ts ---
+````typescript
+export type NotificationType = 'info' | 'error' | 'success' | 'warning';
+
+export interface StatusState {
+  message: string | null;
+  type: NotificationType | null;
+  isLoading: boolean; // General loading indicator for the app
+  details?: string | null; // Optional field for more detailed messages or error info
+  progress?: number | null; // For operations that have a progress, e.g. file loading
+}
+
+````
+--- End of File: vibe-player-v2/src/lib/types/status.types.ts ---
 --- File: vibe-player-v2/src/lib/types/worker.types.ts ---
 ````typescript
 // vibe-player-v2/src/lib/types/worker.types.ts
 
 // General message structure for worker communication
-export interface WorkerMessage<T = any> {
-  type: string;
-  payload?: T;
-  error?: string;
-  messageId?: string; // Optional: for tracking request-response pairs
+export interface WorkerMessage<T = unknown> {
+    type: string;
+    payload?: T;
+    error?: string;
+    messageId?: string; // Optional: for tracking request-response pairs
 }
 
 // --- Rubberband Worker ---
 export const RB_WORKER_MSG_TYPE = {
-  INIT: "rb_init",
-  PROCESS: "rb_process",
-  FLUSH: "rb_flush", // For final processing
-  RESET: "rb_reset", // To reset internal state
-  SET_PITCH: "rb_set_pitch",
-  SET_SPEED: "rb_set_speed",
-  INIT_SUCCESS: "rb_init_success",
-  INIT_ERROR: "rb_init_error",
-  PROCESS_RESULT: "rb_process_result",
-  PROCESS_ERROR: "rb_process_error",
-  FLUSH_RESULT: "rb_flush_result",
-  STATUS: "rb_status", // For general status or progress updates
+    INIT: "rb_init",
+    PROCESS: "rb_process",
+    FLUSH: "rb_flush", // For final processing
+    RESET: "rb_reset", // To reset internal state
+    SET_PITCH: "rb_set_pitch",
+    SET_SPEED: "rb_set_speed",
+    INIT_SUCCESS: "rb_init_success",
+    INIT_ERROR: "rb_init_error",
+    PROCESS_RESULT: "rb_process_result",
+    PROCESS_ERROR: "rb_process_error",
+    FLUSH_RESULT: "rb_flush_result",
+    STATUS: "rb_status", // For general status or progress updates
 };
 
 export interface RubberbandInitPayload {
-  wasmPath: string; // Path to rubberband.wasm
-  loaderPath: string; // Path to rubberband-loader.js
-  sampleRate: number;
-  channels: number;
-  initialSpeed: number;
-  initialPitch: number;
-  // Add other necessary initialization parameters
+    wasmPath: string; // Path to rubberband.wasm
+    loaderPath: string; // Path to rubberband-loader.js
+
+  // --- ADD THIS LINE ---
+  origin: string; // The origin of the main document (e.g., http://localhost:4173)
+  // --- END ADDITION ---
+
+    sampleRate: number;
+    channels: number;
+    initialSpeed: number;
+    initialPitch: number;
+    // Add other necessary initialization parameters
 }
 
 export interface RubberbandProcessPayload {
-  inputBuffer: Float32Array[]; // Array of channels, each a Float32Array
+    inputBuffer: Float32Array[]; // Array of channels, each a Float32Array
 }
 
 export interface RubberbandProcessResultPayload {
-  outputBuffer: Float32Array[]; // Array of channels
+    outputBuffer: Float32Array[]; // Array of channels
 }
 
 export interface RubberbandStatusPayload {
-  message: string;
-  progress?: number; // Optional progress indicator (0-1)
+    message: string;
+    progress?: number; // Optional progress indicator (0-1)
 }
 
 // --- Silero VAD Worker ---
 export const VAD_WORKER_MSG_TYPE = {
-  INIT: "vad_init",
-  PROCESS: "vad_process",
-  RESET: "vad_reset",
-  INIT_SUCCESS: "vad_init_success",
-  INIT_ERROR: "vad_init_error",
-  PROCESS_RESULT: "vad_process_result",
-  PROCESS_ERROR: "vad_process_error",
-  STATUS: "vad_status",
+    INIT: "vad_init",
+    PROCESS: "vad_process",
+    RESET: "vad_reset",
+    INIT_SUCCESS: "vad_init_success",
+    INIT_ERROR: "vad_init_error",
+    PROCESS_RESULT: "vad_process_result",
+    PROCESS_ERROR: "vad_process_error",
+    STATUS: "vad_status",
 };
 
 export interface SileroVadInitPayload {
-  onnxModelPath: string; // Path to silero_vad.onnx
-  // onnxWasmPath: string; // Path to ORT WASM files (usually handled by ORT itself if copied to static root)
-  sampleRate: number; // e.g., 16000
-  frameSamples: number; // e.g., 1536
-  positiveThreshold?: number;
-  negativeThreshold?: number;
+    onnxModelPath: string; // Path to silero_vad.onnx
+    // onnxWasmPath: string; // Path to ORT WASM files (usually handled by ORT itself if copied to static root)
+    sampleRate: number; // e.g., 16000
+    frameSamples: number; // e.g., 1536
+    positiveThreshold?: number;
+    negativeThreshold?: number;
 }
 
 export interface SileroVadProcessPayload {
-  audioFrame: Float32Array; // Single audio frame
+    audioFrame: Float32Array; // Single audio frame
 }
 
 export interface SileroVadProcessResultPayload {
-  isSpeech: boolean;
-  timestamp: number; // Start time of the frame being processed
-  // Potentially include probabilities or other metadata
+    isSpeech: boolean;
+    timestamp: number; // Start time of the frame being processed
+    // Potentially include probabilities or other metadata
 }
 
 export interface SileroVadStatusPayload {
-  message: string;
-  // progress?: number;
+    message: string;
+    // progress?: number;
 }
 
 // --- Spectrogram Worker (if needed as a separate worker from visualizer component) ---
 export const SPEC_WORKER_MSG_TYPE = {
-  INIT: "spec_init",
-  PROCESS: "spec_process",
-  CONFIG_UPDATE: "spec_config_update", // e.g., FFT size change
-  INIT_SUCCESS: "spec_init_success",
-  INIT_ERROR: "spec_init_error",
-  PROCESS_RESULT: "spec_process_result",
-  PROCESS_ERROR: "spec_process_error",
+    INIT: "spec_init",
+    PROCESS: "spec_process",
+    CONFIG_UPDATE: "spec_config_update", // e.g., FFT size change
+    INIT_SUCCESS: "spec_init_success",
+    INIT_ERROR: "spec_init_error",
+    PROCESS_RESULT: "spec_process_result",
+    PROCESS_ERROR: "spec_process_error",
 };
 
 export interface SpectrogramInitPayload {
-  sampleRate: number;
-  // initial FFT size, hop length etc.
+  origin: string;
+  fftPath: string;
+    sampleRate: number;
+    fftSize: number;
+    hopLength: number;
 }
 
 export interface SpectrogramProcessPayload {
-  audioData: Float32Array;
+    audioData: Float32Array;
 }
 
 export interface SpectrogramResultPayload {
-  magnitudes: Float32Array[]; // Array of magnitude arrays (bins) for each frame
-  // Or could be Uint8Array if values are scaled to 0-255 for image display
+    magnitudes: Float32Array[]; // Array of magnitude arrays (bins) for each frame
+    // Or could be Uint8Array if values are scaled to 0-255 for image display
 }
 
 // Type guards for narrowing down message types (examples)
 export function isRubberbandInitPayload(
-  payload: any,
+    payload: unknown,
 ): payload is RubberbandInitPayload {
-  return (
-    payload &&
-    typeof payload.wasmPath === "string" &&
-    typeof payload.sampleRate === "number"
-  );
+    return (
+        payload !== null &&
+        typeof payload === 'object' &&
+        'wasmPath' in payload &&
+        typeof (payload as Record<string, unknown>).wasmPath === "string" &&
+        'sampleRate' in payload &&
+        typeof (payload as Record<string, unknown>).sampleRate === "number"
+    );
 }
 
 export function isSileroVadInitPayload(
-  payload: any,
+    payload: unknown,
 ): payload is SileroVadInitPayload {
-  return (
-    payload &&
-    typeof payload.onnxModelPath === "string" &&
-    typeof payload.sampleRate === "number"
-  );
+    return (
+        payload !== null &&
+        typeof payload === 'object' &&
+        'onnxModelPath' in payload &&
+        typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
+        'sampleRate' in payload &&
+        typeof (payload as Record<string, unknown>).sampleRate === "number"
+    );
 }
 
 ````
@@ -15332,17 +15130,32 @@ export function _resetUrlStateInitializationFlagForTesting() {
 --- File: vibe-player-v2/src/lib/workers/rubberband.worker.ts ---
 ````typescript
 // vibe-player-v2/src/lib/workers/rubberband.worker.ts
-import type {
-  WorkerMessage,
-  RubberbandInitPayload,
-  RubberbandProcessPayload,
-  RubberbandProcessResultPayload,
-} from "../types/worker.types";
-import { RB_WORKER_MSG_TYPE } from "../types/worker.types";
+import type {RubberbandInitPayload, WorkerMessage,} from "../types/worker.types";
+import {RB_WORKER_MSG_TYPE} from "../types/worker.types";
 
 // These will be populated by the loader script when it's initialized
-declare function Rubberband(moduleArg: any): Promise<any>;
-let wasmModule: any = null;
+interface RubberbandModule {
+  _malloc: (size: number) => number;
+  _rubberband_new: (sampleRate: number, channels: number, options: number, timeRatio: number, pitchScale: number) => number;
+  _rubberband_set_time_ratio: (stretcher: number, ratio: number) => void;
+  _rubberband_set_pitch_scale: (stretcher: number, scale: number) => void;
+  _rubberband_reset: (stretcher: number) => void;
+  HEAPF32: Float32Array;
+  RubberBandOptionFlag?: {
+    ProcessRealTime?: number;
+    PitchHighQuality?: number;
+    PhaseIndependent?: number;
+  };
+}
+
+declare function Rubberband(moduleArg: {
+  instantiateWasm: (
+    imports: WebAssembly.Imports,
+    successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
+  ) => Record<string, unknown>;
+}): Promise<RubberbandModule>;
+
+let wasmModule: RubberbandModule | null = null;
 let rubberbandStretcher: number = 0; // This is an opaque pointer (an integer)
 
 let sampleRate = 44100;
@@ -15351,126 +15164,141 @@ let lastKnownPitchScale = 1.0;
 
 // --- Helper to create pointers in WASM memory for our audio data ---
 function inPlaceCreate(buffer: Float32Array): number {
-  if (!wasmModule || !wasmModule._malloc) {
-    throw new Error("WASM module or malloc not initialized for inPlaceCreate.");
-  }
-  const ptr = wasmModule._malloc(buffer.length * buffer.BYTES_PER_ELEMENT);
-  wasmModule.HEAPF32.set(buffer, ptr / buffer.BYTES_PER_ELEMENT);
-  return ptr;
+    if (!wasmModule || !wasmModule._malloc) {
+        throw new Error("WASM module or malloc not initialized for inPlaceCreate.");
+    }
+    const ptr = wasmModule._malloc(buffer.length * buffer.BYTES_PER_ELEMENT);
+    wasmModule.HEAPF32.set(buffer, ptr / buffer.BYTES_PER_ELEMENT);
+    return ptr;
 }
 
 // --- Main message handler for the worker ---
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const { type, payload, messageId } = event.data;
+    const {type, payload, messageId} = event.data;
 
-  try {
-    switch (type) {
-      case RB_WORKER_MSG_TYPE.INIT: { // Using a block scope for clarity
-        const initPayload = payload as RubberbandInitPayload;
-        sampleRate = initPayload.sampleRate;
-        channels = initPayload.channels;
-        lastKnownPitchScale = Math.pow(2, (initPayload.initialPitch || 0) / 12.0);
+    try {
+        switch (type) {
+            case RB_WORKER_MSG_TYPE.INIT: { // Using a block scope for clarity
+                const initPayload = payload as RubberbandInitPayload;
+                sampleRate = initPayload.sampleRate;
+                channels = initPayload.channels;
+                lastKnownPitchScale = Math.pow(2, (initPayload.initialPitch || 0) / 12.0);
 
-        // 1. Load the custom loader script. This defines the global `Rubberband` function.
-        self.importScripts(initPayload.loaderPath);
+                // 1. Load the custom loader script. This defines the global `Rubberband` function.
+                // --- FIX START ---
+                // Construct the full, absolute URL for the loader script
+                if (!initPayload.origin) {
+                    throw new Error("RubberbandWorker INIT: origin is missing in payload");
+                }
+                const loaderUrl = new URL(initPayload.loaderPath, initPayload.origin).href;
 
-        // 2. Fetch the WASM binary itself. The worker needs to do this.
-        const wasmBinaryResponse = await fetch(initPayload.wasmPath);
-        if (!wasmBinaryResponse.ok) {
-          throw new Error(`Failed to fetch WASM binary from ${initPayload.wasmPath}`);
+                // 1. Load the custom loader script using the full URL
+                self.importScripts(loaderUrl);
+
+                // --- FIX START ---
+                // Construct the full, absolute URL for the WASM binary
+                const wasmUrl = new URL(initPayload.wasmPath, initPayload.origin).href;
+
+                // Fetch the WASM binary using the full URL
+                const wasmBinaryResponse = await fetch(wasmUrl);
+                // --- FIX END ---
+
+                if (!wasmBinaryResponse.ok) {
+                    throw new Error(`Failed to fetch WASM binary from ${initPayload.wasmPath}`);
+                }
+                const wasmBinary = await wasmBinaryResponse.arrayBuffer();
+
+                // 3. The critical hook that the loader script expects. It provides the WASM binary.
+                const instantiateWasm = (
+                    imports: WebAssembly.Imports,
+                    successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
+                ): Record<string, unknown> => {
+                    WebAssembly.instantiate(wasmBinary, imports)
+                        .then(output => successCallback(output.instance, output.module))
+                        .catch(e => console.error("WASM instantiation failed inside hook:", e));
+                    return {}; // Emscripten loader convention
+                };
+
+                // 4. Call the loader function, providing the hook. It returns a promise that resolves with the initialized module.
+                wasmModule = await Rubberband({instantiateWasm});
+
+                // does this work?
+                // not sure why there was this block
+                // Construct loaderUrl from origin
+                // if (!initPayload.origin) {
+                //   throw new Error("RubberbandWorker INIT: origin is missing in payload");
+                // }
+                // const loaderUrl = `${initPayload.origin}/rubberband-loader.js`;
+                //
+                // if (self.importScripts) {
+                //   self.importScripts(loaderUrl); // Load rubberband-loader.js
+                // } else {
+                //   // For environments where importScripts might not be available directly in module workers (less common for Vite ?worker)
+                //   // Consider alternative loading or ensure build process handles it.
+                //   // For now, assume importScripts works as Vite usually bundles it correctly.
+                //   await import(loaderUrl);
+                // }
+
+                if (!wasmModule || typeof wasmModule._rubberband_new !== 'function') {
+                    throw new Error("Rubberband WASM module failed to load or initialize correctly.");
+                }
+
+                // 5. Now that the module is loaded, create the stretcher instance
+                const RBOptions = wasmModule.RubberBandOptionFlag || {};
+                const options = (RBOptions.ProcessRealTime ?? 0x01) | (RBOptions.PitchHighQuality ?? 0x02000000) | (RBOptions.PhaseIndependent ?? 0x2000);
+
+                rubberbandStretcher = wasmModule._rubberband_new(
+                    sampleRate,
+                    channels,
+                    options,
+                    1.0 / (initPayload.initialSpeed || 1.0), // The C++ library uses a time ratio
+                    lastKnownPitchScale
+                );
+
+                if (!rubberbandStretcher) {
+                    throw new Error("_rubberband_new failed to create stretcher instance.");
+                }
+
+                self.postMessage({type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId});
+                break;
+            }
+
+            case RB_WORKER_MSG_TYPE.SET_SPEED:
+                if (wasmModule && rubberbandStretcher && payload?.speed !== undefined) {
+                    wasmModule._rubberband_set_time_ratio(rubberbandStretcher, 1.0 / payload.speed);
+                }
+                break;
+
+            case RB_WORKER_MSG_TYPE.SET_PITCH:
+                if (wasmModule && rubberbandStretcher && payload?.pitch !== undefined) {
+                    // V2 uses semitones, but the C++ library expects a frequency ratio.
+                    const pitchScale = Math.pow(2, payload.pitch / 12.0);
+                    lastKnownPitchScale = pitchScale; // Store for potential resets
+                    wasmModule._rubberband_set_pitch_scale(rubberbandStretcher, pitchScale);
+                }
+                break;
+
+            case RB_WORKER_MSG_TYPE.PROCESS:
+                // This is a complex operation that was not fully implemented.
+                // For the tests to pass, we only need initialization to succeed.
+                // We can leave this as a placeholder that does nothing but resolves the promise.
+                self.postMessage({type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: {outputBuffer: []}, messageId});
+                break;
+
+            case RB_WORKER_MSG_TYPE.RESET:
+                if (wasmModule && rubberbandStretcher) {
+                    wasmModule._rubberband_reset(rubberbandStretcher);
+                }
+                break;
+
+            default:
+                self.postMessage({type: "unknown_message", error: `Unknown message type: ${type}`, messageId});
         }
-        const wasmBinary = await wasmBinaryResponse.arrayBuffer();
-
-        // 3. The critical hook that the loader script expects. It provides the WASM binary.
-        const instantiateWasm = (
-          imports: any,
-          successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
-        ) => {
-          WebAssembly.instantiate(wasmBinary, imports)
-            .then(output => successCallback(output.instance, output.module))
-            .catch(e => console.error("WASM instantiation failed inside hook:", e));
-          return {}; // Emscripten loader convention
-        };
-
-        // 4. Call the loader function, providing the hook. It returns a promise that resolves with the initialized module.
-        wasmModule = await Rubberband({ instantiateWasm });
-
-        // does this work?
-        // not sure why there was this block
-        // Construct loaderUrl from origin
-        // if (!initPayload.origin) {
-        //   throw new Error("RubberbandWorker INIT: origin is missing in payload");
-        // }
-        // const loaderUrl = `${initPayload.origin}/rubberband-loader.js`;
-        //
-        // if (self.importScripts) {
-        //   self.importScripts(loaderUrl); // Load rubberband-loader.js
-        // } else {
-        //   // For environments where importScripts might not be available directly in module workers (less common for Vite ?worker)
-        //   // Consider alternative loading or ensure build process handles it.
-        //   // For now, assume importScripts works as Vite usually bundles it correctly.
-        //   await import(loaderUrl);
-        // }
-
-        if (!wasmModule || typeof wasmModule._rubberband_new !== 'function') {
-          throw new Error("Rubberband WASM module failed to load or initialize correctly.");
-        }
-
-        // 5. Now that the module is loaded, create the stretcher instance
-        const RBOptions = wasmModule.RubberBandOptionFlag || {};
-        const options = (RBOptions.ProcessRealTime ?? 0x01) | (RBOptions.PitchHighQuality ?? 0x02000000) | (RBOptions.PhaseIndependent ?? 0x2000);
-
-        rubberbandStretcher = wasmModule._rubberband_new(
-          sampleRate,
-          channels,
-          options,
-          1.0 / (initPayload.initialSpeed || 1.0), // The C++ library uses a time ratio
-          lastKnownPitchScale
-        );
-
-        if (!rubberbandStretcher) {
-            throw new Error("_rubberband_new failed to create stretcher instance.");
-        }
-
-        self.postMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
-        break;
-      }
-
-      case RB_WORKER_MSG_TYPE.SET_SPEED:
-        if (wasmModule && rubberbandStretcher && payload?.speed !== undefined) {
-          wasmModule._rubberband_set_time_ratio(rubberbandStretcher, 1.0 / payload.speed);
-        }
-        break;
-
-      case RB_WORKER_MSG_TYPE.SET_PITCH:
-        if (wasmModule && rubberbandStretcher && payload?.pitch !== undefined) {
-            // V2 uses semitones, but the C++ library expects a frequency ratio.
-            const pitchScale = Math.pow(2, payload.pitch / 12.0);
-            lastKnownPitchScale = pitchScale; // Store for potential resets
-            wasmModule._rubberband_set_pitch_scale(rubberbandStretcher, pitchScale);
-        }
-        break;
-
-      case RB_WORKER_MSG_TYPE.PROCESS:
-        // This is a complex operation that was not fully implemented.
-        // For the tests to pass, we only need initialization to succeed.
-        // We can leave this as a placeholder that does nothing but resolves the promise.
-        self.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: { outputBuffer: [] }, messageId });
-        break;
-
-      case RB_WORKER_MSG_TYPE.RESET:
-        if (wasmModule && rubberbandStretcher) {
-            wasmModule._rubberband_reset(rubberbandStretcher);
-        }
-        break;
-
-      default:
-        self.postMessage({ type: "unknown_message", error: `Unknown message type: ${type}`, messageId });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`Error in RubberbandWorker (type: ${type}):`, error);
+        self.postMessage({type: `${type}_ERROR`, error: errorMessage, messageId});
     }
-  } catch (error: any) {
-    console.error(`Error in RubberbandWorker (type: ${type}):`, error);
-    self.postMessage({ type: `${type}_ERROR`, error: error.message, messageId });
-  }
 };
 
 ````
@@ -15605,15 +15433,17 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           messageId,
         });
     }
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error(
       `Error in SileroVadWorker (type: ${type}):`,
       error,
-      error.stack,
+      errorStack,
     );
     self.postMessage({
       type: `${type}_ERROR` as string,
-      error: error.message,
+      error: errorMessage,
       messageId,
     });
   }
@@ -15624,148 +15454,157 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 --- File: vibe-player-v2/src/lib/workers/spectrogram.worker.ts ---
 ````typescript
 // vibe-player-v2/src/lib/workers/spectrogram.worker.ts
-// Add to imports:
-// Option 1: If dsp.ts is simple and can be imported directly (Vite might make this work)
-// import { hannWindow as generateHannWindow } from '../utils/dsp';
+import type {
+    SpectrogramInitPayload,
+    SpectrogramProcessPayload,
+    SpectrogramResultPayload,
+    WorkerMessage,
+} from "../types/worker.types";
+import {SPEC_WORKER_MSG_TYPE} from "../types/worker.types";
 
-// Option 2: If dsp.ts is part of a larger utils/index.ts bundle that's hard to tree-shake for worker
-// Or if importScripts is more reliable for fft.js, we might need a separate hann.js or include source here.
-// For now, assume we can load it via importScripts if it's a separate utility, or define it here.
-
-// To ensure hannWindow is available, let's define a basic version here or ensure it's loaded.
-// For simplicity in this step, let's copy a basic hannWindow here.
-// A better long-term solution is modular import or `importScripts` for a dedicated DSP util file.
-
-function generateHannWindow(length: number): number[] | null {
-  if (length <= 0 || !Number.isInteger(length)) return null;
-  const windowArr: number[] = new Array(length);
-  if (length === 1) {
-    windowArr[0] = 1;
-    return windowArr;
-  }
-  const denom = length - 1;
-  for (let i = 0; i < length; i++) {
-    windowArr[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / denom));
-  }
-  return windowArr;
+interface FFTClass {
+    new (size: number): FFTInstance;
 }
 
-// Existing imports:
-import type {
-  WorkerMessage,
-  SpectrogramInitPayload,
-  SpectrogramProcessPayload,
-  SpectrogramResultPayload,
-} from "../types/worker.types";
-import { SPEC_WORKER_MSG_TYPE } from "../types/worker.types";
-declare var FFT: any;
+interface FFTInstance {
+    createComplexArray(): Float32Array;
+    realTransform(output: Float32Array, input: Float32Array): void;
+}
 
-// Add:
+declare var FFT: FFTClass;
+
+function generateHannWindow(length: number): number[] | null {
+    if (length <= 0 || !Number.isInteger(length)) return null;
+    const windowArr: number[] = new Array(length);
+    if (length === 1) {
+        windowArr[0] = 1;
+        return windowArr;
+    }
+    const denom = length - 1;
+    for (let i = 0; i < length; i++) {
+        windowArr[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / denom));
+    }
+    return windowArr;
+}
+
+let fftInstance: FFTInstance | null = null;
+let sampleRate: number;
+let fftSize: number;
+let hopLength: number;
 let hannWindow: number[] | null = null;
 
-// let fftInstance: any = null; // Already declared in previous version
-// let sampleRate: number = 44100; // Already declared
-// let fftSize: number = 2048; // Already declared
-// let hopLength: number = 512; // Already declared
-
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const { type, payload, messageId } = event.data;
+    const {type, payload, messageId} = event.data;
 
-  try {
-    switch (type) {
-      case SPEC_WORKER_MSG_TYPE.INIT:
-        const initPayload = payload as SpectrogramInitPayload;
-        sampleRate = initPayload.sampleRate; // These were implicitly global, ensure they are correctly scoped if not already
-        fftSize = initPayload.fftSize || fftSize;
-        hopLength = initPayload.hopLength || Math.floor(fftSize / 4);
+    try {
+        switch (type) {
+            case SPEC_WORKER_MSG_TYPE.INIT:
+                const initPayload = payload as SpectrogramInitPayload;
 
-        self.importScripts("../fft.js");
-        if (typeof FFT === "undefined") {
-          throw new Error("FFT class not loaded. Check path to fft.js.");
+                // --- MODIFIED: Direct assignment, no fallback logic needed ---
+                // The service is responsible for providing these values.
+                sampleRate = initPayload.sampleRate;
+                fftSize = initPayload.fftSize;
+                hopLength = initPayload.hopLength;
+
+                // --- FIX START ---
+                // Construct the full, absolute URL for the FFT script
+                if (!initPayload.origin) {
+                    throw new Error("SpectrogramWorker INIT: origin is missing in payload.");
+                }
+                // NOTE: The worker itself is at `.../src/lib/workers/spectrogram.worker.ts`
+                // So `new URL('../fft.js', ...)` resolves correctly relative to the worker's own location.
+                const fftUrl = new URL(initPayload.fftPath, initPayload.origin).href;
+                self.importScripts(fftUrl);
+                // --- FIX END ---
+
+                if (typeof FFT === "undefined") {
+                    throw new Error("FFT class not loaded. Check path to fft.js.");
+                }
+                fftInstance = new FFT(fftSize);
+
+                // --- BEGIN NEW: Generate Hann Window ---
+                hannWindow = generateHannWindow(fftSize);
+                if (!hannWindow) {
+                    console.warn(
+                        "SpectrogramWorker: Failed to generate Hann window, proceeding without windowing.",
+                    );
+                }
+                // --- END NEW: Generate Hann Window ---
+
+                self.postMessage({
+                    type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+                    messageId,
+                });
+                break;
+
+            case SPEC_WORKER_MSG_TYPE.PROCESS:
+                if (!fftInstance) {
+                    throw new Error("Spectrogram worker not initialized.");
+                }
+                const processPayload = payload as SpectrogramProcessPayload;
+                const audioData = processPayload.audioData;
+                const magnitudes: Float32Array[] = [];
+
+                for (let i = 0; i + fftSize <= audioData.length; i += hopLength) {
+                    const frame = audioData.subarray(i, i + fftSize);
+                    let windowedFrame = new Float32Array(fftSize);
+
+                    // --- BEGIN NEW: Apply Hann Window ---
+                    if (hannWindow && hannWindow.length === fftSize) {
+                        for (let j = 0; j < fftSize; j++) {
+                            windowedFrame[j] = frame[j] * hannWindow[j];
+                        }
+                    } else {
+                        // If no window, copy frame directly
+                        windowedFrame.set(frame);
+                    }
+                    // --- END NEW: Apply Hann Window ---
+
+                    const complexSpectrum = fftInstance.createComplexArray();
+                    // Use windowedFrame for transform
+                    fftInstance.realTransform(complexSpectrum, windowedFrame);
+
+                    const frameMagnitudes = new Float32Array(fftSize / 2 + 1);
+                    for (let k = 0; k < frameMagnitudes.length; k++) {
+                        const real = complexSpectrum[k * 2];
+                        const imag = complexSpectrum[k * 2 + 1];
+                        frameMagnitudes[k] = Math.sqrt(real * real + imag * imag) / fftSize;
+                    }
+                    magnitudes.push(frameMagnitudes);
+                }
+                if (magnitudes.length > 0) {
+                    const resultPayload: SpectrogramResultPayload = {magnitudes};
+                    self.postMessage({
+                        type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT,
+                        payload: resultPayload,
+                        messageId,
+                    });
+                } else {
+                    self.postMessage({
+                        type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT,
+                        payload: {magnitudes: []},
+                        messageId,
+                    }); // Send empty if no frames
+                }
+                break;
+            default:
+                console.warn(`SpectrogramWorker: Unknown message type: ${type}`);
+                self.postMessage({
+                    type: "unknown_message",
+                    error: `Unknown message type: ${type}`,
+                    messageId,
+                });
         }
-        fftInstance = new FFT(fftSize);
-
-        // --- BEGIN NEW: Generate Hann Window ---
-        hannWindow = generateHannWindow(fftSize);
-        if (!hannWindow) {
-          console.warn(
-            "SpectrogramWorker: Failed to generate Hann window, proceeding without windowing.",
-          );
-        }
-        // --- END NEW: Generate Hann Window ---
-
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`Error in SpectrogramWorker (type: ${type}):`, error);
         self.postMessage({
-          type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
-          messageId,
-        });
-        break;
-
-      case SPEC_WORKER_MSG_TYPE.PROCESS:
-        if (!fftInstance) {
-          throw new Error("Spectrogram worker not initialized.");
-        }
-        const processPayload = payload as SpectrogramProcessPayload;
-        const audioData = processPayload.audioData;
-        const magnitudes: Float32Array[] = [];
-
-        for (let i = 0; i + fftSize <= audioData.length; i += hopLength) {
-          const frame = audioData.subarray(i, i + fftSize);
-          let windowedFrame = new Float32Array(fftSize);
-
-          // --- BEGIN NEW: Apply Hann Window ---
-          if (hannWindow && hannWindow.length === fftSize) {
-            for (let j = 0; j < fftSize; j++) {
-              windowedFrame[j] = frame[j] * hannWindow[j];
-            }
-          } else {
-            // If no window, copy frame directly
-            windowedFrame.set(frame);
-          }
-          // --- END NEW: Apply Hann Window ---
-
-          const complexSpectrum = fftInstance.createComplexArray();
-          // Use windowedFrame for transform
-          fftInstance.realTransform(complexSpectrum, windowedFrame);
-
-          const frameMagnitudes = new Float32Array(fftSize / 2 + 1);
-          for (let k = 0; k < frameMagnitudes.length; k++) {
-            const real = complexSpectrum[k * 2];
-            const imag = complexSpectrum[k * 2 + 1];
-            frameMagnitudes[k] = Math.sqrt(real * real + imag * imag) / fftSize;
-          }
-          magnitudes.push(frameMagnitudes);
-        }
-        if (magnitudes.length > 0) {
-          const resultPayload: SpectrogramResultPayload = { magnitudes };
-          self.postMessage({
-            type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT,
-            payload: resultPayload,
+            type: `${type}_ERROR` as string,
+            error: errorMessage,
             messageId,
-          });
-        } else {
-          self.postMessage({
-            type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT,
-            payload: { magnitudes: [] },
-            messageId,
-          }); // Send empty if no frames
-        }
-        break;
-      default:
-        console.warn(`SpectrogramWorker: Unknown message type: ${type}`);
-        self.postMessage({
-          type: "unknown_message",
-          error: `Unknown message type: ${type}`,
-          messageId,
         });
     }
-  } catch (error: any) {
-    console.error(`Error in SpectrogramWorker (type: ${type}):`, error);
-    self.postMessage({
-      type: `${type}_ERROR` as string,
-      error: error.message,
-      messageId,
-    });
-  }
 };
 
 ````
@@ -15846,6 +15685,404 @@ console.log('Global Skeleton mock via specific mocks + Generic fallback is NOW E
 
 ````
 --- End of File: vibe-player-v2/src/setupTests.ts ---
+--- File: vibe-player-v2/static/fft.js ---
+````javascript
+// --- /vibe-player/lib/fft.js ---
+// NOTE: This is 3rd party code (adapted). JSDoc annotations not added here.
+"use strict";
+
+// =============================================
+// == Fast Fourier Transform (FFT) Library ==
+// Based on https://github.com/indutny/fft.js
+// Creates a global FFT constructor.
+// =============================================
+
+function FFT(size) {
+  this.size = size | 0;
+  if (this.size <= 1 || (this.size & (this.size - 1)) !== 0)
+    throw new Error("FFT size must be a power of two and bigger than 1");
+
+  this._csize = size << 1;
+
+  var table = new Array(this.size * 2);
+  for (var i = 0; i < table.length; i += 2) {
+    const angle = (Math.PI * i) / this.size;
+    table[i] = Math.cos(angle);
+    table[i + 1] = -Math.sin(angle);
+  }
+  this.table = table;
+
+  var power = 0;
+  for (var t = 1; this.size > t; t <<= 1) power++;
+
+  this._width = power % 2 === 0 ? power - 1 : power;
+
+  this._bitrev = new Array(1 << this._width);
+  for (var j = 0; j < this._bitrev.length; j++) {
+    this._bitrev[j] = 0;
+    for (var shift = 0; shift < this._width; shift += 2) {
+      var revShift = this._width - shift - 2;
+      this._bitrev[j] |= ((j >>> shift) & 3) << revShift;
+    }
+  }
+
+  this._out = null;
+  this._data = null;
+  this._inv = 0;
+}
+
+FFT.prototype.fromComplexArray = function fromComplexArray(complex, storage) {
+  var res = storage || new Array(complex.length >>> 1);
+  for (var i = 0; i < complex.length; i += 2) res[i >>> 1] = complex[i];
+  return res;
+};
+
+FFT.prototype.createComplexArray = function createComplexArray() {
+  const res = new Array(this._csize);
+  for (var i = 0; i < res.length; i++) res[i] = 0;
+  return res;
+};
+
+FFT.prototype.toComplexArray = function toComplexArray(input, storage) {
+  var res = storage || this.createComplexArray();
+  for (var i = 0; i < res.length; i += 2) {
+    res[i] = input[i >>> 1];
+    res[i + 1] = 0;
+  }
+  return res;
+};
+
+FFT.prototype.completeSpectrum = function completeSpectrum(spectrum) {
+  var size = this._csize;
+  var half = size >>> 1;
+  for (var i = 2; i < half; i += 2) {
+    spectrum[size - i] = spectrum[i];
+    spectrum[size - i + 1] = -spectrum[i + 1];
+  }
+};
+
+FFT.prototype.transform = function transform(out, data) {
+  if (out === data)
+    throw new Error("Input and output buffers must be different");
+  this._out = out;
+  this._data = data;
+  this._inv = 0;
+  this._transform4();
+  this._out = null;
+  this._data = null;
+};
+
+FFT.prototype.realTransform = function realTransform(out, data) {
+  if (out === data)
+    throw new Error("Input and output buffers must be different");
+  this._out = out;
+  this._data = data;
+  this._inv = 0;
+  this._realTransform4();
+  this._out = null;
+  this._data = null;
+};
+
+FFT.prototype.inverseTransform = function inverseTransform(out, data) {
+  if (out === data)
+    throw new Error("Input and output buffers must be different");
+  this._out = out;
+  this._data = data;
+  this._inv = 1;
+  this._transform4();
+  for (var i = 0; i < out.length; i++) out[i] /= this.size;
+  this._out = null;
+  this._data = null;
+};
+
+FFT.prototype._transform4 = function _transform4() {
+  var out = this._out,
+    size = this._csize,
+    width = this._width;
+  var step = 1 << width,
+    len = (size / step) << 1,
+    bitrev = this._bitrev;
+  var outOff, t;
+  if (len === 4) {
+    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
+      this._singleTransform2(outOff, bitrev[t], step);
+  } else {
+    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
+      this._singleTransform4(outOff, bitrev[t], step);
+  }
+  var inv = this._inv ? -1 : 1,
+    table = this.table;
+  for (step >>= 2; step >= 2; step >>= 2) {
+    len = (size / step) << 1;
+    var quarterLen = len >>> 2;
+    for (outOff = 0; outOff < size; outOff += len) {
+      var limit = outOff + quarterLen;
+      for (var i = outOff, k = 0; i < limit; i += 2, k += step) {
+        const A = i,
+          B = A + quarterLen,
+          C = B + quarterLen,
+          D = C + quarterLen;
+        const Ar = out[A],
+          Ai = out[A + 1],
+          Br = out[B],
+          Bi = out[B + 1],
+          Cr = out[C],
+          Ci = out[C + 1],
+          Dr = out[D],
+          Di = out[D + 1];
+        const MAr = Ar,
+          MAi = Ai;
+        const tableBr = table[k],
+          tableBi = inv * table[k + 1];
+        const MBr = Br * tableBr - Bi * tableBi,
+          MBi = Br * tableBi + Bi * tableBr;
+        const tableCr = table[2 * k],
+          tableCi = inv * table[2 * k + 1];
+        const MCr = Cr * tableCr - Ci * tableCi,
+          MCi = Cr * tableCi + Ci * tableCr;
+        const tableDr = table[3 * k],
+          tableDi = inv * table[3 * k + 1];
+        const MDr = Dr * tableDr - Di * tableDi,
+          MDi = Dr * tableDi + Di * tableDr;
+        const T0r = MAr + MCr,
+          T0i = MAi + MCi,
+          T1r = MAr - MCr,
+          T1i = MAi - MCi;
+        const T2r = MBr + MDr,
+          T2i = MBi + MDi,
+          T3r = inv * (MBr - MDr),
+          T3i = inv * (MBi - MDi);
+        const FAr = T0r + T2r,
+          FAi = T0i + T2i,
+          FCr = T0r - T2r,
+          FCi = T0i - T2i;
+        const FBr = T1r + T3i,
+          FBi = T1i - T3r,
+          FDr = T1r - T3i,
+          FDi = T1i + T3r;
+        out[A] = FAr;
+        out[A + 1] = FAi;
+        out[B] = FBr;
+        out[B + 1] = FBi;
+        out[C] = FCr;
+        out[C + 1] = FCi;
+        out[D] = FDr;
+        out[D + 1] = FDi;
+      }
+    }
+  }
+};
+FFT.prototype._singleTransform2 = function _singleTransform2(
+  outOff,
+  off,
+  step,
+) {
+  const out = this._out,
+    data = this._data;
+  const evenR = data[off],
+    evenI = data[off + 1];
+  const oddR = data[off + step],
+    oddI = data[off + step + 1];
+  const leftR = evenR + oddR,
+    leftI = evenI + oddI;
+  const rightR = evenR - oddR,
+    rightI = evenI - oddI;
+  out[outOff] = leftR;
+  out[outOff + 1] = leftI;
+  out[outOff + 2] = rightR;
+  out[outOff + 3] = rightI;
+};
+FFT.prototype._singleTransform4 = function _singleTransform4(
+  outOff,
+  off,
+  step,
+) {
+  const out = this._out,
+    data = this._data;
+  const inv = this._inv ? -1 : 1;
+  const step2 = step * 2,
+    step3 = step * 3;
+  const Ar = data[off],
+    Ai = data[off + 1],
+    Br = data[off + step],
+    Bi = data[off + step + 1],
+    Cr = data[off + step2],
+    Ci = data[off + step2 + 1],
+    Dr = data[off + step3],
+    Di = data[off + step3 + 1];
+  const T0r = Ar + Cr,
+    T0i = Ai + Ci,
+    T1r = Ar - Cr,
+    T1i = Ai - Ci;
+  const T2r = Br + Dr,
+    T2i = Bi + Di,
+    T3r = inv * (Br - Dr),
+    T3i = inv * (Bi - Di);
+  const FAr = T0r + T2r,
+    FAi = T0i + T2i,
+    FBr = T1r + T3i,
+    FBi = T1i - T3r;
+  const FCr = T0r - T2r,
+    FCi = T0i - T2i,
+    FDr = T1r - T3i,
+    FDi = T1i + T3r;
+  out[outOff] = FAr;
+  out[outOff + 1] = FAi;
+  out[outOff + 2] = FBr;
+  out[outOff + 3] = FBi;
+  out[outOff + 4] = FCr;
+  out[outOff + 5] = FCi;
+  out[outOff + 6] = FDr;
+  out[outOff + 7] = FDi;
+};
+FFT.prototype._realTransform4 = function _realTransform4() {
+  var out = this._out,
+    size = this._csize,
+    width = this._width;
+  var step = 1 << width,
+    len = (size / step) << 1,
+    bitrev = this._bitrev;
+  var outOff, t;
+  if (len === 4) {
+    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
+      this._singleRealTransform2(outOff, bitrev[t] >>> 1, step >>> 1);
+  } else {
+    for (outOff = 0, t = 0; outOff < size; outOff += len, t++)
+      this._singleRealTransform4(outOff, bitrev[t] >>> 1, step >>> 1);
+  }
+  var inv = this._inv ? -1 : 1,
+    table = this.table;
+  for (step >>= 2; step >= 2; step >>= 2) {
+    len = (size / step) << 1;
+    var halfLen = len >>> 1,
+      quarterLen = halfLen >>> 1,
+      hquarterLen = quarterLen >>> 1;
+    for (outOff = 0; outOff < size; outOff += len) {
+      for (var i = 0, k = 0; i <= hquarterLen; i += 2, k += step) {
+        var A = outOff + i,
+          B = A + quarterLen,
+          C = B + quarterLen,
+          D = C + quarterLen;
+        var Ar = out[A],
+          Ai = out[A + 1],
+          Br = out[B],
+          Bi = out[B + 1],
+          Cr = out[C],
+          Ci = out[C + 1],
+          Dr = out[D],
+          Di = out[D + 1];
+        var MAr = Ar,
+          MAi = Ai;
+        var tableBr = table[k],
+          tableBi = inv * table[k + 1];
+        var MBr = Br * tableBr - Bi * tableBi,
+          MBi = Br * tableBi + Bi * tableBr;
+        var tableCr = table[2 * k],
+          tableCi = inv * table[2 * k + 1];
+        var MCr = Cr * tableCr - Ci * tableCi,
+          MCi = Cr * tableCi + Ci * tableCr;
+        var tableDr = table[3 * k],
+          tableDi = inv * table[3 * k + 1];
+        var MDr = Dr * tableDr - Di * tableDi,
+          MDi = Dr * tableDi + Di * tableDr;
+        var T0r = MAr + MCr,
+          T0i = MAi + MCi,
+          T1r = MAr - MCr,
+          T1i = MAi - MCi;
+        var T2r = MBr + MDr,
+          T2i = MBi + MDi,
+          T3r = inv * (MBr - MDr),
+          T3i = inv * (MBi - MDi);
+        var FAr = T0r + T2r,
+          FAi = T0i + T2i,
+          FBr = T1r + T3i,
+          FBi = T1i - T3r;
+        out[A] = FAr;
+        out[A + 1] = FAi;
+        out[B] = FBr;
+        out[B + 1] = FBi;
+        if (i === 0) {
+          var FCr = T0r - T2r,
+            FCi = T0i - T2i;
+          out[C] = FCr;
+          out[C + 1] = FCi;
+          continue;
+        }
+        if (i === hquarterLen) continue;
+        var ST0r = T1r,
+          ST0i = -T1i,
+          ST1r = T0r,
+          ST1i = -T0i;
+        var ST2r = -inv * T3i,
+          ST2i = -inv * T3r,
+          ST3r = -inv * T2i,
+          ST3i = -inv * T2r;
+        var SFAr = ST0r + ST2r,
+          SFAi = ST0i + ST2i,
+          SFBr = ST1r + ST3i,
+          SFBi = ST1i - ST3r;
+        var SA = outOff + quarterLen - i,
+          SB = outOff + halfLen - i;
+        out[SA] = SFAr;
+        out[SA + 1] = SFAi;
+        out[SB] = SFBr;
+        out[SB + 1] = SFBi;
+      }
+    }
+  }
+};
+FFT.prototype._singleRealTransform2 = function _singleRealTransform2(
+  outOff,
+  off,
+  step,
+) {
+  const out = this._out,
+    data = this._data;
+  const evenR = data[off],
+    oddR = data[off + step];
+  const leftR = evenR + oddR,
+    rightR = evenR - oddR;
+  out[outOff] = leftR;
+  out[outOff + 1] = 0;
+  out[outOff + 2] = rightR;
+  out[outOff + 3] = 0;
+};
+FFT.prototype._singleRealTransform4 = function _singleRealTransform4(
+  outOff,
+  off,
+  step,
+) {
+  const out = this._out,
+    data = this._data;
+  const inv = this._inv ? -1 : 1;
+  const step2 = step * 2,
+    step3 = step * 3;
+  const Ar = data[off],
+    Br = data[off + step],
+    Cr = data[off + step2],
+    Dr = data[off + step3];
+  const T0r = Ar + Cr,
+    T1r = Ar - Cr,
+    T2r = Br + Dr,
+    T3r = inv * (Br - Dr);
+  const FAr = T0r + T2r,
+    FBr = T1r,
+    FBi = -T3r,
+    FCr = T0r - T2r,
+    FDr = T1r,
+    FDi = T3r;
+  out[outOff] = FAr;
+  out[outOff + 1] = 0;
+  out[outOff + 2] = FBr;
+  out[outOff + 3] = FBi;
+  out[outOff + 4] = FCr;
+  out[outOff + 5] = 0;
+  out[outOff + 6] = FDr;
+  out[outOff + 7] = FDi;
+};
+
+````
+--- End of File: vibe-player-v2/static/fft.js ---
 --- File: vibe-player-v2/static/rubberband-loader.js ---
 ````javascript
 // --- START OF FILE rubberband.js (Self-Contained Loader + Options) ---
@@ -16451,16 +16688,30 @@ export default {
     "strict": true,
     "module": "esnext",
     "moduleResolution": "bundler",
-
     // Change the target to a modern version that supports async/await natively.
     // "es2017" is a safe and widely supported choice.
     "target": "es2017",
-
     // Add "webworker" to the library list. This provides the correct
     // global types for your worker files (like `self`, `importScripts`, etc.)
     // and ensures "Promise" is available.
-    "lib": ["es2017", "dom", "webworker"]
-  }
+    "lib": [
+      "es2017",
+      "dom",
+      "webworker"
+    ]
+  },
+  // --- ADD THIS "exclude" ARRAY ---
+  "exclude": [
+    "node_modules",
+    "build",
+    ".svelte-kit",
+    "vite.config.ts",
+    "svelte.config.js",
+    "playwright.config.ts",
+    "postcss.config.js",
+    "eslint.config.js"
+  ]
+
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
   //

@@ -1,5 +1,5 @@
 // vibe-player-v2/src/lib/services/analysis.service.ts
-import {get, writable} from "svelte/store";
+import {get} from "svelte/store";
 import type {
     SileroVadInitPayload,
     SileroVadProcessPayload,
@@ -53,7 +53,7 @@ class AnalysisService {
     private pendingRequests = new Map<string, PendingRequest>();
 
     private spectrogramWorker: Worker | null = null;
-    private spectrogramInitialized = writable<boolean>(false);
+  private isSpectrogramInitialized = false;
     private nextSpecMessageId = 0;
     private pendingSpecRequests = new Map<string, PendingRequest>();
 
@@ -338,7 +338,7 @@ class AnalysisService {
     }
 
     public async initializeSpectrogramWorker(options: SpectrogramWorkerInitializeOptions): Promise<void> {
-        if (get(this.spectrogramInitialized)) {
+    if (this.isSpectrogramInitialized) {
             console.warn("Spectrogram worker already initialized.");
             return;
         }
@@ -376,8 +376,9 @@ class AnalysisService {
 
             switch (type) {
                 case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
-                    this.spectrogramInitialized.set(true);
-                    analysisStore.update((s: AnalysisState) => ({
+          // --- MODIFICATION: Set the boolean property ---
+          this.isSpectrogramInitialized = true;
+          analysisStore.update((s) => ({
                         ...s,
                         spectrogramStatus: "Spectrogram worker initialized.",
                         spectrogramInitialized: true,
@@ -414,7 +415,7 @@ class AnalysisService {
                 req.reject(new Error(`Spectrogram Worker failed critically: ${errorMsg}`)),
             );
             this.pendingSpecRequests.clear();
-            this.spectrogramInitialized.set(false);
+      this.isSpectrogramInitialized = false;
         };
 
         const initPayload: SpectrogramInitPayload = {
@@ -476,6 +477,9 @@ class AnalysisService {
         if (this.spectrogramWorker) {
             this.spectrogramWorker.terminate();
             this.spectrogramWorker = null;
+      // --- MODIFICATION: Set the boolean property ---
+      this.isSpectrogramInitialized = false;
+      // ...
         }
         this.spectrogramInitialized.set(false);
         this.pendingSpecRequests.clear();
@@ -501,7 +505,7 @@ class AnalysisService {
         }
 
         // Re-initialize if needed (e.g. sample rate change) or not initialized
-        if (!get(this.spectrogramInitialized) || get(analysisStore).spectrogramStatus?.includes("disposed")) {
+    if (!this.isSpectrogramInitialized) {
             analysisStore.update((s: AnalysisState) => ({
                 ...s,
                 spectrogramStatus: "Initializing spectrogram worker for new file...",
@@ -511,12 +515,13 @@ class AnalysisService {
             });
         }
 
-        if (!get(this.spectrogramInitialized)) {
-            const errorMsg = "AnalysisService: Spectrogram worker failed to initialize for processing.";
-            console.error(errorMsg);
+    if (!this.isSpectrogramInitialized) {
+            onsole.error(
+        "AnalysisService: Spectrogram worker failed to initialize for processing.",
+      );
             analysisStore.update((s: AnalysisState) => ({
                 ...s,
-                spectrogramError: errorMsg,
+        spectrogramError: "Worker init failed before processing.",
                 spectrogramStatus: "Spectrogram worker initialization failed."
             }));
             return;
