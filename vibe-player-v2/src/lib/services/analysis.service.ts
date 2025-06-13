@@ -37,7 +37,7 @@ class AnalysisService {
   private nextMessageId = 0;
   private pendingRequests = new Map<
     string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
+    { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }
   >();
 
   // Add to AnalysisService class:
@@ -46,7 +46,7 @@ class AnalysisService {
   private nextSpecMessageId = 0;
   private pendingSpecRequests = new Map<
     string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
+    { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }
   >();
 
   private constructor() {}
@@ -62,14 +62,17 @@ class AnalysisService {
     return `vad_msg_${this.nextMessageId++}`;
   }
 
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<any> {
-    return new Promise((resolve, reject) => {
+  private postMessageToWorker<T, R = unknown>(message: WorkerMessage<T>): Promise<R> {
+    return new Promise<R>((resolve, reject) => {
       if (!this.worker) {
         reject(new Error("VAD Worker not initialized."));
         return;
       }
       const messageId = this.generateMessageId();
-      this.pendingRequests.set(messageId, { resolve, reject });
+      this.pendingRequests.set(messageId, { 
+        resolve: (value: unknown) => resolve(value as R), 
+        reject 
+      });
       this.worker.postMessage({ ...message, messageId });
     });
   }
@@ -135,13 +138,15 @@ class AnalysisService {
           break;
 
         case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
-          const resultPayload = payload as SileroVadProcessResultPayload;
-          analysisStore.update((s) => ({
-            ...s,
-            lastVadResult: resultPayload,
-            isSpeaking: resultPayload.isSpeech, // Example update
-          }));
-          if (request) request.resolve(resultPayload);
+          if (payload && typeof payload === 'object') {
+            const resultPayload = payload as SileroVadProcessResultPayload;
+            analysisStore.update((s) => ({
+              ...s,
+              lastVadResult: resultPayload,
+              isSpeaking: resultPayload.isSpeech, // Example update
+            }));
+            if (request) request.resolve(resultPayload);
+          }
           break;
 
         case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
@@ -283,14 +288,17 @@ class AnalysisService {
     return `spec_msg_${this.nextSpecMessageId++}`;
   }
 
-  private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<any> {
-    return new Promise((resolve, reject) => {
+  private postMessageToSpecWorker<T, R = unknown>(message: WorkerMessage<T>): Promise<R> {
+    return new Promise<R>((resolve, reject) => {
       if (!this.spectrogramWorker) {
         reject(new Error("Spectrogram Worker not initialized."));
         return;
       }
       const messageId = this.generateSpecMessageId();
-      this.pendingSpecRequests.set(messageId, { resolve, reject });
+      this.pendingSpecRequests.set(messageId, { 
+        resolve: (value: unknown) => resolve(value as R), 
+        reject 
+      });
       this.spectrogramWorker.postMessage({ ...message, messageId });
     });
   }
@@ -343,12 +351,14 @@ class AnalysisService {
           if (request) request.resolve(payload);
           break;
         case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
-          const specResult = payload as SpectrogramResultPayload;
-          analysisStore.update((s) => ({
-            ...s,
-            spectrogramData: specResult.magnitudes,
-          }));
-          if (request) request.resolve(specResult);
+          if (payload && typeof payload === 'object') {
+            const specResult = payload as SpectrogramResultPayload;
+            analysisStore.update((s) => ({
+              ...s,
+              spectrogramData: specResult.magnitudes,
+            }));
+            if (request) request.resolve(specResult);
+          }
           break;
         default:
           if (request) request.resolve(payload);

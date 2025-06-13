@@ -1,7 +1,7 @@
 // vibe-player-v2/src/lib/types/worker.types.ts
 
 // General message structure for worker communication
-export interface WorkerMessage<T = any> {
+export interface WorkerMessage<T = unknown> {
     type: string;
     payload?: T;
     error?: string;
@@ -118,21 +118,27 @@ export interface SpectrogramResultPayload {
 
 // Type guards for narrowing down message types (examples)
 export function isRubberbandInitPayload(
-    payload: any,
+    payload: unknown,
 ): payload is RubberbandInitPayload {
     return (
-        payload &&
-        typeof payload.wasmPath === "string" &&
-        typeof payload.sampleRate === "number"
+        payload !== null &&
+        typeof payload === 'object' &&
+        'wasmPath' in payload &&
+        typeof (payload as Record<string, unknown>).wasmPath === "string" &&
+        'sampleRate' in payload &&
+        typeof (payload as Record<string, unknown>).sampleRate === "number"
     );
 }
 
 export function isSileroVadInitPayload(
-    payload: any,
+    payload: unknown,
 ): payload is SileroVadInitPayload {
     return (
-        payload &&
-        typeof payload.onnxModelPath === "string" &&
-        typeof payload.sampleRate === "number"
+        payload !== null &&
+        typeof payload === 'object' &&
+        'onnxModelPath' in payload &&
+        typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
+        'sampleRate' in payload &&
+        typeof (payload as Record<string, unknown>).sampleRate === "number"
     );
 }

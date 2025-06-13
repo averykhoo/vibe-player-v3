@@ -7,7 +7,16 @@ import type {
 } from "../types/worker.types";
 import {SPEC_WORKER_MSG_TYPE} from "../types/worker.types";
 
-declare var FFT: any;
+interface FFTClass {
+    new (size: number): FFTInstance;
+}
+
+interface FFTInstance {
+    createComplexArray(): Float32Array;
+    realTransform(output: Float32Array, input: Float32Array): void;
+}
+
+declare var FFT: FFTClass;
 
 function generateHannWindow(length: number): number[] | null {
     if (length <= 0 || !Number.isInteger(length)) return null;
@@ -23,7 +32,7 @@ function generateHannWindow(length: number): number[] | null {
     return windowArr;
 }
 
-let fftInstance: any = null;
+let fftInstance: FFTInstance | null = null;
 let sampleRate: number;
 let fftSize: number;
 let hopLength: number;
@@ -132,11 +141,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
                     messageId,
                 });
         }
-    } catch (error: any) {
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Error in SpectrogramWorker (type: ${type}):`, error);
         self.postMessage({
             type: `${type}_ERROR` as string,
-            error: error.message,
+            error: errorMessage,
             messageId,
         });
     }

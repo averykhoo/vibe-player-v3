@@ -3,9 +3,28 @@ import type {RubberbandInitPayload, WorkerMessage,} from "../types/worker.types"
 import {RB_WORKER_MSG_TYPE} from "../types/worker.types";
 
 // These will be populated by the loader script when it's initialized
-declare function Rubberband(moduleArg: any): Promise<any>;
+interface RubberbandModule {
+  _malloc: (size: number) => number;
+  _rubberband_new: (sampleRate: number, channels: number, options: number, timeRatio: number, pitchScale: number) => number;
+  _rubberband_set_time_ratio: (stretcher: number, ratio: number) => void;
+  _rubberband_set_pitch_scale: (stretcher: number, scale: number) => void;
+  _rubberband_reset: (stretcher: number) => void;
+  HEAPF32: Float32Array;
+  RubberBandOptionFlag?: {
+    ProcessRealTime?: number;
+    PitchHighQuality?: number;
+    PhaseIndependent?: number;
+  };
+}
 
-let wasmModule: any = null;
+declare function Rubberband(moduleArg: {
+  instantiateWasm: (
+    imports: WebAssembly.Imports,
+    successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
+  ) => Record<string, unknown>;
+}): Promise<RubberbandModule>;
+
+let wasmModule: RubberbandModule | null = null;
 let rubberbandStretcher: number = 0; // This is an opaque pointer (an integer)
 
 let sampleRate = 44100;
@@ -60,9 +79,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
                 // 3. The critical hook that the loader script expects. It provides the WASM binary.
                 const instantiateWasm = (
-                    imports: any,
+                    imports: WebAssembly.Imports,
                     successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
-                ) => {
+                ): Record<string, unknown> => {
                     WebAssembly.instantiate(wasmBinary, imports)
                         .then(output => successCallback(output.instance, output.module))
                         .catch(e => console.error("WASM instantiation failed inside hook:", e));
@@ -144,8 +163,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
             default:
                 self.postMessage({type: "unknown_message", error: `Unknown message type: ${type}`, messageId});
         }
-    } catch (error: any) {
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Error in RubberbandWorker (type: ${type}):`, error);
-        self.postMessage({type: `${type}_ERROR`, error: error.message, messageId});
+        self.postMessage({type: `${type}_ERROR`, error: errorMessage, messageId});
     }
 };

@@ -126,15 +126,17 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           messageId,
         });
     }
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error(
       `Error in SileroVadWorker (type: ${type}):`,
       error,
-      error.stack,
+      errorStack,
     );
     self.postMessage({
       type: `${type}_ERROR` as string,
-      error: error.message,
+      error: errorMessage,
       messageId,
     });
   }
