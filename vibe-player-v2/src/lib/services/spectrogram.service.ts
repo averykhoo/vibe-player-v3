@@ -39,8 +39,8 @@ class SpectrogramService {
 
   public async initialize(options: { sampleRate: number }): Promise<void> {
     if (this.isInitialized) {
-      console.warn("Spectrogram worker already initialized.");
-      return;
+      console.log("SpectrogramService: Re-initializing. Disposing existing worker first.");
+      this.dispose();
     }
 
     analysisStore.update(s => ({ ...s, spectrogramStatus: 'Initializing worker...', spectrogramInitialized: false }));

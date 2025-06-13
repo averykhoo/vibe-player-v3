@@ -37,7 +37,7 @@ jobs:
           release_name: Release ${{ env.TAG_NAME }}
           body: | # Optional: Add release notes here, can be simple or more complex
             Automated release for version ${{ env.TAG_NAME }}.
-            Contains contents of the vibe-player directory.
+            Contains the static build of the Vibe Player V2 application.
           draft: false
           prerelease: false # Set to true if needed based on tag format
 
