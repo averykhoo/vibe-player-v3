@@ -7,7 +7,8 @@ import {
   afterEach,
   type Mocked,
 } from "vitest";
-import RubberbandWorker from '$lib/workers/rubberband.worker?worker';
+// Import the worker, it will be replaced by the mock
+import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
 import audioEngineService from "./audioEngine.service"; // Assuming default export
 import { playerStore } from "$lib/stores/player.store";
 import analysisService from "$lib/services/analysis.service";
@@ -67,7 +68,7 @@ const mockWorkerInstance = {
 };
 // global.Worker = vi.fn(() => mockWorkerInstance); // This mocks the constructor
 // For Vite worker imports (?worker), we need to mock the module
-vi.mock("$lib/workers/rubberband.worker?worker", () => ({
+vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockWorkerInstance),
 }));
 

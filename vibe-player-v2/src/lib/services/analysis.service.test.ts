@@ -7,8 +7,8 @@ import {
   afterEach,
   type Mocked,
 } from "vitest";
-import SileroVadWorker from '$lib/workers/sileroVad.worker?worker';
-import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker';
+import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
+import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
 import analysisService from "./analysis.service"; // Assuming default export
 import { analysisStore } from "$lib/stores/analysis.store";
 import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils";
@@ -37,10 +37,10 @@ const mockSpecWorkerInstance = {
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
 
-vi.mock("$lib/workers/sileroVad.worker?worker", () => ({
+vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
-vi.mock("$lib/workers/spectrogram.worker?worker", () => ({
+vi.mock("$lib/workers/spectrogram.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockSpecWorkerInstance),
 }));
 

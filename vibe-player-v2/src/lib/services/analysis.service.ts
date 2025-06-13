@@ -13,8 +13,8 @@ import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils"; // Assuming VA
 import { VAD_WORKER_MSG_TYPE, SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { analysisStore } from "$lib/stores/analysis.store"; // Assuming analysisStore exists
 
-import SileroVadWorker from "$lib/workers/sileroVad.worker?worker";
-import SpectrogramWorker from "$lib/workers/spectrogram.worker?worker";
+import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
+import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
 interface AnalysisServiceState {
   isInitialized: boolean;

@@ -11,7 +11,7 @@ import { playerStore } from "$lib/stores/player.store"; // Assuming playerStore 
 import analysisService from "$lib/services/analysis.service";
 
 // Import worker using Vite's ?worker syntax
-import RubberbandWorker from "$lib/workers/rubberband.worker?worker";
+import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
 
 interface AudioEngineState {
   isInitialized: boolean;
