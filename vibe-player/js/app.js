@@ -340,11 +340,6 @@ var AudioApp = AudioApp || {};
         app.waveformVisualizer.updateProgressIndicator(0, audioBuffer.duration);
         app.spectrogramVisualizer.updateProgressIndicator(0, audioBuffer.duration);
         app.state.updateRuntime('playbackStartSourceTime', 0.0);
-        if (app.audioEngine) {
-            app.audioEngine.setSpeed(app.state.params.speed);
-            app.audioEngine.setPitch(app.state.params.pitch);
-            app.audioEngine.setGain(app.state.params.gain);
-        }
         await app.waveformVisualizer.computeAndDrawWaveform(audioBuffer, []);
         console.log("App: Kicking off Spectrogram, VAD, and Tone analysis in parallel.");
         app.spectrogramVisualizer.computeAndDrawSpectrogram(audioBuffer);
@@ -419,7 +414,6 @@ var AudioApp = AudioApp || {};
             });
             app.state.updateRuntime('currentVadResults', vadResults);
             const speechRegions = vadResults.regions || [];
-            app.uiManager.updateVadDisplay(vadResults.initialPositiveThreshold, vadResults.initialNegativeThreshold);
             app.uiManager.setSpeechRegionsText(speechRegions);
             app.waveformVisualizer.redrawWaveformHighlight(audioBuffer, speechRegions);
             app.uiManager.updateVadProgress(100);
@@ -643,19 +637,55 @@ var AudioApp = AudioApp || {};
         } else if (type === 'negative') {
             app.state.updateParam('vadNegative', value);
         }
-        const currentVadResults = app.state.runtime.currentVadResults;
+
         const currentAudioBuffer = app.state.runtime.currentAudioBuffer;
-        if (currentVadResults && !app.state.status.isVadProcessing && app.vadAnalyzer && app.waveformVisualizer && currentAudioBuffer) {
-            const newRegions = app.vadAnalyzer.recalculateSpeechRegions(currentVadResults.probabilities, {
-                frameSamples: currentVadResults.frameSamples,
-                sampleRate: currentVadResults.sampleRate,
+        const vadResults = app.state.runtime.currentVadResults;
+
+        if (currentAudioBuffer && vadResults && vadResults.probabilities &&
+            typeof vadResults.frameSamples === 'number' &&
+            typeof vadResults.sampleRate === 'number' &&
+            typeof vadResults.redemptionFrames === 'number') {
+
+            // Ensure VAD is not currently processing a full analysis
+            if (app.state.status.isVadProcessing) {
+                console.log("App.handleThresholdChange: VAD is currently processing, skipping re-calculation for now.");
+                return;
+            }
+
+            const newRegions = generateSpeechRegionsFromProbs(vadResults.probabilities, {
+                frameSamples: vadResults.frameSamples,
+                sampleRate: vadResults.sampleRate,
                 positiveSpeechThreshold: app.state.params.vadPositive,
                 negativeSpeechThreshold: app.state.params.vadNegative,
-                redemptionFrames: currentVadResults.redemptionFrames
+                redemptionFrames: vadResults.redemptionFrames,
+                // Add the missing parameters from Constants
+                minSpeechDurationMs: Constants.VAD.MIN_SPEECH_DURATION_MS,
+                speechPadMs: Constants.VAD.SPEECH_PAD_MS
             });
+
+            // Update the UI text for speech regions
             app.uiManager.setSpeechRegionsText(newRegions);
+
+            // Redraw the waveform with the new speech regions
             app.waveformVisualizer.redrawWaveformHighlight(currentAudioBuffer, newRegions);
+
+            // Update the VAD display in the UI to reflect the thresholds being used for the current highlight
+            // (even though these might be different from vadResults.initialPositiveThreshold if changed since initial analysis)
+            app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, false);
+
+        } else {
+            // This case might occur if thresholds are changed before VAD analysis has run at all,
+            // or if vadResults is incomplete.
+            console.log("App.handleThresholdChange: Skipping speech region recalculation - VAD results or necessary data not available yet.");
+            // Optionally, still update the VAD display to show N/A or the current slider values
+            // if no audio is loaded or VAD hasn't run.
+            if (!currentAudioBuffer) {
+                app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, true); // true for N/A
+            } else {
+                app.uiManager.updateVadDisplay(app.state.params.vadPositive, app.state.params.vadNegative, false);
+            }
         }
+
         if (debouncedUpdateUrlHash) debouncedUpdateUrlHash();
     }
 
@@ -773,8 +803,214 @@ var AudioApp = AudioApp || {};
         rAFUpdateHandle = requestAnimationFrame(updateUIBasedOnContextTime);
     }
 
+    /**
+     * Generates speech regions from VAD probabilities using specified thresholds.
+     * Logic adapted from sileroProcessor.recalculateSpeechRegions.
+     * @private
+     * @param {Float32Array} probabilities - Probabilities for each frame.
+     * @param {object} options - Parameters for region calculation.
+     * @param {number} options.frameSamples - Samples per frame used during original analysis.
+     * @param {number} options.sampleRate - Sample rate used (e.g., Constants.VAD.SAMPLE_RATE).
+     * @param {number} options.positiveSpeechThreshold - Current positive threshold.
+     * @param {number} options.negativeSpeechThreshold - Current negative threshold.
+     * @param {number} options.redemptionFrames - Redemption frames value.
+     * @returns {Array<{start: number, end: number}>} Newly calculated speech regions.
+     */
+    function generateSpeechRegionsFromProbs(probabilities, options) {
+        const {
+            frameSamples,
+            sampleRate,
+            positiveSpeechThreshold,
+            negativeSpeechThreshold,
+            redemptionFrames,
+            minSpeechDurationMs, // New option
+            speechPadMs          // New option
+        } = options;
+
+        // Removed check for global Constants here as these are now passed in.
+        // We still need global Constants for Constants.VAD.SAMPLE_RATE if we want to keep that safety check.
+        // However, sampleRate is passed in options, so direct comparison can be done if needed.
+        // For now, assuming options.sampleRate is the one to be used.
+
+        // if (typeof probabilities === 'undefined' || probabilities === null ||
+        //     typeof probabilities.length !== 'number' ||
+        //     typeof frameSamples !== 'number' || typeof sampleRate !== 'number' || sampleRate === 0 ||
+        //     typeof positiveSpeechThreshold !== 'number' || typeof negativeSpeechThreshold !== 'number' ||
+        //     typeof redemptionFrames !== 'number' ||
+        //     typeof minSpeechDurationMs !== 'number' || // Validate new options
+        //     typeof speechPadMs !== 'number') {       // Validate new options
+        //     console.warn("App.generateSpeechRegionsFromProbs: Invalid arguments (e.g., probabilities not an array, or critical options missing/invalid). Returning empty array. Options:", options, "Probabilities length:", probabilities ? probabilities.length : 'N/A');
+        //     return [];
+        // }
+
+        // 1. Must have a non-null/undefined probabilities
+        if (probabilities == null) {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `probabilities` is null or undefined.",
+                {options: arguments[1]}
+            );
+            return [];
+        }
+
+        // 2. probabilities must be array-like
+        if (typeof probabilities.length !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `probabilities.length` is not a number.",
+                {length: probabilities.length}
+            );
+            return [];
+        }
+
+        // 3. Numeric options
+        if (typeof frameSamples !== "number") {
+            console.warn("generateSpeechRegionsFromProbs: `frameSamples` is not a number.", {frameSamples});
+            return [];
+        }
+
+        if (typeof sampleRate !== "number" || sampleRate === 0) {
+            console.warn("generateSpeechRegionsFromProbs: `sampleRate` must be a non-zero number.", {sampleRate});
+            return [];
+        }
+
+        if (typeof positiveSpeechThreshold !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `positiveSpeechThreshold` is not a number.",
+                {positiveSpeechThreshold}
+            );
+            return [];
+        }
+
+        if (typeof negativeSpeechThreshold !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `negativeSpeechThreshold` is not a number.",
+                {negativeSpeechThreshold}
+            );
+            return [];
+        }
+
+        if (typeof redemptionFrames !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `redemptionFrames` is not a number.",
+                {redemptionFrames}
+            );
+            return [];
+        }
+
+        // 4. New timing-related options
+        if (typeof minSpeechDurationMs !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `minSpeechDurationMs` is not a number.",
+                {minSpeechDurationMs}
+            );
+            return [];
+        }
+
+        if (typeof speechPadMs !== "number") {
+            console.warn(
+                "generateSpeechRegionsFromProbs: `speechPadMs` is not a number.",
+                {speechPadMs}
+            );
+            return [];
+        }
+
+        if (probabilities.length === 0) {
+            return [];
+        }
+
+        // Optional: Keep a safety check if options.sampleRate should align with a global constant,
+        // but this makes the function less pure if Constants is from global scope.
+        // For now, we trust options.sampleRate.
+        // if (sampleRate !== Constants.VAD.SAMPLE_RATE) {
+        //     console.warn(`App.generateSpeechRegionsFromProbs: Processing with sample rate ${sampleRate}. Ensure this is intended.`);
+        // }
+
+        const newRegions = [];
+        let inSpeech = false;
+        let regionStart = 0.0;
+        let redemptionCounter = 0;
+        let lastPositiveFrameIndex = -1;
+
+        for (let i = 0; i < probabilities.length; i++) {
+            const probability = probabilities[i];
+            const frameStartTime = (i * frameSamples) / sampleRate;
+
+            if (probability >= positiveSpeechThreshold) {
+                if (!inSpeech) {
+                    inSpeech = true;
+                    regionStart = frameStartTime;
+                }
+                redemptionCounter = 0;
+                lastPositiveFrameIndex = i;
+            } else if (inSpeech) {
+                if (probability < negativeSpeechThreshold) {
+                    redemptionCounter++;
+                    if (redemptionCounter >= redemptionFrames) {
+                        const firstBadFrameIndex = i - redemptionFrames + 1;
+                        const actualEnd = (firstBadFrameIndex * frameSamples) / sampleRate;
+                        newRegions.push({start: regionStart, end: Math.max(regionStart, actualEnd)});
+                        inSpeech = false;
+                        redemptionCounter = 0;
+                        lastPositiveFrameIndex = -1;
+                    }
+                } else {
+                    redemptionCounter = 0;
+                }
+            }
+        }
+
+        if (inSpeech) {
+            const endFrameIndexPlusOne = (lastPositiveFrameIndex !== -1 && lastPositiveFrameIndex < probabilities.length) ? lastPositiveFrameIndex + 1 : probabilities.length;
+            const finalEnd = (endFrameIndexPlusOne * frameSamples) / sampleRate;
+            newRegions.push({start: regionStart, end: Math.max(regionStart, finalEnd)});
+        }
+
+        const minSpeechDuration = minSpeechDurationMs / 1000.0; // Use from options
+        const speechPad = speechPadMs / 1000.0;               // Use from options
+
+        const paddedAndFilteredRegions = [];
+        for (const region of newRegions) {
+            const start = Math.max(0, region.start - speechPad);
+            const end = region.end + speechPad;
+
+            if ((end - start) >= minSpeechDuration) {
+                paddedAndFilteredRegions.push({start: start, end: end});
+            }
+        }
+
+        if (paddedAndFilteredRegions.length === 0) {
+            return [];
+        }
+
+        const mergedRegions = [];
+        let currentRegion = {...paddedAndFilteredRegions[0]};
+
+        for (let i = 1; i < paddedAndFilteredRegions.length; i++) {
+            const nextRegion = paddedAndFilteredRegions[i];
+            if (nextRegion.start < currentRegion.end) {
+                currentRegion.end = Math.max(currentRegion.end, nextRegion.end);
+            } else {
+                mergedRegions.push(currentRegion);
+                currentRegion = {...nextRegion};
+            }
+        }
+        mergedRegions.push(currentRegion);
+
+        const maxProbTime = (probabilities.length * frameSamples) / sampleRate;
+        return mergedRegions.map(region => ({
+            start: region.start,
+            end: Math.min(region.end, maxProbTime)
+        }));
+    }
+
     // --- REFACTORED: Attach init function to the passed-in 'app' object ---
     app.init = init;
+
+    // For testing purposes only
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test') {
+        app.testExports = {
+            generateSpeechRegionsFromProbs
+        };
+    }
 
 })(AudioApp); // Immediately execute, passing the global AudioApp object.
 // --- /vibe-player/js/app.js ---

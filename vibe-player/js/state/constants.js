@@ -17,7 +17,11 @@ class Constants {
             YIELD_INTERVAL: 5,
             // Default thresholds (can be overridden by AppState or UI)
             DEFAULT_POSITIVE_THRESHOLD: 0.5,
-            DEFAULT_NEGATIVE_THRESHOLD: 0.35
+            DEFAULT_NEGATIVE_THRESHOLD: 0.35,
+            // these were missing
+            MIN_SPEECH_DURATION_MS: 200,
+            SPEECH_PAD_MS: 50,
+            REDEMPTION_FRAMES: 3
         };
     }
 

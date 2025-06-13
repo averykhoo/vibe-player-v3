@@ -116,19 +116,27 @@ global.AudioApp.Utils = {
   formatTime: jest.fn(time => `${time}s`), // From uiManager tests
 };
 
-global.Constants = { // From uiManager tests, expanded if app.js needs more
+global.Constants = {
   UI: {
     SYNC_DEBOUNCE_WAIT_MS: 50,
     DEBOUNCE_HASH_UPDATE_MS: 250,
   },
   VAD: {
-    DEFAULT_POSITIVE_THRESHOLD: 0.8,
-    DEFAULT_NEGATIVE_THRESHOLD: 0.4,
-  },
-  DTMF: { // Added for tone processing parts of app.js
+    DEFAULT_POSITIVE_THRESHOLD: 0.5,
+    DEFAULT_NEGATIVE_THRESHOLD: 0.35,
     SAMPLE_RATE: 16000,
-    BLOCK_SIZE: 1024, // Or whatever value app.js might implicitly rely on
-  }
+    DEFAULT_FRAME_SAMPLES: 1536, // CHANGED from 512
+    MIN_SPEECH_DURATION_MS: 100,
+    SPEECH_PAD_MS: 50,
+    REDEMPTION_FRAMES: 3,
+    PROGRESS_REPORT_INTERVAL: 100,
+    YIELD_INTERVAL: 200,
+  },
+  DTMF: {
+    SAMPLE_RATE: 16000,
+    BLOCK_SIZE: 1024,
+  },
+  // Add other Constants sub-objects if app.js uses them and they aren't mocked elsewhere
 };
 
 // Mock AppState constructor for app.js IIFE
@@ -344,5 +352,263 @@ describe('AudioApp (app.js logic)', () => {
         handleKeyPress()({ detail: { key: 'Space' } });
         expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
     });
+  });
+
+  describe('generateSpeechRegionsFromProbs logic', () => {
+    let generateFunc;
+    // const MOCK_REDEMPTION_FRAMES = global.Constants.VAD.REDEMPTION_FRAMES; // Kept if still used locally, or remove if all direct global access
+
+    // Helper to calculate duration of N frames
+    // Directly uses global.Constants.VAD to ensure values are picked up after mock setup.
+    const frameDuration = (numFrames) => {
+      const sampleRate = global.Constants.VAD.SAMPLE_RATE;
+      const frameSamples = global.Constants.VAD.DEFAULT_FRAME_SAMPLES;
+      if (typeof sampleRate !== 'number' || typeof frameSamples !== 'number' || sampleRate === 0) {
+        // This case should ideally not be hit if Constants.VAD is mocked correctly.
+        console.error('frameDuration: Invalid sampleRate or frameSamples from global.Constants.VAD', global.Constants.VAD);
+        return NaN;
+      }
+      return (numFrames * frameSamples) / sampleRate;
+    };
+
+    beforeAll(() => {
+      // Ensure app.js is loaded and testExports is available
+      if (AudioApp.testExports && AudioApp.testExports.generateSpeechRegionsFromProbs) {
+        generateFunc = AudioApp.testExports.generateSpeechRegionsFromProbs;
+      } else {
+        throw new Error('generateSpeechRegionsFromProbs not exposed on AudioApp.testExports. Make sure app.js is correctly refactored for testing.');
+      }
+    });
+
+    test('should detect a basic speech segment correctly', () => {
+      const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1]); // Speech: frames 1, 2
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 2. Raw region start: fd(1), end: fd(3)
+      const expectedRawStart = frameDuration(1);
+      const expectedRawEnd = frameDuration(3);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('should not detect speech if probabilities are below positive threshold', () => {
+      const probabilities = new Float32Array([0.1, 0.2, 0.4, 0.3, 0.2, 0.1]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+    });
+
+    test('high positive threshold should detect less speech', () => {
+      const probabilities = new Float32Array([0.1, 0.6, 0.8, 0.9, 0.7, 0.2, 0.1]); // Speech frame: 3 (0.9)
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.85,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 3. Raw region start: fd(3), end: fd(4)
+      const expectedRawStart = frameDuration(3);
+      const expectedRawEnd = frameDuration(4);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('low positive threshold should detect more speech', () => {
+      const probabilities = new Float32Array([0.1, 0.25, 0.3, 0.28, 0.1, 0.05]); // Speech: frames 1,2,3
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.2, // Lower threshold
+        negativeSpeechThreshold: 0.1,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 3. Raw region start: fd(1), end: fd(4)
+      const expectedRawStart = frameDuration(1);
+      const expectedRawEnd = frameDuration(4);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('impact of negative threshold and redemption frames', () => {
+      // Dip below negative threshold for less than redemptionFrames should continue speech
+      const probabilities1 = new Float32Array([0.8, 0.8, 0.2, 0.2, 0.8, 0.8]); // Dip of 2 frames
+      const options1 = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3, // Dip is below this
+        redemptionFrames: 3, // But dip length (2) < redemption (3)
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions1 = generateFunc(probabilities1, options1);
+      expect(regions1.length).toBe(1); // Should be one continuous region
+      // lastPositiveFrameIndex = 5. Raw region start: fd(0), end: fd(6)
+      const expectedRawStart1 = frameDuration(0);
+      const expectedRawEnd1 = frameDuration(6);
+      const expectedPaddedStart1 = Math.max(0, expectedRawStart1 - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd1 = Math.min(frameDuration(probabilities1.length), expectedRawEnd1 + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions1[0].start).toBeCloseTo(expectedPaddedStart1);
+      expect(regions1[0].end).toBeCloseTo(expectedPaddedEnd1);
+
+      // Dip below negative threshold for redemptionFrames or more should break speech
+      const probabilities2 = new Float32Array([0.8, 0.8, 0.2, 0.2, 0.2, 0.8, 0.8]); // Dip of 3 frames
+      const options2 = { ...options1, redemptionFrames: 3 }; // Dip length (3) == redemption (3)
+      const regions2 = generateFunc(probabilities2, options2);
+      expect(regions2.length).toBe(2); // Should be two regions
+      // Region 1: lastPositiveFrameIndex = 1. Raw start fd(0), end fd(2)
+      // Region 2: lastPositiveFrameIndex = 6 (relative to its own start). Raw start fd(5), end fd(7)
+    });
+
+    test('should filter out segments shorter than MIN_SPEECH_DURATION_MS (after padding)', () => {
+      const probabilities = new Float32Array([0.1, 0.9, 0.1]); // 1 frame of speech (index 1)
+      const originalMinSpeechMs = global.Constants.VAD.MIN_SPEECH_DURATION_MS;
+      global.Constants.VAD.MIN_SPEECH_DURATION_MS = 200; // Raw 96ms + Pad 100ms = 196ms. This should fail.
+
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS, // Uses the mocked 200ms
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+      global.Constants.VAD.MIN_SPEECH_DURATION_MS = originalMinSpeechMs; // Restore
+    });
+
+    test('should apply SPEECH_PAD_MS to start and end of regions', () => {
+      const probabilities = new Float32Array([0.1, 0.8, 0.8, 0.1]); // Speech frames 1, 2
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 2. Raw region start: fd(1), end: fd(3)
+      const expectedRawStart = frameDuration(1);
+      const expectedRawEnd = frameDuration(3);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('should merge overlapping regions after padding', () => {
+      const probabilities = new Float32Array([0.1, 0.9, 0.9, 0.1, 0.9, 0.9, 0.1]); // Seg1: fr 1-2, Seg2: fr 4-5
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES, // Short redemption to prevent merging inside core logic
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS, // 50ms pad
+      };
+      // Seg1 raw: fd(1) to fd(3). Padded: max(0, fd(1)-0.05) to fd(3)+0.05. -> 0.046 to 0.288+0.05=0.338
+      // Seg2 raw: fd(4) to fd(6). Padded: max(0, fd(4)-0.05) to fd(6)+0.05. -> 0.384-0.05=0.334 to 0.576+0.05=0.626
+      // These are now just touching or barely overlapping due to pad.
+      // fd(1)=0.096, fd(3)=0.288. Padded S1: [0.046, 0.338]
+      // fd(4)=0.384, fd(6)=0.576. Padded S2: [0.334, 0.626]
+      // They overlap: 0.334 < 0.338. Merged: [0.046, 0.626]
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      const expectedMergedStart = Math.max(0, frameDuration(1) - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedMergedEnd = Math.min(frameDuration(probabilities.length), frameDuration(6) + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedMergedStart);
+      expect(regions[0].end).toBeCloseTo(expectedMergedEnd);
+    });
+
+    test('should return empty array for empty probabilities', () => {
+      const probabilities = new Float32Array([]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+    });
+
+    test('should handle probabilities all being 1.0', () => {
+      const probabilities = new Float32Array([1.0, 1.0, 1.0, 1.0]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 3. Raw region start: fd(0), end: fd(4)
+      const expectedRawStart = frameDuration(0);
+      const expectedRawEnd = frameDuration(4);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('should handle probabilities all being 0.0', () => {
+      const probabilities = new Float32Array([0.0, 0.0, 0.0, 0.0]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+    });
+
   });
 });
