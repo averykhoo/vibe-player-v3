@@ -246,6 +246,7 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npm run build
 
+      # 4. Correctly cache Playwright browsers
       - name: Cache Playwright browsers
         id: cache-playwright-browsers
         uses: actions/cache@v4
@@ -253,20 +254,32 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
+      # 5. Install Playwright browsers only if the cache was not restored
       - name: Install Playwright and OS dependencies
         if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
-      # Start the preview server for E2E tests
+      # 6. (DEBUGGING STEP) Verify Playwright directory content
+      - name: List Playwright cache directory
+        if: always() # Run this step even if previous steps fail
+        run: |
+          echo "Verifying contents of the Playwright cache directory..."
+          ls -la ~/.cache/ms-playwright
+          echo "Verification complete."
+
+      # 7. Start the preview server for E2E tests
       - name: Start V2 preview server
         working-directory: ./vibe-player-v2
         run: npm run preview &
         env:
           HOST: '0.0.0.0'
-          PORT: 4173
+          # Align port with playwright.config.js for consistency
+          PORT: 5173
 
+      # Wait for the server to be fully responsive (checks for HTTP 200)
       - name: Wait for Preview Server
-        run: npx wait-on http://localhost:4173 --timeout 60000
+        run: npx wait-on http://localhost:5173 --timeout 120000 --http-status-codes 200
+        # Increased timeout and added check for HTTP 200
 
       - name: Run Playwright E2E tests
         run: npx playwright test
@@ -2113,7 +2126,7 @@ const path = require('path');
 exports.PlayerPage = class PlayerPage {
   constructor(page) {
     this.page = page;
-    this.devServerUrl = 'http://localhost:4173/'; // CHANGED TO 4173
+    this.devServerUrl = 'http://localhost:5173/';
 
     // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
     this.appBarTitle = page.getByTestId('app-bar-title');
