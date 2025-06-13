@@ -4,10 +4,12 @@
   import Controls from '$lib/components/Controls.svelte';
   import Waveform from '$lib/components/visualizers/Waveform.svelte';
   import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
+  import ToneDisplay from '$lib/components/ToneDisplay.svelte'; // Added
   import { playerStore } from '$lib/stores/player.store';
   import audioEngineService from '$lib/services/audioEngine.service';
   import analysisService from '$lib/services/analysis.service';
   import spectrogramService from '$lib/services/spectrogram.service';
+  import dtmfService from '$lib/services/dtmf.service'; // Added
 
   onMount(() => {
     console.log('[+page.svelte onMount] Initializing services...');
@@ -20,6 +22,7 @@
       initialPitch: 0.0,
     });
     analysisService.initialize();
+    dtmfService.initialize(16000); // Added - DTMF worker uses a fixed 16kHz, service handles resampling
     console.log('[+page.svelte onMount] Services initialization called.');
 
     // Cleanup services when the component is destroyed
@@ -28,21 +31,24 @@
       audioEngineService.dispose();
       analysisService.dispose();
       spectrogramService.dispose();
+      dtmfService.dispose(); // Added
       console.log('[+page.svelte onDestroy] Services disposed.');
     };
   });
 
-  // Reactive statement to trigger spectrogram processing when a file is loaded and playable
+  // Reactive statement to trigger spectrogram and DTMF processing when a file is loaded and playable
   $: if ($playerStore.isPlayable && $playerStore.audioBuffer) {
     console.log('[+page.svelte reactive] isPlayable is true, starting background analysis.');
-    // analysisService.startSpectrogramProcessing($playerStore.audioBuffer); // Old way
-    const processSpectrogram = async () => {
-      if (!$playerStore.audioBuffer) return;
-      try {
-        console.log('[+page.svelte] Initializing spectrogram service with sample rate:', $playerStore.audioBuffer.sampleRate);
-        await spectrogramService.initialize({ sampleRate: $playerStore.audioBuffer.sampleRate });
+    const audioBuffer = $playerStore.audioBuffer; // Capture buffer
 
-        const pcmData = $playerStore.audioBuffer.getChannelData(0); // Assuming mono
+    // Spectrogram Processing (existing)
+    const processSpectrogram = async () => {
+      if (!audioBuffer) return;
+      try {
+        console.log('[+page.svelte] Initializing spectrogram service with sample rate:', audioBuffer.sampleRate);
+        await spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
+
+        const pcmData = audioBuffer.getChannelData(0); // Assuming mono
         if (pcmData && pcmData.length > 0) {
           console.log('[+page.svelte] Processing PCM data for spectrogram...');
           await spectrogramService.process(pcmData);
@@ -55,6 +61,18 @@
       }
     };
     processSpectrogram();
+
+    // DTMF Processing (new)
+    const processTones = () => {
+      if (!audioBuffer) return;
+      try {
+        console.log('[+page.svelte] Processing audio for DTMF tones...');
+        dtmfService.process(audioBuffer); // audioBuffer is passed, service handles resampling
+      } catch (error) {
+        console.error('[+page.svelte] Error during DTMF processing:', error);
+      }
+    };
+    processTones();
   }
 </script>
 
@@ -70,6 +88,7 @@
       <Controls />
       <Waveform />
       <Spectrogram />
+      <ToneDisplay /> <!-- Added -->
     {:else}
       <div class="text-center p-8 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
         <p class="text-lg text-neutral-500">

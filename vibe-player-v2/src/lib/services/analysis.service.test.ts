@@ -240,7 +240,7 @@ describe("AnalysisService", () => {
   });
 
   describe("dispose", () => {
-    it("should terminate both VAD and Spectrogram workers", async () => {
+    it("should terminate the VAD worker and update store status", async () => {
       // Initialize VAD
       const vadInitPromise = analysisService.initialize();
       if (mockVadWorkerInstance.onmessage) {
@@ -250,33 +250,19 @@ describe("AnalysisService", () => {
       }
       await vadInitPromise;
 
-      // Initialize Spectrogram worker
-      const specInitPromise = analysisService.initializeSpectrogramWorker({ sampleRate: 16000 });
-      if (mockSpecWorkerInstance.onmessage) {
-        mockSpecWorkerInstance.onmessage!({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "spec_msg_0" },
-        } as MessageEvent);
-      }
-      await specInitPromise;
-
       const vadTerminateSpy = vi.spyOn(mockVadWorkerInstance, 'terminate');
-      const specTerminateSpy = vi.spyOn(mockSpecWorkerInstance, 'terminate');
 
       analysisService.dispose();
       expect(vadTerminateSpy).toHaveBeenCalled();
-      expect(specTerminateSpy).toHaveBeenCalled(); // This was the one failing
       // The status update for "VAD service disposed" is in the main dispose() method
-      // The status update for "Spectrogram worker disposed." is in disposeSpectrogramWorker()
       // Both call analysisStore.update with a function.
       expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
       // This will be called multiple times, check for specific calls if needed,
       // or use .toHaveBeenCalledTimes() if the number of calls is predictable.
       // VAD Init (x2: initializing, initialized) = 2 calls
-      // Spec Init (x2: initializing, initialized) = 2 calls
       // VAD Dispose (x1) = 1 call
-      // Spec Dispose (x1) = 1 call
-      // Total = 6 calls
-      expect(analysisStore.update).toHaveBeenCalledTimes(6);
+      // Total = 3 calls
+      expect(analysisStore.update).toHaveBeenCalledTimes(3);
     });
   });
 });

@@ -24,7 +24,7 @@ jobs:
 
       - name: Build the zip archive
         run: |
-          zip -r vibe-player-${{ env.TAG_NAME }}.zip ./vibe-player -x "./vibe-player/.DS_Store"
+          zip -r vibe-player-${{ env.TAG_NAME }}.zip ./vibe-player-v2/build -x "./vibe-player-v2/build/.DS_Store"
         # Standard shell commands
 
       - name: Create GitHub Release
