@@ -120,11 +120,13 @@ Your goal is to develop a robust mental model of this repository based *only* on
     ├── eslint.config.js
     ├── package-lock.json
     ├── package.json
+    ├── playwright.config.ts
     ├── postcss.config.js
     ├── src
     │   ├── app.css
     │   ├── app.d.ts
     │   ├── app.html
+    │   ├── hooks.server.ts
     │   ├── lib
     │   │   ├── actions
     │   │   │   ├── .gitkeep
@@ -246,55 +248,23 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npm run build
 
-      # Install Playwright browsers only if the cache was not restored
+      # 4. Correctly cache Playwright browsers
+      - name: Cache Playwright browsers
+        id: cache-playwright-browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # 5. Install Playwright browsers only if the cache was not restored
       - name: Install Playwright and OS dependencies
+        if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
-      # Start the preview server and redirect its output to a log file
-      - name: Start V2 preview server
-        working-directory: ./vibe-player-v2
-        # This command redirects both stdout and stderr to server.log
-        # and runs the whole thing in the background.
-        run: npm run preview > server.log 2>&1 &
-        env:
-          HOST: '0.0.0.0'
-          PORT: 4173 # I see you updated this to 4173, which is correct.
-
-      # NEW STEP: A short delay to allow the server to start (or fail)
-      - name: Wait a moment for server to initialize
-        run: sleep 5
-
-      # This step will now attempt to wait, and will likely fail again.
-      - name: Wait for Preview Server
-        id: wait-on-server
-        run: npx wait-on http://localhost:4173 --timeout 120000 --http-status-codes 200
-        continue-on-error: true # Allow the workflow to continue even if this fails
-
-      # CRUCIAL DEBUGGING STEP: Display the server log
-      - name: Display Server Log
-        if: always() # This will run even if the wait-on step failed
-        run: |
-          echo "--- Displaying server.log ---"
-          cat vibe-player-v2/server.log
-          echo "--- End of server.log ---"
-
-      # This step now checks the outcome of wait-on and fails the job if needed
-      - name: Check Server Status
-        if: steps.wait-on-server.outcome == 'failure'
-        run: |
-          echo "Server failed to start or respond."
-          exit 1
-
-      # Now, the rest of your workflow can proceed...
       - name: Run Playwright E2E tests
         run: npx playwright test
 
       # 6. Cleanup and Reporting
-      - name: Stop preview server
-        if: always()
-        run: pkill -f "vite preview" || echo "Preview server already stopped or not found."
-        continue-on-error: true
-
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -786,6 +756,14 @@ module.exports = defineConfig({
     // Optional: Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer
     trace: 'on-first-retry',
     headless: true, // Run tests in headless mode
+  },
+
+  // Configure the web server for E2E tests
+  webServer: {
+    command: 'npm run preview --prefix vibe-player-v2 -- --host 0.0.0.0 --port 4173',
+    url: 'http://localhost:4173',
+    reuseExistingServer: !process.env.CI, // Reuse server locally, not in CI
+    timeout: 180 * 1000, // Increase timeout for server to start
   },
 });
 
@@ -2007,8 +1985,8 @@ describe('AudioApp.uiManager', () => {
 --- File: tests-e2e/player.e2e.spec.js ---
 ````javascript
 // tests-e2e/player.e2e.spec.js
-const { test, expect } = require('@playwright/test');
-const { PlayerPage } = require('./PlayerPage');
+import { test, expect } from '@playwright/test';
+import { PlayerPage } from './PlayerPage';
 
 // Helper function (keep as is)
 function parseTimeToSeconds(timeStr) {
@@ -2021,53 +1999,59 @@ function parseTimeToSeconds(timeStr) {
 const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
 
 test.describe('Vibe Player V2 E2E', () => {
-  let player;
+  let playerPage;
 
+  // Add this block to log browser console messages
   test.beforeEach(async ({ page }) => {
-    player = new PlayerPage(page);
-    await player.goto();
+    // Listen for all console events and log them to the test output
+    page.on('console', msg => {
+      console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`);
+    });
+
+    playerPage = new PlayerPage(page);
+    await playerPage.goto();
   });
 
-  test('should load an audio file and enable playback controls', async () => {
-    await player.loadAudioFile(TEST_AUDIO_FILE);
-    await player.expectControlsToBeReadyForPlayback();
+  test('should load an audio file and enable playback controls', async ({ page }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
   });
 
   test('should display initial time as "0:00 / 0:00" or similar', async () => {
-    await player.loadAudioFile(TEST_AUDIO_FILE);
-    await player.expectControlsToBeReadyForPlayback();
-    await expect(player.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {timeout: 5000});
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {timeout: 5000});
   });
 
   test('should play and pause audio', async ({ page }) => {
-    await player.loadAudioFile(TEST_AUDIO_FILE);
-    await player.expectControlsToBeReadyForPlayback();
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-    await expect(await player.getPlayButtonText()).toMatch(/Play/i);
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
 
-    await player.playButton.click();
-    await expect(await player.getPlayButtonText()).toMatch(/Pause/i, { timeout: 2000 });
+    await playerPage.playButton.click();
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i, { timeout: 2000 });
 
     await page.waitForFunction(
       () => document.querySelector('[data-testid="time-display"]')?.textContent?.startsWith('0:00') === false,
       null,
       { timeout: 5000 }
     );
-    const initialTime = await player.timeDisplay.textContent();
+    const initialTime = await playerPage.timeDisplay.textContent();
     expect(initialTime).not.toMatch(/^0:00 \//);
 
-    await player.playButton.click();
-    await expect(await player.getPlayButtonText()).toMatch(/Play/i);
-    const timeAfterPause = await player.timeDisplay.textContent();
+    await playerPage.playButton.click();
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
+    const timeAfterPause = await playerPage.timeDisplay.textContent();
     await page.waitForTimeout(500);
-    const timeAfterPauseAndDelay = await player.timeDisplay.textContent();
+    const timeAfterPauseAndDelay = await playerPage.timeDisplay.textContent();
     expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
   });
 
   test('should seek audio using the seek bar', async ({ page }) => {
-    await player.loadAudioFile(TEST_AUDIO_FILE);
-    await player.expectControlsToBeReadyForPlayback();
-    await player.playButton.click();
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+    await playerPage.playButton.click();
 
     await page.waitForFunction(
         () => document.querySelector('[data-testid="time-display"]')?.textContent !== '0:00 / 0:00',
@@ -2075,47 +2059,47 @@ test.describe('Vibe Player V2 E2E', () => {
         {timeout: 5000}
     );
 
-    const initialTimeText = await player.timeDisplay.textContent();
+    const initialTimeText = await playerPage.timeDisplay.textContent();
     const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
     expect(durationSeconds).toBeGreaterThan(0); // WAV file is short, adjust expectation
 
-    const currentMax = parseFloat(await player.seekSliderInput.getAttribute('max')) || durationSeconds;
-    await player.setSliderValue(player.seekSliderInput, String(currentMax / 2));
+    const currentMax = parseFloat(await playerPage.seekSliderInput.getAttribute('max')) || durationSeconds;
+    await playerPage.setSliderValue(playerPage.seekSliderInput, String(currentMax / 2));
 
     await page.waitForTimeout(500);
 
-    const timeAfterSeekText = await player.timeDisplay.textContent();
+    const timeAfterSeekText = await playerPage.timeDisplay.textContent();
     const currentTimeAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[0]);
     const durationAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[1]);
 
     expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
     expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
-    expect(await player.getPlayButtonText()).toMatch(/Pause/i);
+    expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
   });
 
   test.describe('URL State Serialization', () => {
     test('should update URL when settings change', async ({ page }) => {
-        await player.loadAudioFile(TEST_AUDIO_FILE);
-        await player.expectControlsToBeReadyForPlayback();
+        await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+        await playerPage.expectControlsToBeReadyForPlayback();
 
-        await player.setSliderValue(player.speedSliderInput, '1.5');
+        await playerPage.setSliderValue(playerPage.speedSliderInput, '1.5');
         await expect(page).toHaveURL(/speed=1.5/, { timeout: 2000 });
 
-        await player.setSliderValue(player.pitchSliderInput, '2');
+        await playerPage.setSliderValue(playerPage.pitchSliderInput, '2');
         await expect(page).toHaveURL(/pitch=2/, { timeout: 2000 });
         await expect(page).toHaveURL(/speed=1.5/);
     });
 
     test('should load settings from URL parameters on page load', async ({ page }) => {
-        await player.page.goto(player.devServerUrl + '?speed=1.75&pitch=-3');
-        await expect(player.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
-        await expect(player.fileInput).toBeVisible({timeout: 10000});
+        await playerPage.page.goto(playerPage.devServerUrl + '?speed=1.75&pitch=-3');
+        await expect(playerPage.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
+        await expect(playerPage.fileInput).toBeVisible({timeout: 10000});
 
-        await player.loadAudioFile(TEST_AUDIO_FILE);
-        await player.expectControlsToBeReadyForPlayback();
+        await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+        await playerPage.expectControlsToBeReadyForPlayback();
 
-        await expect(player.speedSliderInput).toHaveValue('1.75', { timeout: 2000 });
-        await expect(player.pitchSliderInput).toHaveValue('-3', { timeout: 2000 });
+        await expect(playerPage.speedSliderInput).toHaveValue('1.75', { timeout: 2000 });
+        await expect(playerPage.pitchSliderInput).toHaveValue('-3', { timeout: 2000 });
     });
   });
 });
@@ -11395,6 +11379,63 @@ export default [
 
 ````
 --- End of File: vibe-player-v2/eslint.config.js ---
+--- File: vibe-player-v2/playwright.config.ts ---
+````typescript
+import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * See https://playwright.dev/docs/test-configuration.
+ */
+export default defineConfig({
+  testDir: './tests-e2e',
+  /* Run tests in files in parallel */
+  fullyParallel: true,
+  /* Fail the build on CI if you accidentally left test.only in the source code. */
+  forbidOnly: !!process.env.CI,
+  /* Retry on CI only */
+  retries: process.env.CI ? 2 : 0,
+  /* Opt out of parallel tests on CI. */
+  workers: process.env.CI ? 1 : undefined,
+  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  reporter: 'html',
+  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  use: {
+    /* Base URL to use in actions like `await page.goto('/')`. */
+    baseURL: 'http://localhost:5173', // Standard Vite/SvelteKit dev port
+
+    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    trace: 'on-first-retry',
+    // viteConfig section removed as per subtask instructions
+  },
+
+  /* Configure projects for major browsers */
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // {
+    //   name: 'firefox',
+    //   use: { ...devices['Desktop Firefox'] },
+    // },
+    // {
+    //   name: 'webkit',
+    //   use: { ...devices['Desktop Safari'] },
+    // },
+  ],
+
+  /* Run your local dev server before starting the tests */
+  // webServer: {
+  //   command: 'npm run dev',
+  //   url: 'http://localhost:5173', // Standard Vite/SvelteKit dev port
+  //   reuseExistingServer: !process.env.CI,
+  //   stdout: 'pipe',
+  //   stderr: 'pipe',
+  // },
+});
+
+````
+--- End of File: vibe-player-v2/playwright.config.ts ---
 --- File: vibe-player-v2/postcss.config.js ---
 ````javascript
 export default {
@@ -11492,6 +11533,29 @@ export {};
 
 ````
 --- End of File: vibe-player-v2/src/app.html ---
+--- File: vibe-player-v2/src/hooks.server.ts ---
+````typescript
+// vibe-player-v2/src/hooks.server.ts
+import type { Handle } from '@sveltejs/kit';
+
+/**
+ * SvelteKit hook to add required security headers for SharedArrayBuffer support.
+ * SharedArrayBuffer is used by ort-wasm-simd-threaded.jsep.mjs (ONNX Runtime) for multithreading.
+ * Without these headers, the browser will not allow the module to load, causing a silent failure.
+ * See: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer/security_requirements
+ */
+export const handle: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event);
+
+  // Required for SharedArrayBuffer
+  response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+
+  return response;
+};
+
+````
+--- End of File: vibe-player-v2/src/hooks.server.ts ---
 --- File: vibe-player-v2/src/lib/actions/sparkles.action.ts ---
 ````typescript
 // vibe-player-v2/src/lib/actions/sparkles.action.ts
@@ -12461,8 +12525,8 @@ import {
   afterEach,
   type Mocked,
 } from "vitest";
-import SileroVadWorker from '$lib/workers/sileroVad.worker?worker';
-import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker';
+import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
+import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
 import analysisService from "./analysis.service"; // Assuming default export
 import { analysisStore } from "$lib/stores/analysis.store";
 import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils";
@@ -12491,10 +12555,10 @@ const mockSpecWorkerInstance = {
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
 
-vi.mock("$lib/workers/sileroVad.worker?worker", () => ({
+vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
-vi.mock("$lib/workers/spectrogram.worker?worker", () => ({
+vi.mock("$lib/workers/spectrogram.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockSpecWorkerInstance),
 }));
 
@@ -12754,8 +12818,8 @@ import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils"; // Assuming VA
 import { VAD_WORKER_MSG_TYPE, SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { analysisStore } from "$lib/stores/analysis.store"; // Assuming analysisStore exists
 
-import SileroVadWorker from "$lib/workers/sileroVad.worker?worker";
-import SpectrogramWorker from "$lib/workers/spectrogram.worker?worker";
+import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
+import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
 interface AnalysisServiceState {
   isInitialized: boolean;
@@ -12919,6 +12983,7 @@ class AnalysisService {
     };
 
     const initPayload: SileroVadInitPayload = {
+      origin: location.origin, // Added for dynamic WASM path resolution
       onnxModelPath: "/silero_vad.onnx", // Assuming model is in static root
       sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
       frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
@@ -13238,7 +13303,8 @@ import {
   afterEach,
   type Mocked,
 } from "vitest";
-import RubberbandWorker from '$lib/workers/rubberband.worker?worker';
+// Import the worker, it will be replaced by the mock
+import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
 import audioEngineService from "./audioEngine.service"; // Assuming default export
 import { playerStore } from "$lib/stores/player.store";
 import analysisService from "$lib/services/analysis.service";
@@ -13298,7 +13364,7 @@ const mockWorkerInstance = {
 };
 // global.Worker = vi.fn(() => mockWorkerInstance); // This mocks the constructor
 // For Vite worker imports (?worker), we need to mock the module
-vi.mock("$lib/workers/rubberband.worker?worker", () => ({
+vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockWorkerInstance),
 }));
 
@@ -13619,7 +13685,7 @@ import { playerStore } from "$lib/stores/player.store"; // Assuming playerStore 
 import analysisService from "$lib/services/analysis.service";
 
 // Import worker using Vite's ?worker syntax
-import RubberbandWorker from "$lib/workers/rubberband.worker?worker";
+import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
 
 interface AudioEngineState {
   isInitialized: boolean;
@@ -13816,7 +13882,8 @@ class AudioEngineService {
 
     const initPayload: RubberbandInitPayload = {
       wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL, // e.g., '/rubberband.wasm'
-      loaderPath: AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL, // e.g., '/rubberband-loader.js'
+      // loaderPath will be constructed in the worker from origin
+      origin: location.origin,
       sampleRate: options.sampleRate,
       channels: options.channels,
       initialSpeed: options.initialSpeed,
@@ -15298,7 +15365,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     switch (type) {
-      case RB_WORKER_MSG_TYPE.INIT:
+      case RB_WORKER_MSG_TYPE.INIT: { // Using a block scope for clarity
         const initPayload = payload as RubberbandInitPayload;
         sampleRate = initPayload.sampleRate;
         channels = initPayload.channels;
@@ -15328,6 +15395,23 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         // 4. Call the loader function, providing the hook. It returns a promise that resolves with the initialized module.
         wasmModule = await Rubberband({ instantiateWasm });
 
+        // does this work?
+        // not sure why there was this block
+        // Construct loaderUrl from origin
+        // if (!initPayload.origin) {
+        //   throw new Error("RubberbandWorker INIT: origin is missing in payload");
+        // }
+        // const loaderUrl = `${initPayload.origin}/rubberband-loader.js`;
+        //
+        // if (self.importScripts) {
+        //   self.importScripts(loaderUrl); // Load rubberband-loader.js
+        // } else {
+        //   // For environments where importScripts might not be available directly in module workers (less common for Vite ?worker)
+        //   // Consider alternative loading or ensure build process handles it.
+        //   // For now, assume importScripts works as Vite usually bundles it correctly.
+        //   await import(loaderUrl);
+        // }
+
         if (!wasmModule || typeof wasmModule._rubberband_new !== 'function') {
           throw new Error("Rubberband WASM module failed to load or initialize correctly.");
         }
@@ -15350,6 +15434,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         self.postMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
         break;
+      }
 
       case RB_WORKER_MSG_TYPE.SET_SPEED:
         if (wasmModule && rubberbandStretcher && payload?.speed !== undefined) {
@@ -15430,8 +15515,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         // It's crucial that ORT WASM files are served from the expected path.
         // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
-        // Default path for ORT Web is usually the root of where the script is served.
-        ort.env.wasm.wasmPaths = "/"; // Adjust if your static copy path is different e.g. '/wasmfiles/'
+        if (!initPayload.origin) {
+          throw new Error("SileroVadWorker INIT: origin is missing in payload");
+        }
+        ort.env.wasm.wasmPaths = `${initPayload.origin}/`; // Set base path for ORT WASM files
         // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
 
         vadSession = await ort.InferenceSession.create(
@@ -16349,6 +16436,8 @@ export default {
 --- End of File: vibe-player-v2/tailwind.config.ts ---
 --- File: vibe-player-v2/tsconfig.json ---
 ````json
+// vibe-player-v2/tsconfig.json
+
 {
   "extends": "./.svelte-kit/tsconfig.json",
   "compilerOptions": {
@@ -16360,7 +16449,17 @@ export default {
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
-    "moduleResolution": "bundler"
+    "module": "esnext",
+    "moduleResolution": "bundler",
+
+    // Change the target to a modern version that supports async/await natively.
+    // "es2017" is a safe and widely supported choice.
+    "target": "es2017",
+
+    // Add "webworker" to the library list. This provides the correct
+    // global types for your worker files (like `self`, `importScripts`, etc.)
+    // and ensures "Promise" is available.
+    "lib": ["es2017", "dom", "webworker"]
   }
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
@@ -16383,7 +16482,7 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: "./node_modules/onnxruntime-web/dist/*.wasm",
+          src: "./node_modules/onnxruntime-web/dist/*.{wasm,mjs}",
           dest: ".", // Copies to the root of the build directory
         },
       ],
