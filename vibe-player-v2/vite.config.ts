@@ -8,7 +8,7 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: "./node_modules/onnxruntime-web/dist/*.wasm",
+          src: "./node_modules/onnxruntime-web/dist/*.{wasm,mjs}",
           dest: ".", // Copies to the root of the build directory
         },
       ],
