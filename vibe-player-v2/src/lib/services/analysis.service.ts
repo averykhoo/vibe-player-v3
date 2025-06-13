@@ -290,8 +290,8 @@ class AnalysisService {
     }
 
     public detectDTMF(
-        audioFrame: Float32Array, // eslint-disable-line @typescript-eslint/no-unused-vars
-        sampleRate: number, // eslint-disable-line @typescript-eslint/no-unused-vars
+        audioFrame: Float32Array,
+        sampleRate: number,
     ): string | null {
         // TODO: Implement Goertzel algorithm for DTMF frequencies
         console.log("DTMF detection not yet implemented.");
