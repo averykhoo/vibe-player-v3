@@ -274,11 +274,11 @@ jobs:
         env:
           HOST: '0.0.0.0'
           # Align port with playwright.config.js for consistency
-          PORT: 5173
+          PORT: 4173
 
       # Wait for the server to be fully responsive (checks for HTTP 200)
       - name: Wait for Preview Server
-        run: npx wait-on http://localhost:5173 --timeout 120000 --http-status-codes 200
+        run: npx wait-on http://localhost:4173 --timeout 120000 --http-status-codes 200
         # Increased timeout and added check for HTTP 200
 
       - name: Run Playwright E2E tests
@@ -749,8 +749,8 @@ const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
   testDir: './tests-e2e', // Specify the directory for E2E tests
   webServer: {
-    command: 'npm run build --prefix vibe-player-v2 && npx http-server vibe-player-v2/build -p 5173 --silent -c-1', // Added -c-1 to disable caching
-    url: 'http://localhost:5173',
+    command: 'npm run build --prefix vibe-player-v2 && npx http-server vibe-player-v2/build -p 4173 --silent -c-1', // Added -c-1 to disable caching
+    url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000, // Increased timeout to 3 minutes to allow for build time + server start
   },
@@ -776,7 +776,7 @@ module.exports = defineConfig({
 
   use: {
     // Optional: Base URL to use in actions like `await page.goto('/')`
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://localhost:4173',
 
     // Optional: Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer
     trace: 'on-first-retry',
@@ -2126,7 +2126,7 @@ const path = require('path');
 exports.PlayerPage = class PlayerPage {
   constructor(page) {
     this.page = page;
-    this.devServerUrl = 'http://localhost:5173/';
+    this.devServerUrl = 'http://localhost:4173/';
 
     // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
     this.appBarTitle = page.getByTestId('app-bar-title');

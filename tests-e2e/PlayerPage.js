@@ -5,7 +5,7 @@ const path = require('path');
 exports.PlayerPage = class PlayerPage {
   constructor(page) {
     this.page = page;
-    this.devServerUrl = 'http://localhost:5173/';
+    this.devServerUrl = 'http://localhost:4173/';
 
     // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
     this.appBarTitle = page.getByTestId('app-bar-title');

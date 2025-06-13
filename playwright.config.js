@@ -4,8 +4,8 @@ const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
   testDir: './tests-e2e', // Specify the directory for E2E tests
   webServer: {
-    command: 'npm run build --prefix vibe-player-v2 && npx http-server vibe-player-v2/build -p 5173 --silent -c-1', // Added -c-1 to disable caching
-    url: 'http://localhost:5173',
+    command: 'npm run build --prefix vibe-player-v2 && npx http-server vibe-player-v2/build -p 4173 --silent -c-1', // Added -c-1 to disable caching
+    url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000, // Increased timeout to 3 minutes to allow for build time + server start
   },
@@ -31,7 +31,7 @@ module.exports = defineConfig({
 
   use: {
     // Optional: Base URL to use in actions like `await page.goto('/')`
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://localhost:4173',
 
     // Optional: Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer
     trace: 'on-first-retry',
