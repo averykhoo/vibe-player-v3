@@ -23,13 +23,19 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         sampleRate = initPayload.sampleRate;
         channels = initPayload.channels;
 
+        // Construct loaderUrl from origin
+        if (!initPayload.origin) {
+          throw new Error("RubberbandWorker INIT: origin is missing in payload");
+        }
+        const loaderUrl = `${initPayload.origin}/rubberband-loader.js`;
+
         if (self.importScripts) {
-          self.importScripts(initPayload.loaderPath); // Load rubberband-loader.js
+          self.importScripts(loaderUrl); // Load rubberband-loader.js
         } else {
           // For environments where importScripts might not be available directly in module workers (less common for Vite ?worker)
           // Consider alternative loading or ensure build process handles it.
           // For now, assume importScripts works as Vite usually bundles it correctly.
-          await import(initPayload.loaderPath);
+          await import(loaderUrl);
         }
 
         rubberbandInstance = new RubberBand(

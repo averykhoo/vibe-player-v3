@@ -36,8 +36,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         // It's crucial that ORT WASM files are served from the expected path.
         // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
-        // Default path for ORT Web is usually the root of where the script is served.
-        ort.env.wasm.wasmPaths = "/"; // Adjust if your static copy path is different e.g. '/wasmfiles/'
+        if (!initPayload.origin) {
+          throw new Error("SileroVadWorker INIT: origin is missing in payload");
+        }
+        ort.env.wasm.wasmPaths = `${initPayload.origin}/`; // Set base path for ORT WASM files
         // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
 
         vadSession = await ort.InferenceSession.create(

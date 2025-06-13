@@ -178,6 +178,7 @@ class AnalysisService {
     };
 
     const initPayload: SileroVadInitPayload = {
+      origin: location.origin, // Added for dynamic WASM path resolution
       onnxModelPath: "/silero_vad.onnx", // Assuming model is in static root
       sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
       frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
