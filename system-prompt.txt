@@ -246,41 +246,46 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npm run build
 
-      # 4. Correctly cache Playwright browsers
-      - name: Cache Playwright browsers
-        id: cache-playwright-browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      # 5. Install Playwright browsers only if the cache was not restored
+      # Install Playwright browsers only if the cache was not restored
       - name: Install Playwright and OS dependencies
-        if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
-      # 6. (DEBUGGING STEP) Verify Playwright directory content
-      - name: List Playwright cache directory
-        if: always() # Run this step even if previous steps fail
-        run: |
-          echo "Verifying contents of the Playwright cache directory..."
-          ls -la ~/.cache/ms-playwright
-          echo "Verification complete."
-
-      # 7. Start the preview server for E2E tests
+      # Start the preview server and redirect its output to a log file
       - name: Start V2 preview server
         working-directory: ./vibe-player-v2
-        run: npm run preview &
+        # This command redirects both stdout and stderr to server.log
+        # and runs the whole thing in the background.
+        run: npm run preview > server.log 2>&1 &
         env:
           HOST: '0.0.0.0'
-          # Align port with playwright.config.js for consistency
-          PORT: 4173
+          PORT: 4173 # I see you updated this to 4173, which is correct.
 
-      # Wait for the server to be fully responsive (checks for HTTP 200)
+      # NEW STEP: A short delay to allow the server to start (or fail)
+      - name: Wait a moment for server to initialize
+        run: sleep 5
+
+      # This step will now attempt to wait, and will likely fail again.
       - name: Wait for Preview Server
+        id: wait-on-server
         run: npx wait-on http://localhost:4173 --timeout 120000 --http-status-codes 200
-        # Increased timeout and added check for HTTP 200
+        continue-on-error: true # Allow the workflow to continue even if this fails
 
+      # CRUCIAL DEBUGGING STEP: Display the server log
+      - name: Display Server Log
+        if: always() # This will run even if the wait-on step failed
+        run: |
+          echo "--- Displaying server.log ---"
+          cat vibe-player-v2/server.log
+          echo "--- End of server.log ---"
+
+      # This step now checks the outcome of wait-on and fails the job if needed
+      - name: Check Server Status
+        if: steps.wait-on-server.outcome == 'failure'
+        run: |
+          echo "Server failed to start or respond."
+          exit 1
+
+      # Now, the rest of your workflow can proceed...
       - name: Run Playwright E2E tests
         run: npx playwright test
 
