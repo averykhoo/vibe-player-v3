@@ -22,6 +22,18 @@
     // global types for your worker files (like `self`, `importScripts`, etc.)
     // and ensures "Promise" is available.
     "lib": ["es2017", "dom", "webworker"]
+  },
+  // --- ADD THIS "exclude" ARRAY ---
+  "exclude": [
+    "node_modules",
+    "build",
+    ".svelte-kit",
+    "vite.config.ts",
+    "svelte.config.js",
+    "playwright.config.ts",
+    "postcss.config.js",
+    "eslint.config.js"
+  ]
   }
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
