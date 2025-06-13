@@ -9,18 +9,34 @@ import type {
   SpectrogramResultPayload,
   SpectrogramProcessPayload,
 } from "$lib/types/worker.types";
-import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils"; // Assuming VAD_CONSTANTS is in utils/index
+import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils";
 import { VAD_WORKER_MSG_TYPE, SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
-import { analysisStore } from "$lib/stores/analysis.store"; // Assuming analysisStore exists
+import { analysisStore, type AnalysisState } from "$lib/stores/analysis.store";
+// import type { PlayerState } from '$lib/types/player.types'; // AudioBuffer is used
 
 import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
 import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
 interface AnalysisServiceState {
-  isInitialized: boolean;
-  isInitializing: boolean;
-  error: string | null;
-  // Add other relevant state properties
+  isInitialized: boolean; // For VAD worker
+  isInitializing: boolean; // For VAD worker
+  error: string | null; // For VAD worker
+}
+
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}
+
+interface AnalysisServiceInitializeOptions {
+  positiveThreshold?: number;
+  negativeThreshold?: number;
+}
+
+interface SpectrogramWorkerInitializeOptions {
+  sampleRate: number;
+  fftSize?: number;
+  hopLength?: number;
 }
 
 const initialServiceState: AnalysisServiceState = {
@@ -33,21 +49,14 @@ const serviceState = writable<AnalysisServiceState>(initialServiceState);
 
 class AnalysisService {
   private static instance: AnalysisService;
-  private worker: Worker | null = null;
+  private worker: Worker | null = null; // SileroVadWorker
   private nextMessageId = 0;
-  private pendingRequests = new Map<
-    string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
-  >();
+  private pendingRequests = new Map<string, PendingRequest>();
 
-  // Add to AnalysisService class:
   private spectrogramWorker: Worker | null = null;
-  private spectrogramInitialized = writable(false);
+  private spectrogramInitialized = writable<boolean>(false);
   private nextSpecMessageId = 0;
-  private pendingSpecRequests = new Map<
-    string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
-  >();
+  private pendingSpecRequests = new Map<string, PendingRequest>();
 
   private constructor() {}
 
@@ -62,7 +71,7 @@ class AnalysisService {
     return `vad_msg_${this.nextMessageId++}`;
   }
 
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<any> {
+  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
         reject(new Error("VAD Worker not initialized."));
@@ -74,47 +83,48 @@ class AnalysisService {
     });
   }
 
-  public async initialize(options?: {
-    positiveThreshold?: number;
-    negativeThreshold?: number;
-  }): Promise<void> {
+  public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
     if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
-      console.warn("AnalysisService already initialized or initializing.");
+      console.warn("AnalysisService (VAD) already initialized or initializing.");
       return;
     }
-    serviceState.update((s) => ({ ...s, isInitializing: true, error: null }));
-    analysisStore.update((s) => ({
+    serviceState.update((s: AnalysisServiceState) => ({ ...s, isInitializing: true, error: null }));
+    analysisStore.update((s: AnalysisState) => ({
       ...s,
-      status: "VAD service initializing...",
+      vadStatus: "VAD service initializing...",
+      vadInitialized: false, // Explicitly set during init start
     }));
 
     this.worker = new SileroVadWorker();
 
-    this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+    this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
       const { type, payload, error, messageId } = event.data;
       const request = messageId
         ? this.pendingRequests.get(messageId)
         : undefined;
 
       if (error) {
-        console.error(`AnalysisService Worker Error (type ${type}):`, error);
-        serviceState.update((s) => ({
+        const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown VAD worker message error';
+        console.error(`AnalysisService VAD Worker Error (type ${type}):`, errorMsg);
+        serviceState.update((s: AnalysisServiceState) => ({
           ...s,
-          error: `VAD Worker error: ${error}`,
+          error: `VAD Worker error: ${errorMsg}`,
         }));
         if (request) {
-          request.reject(error);
-          this.pendingRequests.delete(messageId!);
+          request.reject(errorMsg);
+          if (messageId) this.pendingRequests.delete(messageId);
         }
         if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
-          serviceState.update((s) => ({
+          serviceState.update((s: AnalysisServiceState) => ({
             ...s,
             isInitialized: false,
             isInitializing: false,
           }));
-          analysisStore.update((s) => ({
+          analysisStore.update((s: AnalysisState) => ({
             ...s,
-            status: "Error initializing VAD service.",
+            vadStatus: "Error initializing VAD service.",
+            vadError: errorMsg,
+            vadInitialized: false,
           }));
         }
         return;
@@ -122,30 +132,32 @@ class AnalysisService {
 
       switch (type) {
         case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
-          serviceState.update((s) => ({
+          serviceState.update((s: AnalysisServiceState) => ({
             ...s,
             isInitialized: true,
             isInitializing: false,
           }));
-          analysisStore.update((s) => ({
+          analysisStore.update((s: AnalysisState) => ({
             ...s,
-            status: "VAD service initialized.",
+            vadStatus: "VAD service initialized.",
+            vadInitialized: true,
+            vadError: null,
           }));
           if (request) request.resolve(payload);
           break;
 
         case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
           const resultPayload = payload as SileroVadProcessResultPayload;
-          analysisStore.update((s) => ({
+          analysisStore.update((s: AnalysisState) => ({
             ...s,
             lastVadResult: resultPayload,
-            isSpeaking: resultPayload.isSpeech, // Example update
+            isSpeaking: resultPayload.isSpeech,
           }));
           if (request) request.resolve(resultPayload);
           break;
 
         case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
-          analysisStore.update((s) => ({ ...s, vadStateResetted: true }));
+          analysisStore.update((s: AnalysisState) => ({ ...s, vadStateResetted: true, lastVadResult: null, isSpeaking: false }));
           if (request) request.resolve(payload);
           break;
 
@@ -154,32 +166,35 @@ class AnalysisService {
             "AnalysisService received message from VAD worker:",
             event.data,
           );
-          if (request) request.resolve(payload); // Generic resolve
+          if (request) request.resolve(payload);
       }
       if (messageId && request) this.pendingRequests.delete(messageId);
     };
 
-    this.worker.onerror = (err) => {
-      console.error("Unhandled error in SileroVadWorker:", err);
-      serviceState.update((s) => ({
+    this.worker.onerror = (err: Event | string) => {
+      const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown VAD worker error');
+      console.error("Unhandled error in SileroVadWorker:", errorMsg);
+      serviceState.update((s: AnalysisServiceState) => ({
         ...s,
-        error: `VAD Worker onerror: ${err.message}`,
+        error: `VAD Worker onerror: ${errorMsg}`,
         isInitialized: false,
         isInitializing: false,
       }));
-      analysisStore.update((s) => ({
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        status: "Critical VAD worker error.",
+        vadStatus: "Critical VAD worker error.",
+        vadError: errorMsg,
+        vadInitialized: false,
       }));
       this.pendingRequests.forEach((req) =>
-        req.reject(new Error("VAD Worker failed critically.")),
+        req.reject(new Error(`VAD Worker failed critically: ${errorMsg}`)),
       );
       this.pendingRequests.clear();
     };
 
     const initPayload: SileroVadInitPayload = {
-      origin: location.origin, // Added for dynamic WASM path resolution
-      onnxModelPath: "/silero_vad.onnx", // Assuming model is in static root
+      origin: location.origin,
+      onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL, // Use constant
       sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
       frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
       positiveThreshold:
@@ -189,20 +204,23 @@ class AnalysisService {
     };
 
     try {
-      await this.postMessageToWorker({
+      await this.postMessageToWorker<SileroVadInitPayload>({
         type: VAD_WORKER_MSG_TYPE.INIT,
         payload: initPayload,
       });
-    } catch (err: any) {
-      serviceState.update((s) => ({
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      serviceState.update((s: AnalysisServiceState) => ({
         ...s,
-        error: err.message || "VAD Initialization failed",
+        error: errorMessage || "VAD Initialization failed",
         isInitialized: false,
         isInitializing: false,
       }));
-      analysisStore.update((s) => ({
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        status: "Error sending VAD init to worker.",
+        vadStatus: "Error sending VAD init to worker.",
+        vadError: errorMessage,
+        vadInitialized: false,
       }));
     }
   }
@@ -211,51 +229,54 @@ class AnalysisService {
     audioFrame: Float32Array,
     timestamp?: number,
   ): Promise<SileroVadProcessResultPayload | null> {
-    if (!get(serviceState).isInitialized || !this.worker) {
-      // console.error('VAD Service not initialized.');
-      // throw new Error('VAD Service not initialized.');
-      // Silently fail or queue if not initialized? For now, throw.
-      throw new Error("VAD Service not initialized.");
+    if (!this.worker || !get(serviceState).isInitialized) {
+      const errorMsg = "VAD Service not initialized or worker unavailable.";
+      console.error(errorMsg);
+      analysisStore.update((s: AnalysisState) => ({ ...s, vadError: errorMsg }));
+      throw new Error(errorMsg);
     }
     const payload: SileroVadProcessPayload = { audioFrame, timestamp };
     try {
-      const result = await this.postMessageToWorker({
+      const result = await this.postMessageToWorker<SileroVadProcessPayload>({
         type: VAD_WORKER_MSG_TYPE.PROCESS,
         payload,
       });
       return result as SileroVadProcessResultPayload;
-    } catch (error) {
-      console.error("Error processing VAD frame:", error);
-      analysisStore.update((s) => ({
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Error processing VAD frame:", errorMessage);
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        error: "Error processing VAD frame",
+        vadError: `Error processing VAD frame: ${errorMessage}`,
       }));
       return null;
     }
   }
 
   public async resetVadState(): Promise<void> {
-    if (!get(serviceState).isInitialized || !this.worker)
-      throw new Error("VAD Service not initialized.");
+    if (!this.worker || !get(serviceState).isInitialized) {
+      const errorMsg = "VAD Service not initialized or worker unavailable for reset.";
+      console.error(errorMsg);
+      analysisStore.update((s: AnalysisState) => ({ ...s, vadError: errorMsg }));
+      throw new Error(errorMsg);
+    }
     try {
-      await this.postMessageToWorker({ type: VAD_WORKER_MSG_TYPE.RESET });
-    } catch (error) {
-      console.error("Error resetting VAD state:", error);
-      analysisStore.update((s) => ({
+      await this.postMessageToWorker<undefined>({ type: VAD_WORKER_MSG_TYPE.RESET });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Error resetting VAD state:", errorMessage);
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        error: "Error resetting VAD state",
+        vadError: `Error resetting VAD state: ${errorMessage}`,
       }));
     }
   }
 
-  // Placeholder for Goertzel DTMF detection logic
-  // This would likely operate on raw audio frames or chunks
   public detectDTMF(
-    audioFrame: Float32Array,
-    sampleRate: number,
+    audioFrame: Float32Array, // eslint-disable-line @typescript-eslint/no-unused-vars
+    sampleRate: number, // eslint-disable-line @typescript-eslint/no-unused-vars
   ): string | null {
     // TODO: Implement Goertzel algorithm for DTMF frequencies
-    // This is a highly simplified placeholder
     console.log("DTMF detection not yet implemented.");
     return null;
   }
@@ -266,24 +287,25 @@ class AnalysisService {
       this.worker = null;
     }
     this.pendingRequests.clear();
-    this.nextMessageId = 0; // Reset message ID counter
-    serviceState.set(initialServiceState);
-    analysisStore.update((s) => ({
+    this.nextMessageId = 0;
+    serviceState.set(initialServiceState); // Reset VAD specific state
+    analysisStore.update((s: AnalysisState) => ({
       ...s,
-      status: "VAD service disposed.",
-      isInitialized: false,
+      vadStatus: "VAD service disposed.",
+      vadInitialized: false,
+      lastVadResult: null,
+      isSpeaking: undefined,
+      vadError: null,
     }));
-    // ... (existing VAD worker disposal) ...
-    this.disposeSpectrogramWorker();
-    // ... (rest of existing dispose) ...
-    console.log("AnalysisService (and Spectrogram worker) disposed.");
+    this.disposeSpectrogramWorker(); // Ensure spec worker is also disposed
+    console.log("AnalysisService (VAD and Spectrogram workers) disposed.");
   }
 
   private generateSpecMessageId(): string {
     return `spec_msg_${this.nextSpecMessageId++}`;
   }
 
-  private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<any> {
+  private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.spectrogramWorker) {
         reject(new Error("Spectrogram Worker not initialized."));
@@ -295,40 +317,39 @@ class AnalysisService {
     });
   }
 
-  public async initializeSpectrogramWorker(options: {
-    sampleRate: number;
-    fftSize?: number;
-    hopLength?: number;
-  }): Promise<void> {
+  public async initializeSpectrogramWorker(options: SpectrogramWorkerInitializeOptions): Promise<void> {
     if (get(this.spectrogramInitialized)) {
       console.warn("Spectrogram worker already initialized.");
       return;
     }
 
     this.spectrogramWorker = new SpectrogramWorker();
-    analysisStore.update((s) => ({
+    analysisStore.update((s: AnalysisState) => ({
       ...s,
       spectrogramStatus: "Spectrogram worker initializing...",
+      spectrogramInitialized: false,
     }));
 
-    this.spectrogramWorker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+    this.spectrogramWorker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
       const { type, payload, error, messageId } = event.data;
       const request = messageId
         ? this.pendingSpecRequests.get(messageId)
         : undefined;
 
       if (error) {
-        console.error(`Spectrogram Worker Error (type ${type}):`, error);
-        analysisStore.update((s) => ({
+        const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown Spectrogram worker message error';
+        console.error(`Spectrogram Worker Error (type ${type}):`, errorMsg);
+        analysisStore.update((s: AnalysisState) => ({
           ...s,
-          spectrogramError: `Worker error: ${error}`,
+          spectrogramError: `Worker error: ${errorMsg}`,
+          spectrogramInitialized: false,
         }));
         if (request) {
-          request.reject(error);
-          this.pendingSpecRequests.delete(messageId!);
+          request.reject(errorMsg);
+          if (messageId) this.pendingSpecRequests.delete(messageId);
         }
         if (type === SPEC_WORKER_MSG_TYPE.INIT_ERROR) {
-          this.spectrogramInitialized.set(false);
+          this.spectrogramInitialized.set(false); // Already set in analysisStore update
         }
         return;
       }
@@ -336,15 +357,17 @@ class AnalysisService {
       switch (type) {
         case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
           this.spectrogramInitialized.set(true);
-          analysisStore.update((s) => ({
+          analysisStore.update((s: AnalysisState) => ({
             ...s,
             spectrogramStatus: "Spectrogram worker initialized.",
+            spectrogramInitialized: true,
+            spectrogramError: null,
           }));
           if (request) request.resolve(payload);
           break;
         case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
           const specResult = payload as SpectrogramResultPayload;
-          analysisStore.update((s) => ({
+          analysisStore.update((s: AnalysisState) => ({
             ...s,
             spectrogramData: specResult.magnitudes,
           }));
@@ -356,25 +379,25 @@ class AnalysisService {
       if (messageId && request) this.pendingSpecRequests.delete(messageId);
     };
 
-    this.spectrogramWorker.onerror = (err) => {
-      /* similar to vad worker onerror */
-      console.error("Unhandled error in SpectrogramWorker:", err);
-      analysisStore.update((s) => ({
+    this.spectrogramWorker.onerror = (err: Event | string) => {
+      const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown Spectrogram worker error');
+      console.error("Unhandled error in SpectrogramWorker:", errorMsg);
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        spectrogramError: `Worker onerror: ${err.message}`,
+        spectrogramError: `Worker onerror: ${errorMsg}`,
+        spectrogramInitialized: false,
+        spectrogramStatus: "Spectrogram worker error."
       }));
       this.pendingSpecRequests.forEach((req) =>
-        req.reject(new Error("Spectrogram Worker failed critically.")),
+        req.reject(new Error(`Spectrogram Worker failed critically: ${errorMsg}`)),
       );
       this.pendingSpecRequests.clear();
       this.spectrogramInitialized.set(false);
     };
 
     const initPayload: SpectrogramInitPayload = {
-      // --- ADD origin and fftPath ---
       origin: location.origin,
-      fftPath: '../fft.js', // This path is relative from the worker file location in source
-      // --- END ADD ---
+      fftPath: VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL,
       sampleRate: options.sampleRate,
       fftSize: options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
       hopLength:
@@ -384,35 +407,42 @@ class AnalysisService {
         ),
     };
     try {
-      await this.postMessageToSpecWorker({
+      await this.postMessageToSpecWorker<SpectrogramInitPayload>({
         type: SPEC_WORKER_MSG_TYPE.INIT,
         payload: initPayload,
       });
-    } catch (e: any) {
-      analysisStore.update((s) => ({
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        spectrogramError: e.message || "Spectrogram init failed",
+        spectrogramError: errorMessage || "Spectrogram init failed",
+        spectrogramInitialized: false,
+        spectrogramStatus: "Error sending Spectrogram init to worker."
       }));
-      this.spectrogramInitialized.set(false);
+      this.spectrogramInitialized.set(false); // Ensure internal writable is also false
     }
   }
 
   public async processAudioForSpectrogram(
     audioData: Float32Array,
   ): Promise<SpectrogramResultPayload | null> {
-    if (!get(this.spectrogramInitialized))
-      throw new Error("Spectrogram worker not initialized.");
+    if (!this.spectrogramWorker || !get(this.spectrogramInitialized)) {
+      const errorMsg = "Spectrogram worker not initialized or unavailable.";
+      console.error(errorMsg);
+      analysisStore.update((s: AnalysisState) => ({ ...s, spectrogramError: errorMsg }));
+      throw new Error(errorMsg);
+    }
     const payload: SpectrogramProcessPayload = { audioData };
     try {
-      // This sends the whole audio data at once. For large files, chunking would be better.
-      const result = await this.postMessageToSpecWorker({
+      const result = await this.postMessageToSpecWorker<SpectrogramProcessPayload>({
         type: SPEC_WORKER_MSG_TYPE.PROCESS,
         payload,
       });
       return result as SpectrogramResultPayload;
-    } catch (e: any) {
-      console.error("Error processing audio for spectrogram:", e);
-      analysisStore.update((s) => ({ ...s, spectrogramError: e.message }));
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      console.error("Error processing audio for spectrogram:", errorMessage);
+      analysisStore.update((s: AnalysisState) => ({ ...s, spectrogramError: `Error processing for spectrogram: ${errorMessage}` }));
       return null;
     }
   }
@@ -421,67 +451,78 @@ class AnalysisService {
     if (this.spectrogramWorker) {
       this.spectrogramWorker.terminate();
       this.spectrogramWorker = null;
-      this.spectrogramInitialized.set(false);
-      this.pendingSpecRequests.clear();
-      this.nextSpecMessageId = 0; // Reset spec message ID counter
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "Spectrogram worker disposed.",
-        spectrogramData: null,
-      }));
     }
+    this.spectrogramInitialized.set(false);
+    this.pendingSpecRequests.clear();
+    this.nextSpecMessageId = 0;
+    analysisStore.update((s: AnalysisState) => ({
+      ...s,
+      spectrogramStatus: "Spectrogram worker disposed.",
+      spectrogramData: null,
+      spectrogramInitialized: false,
+      spectrogramError: null,
+    }));
   }
 
   public async startSpectrogramProcessing(
-    audioBuffer: AudioBuffer,
+    audioBuffer: AudioBuffer, // AudioBuffer is a web Audio API type, not from player.types
   ): Promise<void> {
     if (!audioBuffer) {
       console.warn(
         "AnalysisService: No audio buffer provided for spectrogram processing.",
       );
+      analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: "No audio buffer for spectrogram."}));
       return;
     }
 
-    if (!get(this.spectrogramInitialized)) {
-      analysisStore.update((s) => ({
+    // Re-initialize if needed (e.g. sample rate change) or not initialized
+    if (!get(this.spectrogramInitialized) || get(analysisStore).spectrogramStatus?.includes("disposed")) {
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        spectrogramStatus: "Initializing for new file...",
+        spectrogramStatus: "Initializing spectrogram worker for new file...",
       }));
       await this.initializeSpectrogramWorker({
         sampleRate: audioBuffer.sampleRate,
-        // fftSize and hopLength will use defaults from VISUALIZER_CONSTANTS if not specified
       });
     }
 
-    // Ensure it's initialized after the await above
     if (!get(this.spectrogramInitialized)) {
-      console.error(
-        "AnalysisService: Spectrogram worker failed to initialize for processing.",
-      );
-      analysisStore.update((s) => ({
+      const errorMsg = "AnalysisService: Spectrogram worker failed to initialize for processing.";
+      console.error(errorMsg);
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
-        spectrogramError: "Worker init failed before processing.",
+        spectrogramError: errorMsg,
+        spectrogramStatus: "Spectrogram worker initialization failed."
       }));
       return;
     }
 
-    // For simplicity, process the first channel for the spectrogram
-    const pcmData = audioBuffer.getChannelData(0);
+    const pcmData = audioBuffer.getChannelData(0); // Process first channel
     if (pcmData && pcmData.length > 0) {
-      analysisStore.update((s) => ({
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
         spectrogramStatus: "Processing audio for spectrogram...",
       }));
-      await this.processAudioForSpectrogram(pcmData);
-      analysisStore.update((s) => ({
-        ...s,
-        spectrogramStatus: "Spectrogram processing initiated.",
-      }));
+      try {
+        await this.processAudioForSpectrogram(pcmData);
+        analysisStore.update((s: AnalysisState) => ({
+          ...s,
+          spectrogramStatus: "Spectrogram processing complete.", // Or "initiated" if it's async in worker
+        }));
+      } catch (error: unknown) {
+         const errorMessage = error instanceof Error ? error.message : String(error);
+         analysisStore.update((s: AnalysisState) => ({
+          ...s,
+          spectrogramStatus: "Spectrogram processing failed.",
+          spectrogramError: errorMessage,
+        }));
+      }
     } else {
       console.warn("AnalysisService: No PCM data to process for spectrogram.");
-      analysisStore.update((s) => ({
+      analysisStore.update((s: AnalysisState) => ({
         ...s,
         spectrogramStatus: "No data for spectrogram.",
+        spectrogramData: null, // Clear any old data
       }));
     }
   }
