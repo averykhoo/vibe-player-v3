@@ -7,6 +7,7 @@
   import { playerStore } from '$lib/stores/player.store';
   import audioEngineService from '$lib/services/audioEngine.service';
   import analysisService from '$lib/services/analysis.service';
+  import spectrogramService from '$lib/services/spectrogram.service';
 
   onMount(() => {
     console.log('[+page.svelte onMount] Initializing services...');
@@ -26,6 +27,7 @@
       console.log('[+page.svelte onDestroy] Disposing services...');
       audioEngineService.dispose();
       analysisService.dispose();
+      spectrogramService.dispose();
       console.log('[+page.svelte onDestroy] Services disposed.');
     };
   });
@@ -33,7 +35,26 @@
   // Reactive statement to trigger spectrogram processing when a file is loaded and playable
   $: if ($playerStore.isPlayable && $playerStore.audioBuffer) {
     console.log('[+page.svelte reactive] isPlayable is true, starting background analysis.');
-    analysisService.startSpectrogramProcessing($playerStore.audioBuffer);
+    // analysisService.startSpectrogramProcessing($playerStore.audioBuffer); // Old way
+    const processSpectrogram = async () => {
+      if (!$playerStore.audioBuffer) return;
+      try {
+        console.log('[+page.svelte] Initializing spectrogram service with sample rate:', $playerStore.audioBuffer.sampleRate);
+        await spectrogramService.initialize({ sampleRate: $playerStore.audioBuffer.sampleRate });
+
+        const pcmData = $playerStore.audioBuffer.getChannelData(0); // Assuming mono
+        if (pcmData && pcmData.length > 0) {
+          console.log('[+page.svelte] Processing PCM data for spectrogram...');
+          await spectrogramService.process(pcmData);
+          console.log('[+page.svelte] Spectrogram processing initiated.');
+        } else {
+          console.warn('[+page.svelte] No PCM data found in audioBuffer or data is empty.');
+        }
+      } catch (error) {
+        console.error('[+page.svelte] Error during spectrogram processing:', error);
+      }
+    };
+    processSpectrogram();
   }
 </script>
 
