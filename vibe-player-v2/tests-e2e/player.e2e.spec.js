@@ -1,6 +1,6 @@
 // tests-e2e/player.e2e.spec.js
 import { test, expect } from '@playwright/test';
-import { PlayerPage } from './PlayerPage';
+import { PlayerPage } from './PlayerPage.mjs';
 
 // Helper function (keep as is)
 function parseTimeToSeconds(timeStr) {

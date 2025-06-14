@@ -2,7 +2,7 @@
 const { expect } = require('@playwright/test');
 const path = require('path');
 
-exports.PlayerPage = class PlayerPage {
+export class PlayerPage {
   constructor(page) {
     this.page = page;
     this.devServerUrl = 'http://localhost:4173/';
