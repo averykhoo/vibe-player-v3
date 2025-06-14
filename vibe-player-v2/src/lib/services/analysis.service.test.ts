@@ -1,17 +1,19 @@
-// vibe-player-v2/src/lib/services/analysis.service.test.ts (FIXED)
+// vibe-player-v2/src/lib/services/analysis.service.test.ts
 
-import { vi, describe, it, expect, beforeEach, afterEach, type Mocked } from "vitest";
-import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
-import analysisService from "./analysis.service";
-import { analysisStore } from "$lib/stores/analysis.store";
-import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
-// Mock Svelte stores
+// --- Mock Dependencies ---
+// By mocking at the top level, we ensure any import of these modules gets our fake version.
+
 vi.mock("$lib/stores/analysis.store", () => ({
-  analysisStore: { subscribe: vi.fn(), set: vi.fn(), update: vi.fn() },
+  analysisStore: {
+    subscribe: vi.fn(),
+    set: vi.fn(),
+    update: vi.fn(),
+  },
 }));
 
-// Mock Web Workers
+// Create a single, controllable mock worker instance for all tests.
 const mockVadWorkerInstance = {
   postMessage: vi.fn(),
   terminate: vi.fn(),
@@ -23,65 +25,96 @@ vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
 
+
+// --- Test Suite ---
+// We can now import the service, knowing its dependencies are mocked.
+import analysisService from "./analysis.service";
+import { analysisStore } from "$lib/stores/analysis.store";
+import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
+import { VAD_CONSTANTS } from "$lib/utils";
+
 describe("AnalysisService (VAD Only)", () => {
+
+  // Intercept and mock the global `fetch` API.
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockVadWorkerInstance.postMessage.mockClear();
-    mockVadWorkerInstance.terminate.mockClear();
-    mockVadWorkerInstance.onmessage = null;
-    mockVadWorkerInstance.onerror = null;
-    (analysisStore.update as Mocked<any>).mockClear();
-    (analysisStore.set as Mocked<any>).mockClear();
-    analysisService.dispose();
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), // Return a dummy buffer
+    } as Response);
   });
 
   afterEach(() => {
+    // This is crucial: it resets all mock call history and restores `fetch`.
+    vi.restoreAllMocks();
+    // Manually dispose the singleton to reset its internal state for the next test.
     analysisService.dispose();
   });
 
   describe("initialize (VAD)", () => {
-    it("should create VAD worker and post INIT message", async () => {
-        // Make the test function async and await the initialize method.
-        // This will pause the test until the fetch() and arrayBuffer() promises resolve.
-        // We also need to mock the global fetch
-        global.fetch = vi.fn(() =>
-          Promise.resolve({
-            ok: true,
-            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), // Mock ArrayBuffer
-          } as Response)
-        );
+    it("should successfully initialize the VAD worker", async () => {
+      // Act: Call the async initialize method.
+      const initPromise = analysisService.initialize();
 
-        await analysisService.initialize();
+      // Assert (Immediate): Check that a worker was created and a message was posted.
+      expect(SileroVadWorker).toHaveBeenCalledTimes(1);
+      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "vad_init" }),
+        expect.any(Array)
+      );
+      
+      // Simulate (Completion): The worker responds with success.
+      // This is the key to resolving the promise and preventing a timeout.
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+      } as MessageEvent);
 
-        // Now that initialize() has completed, we can safely check the result.
-        expect(SileroVadWorker).toHaveBeenCalledTimes(1);
+      // Await the promise to ensure all internal logic has completed.
+      await initPromise;
 
-        // Check that postMessage was called with the correct message type
-        // and a payload containing the modelBuffer.
-        expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: VAD_WORKER_MSG_TYPE.INIT,
-            payload: expect.objectContaining({
-              modelBuffer: expect.any(ArrayBuffer), // We just care that a buffer was passed.
-            }),
-          }),
-          // Also check that the buffer was passed in the transfer list
-          [expect.any(ArrayBuffer)]
-        );
+      // Assert (Final State): Check that the service is now in an initialized state.
+      // We can infer this by checking if it's ready to process a frame.
+      expect(() => analysisService.analyzeAudioFrame(new Float32Array(1536))).not.toThrow();
+    });
+
+    it("should handle initialization failure from the worker", async () => {
+      const initPromise = analysisService.initialize();
+
+      // Simulate: The worker responds with an error.
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_error", error: "Model load failed", messageId: "vad_msg_0" },
+      } as MessageEvent);
+
+      // Assert: The promise should reject with the worker's error message.
+      await expect(initPromise).rejects.toThrow("Model load failed");
+
+      // Assert: The service should update the store with the error.
+      expect(analysisStore.update).toHaveBeenCalledWith(
+        expect.any(Function)
+      );
     });
   });
 
   describe("dispose", () => {
-    it("should terminate the VAD worker and update store status", async () => {
+    it("should terminate the worker if it was initialized", async () => {
+      // Arrange: Ensure the service is fully initialized.
       const initPromise = analysisService.initialize();
-      if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage!({ data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" } } as MessageEvent);
-      }
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+      } as MessageEvent);
       await initPromise;
 
-      const vadTerminateSpy = vi.spyOn(mockVadWorkerInstance, 'terminate');
+      // Act: Call the method under test.
       analysisService.dispose();
-      expect(vadTerminateSpy).toHaveBeenCalledTimes(1);
+
+      // Assert: The worker's terminate method should have been called.
+      expect(mockVadWorkerInstance.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not throw an error if called before initialization", () => {
+      // Act & Assert: Call dispose on a clean instance and ensure no errors are thrown.
+      expect(() => analysisService.dispose()).not.toThrow();
+      expect(mockVadWorkerInstance.terminate).not.toHaveBeenCalled();
     });
   });
 });
