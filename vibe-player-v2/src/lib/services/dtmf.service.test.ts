@@ -191,21 +191,25 @@ describe("DtmfService", () => {
       const resamplingError = new Error("Resampling failed");
       mockStartRendering.mockRejectedValueOnce(resamplingError);
 
-      // Act: Call the process method. We don't need to await it since we're checking mock calls,
-      // but we need to let the promise rejection propagate through the event loop.
-      dtmfService.process(mockAudioBuffer);
-      await new Promise(process.nextTick); // Let the promise rejection happen
+      // Act: Call the process method. We expect it to be rejected.
+      try {
+        await dtmfService.process(mockAudioBuffer);
+      } catch (e) {
+        // Error is expected due to resampling failure
+        expect(e).toBe(resamplingError);
+      }
 
       // Assert
-      // The first call sets status to 'processing'
+      // The first store update is for 'processing' status.
+      // The second store update is for the error state.
       expect(dtmfStore.update).toHaveBeenCalledTimes(2);
 
       const errorUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[1][0];
-      const mockState: DtmfState = { status: 'processing', dtmf: [], cpt: [], error: null };
+      const mockState: DtmfState = { status: 'processing', dtmf: [], cpt: [], error: null }; // State before error update
       const newState = errorUpdateCall(mockState);
 
       expect(newState.status).toBe('error');
-      expect(newState.error).toContain("Resampling failed");
+      expect(newState.error).toBe("Failed to resample audio: Resampling failed");
     });
   });
 

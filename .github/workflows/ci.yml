@@ -61,7 +61,7 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run Playwright E2E tests
-        run: npx playwright test --config ./vibe-player-v2/playwright.config.ts
+        run: npx playwright test
 
       # 6. Cleanup and Reporting
       - name: Upload Playwright report

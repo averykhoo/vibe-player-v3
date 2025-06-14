@@ -15,7 +15,6 @@
     "format": "prettier --write ."
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
     "@skeletonlabs/skeleton": "^2.10.0",
     "@skeletonlabs/skeleton-svelte": "^1.2.3",
     "@sveltejs/adapter-auto": "^6.0.0",
