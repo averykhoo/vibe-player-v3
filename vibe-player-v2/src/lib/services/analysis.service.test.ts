@@ -41,13 +41,33 @@ describe("AnalysisService (VAD Only)", () => {
 
   describe("initialize (VAD)", () => {
     it("should create VAD worker and post INIT message", async () => {
-      const initPromise = analysisService.initialize();
-      if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage({ data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" } } as MessageEvent);
-      }
-      await initPromise;
-      expect(SileroVadWorker).toHaveBeenCalledTimes(1);
-      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }));
+        // Make the test function async and await the initialize method.
+        // This will pause the test until the fetch() and arrayBuffer() promises resolve.
+        // We also need to mock the global fetch
+        global.fetch = vi.fn(() =>
+          Promise.resolve({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), // Mock ArrayBuffer
+          } as Response)
+        );
+
+        await analysisService.initialize();
+
+        // Now that initialize() has completed, we can safely check the result.
+        expect(SileroVadWorker).toHaveBeenCalledTimes(1);
+
+        // Check that postMessage was called with the correct message type
+        // and a payload containing the modelBuffer.
+        expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: VAD_WORKER_MSG_TYPE.INIT,
+            payload: expect.objectContaining({
+              modelBuffer: expect.any(ArrayBuffer), // We just care that a buffer was passed.
+            }),
+          }),
+          // Also check that the buffer was passed in the transfer list
+          [expect.any(ArrayBuffer)]
+        );
     });
   });
 
