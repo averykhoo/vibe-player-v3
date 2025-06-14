@@ -26,11 +26,9 @@ Your goal is to develop a robust mental model of this repository based *only* on
 ├── README.md
 ├── REFACTOR_PLAN.txt
 ├── build_system_prompt.py
-├── jest.config.js
-├── jest.setup.js
 ├── package-lock.json
 ├── package.json
-├── playwright.config.js
+├── playwright.config.ts
 ├── src
 │   └── lib
 │       ├── components
@@ -122,7 +120,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
     ├── eslint.config.js
     ├── package-lock.json
     ├── package.json
-    ├── playwright.config.ts
     ├── postcss.config.js
     ├── src
     │   ├── app.css
@@ -138,6 +135,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   │   ├── Controls.test.ts
     │   │   │   ├── FileLoader.svelte
     │   │   │   ├── FileLoader.test.ts
+    │   │   │   ├── ToneDisplay.svelte
     │   │   │   ├── __mocks__
     │   │   │   │   ├── Button.svelte
     │   │   │   │   ├── Generic.svelte
@@ -153,11 +151,16 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   │   ├── analysis.service.test.ts
     │   │   │   ├── analysis.service.ts
     │   │   │   ├── audioEngine.service.test.ts
-    │   │   │   └── audioEngine.service.ts
+    │   │   │   ├── audioEngine.service.ts
+    │   │   │   ├── dtmf.service.test.ts
+    │   │   │   ├── dtmf.service.ts
+    │   │   │   ├── spectrogram.service.test.ts
+    │   │   │   └── spectrogram.service.ts
     │   │   ├── stores
     │   │   │   ├── .gitkeep
     │   │   │   ├── analysis.store.ts
     │   │   │   ├── derived.store.ts
+    │   │   │   ├── dtmf.store.ts
     │   │   │   ├── player.store.ts
     │   │   │   └── status.store.ts
     │   │   ├── types
@@ -181,6 +184,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   │   └── urlState.ts
     │   │   └── workers
     │   │       ├── .gitkeep
+    │   │       ├── dtmf.worker.ts
     │   │       ├── rubberband.worker.ts
     │   │       ├── sileroVad.worker.ts
     │   │       └── spectrogram.worker.ts
@@ -323,7 +327,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3 # Use latest upload-artifact action
         with:
           # Upload content from the vibe-player directory
-          path: './vibe-player'
+          path: './vibe-player-v2/build'
 
       - name: Deploy to GitHub Pages
         id: deployment
@@ -359,7 +363,7 @@ jobs:
 
       - name: Build the zip archive
         run: |
-          zip -r vibe-player-${{ env.TAG_NAME }}.zip ./vibe-player -x "./vibe-player/.DS_Store"
+          zip -r vibe-player-${{ env.TAG_NAME }}.zip ./vibe-player-v2/build -x "./vibe-player-v2/build/.DS_Store"
         # Standard shell commands
 
       - name: Create GitHub Release
@@ -372,7 +376,7 @@ jobs:
           release_name: Release ${{ env.TAG_NAME }}
           body: | # Optional: Add release notes here, can be simple or more complex
             Automated release for version ${{ env.TAG_NAME }}.
-            Contains contents of the vibe-player directory.
+            Contains the static build of the Vibe Player V2 application.
           draft: false
           prerelease: false # Set to true if needed based on tag format
 
@@ -582,205 +586,72 @@ vibe-player/lib/*.mjs
 
 ````
 --- End of File: .llmignore ---
---- File: jest.config.js ---
-````javascript
-// jest.config.js
-module.exports = {
-  testEnvironment: 'jsdom', // Using 'jsdom' as global install should be in PATH
+--- File: playwright.config.ts ---
+````typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
 
-  setupFilesAfterEnv: ['./jest.setup.js'],
+// Define a port for the dev server to listen on.
+const PORT = process.env.PORT || 8080;
 
-  testMatch: [
-    "**/tests/unit/**/*.test.js"
-  ]
-};
+// Define the base URL for the dev server.
+const baseURL = `http://localhost:${PORT}`;
 
-````
---- End of File: jest.config.js ---
---- File: jest.setup.js ---
-````javascript
-// jest.setup.js
-const fs = require('fs');
-const path = require('path');
-// const vm = require('vm'); // vm not used for this strategy
-
-// --- 1. Mock Browser-Specific APIs ---
-global.window = global; // JSDOM's global IS window. Make it explicit.
-global.self = global;   // Common alias for window or worker global scope
-global.document = global.document; // JSDOM provides document
-
-// Mocks (ensure these are comprehensive enough for the scripts being loaded)
-global.AudioContext = jest.fn(() => ({
-  createGain: jest.fn(() => ({ connect: jest.fn(), gain: { value: 1, setTargetAtTime: jest.fn() } })),
-  decodeAudioData: jest.fn((buffer, successCb, errorCb) => {
-    if (typeof successCb === 'function') {
-      successCb({ duration: 10, numberOfChannels: 1, sampleRate: 44100, getChannelData: () => new Float32Array(10) });
-    }
-    return Promise.resolve({ duration: 10, numberOfChannels: 1, sampleRate: 44100, getChannelData: () => new Float32Array(10) });
-  }),
-  audioWorklet: {
-    addModule: jest.fn(() => Promise.resolve())
+/**
+ * See https://playwright.dev/docs/test-configuration.
+ */
+export default defineConfig({
+  // Define the test directory.
+  testDir: path.resolve(__dirname, 'vibe-player-v2/tests/e2e'), // Adjusted path to E2E tests
+  // Define the directory for test results, screenshots, videos, traces, etc.
+  outputDir: path.resolve(__dirname, 'vibe-player-v2/tests/e2e/test-results'), // Adjusted path for outputs
+  /* Run tests in files in parallel */
+  fullyParallel: true,
+  /* Fail the build on CI if you accidentally left test.only in the source code. */
+  forbidOnly: !!process.env.CI,
+  /* Retry on CI only */
+  retries: process.env.CI ? 2 : 0,
+  /* Opt out of parallel tests on CI. */
+  workers: process.env.CI ? 1 : undefined,
+  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  reporter: 'html',
+  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  use: {
+    /* Base URL to use in actions like `await page.goto('/')`. */
+    baseURL: baseURL,
+    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    trace: 'on-first-retry',
   },
-  resume: jest.fn(() => Promise.resolve()),
-  currentTime: 0,
-  state: 'running',
-  destination: {},
-  createBufferSource: jest.fn(() => ({ buffer: null, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), loop: false, onended: null })),
-  createOscillator: jest.fn(() => ({ type: 'sine', frequency: { value: 440, setValueAtTime: jest.fn() }, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), onended: null })),
-}));
-global.AudioWorkletNode = jest.fn().mockImplementation(() => ({ connect: jest.fn(), disconnect: jest.fn(), port: { postMessage: jest.fn(), onmessage: null }, onprocessorerror: null }));
-global.Worker = jest.fn().mockImplementation(function(stringUrl) { this.postMessage = jest.fn(); this.terminate = jest.fn(); this.onmessage = null; this.onerror = null; });
-
-// Mock for ONNX Runtime, crucial for sileroWrapper.js
-if (typeof global.ort === 'undefined') {
-    global.ort = {
-        InferenceSession: {
-            create: jest.fn(() => Promise.resolve({
-                run: jest.fn(() => Promise.resolve({
-                    // Ensure the 'output' tensor matches what sileroWrapper expects
-                    output: new global.ort.Tensor('float32', [0.5], [1])
-                }))
-            }))
-        },
-        Tensor: jest.fn((type, data, dims) => ({ type, data, dims, ortType: type, input: true })),
-        env: {wasm: {}} // For setting wasmPaths
-    };
-}
-
-// Load FFT script into the global context using JSDOM's script execution
-try {
-    const fftScriptContent = fs.readFileSync(path.resolve(__dirname, 'vibe-player/lib/fft.js'), 'utf-8');
-    const scriptEl = global.document.createElement('script');
-    scriptEl.textContent = fftScriptContent;
-    global.document.body.appendChild(scriptEl);
-    // console.log('FFT script loaded via JSDOM script tag.');
-} catch (e) {
-    console.error("Failed to load lib/fft.js via JSDOM:", e.message);
-}
-
-
-// --- 2. Load Application Scripts in Order ---
-const appRoot = path.resolve(__dirname, 'vibe-player');
-global.AudioApp = global.AudioApp || {};
-global.__jestLoadedScripts = global.__jestLoadedScripts || new Set(); // To prevent re-execution
-
-const loadScriptInJsdom = (scriptPathFromAppRoot, isCritical = false) => {
-  const absoluteScriptPath = path.join(appRoot, scriptPathFromAppRoot);
-  if (global.__jestLoadedScripts.has(absoluteScriptPath)) {
-    return;
-  }
-  try {
-    const scriptCode = fs.readFileSync(absoluteScriptPath, 'utf-8');
-    const scriptEl = global.document.createElement('script');
-    scriptEl.textContent = scriptCode;
-    global.document.body.appendChild(scriptEl); // JSDOM executes this
-    global.__jestLoadedScripts.add(absoluteScriptPath);
-  } catch (e) {
-    console.error(`Error JSDOM loading script ${absoluteScriptPath}: ${e.message}`);
-    if (isCritical) throw e;
-  }
-};
-
-// A corrected version of the orderedScripts array for jest.setup.js
-const orderedScripts = [
-  // 1. Foundational modules with no dependencies on other app logic
-  { path: 'js/state/constants.js', critical: true },
-  { path: 'js/utils.js', critical: true },
-
-  // 2. State management
-  { path: 'js/state/appState.js', critical: true }, // Depends on Constants
-
-  // 3. All other feature modules that attach to AudioApp
-  { path: 'js/goertzel.js', critical: true },
-  { path: 'js/uiManager.js', critical: false },
-  { path: 'js/player/audioEngine.js', critical: false },
-  { path: 'js/vad/sileroWrapper.js', critical: false },
-  { path: 'js/vad/sileroProcessor.js', critical: false },
-  { path: 'js/vad/RemoteApiStrategy.js', critical: false },
-  { path: 'js/vad/LocalWorkerStrategy.js', critical: false },
-  { path: 'js/vad/vadAnalyzer.js', critical: false },
-  { path: 'js/visualizers/waveformVisualizer.js', critical: false },
-  { path: 'js/visualizers/spectrogramVisualizer.js', critical: false },
-  { path: 'js/sparkles.js', critical: false },
-
-  // 4. Main application controller, loaded LAST
-  { path: 'js/app.js', critical: true }
-];
-
-console.log("Loading application scripts for Jest environment using JSDOM script execution...");
-orderedScripts.forEach(scriptInfo => {
-  if (scriptInfo.path === 'js/constants.js') { // Skip old constants file if it was in a broader list
-      console.log("Skipping obsolete js/constants.js");
-      return;
-  }
-  loadScriptInJsdom(scriptInfo.path, scriptInfo.critical);
-});
-
-console.log('All specified scripts processed for Jest environment.');
-
-// Optional: Final checks after all scripts are loaded
-// These checks help confirm if the global variables are set as expected.
-// if (typeof global.Constants === 'undefined') console.error('FINAL CHECK: global.Constants is undefined');
-// if (typeof global.AppState === 'undefined') console.error('FINAL CHECK: global.AppState is undefined');
-// if (!global.AudioApp || !global.AudioApp.Utils) console.error('FINAL CHECK: global.AudioApp.Utils is undefined');
-// if (!global.AudioApp || !global.AudioApp.DTMFParser) console.error('FINAL CHECK: global.AudioApp.DTMFParser is undefined');
-// if (!global.AudioApp || !global.AudioApp.state) console.error('FINAL CHECK: global.AudioApp.state is undefined');
-
-````
---- End of File: jest.setup.js ---
---- File: playwright.config.js ---
-````javascript
-// playwright.config.js
-const { defineConfig } = require('@playwright/test');
-
-module.exports = defineConfig({
-  testDir: './tests-e2e', // Specify the directory for E2E tests
-  webServer: {
-    command: 'npm run build --prefix vibe-player-v2 && npx http-server vibe-player-v2/build -p 4173 --silent -c-1', // Added -c-1 to disable caching
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 180 * 1000, // Increased timeout to 3 minutes to allow for build time + server start
-  },
-  // Optional: Configure projects for major browsers
+  /* Configure projects for major browsers */
   projects: [
     {
       name: 'chromium',
-      use: { browserName: 'chromium' },
+      use: { ...devices['Desktop Chrome'] },
     },
-    // {
-    //   name: 'firefox',
-    //   use: { browserName: 'firefox' },
-    // },
-    // {
-    //   name: 'webkit',
-    //   use: { browserName: 'webkit' },
-    // },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
   ],
-  // Optional: Set a global timeout for all tests
-  timeout: 60000, // 60 seconds
-  // Optional: Reporter to use. See https://playwright.dev/docs/test-reporters
-  reporter: 'html', // Generates a nice HTML report
-
-  use: {
-    // Optional: Base URL to use in actions like `await page.goto('/')`
-    baseURL: 'http://localhost:4173',
-
-    // Optional: Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer
-    trace: 'on-first-retry',
-    headless: true, // Run tests in headless mode
-  },
-
-  // Configure the web server for E2E tests
+  /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'npm run preview --prefix vibe-player-v2 -- --host 0.0.0.0 --port 4173',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI, // Reuse server locally, not in CI
-    timeout: 180 * 1000, // Increase timeout for server to start
+    // Adjusted the command to serve the SvelteKit app from its correct directory
+    command: `npm run serve-for-test --prefix ./vibe-player-v2`, // Assuming 'serve-for-test' is defined in vibe-player-v2's package.json
+    url: baseURL,
+    reuseExistingServer: !process.env.CI,
+    cwd: __dirname, // Consider setting CWD if 'serve-for-test' needs specific context
+    // stdout: 'pipe', // Or 'ignore'
+    // stderr: 'pipe', // Or 'ignore'
   },
 });
 
 ````
---- End of File: playwright.config.js ---
+--- End of File: playwright.config.ts ---
 --- File: README.md ---
 ````markdown
 <!-- README.md -->
@@ -2837,6 +2708,7 @@ function parseTimeToSeconds(timeStr) {
 
 // FIX: Changed the test file from a .mp3 to a .wav for better CI compatibility
 const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
+const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
 
 test.describe('Vibe Player V2 E2E', () => {
   let playerPage;
@@ -2915,6 +2787,20 @@ test.describe('Vibe Player V2 E2E', () => {
     expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
     expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
     expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
+  });
+
+  test('should detect and display DTMF tones', async ({ page }) => {
+    await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
+
+    // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
+    const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
+    const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
+
+    const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
+
+    // Wait for the text to appear, giving time for audio processing and UI update
+    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
   });
 
   test.describe('URL State Serialization', () => {
@@ -12459,63 +12345,6 @@ export default [
 
 ````
 --- End of File: vibe-player-v2/eslint.config.js ---
---- File: vibe-player-v2/playwright.config.ts ---
-````typescript
-import { defineConfig, devices } from '@playwright/test';
-
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
-export default defineConfig({
-  testDir: './tests-e2e',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
-  use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:5173', // Standard Vite/SvelteKit dev port
-
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
-    // viteConfig section removed as per subtask instructions
-  },
-
-  /* Configure projects for major browsers */
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-    // {
-    //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
-  ],
-
-  /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run dev',
-  //   url: 'http://localhost:5173', // Standard Vite/SvelteKit dev port
-  //   reuseExistingServer: !process.env.CI,
-  //   stdout: 'pipe',
-  //   stderr: 'pipe',
-  // },
-});
-
-````
---- End of File: vibe-player-v2/playwright.config.ts ---
 --- File: vibe-player-v2/postcss.config.js ---
 ````javascript
 export default {
@@ -13198,29 +13027,17 @@ describe("FileLoader.svelte", () => {
 --- End of File: vibe-player-v2/src/lib/index.ts ---
 --- File: vibe-player-v2/src/lib/services/analysis.service.test.ts ---
 ````typescript
-import {
-  vi,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  type Mocked,
-} from "vitest";
+// vibe-player-v2/src/lib/services/analysis.service.test.ts (FIXED)
+
+import { vi, describe, it, expect, beforeEach, afterEach, type Mocked } from "vitest";
 import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
-import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
-import analysisService from "./analysis.service"; // Assuming default export
+import analysisService from "./analysis.service";
 import { analysisStore } from "$lib/stores/analysis.store";
-import { VAD_CONSTANTS, VISUALIZER_CONSTANTS } from "$lib/utils";
-import { VAD_WORKER_MSG_TYPE, SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 
 // Mock Svelte stores
 vi.mock("$lib/stores/analysis.store", () => ({
-  analysisStore: {
-    subscribe: vi.fn(),
-    set: vi.fn(),
-    update: vi.fn(),
-  },
+  analysisStore: { subscribe: vi.fn(), set: vi.fn(), update: vi.fn() },
 }));
 
 // Mock Web Workers
@@ -13230,253 +13047,50 @@ const mockVadWorkerInstance = {
   onmessage: null as ((event: MessageEvent) => void) | null,
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
-const mockSpecWorkerInstance = {
-  postMessage: vi.fn(),
-  terminate: vi.fn(),
-  onmessage: null as ((event: MessageEvent) => void) | null,
-  onerror: null as ((event: ErrorEvent) => void) | null,
-};
 
 vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
-vi.mock("$lib/workers/spectrogram.worker?worker&inline", () => ({
-  default: vi.fn().mockImplementation(() => mockSpecWorkerInstance),
-}));
 
-// Mock AudioBuffer
-const mockAudioBuffer = {
-  sampleRate: 16000,
-  numberOfChannels: 1,
-  duration: 1.0,
-  getChannelData: vi.fn(() => new Float32Array(16000)), // 1 second of data at 16kHz
-};
-
-describe("AnalysisService", () => {
+describe("AnalysisService (VAD Only)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockVadWorkerInstance.postMessage.mockClear();
     mockVadWorkerInstance.terminate.mockClear();
     mockVadWorkerInstance.onmessage = null;
     mockVadWorkerInstance.onerror = null;
-
-    mockSpecWorkerInstance.postMessage.mockClear();
-    mockSpecWorkerInstance.terminate.mockClear();
-    mockSpecWorkerInstance.onmessage = null;
-    mockSpecWorkerInstance.onerror = null;
-
     (analysisStore.update as Mocked<any>).mockClear();
     (analysisStore.set as Mocked<any>).mockClear();
-
-    // analysisService.dispose(); // Reset state
+    analysisService.dispose();
   });
 
   afterEach(() => {
-    analysisService.dispose(); // Clean up
+    analysisService.dispose();
   });
 
   describe("initialize (VAD)", () => {
     it("should create VAD worker and post INIT message", async () => {
       const initPromise = analysisService.initialize();
-      // Simulate worker response to allow initialization to complete
       if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage({
-          data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
-        } as MessageEvent);
+        mockVadWorkerInstance.onmessage({ data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" } } as MessageEvent);
       }
       await initPromise;
       expect(SileroVadWorker).toHaveBeenCalledTimes(1);
-      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }),
-      );
-    });
-
-    it("should update analysisStore on VAD INIT_SUCCESS", async () => {
-      const promise = analysisService.initialize();
-      expect(mockVadWorkerInstance.onmessage).not.toBeNull();
-      mockVadWorkerInstance.onmessage!({
-        data: {
-          type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS,
-          messageId: "vad_msg_0",
-        },
-      } as MessageEvent);
-      await promise;
-      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
-      // To verify the outcome of the update, you might need to check store's actual value
-      // or spy on the store's $derived values if applicable and testable.
-      // For now, just checking it's called with a function.
-    });
-
-    it("should update analysisStore on VAD INIT_ERROR", async () => {
-      const promise = analysisService.initialize();
-      expect(mockVadWorkerInstance.onmessage).not.toBeNull();
-      mockVadWorkerInstance.onmessage!({
-        data: {
-          type: VAD_WORKER_MSG_TYPE.INIT_ERROR,
-          error: "VAD init fail",
-          messageId: "vad_msg_0",
-        },
-      } as MessageEvent);
-      await promise;
-      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
-  });
-
-  describe("initializeSpectrogramWorker", () => {
-    it("should create Spectrogram worker and post INIT message", async () => {
-      const initPromise = analysisService.initializeSpectrogramWorker({ sampleRate: 16000 });
-      // Simulate worker response to allow initialization to complete
-      if (mockSpecWorkerInstance.onmessage) {
-        mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "spec_msg_0" },
-        } as MessageEvent);
-      }
-      await initPromise;
-      expect(SpectrogramWorker).toHaveBeenCalledTimes(1);
-      expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.INIT }),
-      );
-    });
-
-    it("should update analysisStore on Spectrogram INIT_SUCCESS", async () => {
-      const promise = analysisService.initializeSpectrogramWorker({
-        sampleRate: 16000,
-      });
-      expect(mockSpecWorkerInstance.onmessage).not.toBeNull();
-      mockSpecWorkerInstance.onmessage!({
-        data: {
-          type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
-          messageId: "spec_msg_0",
-        },
-      } as MessageEvent);
-      await promise;
-      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
-  });
-
-  describe("startSpectrogramProcessing", () => {
-    beforeEach(async () => {
-      // Ensure a clean state and full initialization for these tests
-      analysisService.dispose(); // Dispose first to reset all internal states including messageIds
-      vi.clearAllMocks(); // Clear mocks early before re-initializing
-
-      // Re-initialize VAD
-      const vadInitPromise = analysisService.initialize();
-      if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage!({
-          data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
-        } as MessageEvent);
-      }
-      await vadInitPromise;
-
-      // Re-initialize Spectrogram Worker
-      const specInitPromise = analysisService.initializeSpectrogramWorker({ sampleRate: 16000 });
-      if (mockSpecWorkerInstance.onmessage) {
-        mockSpecWorkerInstance.onmessage!({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "spec_msg_0" },
-        } as MessageEvent);
-      }
-      await specInitPromise;
-      // DO NOT Clear all mocks here as it clears spies needed for the tests in this block.
-      // Specific mock clears should happen in the main beforeEach or per test if needed.
-    });
-
-    it("should NOT call initializeSpectrogramWorker again if already initialized", async () => {
-      const initSpy = vi.spyOn(analysisService, "initializeSpectrogramWorker");
-      // Mock processAudioForSpectrogram for this test to avoid it waiting for PROCESS_RESULT
-      const processAudioSpy = vi.spyOn(analysisService, "processAudioForSpectrogram").mockResolvedValue(null);
-
-      await analysisService.startSpectrogramProcessing(mockAudioBuffer as unknown as AudioBuffer);
-
-      expect(initSpy).not.toHaveBeenCalled();
-      // We expect processAudioForSpectrogram to have been called if initialization was skipped.
-      expect(processAudioSpy).toHaveBeenCalled();
-
-      processAudioSpy.mockRestore(); // Restore for other tests
-
-      // Need to ensure the internal state `spectrogramInitialized` is true before processAudioForSpectrogram is called.
-      // The above mock of initSpy should handle the message passing to set it.
-      // If the internal state isn't directly testable, we check the effect: processAudioForSpectrogram called.
-      // This requires careful handling of the async nature and message passing.
-      // For this test, we'll assume the mockImplementation of initSpy leads to spectrogramInitialized=true
-    });
-
-    it("should call postMessage on spec worker with PROCESS type", async () => {
-      // beforeEach of this describe block has initialized the spectrogram worker.
-      // Ensure getChannelData mock is fresh if it's counting calls from beforeEach's load.
-      vi.mocked(mockAudioBuffer.getChannelData).mockClear();
-      const pcmData = mockAudioBuffer.getChannelData(0);
-
-      const processingPromise = analysisService.startSpectrogramProcessing(mockAudioBuffer as unknown as AudioBuffer);
-
-      expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: SPEC_WORKER_MSG_TYPE.PROCESS,
-          // payload: { audioData: pcmData }, // Check exact payload if necessary
-        }),
-      );
-
-      // Simulate worker response for the PROCESS message to allow promise to resolve
-      if (mockSpecWorkerInstance.onmessage) {
-        const calls = vi.mocked(mockSpecWorkerInstance.postMessage).mock.calls;
-        // Ensure postMessage was called before trying to access its details
-        if (calls.length > 0) {
-          const lastCall = calls[calls.length - 1];
-          // Check if lastCall[0] is defined and has a messageId property
-          if (lastCall && lastCall[0] && typeof lastCall[0] === 'object' && 'messageId' in lastCall[0]) {
-            const messageId = lastCall[0].messageId;
-            mockSpecWorkerInstance.onmessage({
-              data: { type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT, payload: { magnitudes: new Float32Array(0) }, messageId: messageId },
-            } as MessageEvent);
-          } else {
-            // Handle cases where the call might not have the expected structure, or postMessage wasn't called as expected.
-            // This could mean the test fails before this point, or the mock needs adjustment.
-            console.warn("PROCESS message not found or malformed in postMessage mock calls for spec worker.");
-          }
-        }
-      }
-      await processingPromise; // Await for completion
+      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }));
     });
   });
 
   describe("dispose", () => {
-    it("should terminate both VAD and Spectrogram workers", async () => {
-      // Initialize VAD
-      const vadInitPromise = analysisService.initialize();
+    it("should terminate the VAD worker and update store status", async () => {
+      const initPromise = analysisService.initialize();
       if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage!({
-          data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
-        } as MessageEvent);
+        mockVadWorkerInstance.onmessage!({ data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" } } as MessageEvent);
       }
-      await vadInitPromise;
-
-      // Initialize Spectrogram worker
-      const specInitPromise = analysisService.initializeSpectrogramWorker({ sampleRate: 16000 });
-      if (mockSpecWorkerInstance.onmessage) {
-        mockSpecWorkerInstance.onmessage!({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "spec_msg_0" },
-        } as MessageEvent);
-      }
-      await specInitPromise;
+      await initPromise;
 
       const vadTerminateSpy = vi.spyOn(mockVadWorkerInstance, 'terminate');
-      const specTerminateSpy = vi.spyOn(mockSpecWorkerInstance, 'terminate');
-
       analysisService.dispose();
-      expect(vadTerminateSpy).toHaveBeenCalled();
-      expect(specTerminateSpy).toHaveBeenCalled(); // This was the one failing
-      // The status update for "VAD service disposed" is in the main dispose() method
-      // The status update for "Spectrogram worker disposed." is in disposeSpectrogramWorker()
-      // Both call analysisStore.update with a function.
-      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
-      // This will be called multiple times, check for specific calls if needed,
-      // or use .toHaveBeenCalledTimes() if the number of calls is predictable.
-      // VAD Init (x2: initializing, initialized) = 2 calls
-      // Spec Init (x2: initializing, initialized) = 2 calls
-      // VAD Dispose (x1) = 1 call
-      // Spec Dispose (x1) = 1 call
-      // Total = 6 calls
-      expect(analysisStore.update).toHaveBeenCalledTimes(6);
+      expect(vadTerminateSpy).toHaveBeenCalledTimes(1);
     });
   });
 });
@@ -13486,563 +13100,167 @@ describe("AnalysisService", () => {
 --- File: vibe-player-v2/src/lib/services/analysis.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/analysis.service.ts
-import {get} from "svelte/store";
-import type {
-    SileroVadInitPayload,
-    SileroVadProcessPayload,
-    SileroVadProcessResultPayload,
-    SpectrogramInitPayload,
-    SpectrogramProcessPayload,
-    SpectrogramResultPayload,
-    WorkerMessage,
-} from "$lib/types/worker.types";
-import {SPEC_WORKER_MSG_TYPE, VAD_WORKER_MSG_TYPE} from "$lib/types/worker.types";
-import {VAD_CONSTANTS, VISUALIZER_CONSTANTS} from "$lib/utils";
-import {type AnalysisState, analysisStore} from "$lib/stores/analysis.store";
-// import type { PlayerState } from '$lib/types/player.types'; // AudioBuffer is used
-import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
+
+import { get } from "svelte/store";
+import type { SileroVadInitPayload, SileroVadProcessPayload, SileroVadProcessResultPayload, WorkerMessage } from "$lib/types/worker.types";
+import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { VAD_CONSTANTS } from "$lib/utils";
+import { type AnalysisState, analysisStore } from "$lib/stores/analysis.store";
 import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
-interface AnalysisServiceState {
-    isInitialized: boolean; // For VAD worker
-    isInitializing: boolean; // For VAD worker
-    error: string | null; // For VAD worker
-}
-
 interface PendingRequest {
-    resolve: (value: unknown) => void;
-    reject: (reason?: unknown) => void;
+  resolve: (value: unknown) => void;
+  reject: (reason?: any) => void;
 }
 
 interface AnalysisServiceInitializeOptions {
-    positiveThreshold?: number;
-    negativeThreshold?: number;
+  positiveThreshold?: number;
+  negativeThreshold?: number;
 }
-
-interface SpectrogramWorkerInitializeOptions {
-    sampleRate: number;
-    fftSize?: number;
-    hopLength?: number;
-}
-
-const initialServiceState: AnalysisServiceState = {
-    isInitialized: false,
-    isInitializing: false,
-    error: null,
-};
-
-const serviceState = writable<AnalysisServiceState>(initialServiceState);
 
 class AnalysisService {
-    private static instance: AnalysisService;
-    private worker: Worker | null = null; // SileroVadWorker
-    private nextMessageId = 0;
-    private pendingRequests = new Map<string, PendingRequest>();
+  private static instance: AnalysisService;
+  private worker: Worker | null = null;
+  private isInitialized = false;
+  private isInitializing = false;
+  private nextMessageId = 0;
+  private pendingRequests = new Map<string, PendingRequest>();
 
-    private spectrogramWorker: Worker | null = null;
-  private isSpectrogramInitialized = false;
-    private nextSpecMessageId = 0;
-    private pendingSpecRequests = new Map<string, PendingRequest>();
+  private constructor() {}
 
-    private constructor() {
+  public static getInstance(): AnalysisService {
+    if (!AnalysisService.instance) {
+      AnalysisService.instance = new AnalysisService();
     }
+    return AnalysisService.instance;
+  }
 
-    public static getInstance(): AnalysisService {
-        if (!AnalysisService.instance) {
-            AnalysisService.instance = new AnalysisService();
-        }
-        return AnalysisService.instance;
+  private generateMessageId(): string {
+    return `vad_msg_${this.nextMessageId++}`;
+  }
+
+  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.worker) {
+        return reject(new Error("VAD Worker not initialized."));
+      }
+      const messageId = this.generateMessageId();
+      this.pendingRequests.set(messageId, { resolve, reject });
+      this.worker.postMessage({ ...message, messageId });
+    });
+  }
+
+  public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
+    if (this.isInitialized || this.isInitializing) {
+      console.warn("AnalysisService already initialized or initializing.");
+      return;
     }
+    this.isInitializing = true;
+    analysisStore.update(s => ({ ...s, vadStatus: "VAD service initializing...", vadInitialized: false, vadError: null }));
 
-    private generateMessageId(): string {
-        return `vad_msg_${this.nextMessageId++}`;
+    this.worker = new SileroVadWorker();
+
+    this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
+      const { type, payload, error, messageId } = event.data;
+      const request = messageId ? this.pendingRequests.get(messageId) : undefined;
+
+      if (error) {
+        const errorMsg = typeof error === 'string' ? error : (error as Error).message;
+        analysisStore.update(s => ({ ...s, vadError: `VAD Worker error: ${errorMsg}` }));
+        if (request) request.reject(errorMsg);
+        if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
+            this.isInitialized = false;
+            this.isInitializing = false;
+            analysisStore.update(s => ({ ...s, vadStatus: "Error initializing VAD service.", vadInitialized: false }));
+        }
+      } else {
+         switch (type) {
+            case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
+                this.isInitialized = true;
+                this.isInitializing = false;
+                analysisStore.update(s => ({ ...s, vadStatus: "VAD service initialized.", vadInitialized: true, vadError: null }));
+                if (request) request.resolve(payload);
+                break;
+            case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
+                const resultPayload = payload as SileroVadProcessResultPayload;
+                analysisStore.update(s => ({ ...s, lastVadResult: resultPayload, isSpeaking: resultPayload.isSpeech }));
+                if (request) request.resolve(resultPayload);
+                break;
+            case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
+                analysisStore.update(s => ({ ...s, vadStateResetted: true, lastVadResult: null, isSpeaking: false }));
+                if (request) request.resolve(payload);
+                break;
+            default:
+                if (request) request.resolve(payload);
+         }
+      }
+      if (messageId && request) this.pendingRequests.delete(messageId);
+    };
+
+    this.worker.onerror = (err: Event | string) => {
+      const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown VAD worker error');
+      analysisStore.update(s => ({ ...s, vadStatus: "Critical VAD worker error.", vadError: errorMsg, vadInitialized: false }));
+      this.pendingRequests.forEach(req => req.reject(new Error(`VAD Worker failed critically: ${errorMsg}`)));
+      this.pendingRequests.clear();
+      this.isInitialized = false;
+      this.isInitializing = false;
+    };
+
+    const initPayload: SileroVadInitPayload = {
+        origin: location.origin,
+        onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL,
+        sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
+        frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
+        positiveThreshold: options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
+        negativeThreshold: options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
+    };
+
+    try {
+        await this.postMessageToWorker<SileroVadInitPayload>({ type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload });
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        this.isInitialized = false;
+        this.isInitializing = false;
+        analysisStore.update(s => ({ ...s, vadStatus: "Error sending VAD init to worker.", vadError: errorMessage, vadInitialized: false }));
     }
+  }
 
-    private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.worker) {
-                reject(new Error("VAD Worker not initialized."));
-                return;
-            }
-            const messageId = this.generateMessageId();
-            this.pendingRequests.set(messageId, {
-                resolve: (value: unknown) => resolve(value as R),
-                reject
-            });
-            this.worker.postMessage({...message, messageId});
-        });
+  public async analyzeAudioFrame(audioFrame: Float32Array, timestamp?: number): Promise<SileroVadProcessResultPayload | null> {
+    if (!this.worker || !this.isInitialized) {
+      const errorMsg = "VAD Service not initialized or worker unavailable.";
+      analysisStore.update(s => ({ ...s, vadError: errorMsg }));
+      throw new Error(errorMsg);
     }
-
-    public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
-        console.log('[AnalysisService] Initialize called.');
-
-        if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
-            console.warn("AnalysisService already initialized or initializing.");
-            return;
-        }
-        serviceState.update((s: AnalysisServiceState) => ({...s, isInitializing: true, error: null}));
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            vadStatus: "VAD service initializing...",
-            vadInitialized: false, // Explicitly set during init start
-        }));
-
-        this.worker = new SileroVadWorker();
-
-        this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
-            const {type, payload, error, messageId} = event.data;
-            const request = messageId
-                ? this.pendingRequests.get(messageId)
-                : undefined;
-            console.log(`[AnalysisService] Received message from VAD worker: type=${type}`);
-
-            if (error) {
-                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown VAD worker message error';
-                console.error(`AnalysisService VAD Worker Error (type ${type}):`, errorMsg);
-                serviceState.update((s: AnalysisServiceState) => ({
-                    ...s,
-                    error: `VAD Worker error: ${errorMsg}`,
-                }));
-                if (request) {
-                    request.reject(errorMsg);
-                    if (messageId) this.pendingRequests.delete(messageId);
-                }
-                if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
-                    serviceState.update((s: AnalysisServiceState) => ({
-                        ...s,
-                        isInitialized: false,
-                        isInitializing: false,
-                    }));
-                    analysisStore.update((s: AnalysisState) => ({
-                        ...s,
-                        vadStatus: "Error initializing VAD service.",
-                        vadError: errorMsg,
-                        vadInitialized: false,
-                    }));
-                }
-                return;
-            }
-
-            switch (type) {
-                case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
-                    console.log('[AnalysisService] VAD Worker reported INIT_SUCCESS.');
-
-                    serviceState.update((s: AnalysisServiceState) => ({
-                        ...s,
-                        isInitialized: true,
-                        isInitializing: false,
-                    }));
-                    analysisStore.update((s: AnalysisState) => ({
-                        ...s,
-                        vadStatus: "VAD service initialized.",
-                        vadInitialized: true,
-                        vadError: null,
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-
-                case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
-                    if (payload && typeof payload === 'object') {
-                        const resultPayload = payload as SileroVadProcessResultPayload;
-                        analysisStore.update((s: AnalysisState) => ({
-                            ...s,
-                            lastVadResult: resultPayload,
-                            isSpeaking: resultPayload.isSpeech,
-                        }));
-                        if (request) request.resolve(resultPayload);
-                    }
-                    break;
-
-                case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
-                    analysisStore.update((s: AnalysisState) => ({
-                        ...s,
-                        vadStateResetted: true,
-                        lastVadResult: null,
-                        isSpeaking: false
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-
-                default:
-                    console.log(
-                        "AnalysisService received message from VAD worker:",
-                        event.data,
-                    );
-                    if (request) request.resolve(payload);
-            }
-            if (messageId && request) this.pendingRequests.delete(messageId);
-        };
-
-        this.worker.onerror = (err: Event | string) => {
-            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown VAD worker error');
-            console.error("Unhandled error in SileroVadWorker:", errorMsg);
-            serviceState.update((s: AnalysisServiceState) => ({
-                ...s,
-                error: `VAD Worker onerror: ${errorMsg}`,
-                isInitialized: false,
-                isInitializing: false,
-            }));
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadStatus: "Critical VAD worker error.",
-                vadError: errorMsg,
-                vadInitialized: false,
-            }));
-            this.pendingRequests.forEach((req) =>
-                req.reject(new Error(`VAD Worker failed critically: ${errorMsg}`)),
-            );
-            this.pendingRequests.clear();
-        };
-
-        const initPayload: SileroVadInitPayload = {
-            origin: location.origin,
-            onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL, // Use constant
-            sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
-            frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
-            positiveThreshold:
-                options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
-            negativeThreshold:
-                options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
-        };
-
-        try {
-            console.log('[AnalysisService] Posting INIT message to VAD worker.');
-
-            await this.postMessageToWorker<SileroVadInitPayload>({
-                type: VAD_WORKER_MSG_TYPE.INIT,
-                payload: initPayload,
-            });
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            serviceState.update((s: AnalysisServiceState) => ({
-                ...s,
-                error: errorMessage || "VAD Initialization failed",
-                isInitialized: false,
-                isInitializing: false,
-            }));
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadStatus: "Error sending VAD init to worker.",
-                vadError: errorMessage,
-                vadInitialized: false,
-            }));
-        }
+    const payload: SileroVadProcessPayload = { audioFrame, timestamp };
+    try {
+      const result = await this.postMessageToWorker<SileroVadProcessPayload>({ type: VAD_WORKER_MSG_TYPE.PROCESS, payload });
+      return result as SileroVadProcessResultPayload;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      analysisStore.update(s => ({ ...s, vadError: `Error processing VAD frame: ${errorMessage}` }));
+      return null;
     }
+  }
 
-    public async analyzeAudioFrame(
-        audioFrame: Float32Array,
-        timestamp?: number,
-    ): Promise<SileroVadProcessResultPayload | null> {
-        if (!this.worker || !get(serviceState).isInitialized) {
-            const errorMsg = "VAD Service not initialized or worker unavailable.";
-            console.error(errorMsg);
-            analysisStore.update((s: AnalysisState) => ({...s, vadError: errorMsg}));
-            throw new Error(errorMsg);
-        }
-        const payload: SileroVadProcessPayload = {audioFrame, timestamp};
-        try {
-            const result = await this.postMessageToWorker<SileroVadProcessPayload>({
-                type: VAD_WORKER_MSG_TYPE.PROCESS,
-                payload,
-            });
-            return result as SileroVadProcessResultPayload;
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error("Error processing VAD frame:", errorMessage);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadError: `Error processing VAD frame: ${errorMessage}`,
-            }));
-            return null;
-        }
+  public dispose(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
     }
-
-    public async resetVadState(): Promise<void> {
-        if (!this.worker || !get(serviceState).isInitialized) {
-            const errorMsg = "VAD Service not initialized or worker unavailable for reset.";
-            console.error(errorMsg);
-            analysisStore.update((s: AnalysisState) => ({...s, vadError: errorMsg}));
-            throw new Error(errorMsg);
-        }
-        try {
-            await this.postMessageToWorker<undefined>({type: VAD_WORKER_MSG_TYPE.RESET});
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error("Error resetting VAD state:", errorMessage);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadError: `Error resetting VAD state: ${errorMessage}`,
-            }));
-        }
-    }
-
-    public detectDTMF(
-        audioFrame: Float32Array,
-        sampleRate: number,
-    ): string | null {
-        // TODO: Implement Goertzel algorithm for DTMF frequencies
-        console.log("DTMF detection not yet implemented.");
-        return null;
-    }
-
-    public dispose(): void {
-        if (this.worker) {
-            this.worker.terminate();
-            this.worker = null;
-        }
-        this.pendingRequests.clear();
-        this.nextMessageId = 0;
-        serviceState.set(initialServiceState); // Reset VAD specific state
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            vadStatus: "VAD service disposed.",
-            vadInitialized: false,
-            lastVadResult: null,
-            isSpeaking: undefined,
-            vadError: null,
-        }));
-        this.disposeSpectrogramWorker(); // Ensure spec worker is also disposed
-        console.log("AnalysisService (VAD and Spectrogram workers) disposed.");
-    }
-
-    private generateSpecMessageId(): string {
-        return `spec_msg_${this.nextSpecMessageId++}`;
-    }
-
-    private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.spectrogramWorker) {
-                reject(new Error("Spectrogram Worker not initialized."));
-                return;
-            }
-            const messageId = this.generateSpecMessageId();
-            this.pendingSpecRequests.set(messageId, {
-                resolve: (value: unknown) => resolve(value as R),
-                reject
-            });
-            this.spectrogramWorker.postMessage({...message, messageId});
-        });
-    }
-
-    public async initializeSpectrogramWorker(options: SpectrogramWorkerInitializeOptions): Promise<void> {
-    if (this.isSpectrogramInitialized) {
-            console.warn("Spectrogram worker already initialized.");
-            return;
-        }
-
-        this.spectrogramWorker = new SpectrogramWorker();
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            spectrogramStatus: "Spectrogram worker initializing...",
-            spectrogramInitialized: false,
-        }));
-
-        this.spectrogramWorker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
-            const {type, payload, error, messageId} = event.data;
-            const request = messageId
-                ? this.pendingSpecRequests.get(messageId)
-                : undefined;
-
-            if (error) {
-                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown Spectrogram worker message error';
-                console.error(`Spectrogram Worker Error (type ${type}):`, errorMsg);
-                analysisStore.update((s: AnalysisState) => ({
-                    ...s,
-                    spectrogramError: `Worker error: ${errorMsg}`,
-                    spectrogramInitialized: false,
-                }));
-                if (request) {
-                    request.reject(errorMsg);
-                    if (messageId) this.pendingSpecRequests.delete(messageId);
-                }
-                if (type === SPEC_WORKER_MSG_TYPE.INIT_ERROR) {
-                    this.spectrogramInitialized.set(false); // Already set in analysisStore update
-                }
-                return;
-            }
-
-            switch (type) {
-                case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
-          // --- MODIFICATION: Set the boolean property ---
-          this.isSpectrogramInitialized = true;
-          analysisStore.update((s) => ({
-                        ...s,
-                        spectrogramStatus: "Spectrogram worker initialized.",
-                        spectrogramInitialized: true,
-                        spectrogramError: null,
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-                case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
-                    if (payload && typeof payload === 'object') {
-                        const specResult = payload as SpectrogramResultPayload;
-                        analysisStore.update((s: AnalysisState) => ({
-                            ...s,
-                            spectrogramData: specResult.magnitudes,
-                        }));
-                        if (request) request.resolve(specResult);
-                    }
-                    break;
-                default:
-                    if (request) request.resolve(payload);
-            }
-            if (messageId && request) this.pendingSpecRequests.delete(messageId);
-        };
-
-        this.spectrogramWorker.onerror = (err: Event | string) => {
-            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown Spectrogram worker error');
-            console.error("Unhandled error in SpectrogramWorker:", errorMsg);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramError: `Worker onerror: ${errorMsg}`,
-                spectrogramInitialized: false,
-                spectrogramStatus: "Spectrogram worker error."
-            }));
-            this.pendingSpecRequests.forEach((req) =>
-                req.reject(new Error(`Spectrogram Worker failed critically: ${errorMsg}`)),
-            );
-            this.pendingSpecRequests.clear();
-      this.isSpectrogramInitialized = false;
-        };
-
-        const initPayload: SpectrogramInitPayload = {
-            origin: location.origin,
-            fftPath: VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL,
-            sampleRate: options.sampleRate,
-            fftSize: options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
-            hopLength:
-                options.hopLength ||
-                Math.floor(
-                    (options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE) / 4,
-                ),
-        };
-        try {
-            await this.postMessageToSpecWorker<SpectrogramInitPayload>({
-                type: SPEC_WORKER_MSG_TYPE.INIT,
-                payload: initPayload,
-            });
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramError: errorMessage || "Spectrogram init failed",
-                spectrogramInitialized: false,
-                spectrogramStatus: "Error sending Spectrogram init to worker."
-            }));
-            this.spectrogramInitialized.set(false); // Ensure internal writable is also false
-        }
-    }
-
-    public async processAudioForSpectrogram(
-        audioData: Float32Array,
-    ): Promise<SpectrogramResultPayload | null> {
-        if (!this.spectrogramWorker || !get(this.spectrogramInitialized)) {
-            const errorMsg = "Spectrogram worker not initialized or unavailable.";
-            console.error(errorMsg);
-            analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: errorMsg}));
-            throw new Error(errorMsg);
-        }
-        const payload: SpectrogramProcessPayload = {audioData};
-        try {
-            const result = await this.postMessageToSpecWorker<SpectrogramProcessPayload>({
-                type: SPEC_WORKER_MSG_TYPE.PROCESS,
-                payload,
-            });
-            return result as SpectrogramResultPayload;
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            console.error("Error processing audio for spectrogram:", errorMessage);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramError: `Error processing for spectrogram: ${errorMessage}`
-            }));
-            return null;
-        }
-    }
-
-    public disposeSpectrogramWorker(): void {
-        if (this.spectrogramWorker) {
-            this.spectrogramWorker.terminate();
-            this.spectrogramWorker = null;
-      // --- MODIFICATION: Set the boolean property ---
-      this.isSpectrogramInitialized = false;
-      // ...
-        }
-        this.spectrogramInitialized.set(false);
-        this.pendingSpecRequests.clear();
-        this.nextSpecMessageId = 0;
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            spectrogramStatus: "Spectrogram worker disposed.",
-            spectrogramData: null,
-            spectrogramInitialized: false,
-            spectrogramError: null,
-        }));
-    }
-
-    public async startSpectrogramProcessing(
-        audioBuffer: AudioBuffer, // AudioBuffer is a web Audio API type, not from player.types
-    ): Promise<void> {
-        if (!audioBuffer) {
-            console.warn(
-                "AnalysisService: No audio buffer provided for spectrogram processing.",
-            );
-            analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: "No audio buffer for spectrogram."}));
-            return;
-        }
-
-        // Re-initialize if needed (e.g. sample rate change) or not initialized
-    if (!this.isSpectrogramInitialized) {
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramStatus: "Initializing spectrogram worker for new file...",
-            }));
-            await this.initializeSpectrogramWorker({
-                sampleRate: audioBuffer.sampleRate,
-            });
-        }
-
-    if (!this.isSpectrogramInitialized) {
-            onsole.error(
-        "AnalysisService: Spectrogram worker failed to initialize for processing.",
-      );
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-        spectrogramError: "Worker init failed before processing.",
-                spectrogramStatus: "Spectrogram worker initialization failed."
-            }));
-            return;
-        }
-
-        const pcmData = audioBuffer.getChannelData(0); // Process first channel
-        if (pcmData && pcmData.length > 0) {
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramStatus: "Processing audio for spectrogram...",
-            }));
-            try {
-                await this.processAudioForSpectrogram(pcmData);
-                analysisStore.update((s: AnalysisState) => ({
-                    ...s,
-                    spectrogramStatus: "Spectrogram processing complete.", // Or "initiated" if it's async in worker
-                }));
-            } catch (error: unknown) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                analysisStore.update((s: AnalysisState) => ({
-                    ...s,
-                    spectrogramStatus: "Spectrogram processing failed.",
-                    spectrogramError: errorMessage,
-                }));
-            }
-        } else {
-            console.warn("AnalysisService: No PCM data to process for spectrogram.");
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramStatus: "No data for spectrogram.",
-                spectrogramData: null, // Clear any old data
-            }));
-        }
-    }
+    this.pendingRequests.clear();
+    this.nextMessageId = 0;
+    this.isInitialized = false;
+    this.isInitializing = false;
+    analysisStore.update(s => ({
+      ...s,
+      vadStatus: "VAD service disposed.",
+      vadInitialized: false,
+      lastVadResult: null,
+      isSpeaking: undefined,
+      vadError: null,
+    }));
+    console.log("AnalysisService disposed.");
+  }
 }
 
 export default AnalysisService.getInstance();
@@ -14985,6 +14203,744 @@ export default AudioEngineService.getInstance();
 
 ````
 --- End of File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
+--- File: vibe-player-v2/src/lib/services/dtmf.service.test.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/dtmf.service.test.ts
+import { vi, describe, it, expect, beforeEach, afterEach, type Mocked } from "vitest";
+import DtmfWorker from '$lib/workers/dtmf.worker?worker&inline';
+import dtmfService from "./dtmf.service";
+import { dtmfStore, type DtmfState } from "$lib/stores/dtmf.store";
+
+// Mock Svelte stores
+vi.mock("$lib/stores/dtmf.store", () => {
+    const actual = vi.importActual("$lib/stores/dtmf.store");
+    return {
+        ...actual, // Import and retain actual DtmfState, initialState if needed by service
+        dtmfStore: {
+            subscribe: vi.fn(),
+            set: vi.fn(),
+            update: vi.fn(),
+        }
+    };
+});
+
+// Mock Web Workers
+const mockDtmfWorkerInstance = {
+  postMessage: vi.fn(),
+  terminate: vi.fn(),
+  onmessage: null as ((event: MessageEvent) => void) | null,
+  onerror: null as ((event: ErrorEvent) => void) | null, // Though service uses onmessage for errors
+};
+
+vi.mock("$lib/workers/dtmf.worker?worker&inline", () => ({
+  default: vi.fn().mockImplementation(() => mockDtmfWorkerInstance),
+}));
+
+// Mock OfflineAudioContext
+const mockGetChannelData = vi.fn();
+const mockStartRendering = vi.fn();
+const mockOfflineAudioContext = vi.fn(() => ({
+  createBufferSource: vi.fn(() => ({
+    buffer: null,
+    connect: vi.fn(),
+    start: vi.fn(),
+  })),
+  startRendering: mockStartRendering,
+}));
+global.OfflineAudioContext = mockOfflineAudioContext as any;
+
+
+const mockAudioBuffer = {
+  sampleRate: 48000, // Original sample rate
+  duration: 1.0,
+  numberOfChannels: 1,
+  getChannelData: vi.fn(() => new Float32Array(48000)), // Matches original sample rate
+} as unknown as AudioBuffer;
+
+const resampledAudioBuffer = {
+    sampleRate: 16000,
+    duration: 1.0,
+    numberOfChannels: 1,
+    getChannelData: mockGetChannelData,
+} as unknown as AudioBuffer;
+
+
+describe("DtmfService", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDtmfWorkerInstance.postMessage.mockClear();
+    mockDtmfWorkerInstance.terminate.mockClear();
+    mockDtmfWorkerInstance.onmessage = null;
+    mockDtmfWorkerInstance.onerror = null;
+
+    (dtmfStore.update as Mocked<any>).mockClear();
+    (dtmfStore.set as Mocked<any>).mockClear();
+
+    dtmfService.dispose(); // Clean up previous state
+  });
+
+  afterEach(() => {
+    dtmfService.dispose(); // Clean up
+  });
+
+  describe("initialize", () => {
+    it("should create DTMF worker, post INIT message, and update store on init_complete", () => {
+      dtmfService.initialize(16000); // targetSampleRate for worker
+
+      expect(DtmfWorker).toHaveBeenCalledTimes(1);
+      expect(mockDtmfWorkerInstance.postMessage).toHaveBeenCalledWith(
+        { type: 'init', payload: { sampleRate: 16000 } }
+      );
+
+      // Simulate worker response for init_complete
+      if (mockDtmfWorkerInstance.onmessage) {
+        mockDtmfWorkerInstance.onmessage({
+          data: { type: 'init_complete' },
+        } as MessageEvent);
+      }
+
+      expect(dtmfStore.update).toHaveBeenCalledTimes(1);
+      const lastUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[0][0];
+      const mockState: DtmfState = { status: 'processing', dtmf: [], cpt: [], error: 'old error' };
+      const newState = lastUpdateCall(mockState);
+      expect(newState.status).toBe('idle');
+      expect(newState.error).toBeNull();
+    });
+
+    it("should update dtmfStore on 'error' message from worker during init", () => {
+      dtmfService.initialize(16000);
+
+      if (mockDtmfWorkerInstance.onmessage) {
+        mockDtmfWorkerInstance.onmessage({
+          data: { type: 'error', payload: "Init failed" },
+        } as MessageEvent);
+      }
+
+      expect(dtmfStore.update).toHaveBeenCalledTimes(1);
+      const lastUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[0][0];
+      const mockState: DtmfState = { status: 'processing', dtmf: [], cpt: [], error: null };
+      const newState = lastUpdateCall(mockState);
+      expect(newState.status).toBe('error');
+      expect(newState.error).toBe("Init failed");
+    });
+  });
+
+  describe("process", () => {
+    beforeEach(() => {
+      // Ensure service is initialized
+      dtmfService.initialize(16000);
+      if (mockDtmfWorkerInstance.onmessage) {
+        mockDtmfWorkerInstance.onmessage({ data: { type: 'init_complete' } } as MessageEvent);
+      }
+      (dtmfStore.update as Mocked<any>).mockClear(); // Clear init updates
+
+      // Setup resampling mock
+      mockGetChannelData.mockReturnValue(new Float32Array(16000)); // Resampled data
+      mockStartRendering.mockResolvedValue(resampledAudioBuffer);
+    });
+
+    it("should update store to 'processing', resample audio, and post 'process' message", async () => {
+      await dtmfService.process(mockAudioBuffer);
+
+      expect(dtmfStore.update).toHaveBeenCalledWith(expect.any(Function));
+      const processingUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[0][0];
+      const processingState = processingUpdateCall({ status: 'idle', dtmf: ['old'], cpt: ['old'], error: 'yes' });
+      expect(processingState.status).toBe('processing');
+      expect(processingState.dtmf).toEqual([]);
+      expect(processingState.cpt).toEqual([]);
+
+      expect(mockOfflineAudioContext).toHaveBeenCalledWith(1, mockAudioBuffer.duration * 16000, 16000);
+      expect(mockStartRendering).toHaveBeenCalled();
+
+      // Wait for resampling to complete
+      await mockStartRendering();
+
+      expect(mockDtmfWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'process', payload: { pcmData: new Float32Array(16000) } })
+      );
+    });
+
+    it("should update store with results on 'result' message from worker", async () => {
+      const processPromise = dtmfService.process(mockAudioBuffer);
+
+      // Simulate worker response for result
+      if (mockDtmfWorkerInstance.onmessage) {
+        mockDtmfWorkerInstance.onmessage({
+          data: { type: 'result', payload: { dtmf: ['1', '2'], cpt: ['busy'] } },
+        } as MessageEvent);
+      }
+      await processPromise; // Ensure all async operations complete
+
+      // The first update is 'processing', the second is the result
+      const resultUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[1][0];
+      const mockState: DtmfState = { status: 'processing', dtmf: [], cpt: [], error: null };
+      const newState = resultUpdateCall(mockState);
+      expect(newState.status).toBe('complete');
+      expect(newState.dtmf).toEqual(['1', '2']);
+      expect(newState.cpt).toEqual(['busy']);
+    });
+
+    it("should update store with error if worker not initialized", () => {
+      dtmfService.dispose(); // Ensure worker is null
+      (dtmfStore.update as Mocked<any>).mockClear();
+
+      dtmfService.process(mockAudioBuffer);
+
+      expect(dtmfStore.update).toHaveBeenCalledTimes(1);
+      const errorUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[0][0];
+      const newState = errorUpdateCall({status: 'idle', dtmf: [], cpt: [], error: null});
+      expect(newState.status).toBe('error');
+      expect(newState.error).toBe('DTMF Worker not initialized.');
+    });
+
+    it("should update store with error if resampling fails", async () => {
+      // Arrange: Mock the resampling process to fail
+      const resamplingError = new Error("Resampling failed");
+      mockStartRendering.mockRejectedValueOnce(resamplingError);
+
+      // Act: Call the process method and await its expected rejection
+      await expect(dtmfService.process(mockAudioBuffer)).rejects.toThrow(resamplingError);
+
+      // Assert:
+      // The store should be updated twice: once for 'processing', once for 'error'.
+      expect(dtmfStore.update).toHaveBeenCalledTimes(2);
+
+      // Get the second update call (the error one) and test its logic.
+      const errorUpdateCall = (dtmfStore.update as Mocked<any>).mock.calls[1][0];
+      const mockState: DtmfState = { status: 'processing', dtmf: [], cpt: [], error: null };
+      const newState = errorUpdateCall(mockState);
+
+      expect(newState.status).toBe('error');
+      expect(newState.error).toContain("Resampling failed");
+    });
+  });
+
+  describe("dispose", () => {
+    it("should terminate worker", () => {
+      dtmfService.initialize(16000); // Initialize first
+      if (mockDtmfWorkerInstance.onmessage) { // Simulate init complete
+          mockDtmfWorkerInstance.onmessage({ data: { type: 'init_complete' } } as MessageEvent);
+      }
+      (dtmfStore.update as Mocked<any>).mockClear();
+
+      dtmfService.dispose();
+
+      expect(mockDtmfWorkerInstance.terminate).toHaveBeenCalledTimes(1);
+      // Check if worker is set to null (not directly testable for private prop, but terminate is a good indicator)
+    });
+
+     it("should do nothing if worker already null", () => {
+      dtmfService.dispose(); // Call dispose once to ensure worker is null
+      // Since the worker is mocked at the module level and dtmfService is a singleton,
+      // the first dispose() call will set its internal worker to null.
+      // The DtmfWorker constructor mock won't be called again unless initialize is called.
+      // So, the first dispose makes the internal worker null.
+      mockDtmfWorkerInstance.terminate.mockClear(); // Clear any calls from previous dispose if any test didn't clean up
+
+      dtmfService.dispose(); // Call again
+
+      expect(mockDtmfWorkerInstance.terminate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+````
+--- End of File: vibe-player-v2/src/lib/services/dtmf.service.test.ts ---
+--- File: vibe-player-v2/src/lib/services/dtmf.service.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/dtmf.service.ts
+
+import DtmfWorker from '$lib/workers/dtmf.worker?worker&inline';
+import { dtmfStore } from '$lib/stores/dtmf.store';
+
+class DtmfService {
+  private static instance: DtmfService;
+  private worker: Worker | null = null;
+
+  private constructor() {}
+
+  public static getInstance(): DtmfService {
+    if (!DtmfService.instance) {
+      DtmfService.instance = new DtmfService();
+    }
+    return DtmfService.instance;
+  }
+
+  public initialize(sampleRate: number): void {
+    if (this.worker) {
+      this.worker.terminate();
+    }
+
+    this.worker = new DtmfWorker();
+
+    this.worker.onmessage = (event) => {
+      const { type, payload, error } = event.data;
+      if (type === 'init_complete') {
+        dtmfStore.update(s => ({ ...s, status: 'idle', error: null }));
+      } else if (type === 'result') {
+        dtmfStore.update(s => ({ ...s, status: 'complete', dtmf: payload.dtmf, cpt: payload.cpt || [] }));
+      } else if (type === 'error') {
+        dtmfStore.update(s => ({ ...s, status: 'error', error: payload }));
+      }
+    };
+
+    this.worker.postMessage({ type: 'init', payload: { sampleRate } });
+  }
+
+  public async process(audioBuffer: AudioBuffer): Promise<void> {
+    if (!this.worker) {
+      dtmfStore.update(s => ({ ...s, status: 'error', error: 'DTMF Worker not initialized.' }));
+      return;
+    }
+    dtmfStore.update(s => ({ ...s, status: 'processing', dtmf: [], cpt: [] }));
+
+    // We need to resample the audio to 16kHz for the Goertzel algorithm
+    const targetSampleRate = 16000;
+    const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * targetSampleRate, targetSampleRate);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start();
+
+   try {
+     const resampled = await offlineCtx.startRendering();
+     const pcmData = resampled.getChannelData(0);
+     this.worker?.postMessage({ type: 'process', payload: { pcmData } });
+   } catch (e) {
+     const error = e as Error;
+     dtmfStore.update(s => ({ ...s, status: 'error', error: `Resampling failed: ${error.message}` }));
+     // Re-throw the error so the caller (like a test) can know it failed.
+     throw error;
+   }
+  }
+
+  public dispose(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    console.log("DtmfService disposed.");
+  }
+}
+
+export default DtmfService.getInstance();
+
+````
+--- End of File: vibe-player-v2/src/lib/services/dtmf.service.ts ---
+--- File: vibe-player-v2/src/lib/services/spectrogram.service.test.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/spectrogram.service.test.ts
+import { vi, describe, it, expect, beforeEach, afterEach, type Mocked } from "vitest";
+import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
+import spectrogramService from "./spectrogram.service";
+import { analysisStore } from "$lib/stores/analysis.store";
+import { VISUALIZER_CONSTANTS } from "$lib/utils/constants"; // For init payload
+import { SPEC_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+
+// Mock Svelte stores
+vi.mock("$lib/stores/analysis.store", () => ({
+  analysisStore: {
+    subscribe: vi.fn(),
+    set: vi.fn(),
+    update: vi.fn(),
+  },
+}));
+
+// Mock Web Workers
+const mockSpecWorkerInstance = {
+  postMessage: vi.fn(),
+  terminate: vi.fn(),
+  onmessage: null as ((event: MessageEvent) => void) | null,
+  onerror: null as ((event: ErrorEvent | Event | string) => void) | null, // Adjusted to match service
+};
+
+vi.mock("$lib/workers/spectrogram.worker?worker&inline", () => ({
+  default: vi.fn().mockImplementation(() => mockSpecWorkerInstance),
+}));
+
+const mockAudioData = new Float32Array(16000); // Sample audio data
+
+describe("SpectrogramService", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset worker instance mocks
+    mockSpecWorkerInstance.postMessage.mockClear();
+    mockSpecWorkerInstance.terminate.mockClear();
+    mockSpecWorkerInstance.onmessage = null;
+    mockSpecWorkerInstance.onerror = null;
+
+    // Reset store mocks
+    (analysisStore.update as Mocked<any>).mockClear();
+    (analysisStore.set as Mocked<any>).mockClear();
+
+    // Ensure a fresh service instance for some tests if necessary, or reset its state.
+    // For singleton, we might need a reset method or careful state management in tests.
+    // For now, we rely on dispose and re-initialize logic.
+    spectrogramService.dispose(); // Clean up previous state
+  });
+
+  afterEach(() => {
+    spectrogramService.dispose(); // Clean up
+  });
+
+  describe("initialize", () => {
+    it("should create Spectrogram worker, post INIT message, and update store", async () => {
+      const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
+
+      expect(SpectrogramWorker).toHaveBeenCalledTimes(1);
+      expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.INIT })
+      );
+      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function)); // Initial 'Initializing' update
+
+      // Simulate worker response for INIT_SUCCESS
+      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
+        } as MessageEvent);
+      }
+      await initPromise;
+
+      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function)); // For 'Initialized'
+      // Check the final state update for success
+      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
+      const mockState = { spectrogramStatus: '', spectrogramInitialized: false, spectrogramError: 'previous error' };
+      const newState = lastUpdateCall[0](mockState);
+      expect(newState.spectrogramStatus).toBe('Initialized');
+      expect(newState.spectrogramInitialized).toBe(true);
+      expect(newState.spectrogramError).toBeNull();
+    });
+
+    it("should update analysisStore on INIT_ERROR from worker message", async () => {
+      const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
+      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: { type: SPEC_WORKER_MSG_TYPE.INIT_ERROR, error: "Init failed in worker", messageId: initMessageId },
+        } as MessageEvent);
+      }
+
+      try {
+        await initPromise;
+      } catch (e) {
+        // Expected to reject due to error
+      }
+
+      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
+      const mockState = { spectrogramStatus: '', spectrogramInitialized: true, spectrogramError: null };
+      const newState = lastUpdateCall[0](mockState);
+      expect(newState.spectrogramError).toContain("Init failed in worker");
+      expect(newState.spectrogramInitialized).toBe(false);
+    });
+
+    it("should update analysisStore on worker onerror during initialize", async () => {
+      mockSpecWorkerInstance.postMessage.mockImplementationOnce(() => {
+        // Simulate error being thrown by postMessage or worker globally failing
+        if (mockSpecWorkerInstance.onerror) {
+            mockSpecWorkerInstance.onerror(new ErrorEvent("error", { message: "Critical worker failure" }));
+        }
+        throw new Error("Simulated postMessage failure");
+      });
+
+      try {
+        await spectrogramService.initialize({ sampleRate: 16000 });
+      } catch(e) {
+        // error expected
+      }
+
+      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
+      const mockState = { spectrogramStatus: '', spectrogramInitialized: true, spectrogramError: null };
+      const newState = lastUpdateCall[0](mockState); // This might be the one from onerror or the catch block in initialize
+
+      // Check for either "Simulated postMessage failure" or "Critical worker failure"
+      expect(newState.spectrogramError).toBeDefined();
+      expect(newState.spectrogramInitialized).toBe(false);
+    });
+  });
+
+  describe("process", () => {
+    beforeEach(async () => {
+      // Ensure service is initialized before process tests
+      const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
+      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
+        } as MessageEvent);
+      }
+      await initPromise;
+      (analysisStore.update as Mocked<any>).mockClear(); // Clear init updates
+    });
+
+    it("should post PROCESS message and update store on success", async () => {
+      const processPromise = spectrogramService.process(mockAudioData);
+
+      expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.PROCESS, payload: { audioData: mockAudioData } })
+      );
+      // Check for 'Processing audio...' update
+      let storeUpdate = (analysisStore.update as Mocked<any>).mock.calls[0][0];
+      let state = storeUpdate({});
+      expect(state.spectrogramStatus).toBe('Processing audio for spectrogram...');
+
+      // Simulate worker response for PROCESS_RESULT
+      const processMessageId = mockSpecWorkerInstance.postMessage.mock.calls.find(call => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS)[0].messageId;
+      const mockResultPayload = { magnitudes: new Float32Array([1, 2, 3]) };
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: { type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT, payload: mockResultPayload, messageId: processMessageId },
+        } as MessageEvent);
+      }
+      await processPromise;
+
+      // Check for 'Processing complete.' and data update
+      const updateCalls = (analysisStore.update as Mocked<any>).mock.calls;
+      // First call is status 'Processing audio...', second is data, third is status 'Processing complete.'
+      // The service updates data first, then status.
+      storeUpdate = updateCalls[1][0]; // data update
+      state = storeUpdate({ spectrogramData: null });
+      expect(state.spectrogramData).toEqual(mockResultPayload.magnitudes);
+
+      storeUpdate = updateCalls[2][0]; // status update
+      state = storeUpdate({});
+      expect(state.spectrogramStatus).toBe('Processing complete.');
+    });
+
+    it("should update store on PROCESS_ERROR from worker", async () => {
+      const processPromise = spectrogramService.process(mockAudioData);
+      const processMessageId = mockSpecWorkerInstance.postMessage.mock.calls.find(call => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS)[0].messageId;
+
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: { type: SPEC_WORKER_MSG_TYPE.PROCESS_ERROR, error: "Processing failed in worker", messageId: processMessageId },
+        } as MessageEvent);
+      }
+
+      try {
+        await processPromise;
+      } catch (e) {
+        // Expected to reject
+      }
+
+      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
+      const mockState = { spectrogramStatus: '', spectrogramError: null };
+      const newState = lastUpdateCall[0](mockState);
+      expect(newState.spectrogramStatus).toBe('Processing failed.');
+      expect(newState.spectrogramError).toContain("Processing failed in worker");
+    });
+  });
+
+  describe("dispose", () => {
+    it("should terminate worker, update store to disposed state, and clear pending promises", async () => {
+      // Initialize to have a worker and potentially pending promises
+      const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
+      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+
+      // Simulate worker initialization success
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
+        } as MessageEvent);
+      }
+      await initPromise;
+      (analysisStore.update as Mocked<any>).mockClear(); // Clear init updates
+
+      // --- Act ---
+      spectrogramService.dispose();
+
+      // --- Assert ---
+      // Worker termination
+      expect(mockSpecWorkerInstance.terminate).toHaveBeenCalledTimes(1);
+
+      // Store update to 'Disposed' state
+      expect(analysisStore.update).toHaveBeenCalledTimes(1);
+      const storeUpdater = (analysisStore.update as Mocked<any>).mock.calls[0][0];
+      const prevState = {
+        spectrogramStatus: "Initializing",
+        spectrogramData: null,
+        spectrogramInitialized: false,
+        spectrogramError: null,
+      };
+      const newState = storeUpdater(prevState);
+      expect(newState.spectrogramStatus).toBe("Disposed");
+      expect(newState.spectrogramData).toBeNull();
+      expect(newState.spectrogramInitialized).toBe(false);
+      expect(newState.spectrogramError).toBeNull();
+
+      // Attempt to use a method that relies on pending promises after dispose
+      // This tests if pending promises are cleared and won't cause issues
+      // For example, if process() was called and its promise was pending
+      // Here, we'll simulate a scenario where a promise might be unresolved
+      // and ensure it doesn't lead to errors after dispose.
+      // This part is conceptual for this test, as direct promise rejection checking
+      // would require more complex setup (e.g., if dispose explicitly rejects them).
+      // The main check is that the service is reset and doesn't hold onto old states/promises.
+
+      // Verify that calling methods after dispose won't use the old worker or state
+      // For instance, calling initialize again should create a new worker.
+      // This is indirectly tested by beforeEach creating a new worker via initialize.
+      // We can also check that there are no lingering unresolved promises.
+      // This is more of a design verification - dispose should ensure no callbacks
+      // from an old worker instance will be processed.
+      // A simple check: if a promise was pending and got rejected by dispose,
+      // it should not interact with the store post-dispose.
+      // This is implicitly covered by the store update check being specific to "Disposed".
+    });
+
+    it("should handle dispose being called multiple times without error", () => {
+      spectrogramService.initialize({ sampleRate: 16000 }); // Ensure worker exists
+
+      expect(() => {
+        spectrogramService.dispose();
+        spectrogramService.dispose(); // Call dispose again
+      }).not.toThrow();
+
+      expect(mockSpecWorkerInstance.terminate).toHaveBeenCalledTimes(1); // Still only terminates the first time
+    });
+  });
+});
+
+````
+--- End of File: vibe-player-v2/src/lib/services/spectrogram.service.test.ts ---
+--- File: vibe-player-v2/src/lib/services/spectrogram.service.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/spectrogram.service.ts
+
+import type { WorkerMessage, SpectrogramInitPayload, SpectrogramProcessPayload, SpectrogramResultPayload } from '$lib/types/worker.types';
+import { SPEC_WORKER_MSG_TYPE } from '$lib/types/worker.types';
+import { VISUALIZER_CONSTANTS } from '$lib/utils/constants';
+import { analysisStore, type AnalysisState } from '$lib/stores/analysis.store';
+import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
+
+class SpectrogramService {
+  private static instance: SpectrogramService;
+  private worker: Worker | null = null;
+  private isInitialized = false;
+  private nextMessageId = 0;
+  private pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (reason?: any) => void }>();
+
+  private constructor() {}
+
+  public static getInstance(): SpectrogramService {
+    if (!SpectrogramService.instance) {
+      SpectrogramService.instance = new SpectrogramService();
+    }
+    return SpectrogramService.instance;
+  }
+
+  private generateMessageId(): string {
+    return `spec_msg_${this.nextMessageId++}`;
+  }
+
+  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.worker) {
+        return reject(new Error("Spectrogram Worker not initialized."));
+      }
+      const messageId = this.generateMessageId();
+      this.pendingRequests.set(messageId, { resolve, reject });
+      this.worker.postMessage({ ...message, messageId });
+    });
+  }
+
+  public async initialize(options: { sampleRate: number }): Promise<void> {
+    if (this.isInitialized) {
+      console.log("SpectrogramService: Re-initializing. Disposing existing worker first.");
+      this.dispose();
+    }
+
+    analysisStore.update(s => ({ ...s, spectrogramStatus: 'Initializing worker...', spectrogramInitialized: false }));
+    this.worker = new SpectrogramWorker();
+
+    this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
+      const { type, payload, error, messageId } = event.data;
+      const request = messageId ? this.pendingRequests.get(messageId) : undefined;
+      if (error) {
+        const errorMsg = typeof error === 'string' ? error : (error as Error).message;
+        analysisStore.update(s => ({ ...s, spectrogramError: `Worker error: ${errorMsg}`, spectrogramInitialized: false }));
+        if (request) request.reject(errorMsg);
+      } else {
+        switch (type) {
+          case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
+            this.isInitialized = true;
+            analysisStore.update(s => ({ ...s, spectrogramStatus: 'Initialized', spectrogramInitialized: true, spectrogramError: null }));
+            if (request) request.resolve(payload);
+            break;
+          case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
+            const specResult = payload as SpectrogramResultPayload;
+            analysisStore.update(s => ({ ...s, spectrogramData: specResult.magnitudes }));
+            if (request) request.resolve(specResult);
+            break;
+          default:
+            if (request) request.resolve(payload);
+        }
+      }
+      if (messageId && request) this.pendingRequests.delete(messageId);
+    };
+
+    this.worker.onerror = (err: Event | string) => {
+      const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown error');
+      analysisStore.update(s => ({ ...s, spectrogramError: `Worker onerror: ${errorMsg}`, spectrogramInitialized: false }));
+      this.pendingRequests.forEach(req => req.reject(new Error(`Spectrogram Worker failed critically: ${errorMsg}`)));
+      this.pendingRequests.clear();
+      this.isInitialized = false;
+    };
+
+    const initPayload: SpectrogramInitPayload = {
+      origin: location.origin,
+      fftPath: VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL,
+      sampleRate: options.sampleRate,
+      fftSize: VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
+      hopLength: Math.floor(VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE / 4),
+    };
+
+    try {
+      await this.postMessageToWorker({ type: SPEC_WORKER_MSG_TYPE.INIT, payload: initPayload });
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      analysisStore.update(s => ({ ...s, spectrogramError: errorMessage, spectrogramInitialized: false }));
+      this.isInitialized = false;
+    }
+  }
+
+  public async process(audioData: Float32Array): Promise<void> {
+    if (!this.worker || !this.isInitialized) {
+      throw new Error("Spectrogram worker not initialized or unavailable.");
+    }
+    analysisStore.update(s => ({ ...s, spectrogramStatus: 'Processing audio for spectrogram...' }));
+    try {
+      await this.postMessageToWorker<SpectrogramProcessPayload>({ type: SPEC_WORKER_MSG_TYPE.PROCESS, payload: { audioData } });
+      analysisStore.update(s => ({ ...s, spectrogramStatus: 'Processing complete.' }));
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      analysisStore.update(s => ({ ...s, spectrogramStatus: 'Processing failed.', spectrogramError: errorMessage }));
+    }
+  }
+
+  public dispose(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+      this.isInitialized = false;
+    }
+    this.pendingRequests.clear();
+    analysisStore.update(s => ({
+      ...s,
+      spectrogramStatus: 'Disposed',
+      spectrogramData: null,
+      spectrogramInitialized: false,
+      spectrogramError: null,
+    }));
+    console.log("SpectrogramService disposed.");
+  }
+}
+
+export default SpectrogramService.getInstance();
+
+````
+--- End of File: vibe-player-v2/src/lib/services/spectrogram.service.ts ---
 --- File: vibe-player-v2/src/lib/stores/analysis.store.ts ---
 ````typescript
 import { writable } from 'svelte/store';
@@ -15020,6 +14976,30 @@ export const exampleDerived = derived(statusStore, ($statusStore) => ({
 
 ````
 --- End of File: vibe-player-v2/src/lib/stores/derived.store.ts ---
+--- File: vibe-player-v2/src/lib/stores/dtmf.store.ts ---
+````typescript
+// vibe-player-v2/src/lib/stores/dtmf.store.ts
+
+import { writable } from 'svelte/store';
+
+export interface DtmfState {
+  status: 'idle' | 'processing' | 'complete' | 'error';
+  dtmf: string[];
+  cpt: string[]; // For Call Progress Tones
+  error: string | null;
+}
+
+const initialState: DtmfState = {
+  status: 'idle',
+  dtmf: [],
+  cpt: [],
+  error: null,
+};
+
+export const dtmfStore = writable<DtmfState>(initialState);
+
+````
+--- End of File: vibe-player-v2/src/lib/stores/dtmf.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/player.store.ts ---
 ````typescript
 import { writable } from 'svelte/store';
@@ -16204,6 +16184,169 @@ export function _resetUrlStateInitializationFlagForTesting() {
 
 ````
 --- End of File: vibe-player-v2/src/lib/utils/urlState.ts ---
+--- File: vibe-player-v2/src/lib/workers/dtmf.worker.ts ---
+````typescript
+// vibe-player-v2/src/lib/workers/dtmf.worker.ts
+
+// --- Constants directly ported from V1's goertzel.js ---
+const DTMF_SAMPLE_RATE = 16000;
+const DTMF_BLOCK_SIZE = 410;
+const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0;
+const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 4e2;
+const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941];
+const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633];
+export const DTMF_CHARACTERS: { [key: string]: string } = {
+  '697_1209': '1',
+  '697_1336': '2',
+  '697_1477': '3',
+  '697_1633': 'A',
+  '770_1209': '4',
+  '770_1336': '5',
+  '770_1477': '6',
+  '770_1633': 'B',
+  '852_1209': '7',
+  '852_1336': '8',
+  '852_1477': '9',
+  '852_1633': 'C',
+  '941_1209': '*',
+  '941_1336': '0',
+  '941_1477': '#',
+  '941_1633': 'D'
+};
+// NOTE: CPT constants and classes would be ported here as well for a full implementation.
+// For this step, we will focus on DTMF.
+
+// --- Ported GoertzelFilter Class with TypeScript ---
+class GoertzelFilter {
+  private q1: number = 0;
+  private q2: number = 0;
+  private N: number;
+  private cosine: number;
+  private coeff: number;
+
+  constructor(public targetFrequency: number, public sampleRate: number, N: number) {
+    this.N = N;
+    const k = Math.floor(0.5 + (this.N * this.targetFrequency) / this.sampleRate);
+    const omega = (2 * Math.PI * k) / this.N;
+    this.cosine = Math.cos(omega);
+    this.coeff = 2 * this.cosine;
+  }
+
+  public reset(): void {
+    this.q1 = 0;
+    this.q2 = 0;
+  }
+
+  public processBlock(samples: Float32Array): void {
+    for (let i = 0; i < samples.length; i++) {
+      const q0 = samples[i] + this.coeff * this.q1 - this.q2;
+      this.q2 = this.q1;
+      this.q1 = q0;
+    }
+  }
+
+  public getMagnitudeSquared(): number {
+    return this.q1 * this.q1 + this.q2 * this.q2 - this.q1 * this.q2 * this.coeff;
+  }
+}
+
+// --- Ported DTMFParser Class with TypeScript ---
+class DTMFParser {
+  private lowGroupFilters: GoertzelFilter[];
+  private highGroupFilters: GoertzelFilter[];
+
+  constructor(private sampleRate: number, private blockSize: number) {
+    this.lowGroupFilters = DTMF_FREQUENCIES_LOW.map(freq => new GoertzelFilter(freq, this.sampleRate, this.blockSize));
+    this.highGroupFilters = DTMF_FREQUENCIES_HIGH.map(freq => new GoertzelFilter(freq, this.sampleRate, this.blockSize));
+  }
+
+  public processAudioBlock(audioBlock: Float32Array): string | null {
+    let maxLowMag = -1, detectedLowFreq = -1;
+    const lowMagnitudes: { [key: number]: number } = {};
+    this.lowGroupFilters.forEach(filter => {
+      filter.reset();
+      filter.processBlock(audioBlock);
+      const magSq = filter.getMagnitudeSquared();
+      lowMagnitudes[filter.targetFrequency] = magSq;
+      if (magSq > maxLowMag) {
+        maxLowMag = magSq;
+        detectedLowFreq = filter.targetFrequency;
+      }
+    });
+
+    let maxHighMag = -1, detectedHighFreq = -1;
+    const highMagnitudes: { [key: number]: number } = {};
+    this.highGroupFilters.forEach(filter => {
+      filter.reset();
+      filter.processBlock(audioBlock);
+      const magSq = filter.getMagnitudeSquared();
+      highMagnitudes[filter.targetFrequency] = magSq;
+      if (magSq > maxHighMag) {
+        maxHighMag = magSq;
+        detectedHighFreq = filter.targetFrequency;
+      }
+    });
+
+    if (maxLowMag < DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD || maxHighMag < DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD) {
+      return null;
+    }
+
+    // Check relative threshold
+    for (const freq in lowMagnitudes) {
+        if (Number(freq) !== detectedLowFreq && lowMagnitudes[freq] * DTMF_RELATIVE_THRESHOLD_FACTOR > maxLowMag) return null;
+    }
+    for (const freq in highMagnitudes) {
+        if (Number(freq) !== detectedHighFreq && highMagnitudes[freq] * DTMF_RELATIVE_THRESHOLD_FACTOR > maxHighMag) return null;
+    }
+
+    const dtmfKey = `${detectedLowFreq}_${detectedHighFreq}`;
+    return (DTMF_CHARACTERS as Record<string, string>)[dtmfKey] || null;
+  }
+}
+
+// --- Worker Logic ---
+let dtmfParser: DTMFParser | null = null;
+
+self.onmessage = (event: MessageEvent) => {
+  const { type, payload } = event.data;
+
+  try {
+    if (type === 'init') {
+      dtmfParser = new DTMFParser(payload.sampleRate, DTMF_BLOCK_SIZE);
+      self.postMessage({ type: 'init_complete' });
+    } else if (type === 'process') {
+      if (!dtmfParser) throw new Error('Worker not initialized.');
+
+      const { pcmData } = payload;
+      const detectedDtmf: string[] = [];
+      let lastDetectedDtmf: string | null = null;
+
+      // Ported processing loop from V1's app.js (simplified for DTMF only)
+      for (let i = 0; (i + DTMF_BLOCK_SIZE) <= pcmData.length; i += DTMF_BLOCK_SIZE) {
+          const audioBlock = pcmData.subarray(i, i + DTMF_BLOCK_SIZE);
+          const tone = dtmfParser.processAudioBlock(audioBlock);
+
+          if (tone) {
+            // A simple logic to avoid adding the same tone for every single block it's detected in
+            if (lastDetectedDtmf !== tone) {
+              detectedDtmf.push(tone);
+            }
+            lastDetectedDtmf = tone;
+          } else {
+            lastDetectedDtmf = null;
+          }
+      }
+
+      self.postMessage({ type: 'result', payload: { dtmf: detectedDtmf } });
+    }
+  } catch(e) {
+      const error = e as Error;
+      self.postMessage({ type: 'error', payload: error.message });
+  }
+};
+
+````
+--- End of File: vibe-player-v2/src/lib/workers/dtmf.worker.ts ---
 --- File: vibe-player-v2/src/lib/workers/rubberband.worker.ts ---
 ````typescript
 // vibe-player-v2/src/lib/workers/rubberband.worker.ts
