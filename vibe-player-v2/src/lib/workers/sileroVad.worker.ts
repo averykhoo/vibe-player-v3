@@ -36,14 +36,16 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         // It's crucial that ORT WASM files are served from the expected path.
         // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
-        if (!initPayload.origin) {
-          throw new Error("SileroVadWorker INIT: origin is missing in payload");
-        }
-        ort.env.wasm.wasmPaths = `${initPayload.origin}/`; // Set base path for ORT WASM files
+        // ort.env.wasm.wasmPaths should be set globally if needed or ORT will fetch from CDN.
+        // We are now passing the model as an ArrayBuffer, so path resolution for the model itself is not needed here.
         // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
 
+        if (!initPayload.modelBuffer) { // Ensure modelBuffer is provided
+          throw new Error("SileroVadWorker INIT: modelBuffer is missing in payload");
+        }
+
         vadSession = await ort.InferenceSession.create(
-          initPayload.onnxModelPath,
+          initPayload.modelBuffer, // Use modelBuffer directly
         );
 
         // Initialize h, c, sr tensors

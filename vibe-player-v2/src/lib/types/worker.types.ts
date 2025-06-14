@@ -65,7 +65,8 @@ export const VAD_WORKER_MSG_TYPE = {
 };
 
 export interface SileroVadInitPayload {
-    onnxModelPath: string; // Path to silero_vad.onnx
+    // onnxModelPath: string; // Path to silero_vad.onnx
+    modelBuffer: ArrayBuffer; // ArrayBuffer of the ONNX model
     // onnxWasmPath: string; // Path to ORT WASM files (usually handled by ORT itself if copied to static root)
     sampleRate: number; // e.g., 16000
     frameSamples: number; // e.g., 1536
@@ -136,8 +137,10 @@ export function isSileroVadInitPayload(
     return (
         payload !== null &&
         typeof payload === 'object' &&
-        'onnxModelPath' in payload &&
-        typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
+        // 'onnxModelPath' in payload && // No longer checking for onnxModelPath
+        // typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
+        'modelBuffer' in payload && // Check for modelBuffer instead
+        (payload as Record<string, unknown>).modelBuffer instanceof ArrayBuffer && // Verify it's an ArrayBuffer
         'sampleRate' in payload &&
         typeof (payload as Record<string, unknown>).sampleRate === "number"
     );

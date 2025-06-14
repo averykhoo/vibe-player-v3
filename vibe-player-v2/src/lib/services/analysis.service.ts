@@ -38,14 +38,18 @@ class AnalysisService {
     return `vad_msg_${this.nextMessageId++}`;
   }
 
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+  private postMessageToWorker<T>(message: WorkerMessage<T>, transferList?: Transferable[]): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
         return reject(new Error("VAD Worker not initialized."));
       }
       const messageId = this.generateMessageId();
       this.pendingRequests.set(messageId, { resolve, reject });
-      this.worker.postMessage({ ...message, messageId });
+      if (transferList) {
+        this.worker.postMessage({ ...message, messageId }, transferList);
+      } else {
+        this.worker.postMessage({ ...message, messageId });
+      }
     });
   }
 
@@ -106,17 +110,28 @@ class AnalysisService {
       this.isInitializing = false;
     };
 
-    const initPayload: SileroVadInitPayload = {
-        origin: location.origin,
-        onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL,
+    try {
+      // Fetch the ONNX model
+      const modelResponse = await fetch(VAD_CONSTANTS.ONNX_MODEL_URL);
+      if (!modelResponse.ok) {
+        throw new Error(`Failed to fetch ONNX model: ${modelResponse.statusText}`);
+      }
+      const modelBuffer = await modelResponse.arrayBuffer();
+
+      const initPayload: SileroVadInitPayload = {
+        // origin: location.origin, // origin is not part of SileroVadInitPayload anymore
+        modelBuffer,
         sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
         frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
         positiveThreshold: options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
         negativeThreshold: options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
-    };
+      };
 
-    try {
-        await this.postMessageToWorker<SileroVadInitPayload>({ type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload });
+      // Post the message with the modelBuffer in the transfer list
+      await this.postMessageToWorker<SileroVadInitPayload>(
+        { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
+        [initPayload.modelBuffer]
+      );
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         this.isInitialized = false;
