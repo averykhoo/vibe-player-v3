@@ -26,15 +26,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
 ├── README.md
 ├── REFACTOR_PLAN.txt
 ├── build_system_prompt.py
-├── package-lock.json
-├── package.json
-├── playwright.config.ts
-├── src
-│   └── lib
-│       ├── components
-│       │   └── Controls.svelte
-│       └── services
-│           └── analysis.service.ts
 ├── system-prompt.txt
 ├── test-audio
 │   ├── 449496_9289636-lq.mp3
@@ -54,16 +45,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
 │   ├── overlordVol14Prologue.mp3
 │   ├── warning.mp3
 │   └── 【Sound_of_Japan】Outgoing_Phone_Call_Dial_Sound⧸_Answering_Machine.m4a
-├── tests
-│   └── unit
-│       ├── app.test.js
-│       ├── state
-│       │   ├── appState.test.js
-│       │   └── constants.test.js
-│       └── uiManager.test.js
-├── tests-e2e
-│   ├── PlayerPage.js
-│   └── player.e2e.spec.js
 ├── vibe-player
 │   ├── CONTRIBUTING-LLM.md
 │   ├── README.md
@@ -120,6 +101,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
     ├── eslint.config.js
     ├── package-lock.json
     ├── package.json
+    ├── playwright.config.ts
     ├── postcss.config.js
     ├── src
     │   ├── app.css
@@ -200,6 +182,9 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   └── silero_vad.onnx
     ├── svelte.config.js
     ├── tailwind.config.ts
+    ├── tests-e2e
+    │   ├── PlayerPage.mjs
+    │   └── player.e2e.spec.js
     ├── tsconfig.json
     └── vite.config.ts
 ````
@@ -235,14 +220,13 @@ jobs:
         with:
           node-version: '18.x'
           cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+          cache-dependency-path: 'vibe-player-v2/package-lock.json'
 
       # 2. Install dependencies for the V2 app and the root project.
       # The `setup-node` action automatically handles skipping this if the cache was restored.
-      - name: Install root and V2 dependencies
-        run: |
-          npm ci
-          cd vibe-player-v2 && npm ci && cd ..
+      - name: Install V2 dependencies
+        working-directory: ./vibe-player-v2
+        run: npm ci
 
       # 3. Run all tests and builds as before
       - name: Lint V2
@@ -263,14 +247,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2/package-lock.json') }}
 
       # 5. Install Playwright browsers only if the cache was not restored
       - name: Install Playwright and OS dependencies
         if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
+        working-directory: ./vibe-player-v2
         run: npx playwright install --with-deps
 
       - name: Run Playwright E2E tests
+        working-directory: ./vibe-player-v2
         run: npx playwright test
 
       # 6. Cleanup and Reporting
@@ -586,72 +572,6 @@ vibe-player/lib/*.mjs
 
 ````
 --- End of File: .llmignore ---
---- File: playwright.config.ts ---
-````typescript
-// playwright.config.ts
-import { defineConfig, devices } from '@playwright/test';
-import path from 'path';
-
-// Define a port for the dev server to listen on.
-const PORT = process.env.PORT || 8080;
-
-// Define the base URL for the dev server.
-const baseURL = `http://localhost:${PORT}`;
-
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
-export default defineConfig({
-  // Define the test directory.
-  testDir: path.resolve(__dirname, 'vibe-player-v2/tests/e2e'), // Adjusted path to E2E tests
-  // Define the directory for test results, screenshots, videos, traces, etc.
-  outputDir: path.resolve(__dirname, 'vibe-player-v2/tests/e2e/test-results'), // Adjusted path for outputs
-  /* Run tests in files in parallel */
-  fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
-  use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: baseURL,
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
-  },
-  /* Configure projects for major browsers */
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-  ],
-  /* Run your local dev server before starting the tests */
-  webServer: {
-    // Adjusted the command to serve the SvelteKit app from its correct directory
-    command: `npm run serve-for-test --prefix ./vibe-player-v2`, // Assuming 'serve-for-test' is defined in vibe-player-v2's package.json
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    cwd: __dirname, // Consider setting CWD if 'serve-for-test' needs specific context
-    // stdout: 'pipe', // Or 'ignore'
-    // stderr: 'pipe', // Or 'ignore'
-  },
-});
-
-````
---- End of File: playwright.config.ts ---
 --- File: README.md ---
 ````markdown
 <!-- README.md -->
@@ -890,2036 +810,6 @@ This will be performed on a dedicated `feature/svelte-refactor` branch.
 *   **Encapsulate Intensive Tasks in Workers.** Any long-running or CPU-intensive task (VAD, spectrograms, audio processing) must be offloaded to a Web Worker to keep the UI responsive.
 ````
 --- End of File: REFACTOR_PLAN.txt ---
---- File: src/lib/services/analysis.service.ts ---
-````typescript
-// vibe-player-v2/src/lib/services/analysis.service.ts
-import {get, writable} from "svelte/store";
-import type {
-    SileroVadInitPayload,
-    SileroVadProcessPayload,
-    SileroVadProcessResultPayload,
-    SpectrogramInitPayload,
-    SpectrogramProcessPayload,
-    SpectrogramResultPayload,
-    WorkerMessage,
-} from "$lib/types/worker.types";
-import {SPEC_WORKER_MSG_TYPE, VAD_WORKER_MSG_TYPE} from "$lib/types/worker.types";
-import {VAD_CONSTANTS, VISUALIZER_CONSTANTS} from "$lib/utils";
-import {type AnalysisState, analysisStore} from "$lib/stores/analysis.store";
-// import type { PlayerState } from '$lib/types/player.types'; // AudioBuffer is used
-import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
-import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
-
-interface AnalysisServiceState {
-    isInitialized: boolean; // For VAD worker
-    isInitializing: boolean; // For VAD worker
-    error: string | null; // For VAD worker
-}
-
-interface PendingRequest {
-    resolve: (value: unknown) => void;
-    reject: (reason?: unknown) => void;
-}
-
-interface AnalysisServiceInitializeOptions {
-    positiveThreshold?: number;
-    negativeThreshold?: number;
-}
-
-interface SpectrogramWorkerInitializeOptions {
-    sampleRate: number;
-    fftSize?: number;
-    hopLength?: number;
-}
-
-const initialServiceState: AnalysisServiceState = {
-    isInitialized: false,
-    isInitializing: false,
-    error: null,
-};
-
-const serviceState = writable<AnalysisServiceState>(initialServiceState);
-
-class AnalysisService {
-    private static instance: AnalysisService;
-    private worker: Worker | null = null; // SileroVadWorker
-    private nextMessageId = 0;
-    private pendingRequests = new Map<string, PendingRequest>();
-
-    private spectrogramWorker: Worker | null = null;
-  private isSpectrogramInitialized = false;
-    private nextSpecMessageId = 0;
-    private pendingSpecRequests = new Map<string, PendingRequest>();
-
-    private constructor() {
-    }
-
-    public static getInstance(): AnalysisService {
-        if (!AnalysisService.instance) {
-            AnalysisService.instance = new AnalysisService();
-        }
-        return AnalysisService.instance;
-    }
-
-    private generateMessageId(): string {
-        return `vad_msg_${this.nextMessageId++}`;
-    }
-
-    private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.worker) {
-                reject(new Error("VAD Worker not initialized."));
-                return;
-            }
-            const messageId = this.generateMessageId();
-            this.pendingRequests.set(messageId, {
-                resolve: (value: unknown) => resolve(value),
-                reject
-            });
-            this.worker.postMessage({...message, messageId});
-        });
-    }
-
-    public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
-        console.log('[AnalysisService] Initialize called.');
-
-        if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
-            console.warn("AnalysisService already initialized or initializing.");
-            return;
-        }
-        serviceState.update((s: AnalysisServiceState) => ({...s, isInitializing: true, error: null}));
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            vadStatus: "VAD service initializing...",
-            vadInitialized: false, // Explicitly set during init start
-        }));
-
-        this.worker = new SileroVadWorker();
-
-        this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
-            const {type, payload, error, messageId} = event.data;
-            const request = messageId
-                ? this.pendingRequests.get(messageId)
-                : undefined;
-            console.log(`[AnalysisService] Received message from VAD worker: type=${type}`);
-
-            if (error) {
-                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown VAD worker message error';
-                console.error(`AnalysisService VAD Worker Error (type ${type}):`, errorMsg);
-                serviceState.update((s: AnalysisServiceState) => ({
-                    ...s,
-                    error: `VAD Worker error: ${errorMsg}`,
-                }));
-                if (request) {
-                    request.reject(errorMsg);
-                    if (messageId) this.pendingRequests.delete(messageId);
-                }
-                if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
-                    serviceState.update((s: AnalysisServiceState) => ({
-                        ...s,
-                        isInitialized: false,
-                        isInitializing: false,
-                    }));
-                    analysisStore.update((s: AnalysisState) => ({
-                        ...s,
-                        vadStatus: "Error initializing VAD service.",
-                        vadError: errorMsg,
-                        vadInitialized: false,
-                    }));
-                }
-                return;
-            }
-
-            switch (type) {
-                case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
-                    console.log('[AnalysisService] VAD Worker reported INIT_SUCCESS.');
-
-                    serviceState.update((s: AnalysisServiceState) => ({
-                        ...s,
-                        isInitialized: true,
-                        isInitializing: false,
-                    }));
-                    analysisStore.update((s: AnalysisState) => ({
-                        ...s,
-                        vadStatus: "VAD service initialized.",
-                        vadInitialized: true,
-                        vadError: null,
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-
-                case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
-                    if (payload && typeof payload === 'object') {
-                        const resultPayload = payload as SileroVadProcessResultPayload;
-                        analysisStore.update((s: AnalysisState) => ({
-                            ...s,
-                            lastVadResult: resultPayload,
-                            isSpeaking: resultPayload.isSpeech,
-                        }));
-                        if (request) request.resolve(resultPayload);
-                    }
-                    break;
-
-                case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
-                    analysisStore.update((s: AnalysisState) => ({
-                        ...s,
-                        vadStateResetted: true,
-                        lastVadResult: null,
-                        isSpeaking: false
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-
-                default:
-                    console.log(
-                        "AnalysisService received message from VAD worker:",
-                        event.data,
-                    );
-                    if (request) request.resolve(payload);
-            }
-            if (messageId && request) this.pendingRequests.delete(messageId);
-        };
-
-        this.worker.onerror = (err: Event | string) => {
-            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown VAD worker error');
-            console.error("Unhandled error in SileroVadWorker:", errorMsg);
-            serviceState.update((s: AnalysisServiceState) => ({
-                ...s,
-                error: `VAD Worker onerror: ${errorMsg}`,
-                isInitialized: false,
-                isInitializing: false,
-            }));
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadStatus: "Critical VAD worker error.",
-                vadError: errorMsg,
-                vadInitialized: false,
-            }));
-            this.pendingRequests.forEach((req) =>
-                req.reject(new Error(`VAD Worker failed critically: ${errorMsg}`)),
-            );
-            this.pendingRequests.clear();
-        };
-
-        const initPayload: SileroVadInitPayload = {
-            origin: location.origin,
-            onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL, // Use constant
-            sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
-            frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
-            positiveThreshold:
-                options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
-            negativeThreshold:
-                options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
-        };
-
-        try {
-            console.log('[AnalysisService] Posting INIT message to VAD worker.');
-
-            await this.postMessageToWorker<SileroVadInitPayload>({
-                type: VAD_WORKER_MSG_TYPE.INIT,
-                payload: initPayload,
-            });
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            serviceState.update((s: AnalysisServiceState) => ({
-                ...s,
-                error: errorMessage || "VAD Initialization failed",
-                isInitialized: false,
-                isInitializing: false,
-            }));
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadStatus: "Error sending VAD init to worker.",
-                vadError: errorMessage,
-                vadInitialized: false,
-            }));
-        }
-    }
-
-    public async analyzeAudioFrame(
-        audioFrame: Float32Array,
-        timestamp?: number,
-    ): Promise<SileroVadProcessResultPayload | null> {
-        if (!this.worker || !get(serviceState).isInitialized) {
-            const errorMsg = "VAD Service not initialized or worker unavailable.";
-            console.error(errorMsg);
-            analysisStore.update((s: AnalysisState) => ({...s, vadError: errorMsg}));
-            throw new Error(errorMsg);
-        }
-        const payload: SileroVadProcessPayload = {audioFrame, timestamp};
-        try {
-            const result = await this.postMessageToWorker<SileroVadProcessPayload>({
-                type: VAD_WORKER_MSG_TYPE.PROCESS,
-                payload,
-            });
-            return result as SileroVadProcessResultPayload;
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error("Error processing VAD frame:", errorMessage);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadError: `Error processing VAD frame: ${errorMessage}`,
-            }));
-            return null;
-        }
-    }
-
-    public async resetVadState(): Promise<void> {
-        if (!this.worker || !get(serviceState).isInitialized) {
-            const errorMsg = "VAD Service not initialized or worker unavailable for reset.";
-            console.error(errorMsg);
-            analysisStore.update((s: AnalysisState) => ({...s, vadError: errorMsg}));
-            throw new Error(errorMsg);
-        }
-        try {
-            await this.postMessageToWorker<undefined>({type: VAD_WORKER_MSG_TYPE.RESET});
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error("Error resetting VAD state:", errorMessage);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                vadError: `Error resetting VAD state: ${errorMessage}`,
-            }));
-        }
-    }
-
-    public detectDTMF(
-        audioFrame: Float32Array,
-        sampleRate: number,
-    ): string | null {
-        // TODO: Implement Goertzel algorithm for DTMF frequencies
-        console.log("DTMF detection not yet implemented.");
-        return null;
-    }
-
-    public dispose(): void {
-        if (this.worker) {
-            this.worker.terminate();
-            this.worker = null;
-        }
-        this.pendingRequests.clear();
-        this.nextMessageId = 0;
-        serviceState.set(initialServiceState); // Reset VAD specific state
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            vadStatus: "VAD service disposed.",
-            vadInitialized: false,
-            lastVadResult: null,
-            isSpeaking: undefined,
-            vadError: null,
-        }));
-        this.disposeSpectrogramWorker(); // Ensure spec worker is also disposed
-        console.log("AnalysisService (VAD and Spectrogram workers) disposed.");
-    }
-
-    private generateSpecMessageId(): string {
-        return `spec_msg_${this.nextSpecMessageId++}`;
-    }
-
-    private postMessageToSpecWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.spectrogramWorker) {
-                reject(new Error("Spectrogram Worker not initialized."));
-                return;
-            }
-            const messageId = this.generateSpecMessageId();
-            this.pendingSpecRequests.set(messageId, {
-                resolve: (value: unknown) => resolve(value),
-                reject
-            });
-            this.spectrogramWorker.postMessage({...message, messageId});
-        });
-    }
-
-    public async initializeSpectrogramWorker(options: SpectrogramWorkerInitializeOptions): Promise<void> {
-    if (this.isSpectrogramInitialized) {
-            console.warn("Spectrogram worker already initialized.");
-            return;
-        }
-
-        this.spectrogramWorker = new SpectrogramWorker();
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            spectrogramStatus: "Spectrogram worker initializing...",
-            spectrogramInitialized: false,
-        }));
-
-        this.spectrogramWorker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
-            const {type, payload, error, messageId} = event.data;
-            const request = messageId
-                ? this.pendingSpecRequests.get(messageId)
-                : undefined;
-
-            if (error) {
-                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown Spectrogram worker message error';
-                console.error(`Spectrogram Worker Error (type ${type}):`, errorMsg);
-                analysisStore.update((s: AnalysisState) => ({
-                    ...s,
-                    spectrogramError: `Worker error: ${errorMsg}`,
-                    spectrogramInitialized: false,
-                }));
-                if (request) {
-                    request.reject(errorMsg);
-                    if (messageId) this.pendingSpecRequests.delete(messageId);
-                }
-                if (type === SPEC_WORKER_MSG_TYPE.INIT_ERROR) {
-                    this.isSpectrogramInitialized = false;
-                }
-                return;
-            }
-
-            switch (type) {
-                case SPEC_WORKER_MSG_TYPE.INIT_SUCCESS:
-          this.isSpectrogramInitialized = true;
-          analysisStore.update((s) => ({
-                        ...s,
-                        spectrogramStatus: "Spectrogram worker initialized.",
-                        spectrogramInitialized: true,
-                        spectrogramError: null,
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-                case SPEC_WORKER_MSG_TYPE.PROCESS_RESULT:
-                    if (payload && typeof payload === 'object') {
-                        const specResult = payload as SpectrogramResultPayload;
-                        analysisStore.update((s: AnalysisState) => ({
-                            ...s,
-                            spectrogramData: specResult.magnitudes,
-                        }));
-                        if (request) request.resolve(specResult);
-                    }
-                    break;
-                default:
-                    if (request) request.resolve(payload);
-            }
-            if (messageId && request) this.pendingSpecRequests.delete(messageId);
-        };
-
-        this.spectrogramWorker.onerror = (err: Event | string) => {
-            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown Spectrogram worker error');
-            console.error("Unhandled error in SpectrogramWorker:", errorMsg);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramError: `Worker onerror: ${errorMsg}`,
-                spectrogramInitialized: false,
-                spectrogramStatus: "Spectrogram worker error."
-            }));
-            this.pendingSpecRequests.forEach((req) =>
-                req.reject(new Error(`Spectrogram Worker failed critically: ${errorMsg}`)),
-            );
-            this.pendingSpecRequests.clear();
-            this.isSpectrogramInitialized = false;
-        };
-
-        const initPayload: SpectrogramInitPayload = {
-            origin: location.origin,
-            fftPath: VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL,
-            sampleRate: options.sampleRate,
-            fftSize: options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
-            hopLength:
-                options.hopLength ||
-                Math.floor(
-                    (options.fftSize || VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE) / 4,
-                ),
-        };
-        try {
-            await this.postMessageToSpecWorker<SpectrogramInitPayload>({
-                type: SPEC_WORKER_MSG_TYPE.INIT,
-                payload: initPayload,
-            });
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramError: errorMessage || "Spectrogram init failed",
-                spectrogramInitialized: false,
-                spectrogramStatus: "Error sending Spectrogram init to worker."
-            }));
-            this.isSpectrogramInitialized = false;
-        }
-    }
-
-    public async processAudioForSpectrogram(
-        audioData: Float32Array,
-    ): Promise<SpectrogramResultPayload | null> {
-        if (!this.spectrogramWorker || !this.isSpectrogramInitialized) {
-            const errorMsg = "Spectrogram worker not initialized or unavailable.";
-            console.error(errorMsg);
-            analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: errorMsg}));
-            throw new Error(errorMsg);
-        }
-        const payload: SpectrogramProcessPayload = {audioData};
-        try {
-            const result = await this.postMessageToSpecWorker<SpectrogramProcessPayload>({
-                type: SPEC_WORKER_MSG_TYPE.PROCESS,
-                payload,
-            });
-            return result as SpectrogramResultPayload;
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            console.error("Error processing audio for spectrogram:", errorMessage);
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramError: `Error processing for spectrogram: ${errorMessage}`
-            }));
-            return null;
-        }
-    }
-
-    public disposeSpectrogramWorker(): void {
-        if (this.spectrogramWorker) {
-            this.spectrogramWorker.terminate();
-            this.spectrogramWorker = null;
-            this.isSpectrogramInitialized = false;
-        }
-        this.pendingSpecRequests.clear();
-        this.nextSpecMessageId = 0;
-        analysisStore.update((s: AnalysisState) => ({
-            ...s,
-            spectrogramStatus: "Spectrogram worker disposed.",
-            spectrogramData: null,
-            spectrogramInitialized: false,
-            spectrogramError: null,
-        }));
-    }
-
-    public async startSpectrogramProcessing(
-        audioBuffer: AudioBuffer, // AudioBuffer is a web Audio API type, not from player.types
-    ): Promise<void> {
-        if (!audioBuffer) {
-            console.warn(
-                "AnalysisService: No audio buffer provided for spectrogram processing.",
-            );
-            analysisStore.update((s: AnalysisState) => ({...s, spectrogramError: "No audio buffer for spectrogram."}));
-            return;
-        }
-
-        // Re-initialize if needed (e.g. sample rate change) or not initialized
-    if (!this.isSpectrogramInitialized) {
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramStatus: "Initializing spectrogram worker for new file...",
-            }));
-            await this.initializeSpectrogramWorker({
-                sampleRate: audioBuffer.sampleRate,
-            });
-        }
-
-    if (!this.isSpectrogramInitialized) {
-            console.error(
-        "AnalysisService: Spectrogram worker failed to initialize for processing.",
-      );
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-        spectrogramError: "Worker init failed before processing.",
-                spectrogramStatus: "Spectrogram worker initialization failed."
-            }));
-            return;
-        }
-
-        const pcmData = audioBuffer.getChannelData(0); // Process first channel
-        if (pcmData && pcmData.length > 0) {
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramStatus: "Processing audio for spectrogram...",
-            }));
-            try {
-                await this.processAudioForSpectrogram(pcmData);
-                analysisStore.update((s: AnalysisState) => ({
-                    ...s,
-                    spectrogramStatus: "Spectrogram processing complete.", // Or "initiated" if it's async in worker
-                }));
-            } catch (error: unknown) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                analysisStore.update((s: AnalysisState) => ({
-                    ...s,
-                    spectrogramStatus: "Spectrogram processing failed.",
-                    spectrogramError: errorMessage,
-                }));
-            }
-        } else {
-            console.warn("AnalysisService: No PCM data to process for spectrogram.");
-            analysisStore.update((s: AnalysisState) => ({
-                ...s,
-                spectrogramStatus: "No data for spectrogram.",
-                spectrogramData: null, // Clear any old data
-            }));
-        }
-    }
-}
-
-export default AnalysisService.getInstance();
-
-````
---- End of File: src/lib/services/analysis.service.ts ---
---- File: tests/unit/app.test.js ---
-````javascript
-// tests/unit/app.test.js
-/* eslint-env jest */
-
-// Mock dependencies BEFORE app.js is loaded
-global.AudioApp = global.AudioApp || {};
-
-global.AudioApp.state = {
-  params: {
-    jumpTime: 5, // Default
-    speed: 1.0,
-    pitch: 1.0,
-    gain: 1.0,
-    audioUrl: '',
-    initialSeekTime: null,
-    vadPositive: 0.8,
-    vadNegative: 0.4,
-  },
-  runtime: {
-    currentAudioBuffer: { duration: 100 },
-    playbackStartSourceTime: 0,
-    playbackStartTimeContext: null,
-    currentSpeedForUpdate: 1,
-    currentFile: null,
-    currentVadResults: null,
-  },
-  status: {
-    workletPlaybackReady: true,
-    isActuallyPlaying: false,
-    urlInputStyle: 'default',
-    fileInfoMessage: '',
-    urlLoadingErrorMessage: '',
-    isVadProcessing: false,
-    playbackNaturallyEnded: false,
-  },
-  updateParam: jest.fn(),
-  updateRuntime: jest.fn(),
-  updateStatus: jest.fn(),
-  serialize: jest.fn().mockReturnValue('serialized=hash'),
-  deserialize: jest.fn(),
-  subscribe: jest.fn(), // Added from uiManager tests, though app.js doesn't directly use it.
-};
-
-global.AudioApp.audioEngine = {
-  seek: jest.fn(),
-  getAudioContext: jest.fn().mockReturnValue({ currentTime: 0 }), // Mock audio context
-  getCurrentTime: jest.fn().mockReturnValue({ currentTime: 0 }),
-  init: jest.fn(),
-  loadAndProcessFile: jest.fn(),
-  setSpeed: jest.fn(),
-  setPitch: jest.fn(),
-  setGain: jest.fn(),
-  togglePlayPause: jest.fn(),
-  cleanup: jest.fn(),
-  resampleTo16kMono: jest.fn().mockResolvedValue(new Float32Array(16000)), // For VAD/tone
-};
-
-global.AudioApp.uiManager = {
-  init: jest.fn(),
-  resetUI: jest.fn(),
-  setFileInfo: jest.fn(),
-  updateFileName: jest.fn(),
-  setPlayButtonState: jest.fn(),
-  updateTimeDisplay: jest.fn(),
-  updateSeekBar: jest.fn(),
-  setSpeechRegionsText: jest.fn(),
-  updateVadDisplay: jest.fn(),
-  enablePlaybackControls: jest.fn(),
-  enableSeekBar: jest.fn(),
-  updateVadProgress: jest.fn(),
-  showVadProgress: jest.fn(),
-  setUrlLoadingError: jest.fn(),
-  setUrlInputStyle: jest.fn(),
-  unfocusUrlInput: jest.fn(),
-  setAudioUrlInputValue: jest.fn(),
-  getAudioUrlInputValue: jest.fn().mockReturnValue(''),
-  setJumpTimeValue: jest.fn(),
-  showDropZone: jest.fn(),
-  hideDropZone: jest.fn(),
-  // getJumpTime: jest.fn(), // This should not be used by app.js anymore
-};
-
-global.AudioApp.waveformVisualizer = {
-  init: jest.fn(),
-  clearVisuals: jest.fn(),
-  updateProgressIndicator: jest.fn(),
-  computeAndDrawWaveform: jest.fn(),
-  redrawWaveformHighlight: jest.fn(),
-  resizeAndRedraw: jest.fn(),
-};
-
-global.AudioApp.spectrogramVisualizer = {
-  init: jest.fn(),
-  clearVisuals: jest.fn(),
-  showSpinner: jest.fn(),
-  updateProgressIndicator: jest.fn(),
-  computeAndDrawSpectrogram: jest.fn(),
-  resizeAndRedraw: jest.fn(),
-};
-
-global.AudioApp.vadAnalyzer = {
-  init: jest.fn(),
-  analyze: jest.fn().mockResolvedValue({ regions: [], initialPositiveThreshold: 0.8, initialNegativeThreshold: 0.4, probabilities: {}, frameSamples:0, sampleRate:0, redemptionFrames:0 }),
-  recalculateSpeechRegions: jest.fn().mockReturnValue([]),
-};
-
-global.AudioApp.DTMFParser = jest.fn().mockImplementation(() => ({
-    processAudioBlock: jest.fn().mockReturnValue(null)
-}));
-global.AudioApp.CallProgressToneParser = jest.fn().mockImplementation(() => ({
-    processAudioBlock: jest.fn().mockReturnValue(null)
-}));
-
-
-global.AudioApp.Utils = {
-  debounce: jest.fn((fn) => fn), // Executes immediately
-  formatTime: jest.fn(time => `${time}s`), // From uiManager tests
-};
-
-global.Constants = {
-  UI: {
-    SYNC_DEBOUNCE_WAIT_MS: 50,
-    DEBOUNCE_HASH_UPDATE_MS: 250,
-  },
-  VAD: {
-    DEFAULT_POSITIVE_THRESHOLD: 0.5,
-    DEFAULT_NEGATIVE_THRESHOLD: 0.35,
-    SAMPLE_RATE: 16000,
-    DEFAULT_FRAME_SAMPLES: 1536, // CHANGED from 512
-    MIN_SPEECH_DURATION_MS: 100,
-    SPEECH_PAD_MS: 50,
-    REDEMPTION_FRAMES: 3,
-    PROGRESS_REPORT_INTERVAL: 100,
-    YIELD_INTERVAL: 200,
-  },
-  DTMF: {
-    SAMPLE_RATE: 16000,
-    BLOCK_SIZE: 1024,
-  },
-  // Add other Constants sub-objects if app.js uses them and they aren't mocked elsewhere
-};
-
-// Mock AppState constructor for app.js IIFE
-global.AppState = jest.fn().mockImplementation(() => global.AudioApp.state);
-
-
-// To capture event handlers
-const eventListeners = {};
-const originalAddEventListener = document.addEventListener;
-let addEventListenerSpy;
-
-// --- Load app.js AFTER all mocks are set up ---
-// The IIFE in app.js will use the mocked global.AudioApp
-require('../../vibe-player/js/app.js');
-// --- End of app.js loading ---
-
-
-describe('AudioApp (app.js logic)', () => {
-  let capturedHandlers = {};
-  let debouncedUpdateUrlHashMock;
-
-
-  beforeAll(() => {
-    // Spy on addEventListener to capture handlers
-    addEventListenerSpy = jest.spyOn(document, 'addEventListener').mockImplementation((event, handler) => {
-      capturedHandlers[event] = handler;
-    });
-
-    // Mocking the result of debounce specifically for updateUrlHashFromState
-    // updateUrlHashFromState is not directly exported, so we mock its debounced version
-    debouncedUpdateUrlHashMock = jest.fn();
-    global.AudioApp.Utils.debounce.mockImplementation((fn, delay) => {
-        if (fn.name === 'updateUrlHashFromState') {
-            return debouncedUpdateUrlHashMock;
-        }
-        return fn; // For other debounced functions, return them directly
-    });
-
-    // Call init to setup event listeners etc.
-    // app.init is assigned by the IIFE.
-    AudioApp.init();
-  });
-
-  afterAll(() => {
-    // Restore original addEventListener
-    addEventListenerSpy.mockRestore();
-  });
-
-  beforeEach(() => {
-    // Reset mocks before each test
-    jest.clearAllMocks();
-
-    // Restore debounce mock for updateUrlHashFromState for each test if needed,
-    // or ensure it's freshly created.
-    global.AudioApp.Utils.debounce.mockImplementation((fn, delay) => {
-        if (fn.name === 'updateUrlHashFromState') {
-            return debouncedUpdateUrlHashMock;
-        }
-        return fn;
-    });
-
-    // Default states (can be overridden in specific tests)
-    global.AudioApp.state.params.jumpTime = 5;
-    global.AudioApp.state.runtime.currentAudioBuffer = { duration: 100 };
-    global.AudioApp.state.runtime.playbackStartSourceTime = 0;
-    global.AudioApp.state.runtime.playbackStartTimeContext = null;
-    global.AudioApp.state.runtime.currentSpeedForUpdate = 1;
-    global.AudioApp.state.status.workletPlaybackReady = true;
-    global.AudioApp.state.status.isActuallyPlaying = false;
-    global.AudioApp.audioEngine.getAudioContext.mockReturnValue({ currentTime: 0 });
-    global.AudioApp.audioEngine.getCurrentTime.mockReturnValue({ currentTime: 0 });
-
-  });
-
-  describe('handleJumpTimeChange', () => {
-    const handleJumpTimeChange = () => capturedHandlers['audioapp:jumpTimeChanged'];
-
-    test('valid input should update jumpTime and call debouncedUpdateUrlHash', () => {
-      handleJumpTimeChange()({ detail: { value: 15 } });
-      expect(AudioApp.state.updateParam).toHaveBeenCalledWith('jumpTime', 15);
-      expect(debouncedUpdateUrlHashMock).toHaveBeenCalled();
-    });
-
-    test('zero input should not update jumpTime', () => {
-      handleJumpTimeChange()({ detail: { value: 0 } });
-      expect(AudioApp.state.updateParam).not.toHaveBeenCalled();
-      expect(debouncedUpdateUrlHashMock).not.toHaveBeenCalled();
-    });
-
-    test('negative input should not update jumpTime', () => {
-      handleJumpTimeChange()({ detail: { value: -5 } });
-      expect(AudioApp.state.updateParam).not.toHaveBeenCalled();
-      expect(debouncedUpdateUrlHashMock).not.toHaveBeenCalled();
-    });
-
-    test('non-numeric input should not update jumpTime', () => {
-      handleJumpTimeChange()({ detail: { value: 'abc' } });
-      expect(AudioApp.state.updateParam).not.toHaveBeenCalled();
-      expect(debouncedUpdateUrlHashMock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('handleJump', () => {
-    const handleJump = () => capturedHandlers['audioapp:jumpClicked'];
-
-    // Mocking calculateEstimatedSourceTime by controlling its inputs
-    // For these tests, assume calculateEstimatedSourceTime returns playbackStartSourceTime when paused,
-    // or a calculated value if playing. We'll control playbackStartSourceTime and mock audioContext.currentTime.
-
-    test('jump forward within bounds', () => {
-      AudioApp.state.runtime.playbackStartSourceTime = 50; // current time
-      handleJump()({ detail: { direction: 1 } }); // jumpTime is 5
-      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(55);
-      expect(debouncedUpdateUrlHashMock).toHaveBeenCalled();
-    });
-
-    test('jump backward within bounds', () => {
-      AudioApp.state.runtime.playbackStartSourceTime = 50;
-      handleJump()({ detail: { direction: -1 } });
-      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(45);
-      expect(debouncedUpdateUrlHashMock).toHaveBeenCalled();
-    });
-
-    test('jump backward resulting in time before 0 seconds', () => {
-      AudioApp.state.runtime.playbackStartSourceTime = 3;
-      handleJump()({ detail: { direction: -1 } }); // 3 - 5 = -2 -> 0
-      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(0);
-    });
-
-    test('jump forward resulting in time after duration', () => {
-      AudioApp.state.runtime.playbackStartSourceTime = 98;
-      AudioApp.state.runtime.currentAudioBuffer.duration = 100;
-      handleJump()({ detail: { direction: 1 } }); // 98 + 5 = 103 -> 100
-      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(100);
-    });
-
-    test('when playing, should update playbackStartTimeContext', () => {
-      AudioApp.state.status.isActuallyPlaying = true;
-      AudioApp.state.runtime.playbackStartSourceTime = 50;
-      AudioApp.audioEngine.getAudioContext.mockReturnValue({ currentTime: 10 }); // Simulate context time
-
-      handleJump()({ detail: { direction: 1 } });
-
-      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(55);
-      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartSourceTime', 55);
-      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartTimeContext', 10);
-    });
-
-    test('when paused, should set playbackStartTimeContext to null and call updateUIWithTime', () => {
-      AudioApp.state.status.isActuallyPlaying = false;
-      AudioApp.state.runtime.playbackStartSourceTime = 50;
-
-      // Mock updateUIWithTime by checking calls to uiManager functions it calls
-      AudioApp.uiManager.updateTimeDisplay.mockClear();
-      AudioApp.uiManager.updateSeekBar.mockClear();
-
-      handleJump()({ detail: { direction: 1 } });
-
-      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(55);
-      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartSourceTime', 55);
-      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartTimeContext', null);
-
-      // Check if updateUIWithTime was effectively called
-      expect(AudioApp.uiManager.updateTimeDisplay).toHaveBeenCalledWith(55, AudioApp.state.runtime.currentAudioBuffer.duration);
-      expect(AudioApp.uiManager.updateSeekBar).toHaveBeenCalled(); // Argument depends on fraction
-    });
-     test('should not jump if worklet not ready', () => {
-        AudioApp.state.status.workletPlaybackReady = false;
-        handleJump()({ detail: { direction: 1 } });
-        expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
-    });
-
-    test('should not jump if no audio buffer', () => {
-        AudioApp.state.runtime.currentAudioBuffer = null;
-        handleJump()({ detail: { direction: 1 } });
-        expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('handleKeyPress', () => {
-    let handlePlayPauseMock;
-    const handleKeyPress = () => capturedHandlers['audioapp:keyPressed'];
-
-    beforeEach(() => {
-        // To test if handlePlayPause is called, we can spy on it.
-        // Since handlePlayPause is internal to app.js, we'd typically have to
-        // trigger the 'Space' key and check its side effects (e.g., audioEngine.togglePlayPause).
-        // For simplicity here, if we could mock 'handlePlayPause' itself, that would be easier.
-        // Given the structure, we'll check the call to audioEngine.togglePlayPause,
-        // as handlePlayPause directly calls it.
-        AudioApp.audioEngine.togglePlayPause.mockClear();
-    });
-
-    test('ArrowLeft should not trigger seek', () => {
-      handleKeyPress()({ detail: { key: 'ArrowLeft' } });
-      expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
-      expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
-    });
-
-    test('ArrowRight should not trigger seek', () => {
-      handleKeyPress()({ detail: { key: 'ArrowRight' } });
-      expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
-      expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
-    });
-
-    test('Space key should call togglePlayPause (via handlePlayPause)', () => {
-      handleKeyPress()({ detail: { key: 'Space' } });
-      expect(AudioApp.audioEngine.togglePlayPause).toHaveBeenCalled();
-    });
-
-    test('should not process key press if worklet not ready', () => {
-        AudioApp.state.status.workletPlaybackReady = false;
-        handleKeyPress()({ detail: { key: 'Space' } });
-        expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('generateSpeechRegionsFromProbs logic', () => {
-    let generateFunc;
-    // const MOCK_REDEMPTION_FRAMES = global.Constants.VAD.REDEMPTION_FRAMES; // Kept if still used locally, or remove if all direct global access
-
-    // Helper to calculate duration of N frames
-    // Directly uses global.Constants.VAD to ensure values are picked up after mock setup.
-    const frameDuration = (numFrames) => {
-      const sampleRate = global.Constants.VAD.SAMPLE_RATE;
-      const frameSamples = global.Constants.VAD.DEFAULT_FRAME_SAMPLES;
-      if (typeof sampleRate !== 'number' || typeof frameSamples !== 'number' || sampleRate === 0) {
-        // This case should ideally not be hit if Constants.VAD is mocked correctly.
-        console.error('frameDuration: Invalid sampleRate or frameSamples from global.Constants.VAD', global.Constants.VAD);
-        return NaN;
-      }
-      return (numFrames * frameSamples) / sampleRate;
-    };
-
-    beforeAll(() => {
-      // Ensure app.js is loaded and testExports is available
-      if (AudioApp.testExports && AudioApp.testExports.generateSpeechRegionsFromProbs) {
-        generateFunc = AudioApp.testExports.generateSpeechRegionsFromProbs;
-      } else {
-        throw new Error('generateSpeechRegionsFromProbs not exposed on AudioApp.testExports. Make sure app.js is correctly refactored for testing.');
-      }
-    });
-
-    test('should detect a basic speech segment correctly', () => {
-      const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1]); // Speech: frames 1, 2
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(1);
-      // lastPositiveFrameIndex = 2. Raw region start: fd(1), end: fd(3)
-      const expectedRawStart = frameDuration(1);
-      const expectedRawEnd = frameDuration(3);
-      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
-      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
-    });
-
-    test('should not detect speech if probabilities are below positive threshold', () => {
-      const probabilities = new Float32Array([0.1, 0.2, 0.4, 0.3, 0.2, 0.1]);
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(0);
-    });
-
-    test('high positive threshold should detect less speech', () => {
-      const probabilities = new Float32Array([0.1, 0.6, 0.8, 0.9, 0.7, 0.2, 0.1]); // Speech frame: 3 (0.9)
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.85,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(1);
-      // lastPositiveFrameIndex = 3. Raw region start: fd(3), end: fd(4)
-      const expectedRawStart = frameDuration(3);
-      const expectedRawEnd = frameDuration(4);
-      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
-      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
-    });
-
-    test('low positive threshold should detect more speech', () => {
-      const probabilities = new Float32Array([0.1, 0.25, 0.3, 0.28, 0.1, 0.05]); // Speech: frames 1,2,3
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.2, // Lower threshold
-        negativeSpeechThreshold: 0.1,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(1);
-      // lastPositiveFrameIndex = 3. Raw region start: fd(1), end: fd(4)
-      const expectedRawStart = frameDuration(1);
-      const expectedRawEnd = frameDuration(4);
-      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
-      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
-    });
-
-    test('impact of negative threshold and redemption frames', () => {
-      // Dip below negative threshold for less than redemptionFrames should continue speech
-      const probabilities1 = new Float32Array([0.8, 0.8, 0.2, 0.2, 0.8, 0.8]); // Dip of 2 frames
-      const options1 = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3, // Dip is below this
-        redemptionFrames: 3, // But dip length (2) < redemption (3)
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions1 = generateFunc(probabilities1, options1);
-      expect(regions1.length).toBe(1); // Should be one continuous region
-      // lastPositiveFrameIndex = 5. Raw region start: fd(0), end: fd(6)
-      const expectedRawStart1 = frameDuration(0);
-      const expectedRawEnd1 = frameDuration(6);
-      const expectedPaddedStart1 = Math.max(0, expectedRawStart1 - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedPaddedEnd1 = Math.min(frameDuration(probabilities1.length), expectedRawEnd1 + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions1[0].start).toBeCloseTo(expectedPaddedStart1);
-      expect(regions1[0].end).toBeCloseTo(expectedPaddedEnd1);
-
-      // Dip below negative threshold for redemptionFrames or more should break speech
-      const probabilities2 = new Float32Array([0.8, 0.8, 0.2, 0.2, 0.2, 0.8, 0.8]); // Dip of 3 frames
-      const options2 = { ...options1, redemptionFrames: 3 }; // Dip length (3) == redemption (3)
-      const regions2 = generateFunc(probabilities2, options2);
-      expect(regions2.length).toBe(2); // Should be two regions
-      // Region 1: lastPositiveFrameIndex = 1. Raw start fd(0), end fd(2)
-      // Region 2: lastPositiveFrameIndex = 6 (relative to its own start). Raw start fd(5), end fd(7)
-    });
-
-    test('should filter out segments shorter than MIN_SPEECH_DURATION_MS (after padding)', () => {
-      const probabilities = new Float32Array([0.1, 0.9, 0.1]); // 1 frame of speech (index 1)
-      const originalMinSpeechMs = global.Constants.VAD.MIN_SPEECH_DURATION_MS;
-      global.Constants.VAD.MIN_SPEECH_DURATION_MS = 200; // Raw 96ms + Pad 100ms = 196ms. This should fail.
-
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS, // Uses the mocked 200ms
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(0);
-      global.Constants.VAD.MIN_SPEECH_DURATION_MS = originalMinSpeechMs; // Restore
-    });
-
-    test('should apply SPEECH_PAD_MS to start and end of regions', () => {
-      const probabilities = new Float32Array([0.1, 0.8, 0.8, 0.1]); // Speech frames 1, 2
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(1);
-      // lastPositiveFrameIndex = 2. Raw region start: fd(1), end: fd(3)
-      const expectedRawStart = frameDuration(1);
-      const expectedRawEnd = frameDuration(3);
-      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
-      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
-    });
-
-    test('should merge overlapping regions after padding', () => {
-      const probabilities = new Float32Array([0.1, 0.9, 0.9, 0.1, 0.9, 0.9, 0.1]); // Seg1: fr 1-2, Seg2: fr 4-5
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES, // Short redemption to prevent merging inside core logic
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS, // 50ms pad
-      };
-      // Seg1 raw: fd(1) to fd(3). Padded: max(0, fd(1)-0.05) to fd(3)+0.05. -> 0.046 to 0.288+0.05=0.338
-      // Seg2 raw: fd(4) to fd(6). Padded: max(0, fd(4)-0.05) to fd(6)+0.05. -> 0.384-0.05=0.334 to 0.576+0.05=0.626
-      // These are now just touching or barely overlapping due to pad.
-      // fd(1)=0.096, fd(3)=0.288. Padded S1: [0.046, 0.338]
-      // fd(4)=0.384, fd(6)=0.576. Padded S2: [0.334, 0.626]
-      // They overlap: 0.334 < 0.338. Merged: [0.046, 0.626]
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(1);
-      const expectedMergedStart = Math.max(0, frameDuration(1) - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedMergedEnd = Math.min(frameDuration(probabilities.length), frameDuration(6) + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions[0].start).toBeCloseTo(expectedMergedStart);
-      expect(regions[0].end).toBeCloseTo(expectedMergedEnd);
-    });
-
-    test('should return empty array for empty probabilities', () => {
-      const probabilities = new Float32Array([]);
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(0);
-    });
-
-    test('should handle probabilities all being 1.0', () => {
-      const probabilities = new Float32Array([1.0, 1.0, 1.0, 1.0]);
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(1);
-      // lastPositiveFrameIndex = 3. Raw region start: fd(0), end: fd(4)
-      const expectedRawStart = frameDuration(0);
-      const expectedRawEnd = frameDuration(4);
-      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
-      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
-      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
-    });
-
-    test('should handle probabilities all being 0.0', () => {
-      const probabilities = new Float32Array([0.0, 0.0, 0.0, 0.0]);
-      const options = {
-        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
-        sampleRate: global.Constants.VAD.SAMPLE_RATE,
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.3,
-        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
-        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
-        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
-      };
-      const regions = generateFunc(probabilities, options);
-      expect(regions.length).toBe(0);
-    });
-
-  });
-});
-
-````
---- End of File: tests/unit/app.test.js ---
---- File: tests/unit/state/appState.test.js ---
-````javascript
-// tests/unit/state/appState.test.js
-
-describe('AppState Class', () => {
-    let appState;
-
-    beforeEach(() => {
-        // Ensure Constants is available if AppState relies on it for defaults
-        if (typeof Constants === 'undefined') {
-            // This error will fail the test suite if Constants isn't loaded by jest.setup.js
-            throw new Error("AppState tests require Constants to be globally available.");
-        }
-        // Create a new AppState instance for each test to ensure isolation
-        // This also relies on AppState being globally available via jest.setup.js
-        if (typeof AppState === 'undefined') {
-            throw new Error("AppState tests require AppState to be globally available to instantiate.");
-        }
-        appState = new AppState();
-    });
-
-    test('should be defined globally and instantiable', () => {
-        expect(typeof AppState).not.toBe('undefined');
-        // The check below is redundant due to beforeEach, but good for explicit clarity
-        if (typeof AppState === 'undefined') {
-            throw new Error("Test Error: AppState class is undefined in appState.test.js.");
-        }
-        expect(appState).toBeInstanceOf(AppState);
-    });
-
-    describe('Constructor and Default Values', () => {
-        test('should initialize params with default values', () => {
-            expect(appState.params.speed).toBe(1.0);
-            expect(appState.params.pitch).toBe(1.0);
-            expect(appState.params.gain).toBe(1.0);
-            // Constants should be defined here due to the check in beforeEach
-            expect(appState.params.vadPositive).toBe(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD);
-            expect(appState.params.vadNegative).toBe(Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD);
-            expect(appState.params.audioUrl).toBe("");
-            expect(appState.params.jumpTime).toBe(5);
-            expect(appState.params.initialSeekTime).toBeNull();
-        });
-
-        test('should initialize runtime with default values', () => {
-            expect(appState.runtime.currentAudioBuffer).toBeNull();
-            expect(appState.runtime.currentVadResults).toBeNull();
-            expect(appState.runtime.currentFile).toBeNull();
-            expect(appState.runtime.playbackStartTimeContext).toBeNull();
-            expect(appState.runtime.playbackStartSourceTime).toBe(0.0);
-            expect(appState.runtime.currentSpeedForUpdate).toBe(1.0);
-        });
-
-        test('should initialize status with default values', () => {
-            expect(appState.status.isActuallyPlaying).toBe(false);
-            expect(appState.status.workletPlaybackReady).toBe(false);
-            expect(appState.status.vadModelReady).toBe(false);
-            expect(appState.status.isVadProcessing).toBe(false);
-            expect(appState.status.playbackNaturallyEnded).toBe(false);
-            expect(appState.status.urlInputStyle).toBe('default');
-            expect(appState.status.fileInfoMessage).toBe("No file selected.");
-            expect(appState.status.urlLoadingErrorMessage).toBe("");
-        });
-    });
-
-    describe('State Update Methods', () => {
-        test('updateParam should update a param and notify subscribers', () => {
-            const mockSpecificSubscriber = jest.fn();
-            const mockGenericSubscriber = jest.fn();
-            appState.subscribe('param:speed:changed', mockSpecificSubscriber);
-            appState.subscribe('param:changed', mockGenericSubscriber);
-
-            appState.updateParam('speed', 1.5);
-
-            expect(appState.params.speed).toBe(1.5);
-            expect(mockSpecificSubscriber).toHaveBeenCalledWith(1.5);
-            expect(mockSpecificSubscriber).toHaveBeenCalledTimes(1);
-            expect(mockGenericSubscriber).toHaveBeenCalledWith({ param: 'speed', value: 1.5 });
-            expect(mockGenericSubscriber).toHaveBeenCalledTimes(1);
-        });
-
-        test('updateParam should not notify if value is unchanged', () => {
-            appState.updateParam('speed', 1.5); // Set initial value
-            const mockSubscriber = jest.fn();
-            const mockGenericSubscriber = jest.fn();
-            appState.subscribe('param:speed:changed', mockSubscriber);
-            appState.subscribe('param:changed', mockGenericSubscriber);
-
-            appState.updateParam('speed', 1.5); // Update with same value
-
-            expect(mockSubscriber).not.toHaveBeenCalled();
-            expect(mockGenericSubscriber).not.toHaveBeenCalled();
-        });
-
-        test('updateParam should warn for unknown param and not update', () => {
-            const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-            const originalParams = JSON.parse(JSON.stringify(appState.params)); // Deep copy
-
-            appState.updateParam('unknownParam', 999);
-
-            expect(appState.params).toEqual(originalParams); // Ensure params object is not changed
-            expect(consoleWarnSpy).toHaveBeenCalledWith('AppState: Attempted to update unknown param "unknownParam"');
-            consoleWarnSpy.mockRestore();
-        });
-
-
-        test('updateRuntime should update a runtime property and notify', () => {
-            const mockSubscriber = jest.fn();
-            appState.subscribe('runtime:currentAudioBuffer:changed', mockSubscriber);
-            const newBuffer = { id: 'testBuffer' }; // Mock buffer
-            appState.updateRuntime('currentAudioBuffer', newBuffer);
-            expect(appState.runtime.currentAudioBuffer).toEqual(newBuffer);
-            expect(mockSubscriber).toHaveBeenCalledWith(newBuffer);
-        });
-
-        test('updateStatus should update a status flag and notify', () => {
-            const mockSubscriber = jest.fn();
-            appState.subscribe('status:isActuallyPlaying:changed', mockSubscriber);
-            appState.updateStatus('isActuallyPlaying', true);
-            expect(appState.status.isActuallyPlaying).toBe(true);
-            expect(mockSubscriber).toHaveBeenCalledWith(true);
-        });
-    });
-
-    describe('Publisher/Subscriber System', () => {
-        test('should allow subscription and unsubscription', () => {
-            const mockCallback = jest.fn();
-            appState.subscribe('testEvent', mockCallback);
-            appState._notify('testEvent', 'testData');
-            expect(mockCallback).toHaveBeenCalledWith('testData');
-
-            appState.unsubscribe('testEvent', mockCallback);
-            appState._notify('testEvent', 'testData2');
-            expect(mockCallback).toHaveBeenCalledTimes(1); // Should not be called again
-        });
-
-        test('unsubscribe should remove event key if no callbacks remain', () => {
-            const cb1 = jest.fn();
-            appState.subscribe('emptyEvent', cb1);
-            expect(appState._subscribers['emptyEvent']).toBeDefined();
-            appState.unsubscribe('emptyEvent', cb1);
-            expect(appState._subscribers['emptyEvent']).toBeUndefined();
-        });
-
-        test('should handle multiple subscribers for an event', () => {
-            const cb1 = jest.fn();
-            const cb2 = jest.fn();
-            appState.subscribe('multiEvent', cb1);
-            appState.subscribe('multiEvent', cb2);
-            appState._notify('multiEvent', 'data');
-            expect(cb1).toHaveBeenCalledWith('data');
-            expect(cb2).toHaveBeenCalledWith('data');
-        });
-
-        test('subscribe should not add same callback multiple times', () => {
-            const cb1 = jest.fn();
-            appState.subscribe('singleCbTest', cb1);
-            appState.subscribe('singleCbTest', cb1);
-            expect(appState._subscribers['singleCbTest'].length).toBe(1);
-        });
-
-        test('_notify should handle errors in callbacks gracefully', () => {
-            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-            const cb1 = jest.fn(() => { throw new Error("Test CB Error"); });
-            const cb2 = jest.fn();
-
-            appState.subscribe('errorTestEvent', cb1);
-            appState.subscribe('errorTestEvent', cb2);
-            appState._notify('errorTestEvent', 'data');
-
-            expect(cb1).toHaveBeenCalledWith('data');
-            expect(cb2).toHaveBeenCalledWith('data'); // cb2 should still be called
-            expect(consoleErrorSpy).toHaveBeenCalled();
-            consoleErrorSpy.mockRestore();
-        });
-    });
-
-    describe('Serialization/Deserialization', () => {
-        test('serialize should produce correct hash string for non-default values', () => {
-            appState.updateParam('speed', 1.25);
-            appState.updateParam('pitch', 0.75);
-            appState.updateParam('audioUrl', 'http://example.com/audio.mp3');
-            // Deliberately set one VAD param to non-default
-            appState.updateParam('vadPositive', 0.6);
-
-
-            const hash = appState.serialize(123.45);
-            const searchParams = new URLSearchParams(hash);
-
-            expect(searchParams.get(Constants.URLHashKeys.SPEED)).toBe('1.25');
-            expect(searchParams.get(Constants.URLHashKeys.PITCH)).toBe('0.75');
-            expect(searchParams.get(Constants.URLHashKeys.AUDIO_URL)).toBe('http://example.com/audio.mp3');
-            expect(searchParams.get(Constants.URLHashKeys.TIME)).toBe('123.45');
-            expect(searchParams.get(Constants.URLHashKeys.VAD_POSITIVE)).toBe('0.60');
-            // Ensure non-changed defaults are not in the hash
-            expect(searchParams.has(Constants.URLHashKeys.GAIN)).toBe(false);
-            expect(searchParams.has(Constants.URLHashKeys.VAD_NEGATIVE)).toBe(false);
-        });
-
-        test('serialize should return empty string if all params are default and no time', () => {
-            // All params are already default in a new instance
-            const hash = appState.serialize(0); // time 0 or undefined should not be included
-            expect(hash).toBe('');
-            const hash2 = appState.serialize();
-            expect(hash2).toBe('');
-        });
-
-        test('deserialize should update params correctly from hash string', () => {
-            const hash = 'speed=1.5&pitch=0.8&url=test.mp3&time=10.5&vadPositive=0.75&gain=0.5';
-            // Mock updateParam to check calls if direct state checking is complex
-            // For this test, we'll check the state directly after deserialize
-            appState.deserialize(hash);
-
-            expect(appState.params.speed).toBe(1.5);
-            expect(appState.params.pitch).toBe(0.8);
-            expect(appState.params.audioUrl).toBe('test.mp3');
-            expect(appState.params.initialSeekTime).toBe(10.5);
-            expect(appState.params.vadPositive).toBe(0.75);
-            expect(appState.params.gain).toBe(0.5);
-            // Ensure params not in hash remain default
-            expect(appState.params.vadNegative).toBe(Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD);
-            expect(appState.params.jumpTime).toBe(5); // Assuming default jumpTime is 5
-        });
-
-        test('deserialize should handle empty, null, or undefined hash string gracefully', () => {
-            // Spy on updateParam to ensure it's not called
-            const updateParamSpy = jest.spyOn(appState, 'updateParam');
-            appState.deserialize('');
-            expect(updateParamSpy).not.toHaveBeenCalled();
-            appState.deserialize(null);
-            expect(updateParamSpy).not.toHaveBeenCalled();
-            appState.deserialize(undefined);
-            expect(updateParamSpy).not.toHaveBeenCalled();
-            updateParamSpy.mockRestore();
-        });
-
-        test('deserialize should not update params if values are invalid', () => {
-            const hash = 'speed=abc&pitch=xyz&gain=foo&vadPositive=bar&vadNegative=baz&time=qux';
-            const originalParamsJSON = JSON.stringify(appState.params);
-
-            appState.deserialize(hash);
-
-            // Check that params object is unchanged because all parsed values would be NaN
-            expect(JSON.stringify(appState.params)).toEqual(originalParamsJSON);
-        });
-    });
-});
-
-````
---- End of File: tests/unit/state/appState.test.js ---
---- File: tests/unit/state/constants.test.js ---
-````javascript
-// tests/unit/state/constants.test.js
-
-describe('Constants Class', () => {
-    test('should be defined globally and accessible in tests', () => {
-        // This is the primary check. If Constants is not defined here, jest.setup.js
-        // and the self-exporting mechanism in constants.js are not working as expected.
-        expect(typeof Constants).not.toBe('undefined');
-        if (typeof Constants === 'undefined') {
-            console.error("Test Error: Constants class is undefined in constants.test.js");
-            // Throw an error to make it very clear in test output if this fails.
-            throw new Error("Test Error: Constants class is undefined in constants.test.js. Check jest.setup.js and the global assignment in constants.js.");
-        }
-    });
-
-    // Only proceed with these if the above test passes or if we want to see detailed failures.
-    // These tests assume 'Constants' is available.
-    test('should have correct AudioEngine structure and key values', () => {
-        if (typeof Constants === 'undefined') return; // Guard for cleaner output if first test fails
-        expect(Constants.AudioEngine).toBeDefined();
-        expect(Constants.AudioEngine.PROCESSOR_NAME).toBe('rubberband-processor');
-        expect(Constants.AudioEngine.WASM_BINARY_URL).toBe('lib/rubberband.wasm');
-    });
-
-    test('should have correct VAD structure and key values', () => {
-        if (typeof Constants === 'undefined') return;
-        expect(Constants.VAD).toBeDefined();
-        expect(Constants.VAD.SAMPLE_RATE).toBe(16000);
-        expect(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD).toBe(0.5);
-    });
-
-    test('should have correct UI structure and key values', () => {
-        if (typeof Constants === 'undefined') return;
-        expect(Constants.UI).toBeDefined();
-        expect(Constants.UI.DEBOUNCE_HASH_UPDATE_MS).toBe(500);
-    });
-
-    test('should have correct Visualizer structure and key values', () => {
-        if (typeof Constants === 'undefined') return;
-        expect(Constants.Visualizer).toBeDefined();
-        expect(Constants.Visualizer.WAVEFORM_COLOR_SPEECH).toBe('#FDE725');
-    });
-
-    test('should have correct URLHashKeys structure and key values', () => {
-        if (typeof Constants === 'undefined') return;
-        expect(Constants.URLHashKeys).toBeDefined();
-        expect(Constants.URLHashKeys.SPEED).toBe('speed');
-        expect(Constants.URLHashKeys.TIME).toBe('time');
-    });
-
-    test('should have correct DTMF structure and key values', () => {
-        if (typeof Constants === 'undefined') return;
-        expect(Constants.DTMF).toBeDefined();
-        expect(Constants.DTMF.SAMPLE_RATE).toBe(16000);
-    });
-});
-
-````
---- End of File: tests/unit/state/constants.test.js ---
---- File: tests/unit/uiManager.test.js ---
-````javascript
-// tests/unit/uiManager.test.js
-/* eslint-env jest */
-
-// Mock AudioApp and its dependencies before uiManager is loaded
-global.AudioApp = global.AudioApp || {};
-global.AudioApp.Utils = {
-  formatTime: jest.fn(time => `${time}s`), // Minimal mock for Utils used in init/reset path
-};
-global.Constants = { // Minimal mock for Constants used in init/reset path
-  VAD: {
-    DEFAULT_POSITIVE_THRESHOLD: 0.8,
-    DEFAULT_NEGATIVE_THRESHOLD: 0.4,
-  },
-  UI: {}, // if uiManager accesses anything under UI
-};
-
-// Mock AudioApp.state and its subscribe method
-global.AudioApp.state = {
-  subscribe: jest.fn(),
-  params: {}, // For setJumpTimeValue if it tries to read state, though current impl doesn't
-  runtime: {},
-  status: {},
-};
-
-// Now load the uiManager after mocks are in place
-require('../../vibe-player/js/uiManager.js'); // Assuming path from tests/unit/ to js/
-
-describe('AudioApp.uiManager', () => {
-  let jumpTimeInput;
-  let jumpBackButton;
-  let jumpForwardButton;
-  let dispatchEventSpy;
-
-  beforeEach(() => {
-    // Create and append mock DOM elements
-    jumpTimeInput = document.createElement('input');
-    jumpTimeInput.id = 'jumpTime';
-    jumpTimeInput.type = 'number';
-    jumpTimeInput.value = '5'; // Default value
-    document.body.appendChild(jumpTimeInput);
-
-    jumpBackButton = document.createElement('button');
-    jumpBackButton.id = 'jumpBack';
-    document.body.appendChild(jumpBackButton);
-
-    jumpForwardButton = document.createElement('button');
-    jumpForwardButton.id = 'jumpForward';
-    document.body.appendChild(jumpForwardButton);
-
-    // Other elements uiManager.init() might try to access to avoid errors
-    const chooseFileButton = document.createElement('button'); // Added to silence warning
-    chooseFileButton.id = 'chooseFileButton';
-    document.body.appendChild(chooseFileButton);
-
-    const playPauseButton = document.createElement('button');
-    playPauseButton.id = 'playPause';
-    document.body.appendChild(playPauseButton);
-
-    const seekBar = document.createElement('input');
-    seekBar.id = 'seekBar';
-    document.body.appendChild(seekBar);
-
-    const fileNameDisplay = document.createElement('span');
-    fileNameDisplay.id = 'fileNameDisplay';
-    document.body.appendChild(fileNameDisplay);
-
-    const fileInfo = document.createElement('p');
-    fileInfo.id = 'fileInfo';
-    document.body.appendChild(fileInfo);
-
-    const timeDisplay = document.createElement('div');
-    timeDisplay.id = 'timeDisplay';
-    document.body.appendChild(timeDisplay);
-
-    const speechRegionsDisplay = document.createElement('pre');
-    speechRegionsDisplay.id = 'speechRegionsDisplay';
-    document.body.appendChild(speechRegionsDisplay);
-
-    const vadThresholdValueDisplay = document.createElement('span');
-    vadThresholdValueDisplay.id = 'vadThresholdValue';
-    document.body.appendChild(vadThresholdValueDisplay);
-
-    const vadNegativeThresholdValueDisplay = document.createElement('span');
-    vadNegativeThresholdValueDisplay.id = 'vadNegativeThresholdValue';
-    document.body.appendChild(vadNegativeThresholdValueDisplay);
-
-    const vadThresholdSlider = document.createElement('input');
-    vadThresholdSlider.id = 'vadThreshold';
-    document.body.appendChild(vadThresholdSlider);
-
-    const vadNegativeThresholdSlider = document.createElement('input');
-    vadNegativeThresholdSlider.id = 'vadNegativeThreshold';
-    document.body.appendChild(vadNegativeThresholdSlider);
-
-    const vadProgressContainer = document.createElement('div');
-    vadProgressContainer.id = 'vadProgressContainer';
-    document.body.appendChild(vadProgressContainer);
-
-    const vadProgressBar = document.createElement('span');
-    vadProgressBar.id = 'vadProgressBar';
-    document.body.appendChild(vadProgressBar);
-
-    const dtmfDisplay = document.createElement('div');
-    dtmfDisplay.id = 'dtmfDisplay';
-    document.body.appendChild(dtmfDisplay);
-
-    const cptDisplay = document.createElement('div');
-    cptDisplay.id = 'cpt-display-content';
-    document.body.appendChild(cptDisplay);
-
-    const urlLoadingErrorDisplay = document.createElement('span');
-    urlLoadingErrorDisplay.id = 'urlLoadingErrorDisplay';
-    document.body.appendChild(urlLoadingErrorDisplay);
-
-    const audioUrlInput = document.createElement('input');
-    audioUrlInput.id = 'audioUrlInput';
-    document.body.appendChild(audioUrlInput);
-
-    const playbackSpeedControl = document.createElement('input');
-    playbackSpeedControl.id = 'playbackSpeed';
-    playbackSpeedControl.min = "0.5"; playbackSpeedControl.max = "2"; playbackSpeedControl.value = "1";
-    document.body.appendChild(playbackSpeedControl);
-    const speedValueDisplay = document.createElement('span');
-    speedValueDisplay.id = 'speedValue';
-    document.body.appendChild(speedValueDisplay);
-
-    const pitchControl = document.createElement('input');
-    pitchControl.id = 'pitchControl';
-    pitchControl.min = "0.5"; pitchControl.max = "2"; pitchControl.value = "1";
-    document.body.appendChild(pitchControl);
-    const pitchValueDisplay = document.createElement('span');
-    pitchValueDisplay.id = 'pitchValue';
-    document.body.appendChild(pitchValueDisplay);
-
-    const gainControl = document.createElement('input');
-    gainControl.id = 'gainControl';
-    gainControl.min = "0"; gainControl.max = "2"; gainControl.value = "1";
-    document.body.appendChild(gainControl);
-    const gainValueDisplay = document.createElement('span');
-    gainValueDisplay.id = 'gainValue';
-    document.body.appendChild(gainValueDisplay);
-
-    // Spy on document.dispatchEvent
-    dispatchEventSpy = jest.spyOn(document, 'dispatchEvent');
-
-    // Initialize uiManager
-    // This will call assignDOMElements and setupEventListeners
-    AudioApp.uiManager.init();
-  });
-
-  afterEach(() => {
-    // Clean up DOM elements
-    document.body.innerHTML = '';
-    // Restore spies
-    dispatchEventSpy.mockRestore();
-    // Clear mocks state
-    AudioApp.state.subscribe.mockClear();
-  });
-
-  describe('setupEventListeners - jumpTimeInput', () => {
-    test('should dispatch audioapp:jumpTimeChanged with correct value on valid input', () => {
-      jumpTimeInput.value = '10';
-      jumpTimeInput.dispatchEvent(new Event('input'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpTimeChanged');
-      expect(event.detail).toEqual({ value: 10 });
-    });
-
-    test('should dispatch audioapp:jumpTimeChanged with value 1 on empty input', () => {
-      jumpTimeInput.value = '';
-      jumpTimeInput.dispatchEvent(new Event('input'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpTimeChanged');
-      expect(event.detail).toEqual({ value: 1 });
-    });
-
-    test('should dispatch audioapp:jumpTimeChanged with value 1 on non-numeric input', () => {
-      jumpTimeInput.value = 'abc';
-      jumpTimeInput.dispatchEvent(new Event('input'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpTimeChanged');
-      expect(event.detail).toEqual({ value: 1 });
-    });
-
-    test('should dispatch audioapp:jumpTimeChanged with value 1 on zero input', () => {
-      jumpTimeInput.value = '0';
-      jumpTimeInput.dispatchEvent(new Event('input'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpTimeChanged');
-      expect(event.detail).toEqual({ value: 1 });
-    });
-
-    test('should dispatch audioapp:jumpTimeChanged with value 1 on negative input', () => {
-      jumpTimeInput.value = '-5';
-      jumpTimeInput.dispatchEvent(new Event('input'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpTimeChanged');
-      expect(event.detail).toEqual({ value: 1 });
-    });
-  });
-
-  describe('Jump Button/Key Event Dispatch', () => {
-    test('jumpBackButton click should dispatch audioapp:jumpClicked with direction -1', () => {
-      jumpBackButton.dispatchEvent(new Event('click'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpClicked');
-      expect(event.detail).toEqual({ direction: -1 });
-    });
-
-    test('jumpForwardButton click should dispatch audioapp:jumpClicked with direction 1', () => {
-      jumpForwardButton.dispatchEvent(new Event('click'));
-      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
-      const event = dispatchEventSpy.mock.calls[0][0];
-      expect(event.type).toBe('audioapp:jumpClicked');
-      expect(event.detail).toEqual({ direction: 1 });
-    });
-
-    test('ArrowLeft keydown should dispatch audioapp:jumpClicked with direction -1', () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft' }));
-      // Note: handleKeyDown is attached to 'document', so we dispatch on document.
-      // The spy should capture this.
-      const jumpClickedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:jumpClicked');
-      expect(jumpClickedEvent).toBeDefined();
-      expect(jumpClickedEvent[0].detail).toEqual({ direction: -1 });
-    });
-
-    test('ArrowRight keydown should dispatch audioapp:jumpClicked with direction 1', () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }));
-      const jumpClickedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:jumpClicked');
-      expect(jumpClickedEvent).toBeDefined();
-      expect(jumpClickedEvent[0].detail).toEqual({ direction: 1 });
-    });
-
-    test('Space keydown should dispatch audioapp:keyPressed with key Space', () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
-      const keyPressedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:keyPressed');
-      expect(keyPressedEvent).toBeDefined();
-      expect(keyPressedEvent[0].detail).toEqual({ key: 'Space' });
-    });
-
-    test('ArrowLeft keydown should NOT dispatch audioapp:keyPressed', () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft' }));
-      const keyPressedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:keyPressed');
-      expect(keyPressedEvent).toBeUndefined();
-    });
-
-    test('ArrowRight keydown should NOT dispatch audioapp:keyPressed', () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }));
-      const keyPressedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:keyPressed');
-      expect(keyPressedEvent).toBeUndefined();
-    });
-  });
-
-  describe('setJumpTimeValue(value)', () => {
-    beforeEach(() => {
-        // Reset jumpTimeInput for these specific tests if needed, though init() does set it.
-        // AudioApp.uiManager.init() is called in global beforeEach, so jumpTimeInput exists.
-        // Ensure a known state if previous tests could modify it and init() doesn't reset it perfectly for tests.
-        jumpTimeInput.value = '5'; // Explicitly set before each setJumpTimeValue test
-    });
-
-    test('should update jumpTimeInput.value for a new valid string number', () => {
-      AudioApp.uiManager.setJumpTimeValue("10");
-      expect(jumpTimeInput.value).toBe("10");
-    });
-
-    test('should not change jumpTimeInput.value if new string value is same as current', () => {
-      AudioApp.uiManager.setJumpTimeValue("5"); // Current is "5"
-      expect(jumpTimeInput.value).toBe("5");
-    });
-
-    test('should update jumpTimeInput.value for a new valid number', () => {
-      AudioApp.uiManager.setJumpTimeValue(15);
-      expect(jumpTimeInput.value).toBe("15");
-    });
-
-    test('should not change jumpTimeInput.value if new numeric value is effectively the same (e.g. "5.0" vs 5)', () => {
-      jumpTimeInput.value = "5.0";
-      AudioApp.uiManager.setJumpTimeValue(5);
-      expect(jumpTimeInput.value).toBe("5.0"); // Value remains "5.0" because 5.0 === 5
-    });
-
-    test('should not change jumpTimeInput.value if new numeric value is effectively the same (e.g. "5" vs 5.0)', () => {
-      jumpTimeInput.value = "5";
-      AudioApp.uiManager.setJumpTimeValue(5.0);
-      // parseFloat("5") is 5, parseFloat("5.0") is 5. Values are same.
-      expect(jumpTimeInput.value).toBe("5");
-    });
-
-    test('should not update jumpTimeInput.value for an invalid input like "invalid"', () => {
-      jumpTimeInput.value = "7"; // Set a known valid state
-      AudioApp.uiManager.setJumpTimeValue("invalid");
-      expect(jumpTimeInput.value).toBe("7"); // Should remain unchanged
-    });
-
-    test('should not update jumpTimeInput.value for NaN', () => {
-      jumpTimeInput.value = "8"; // Set a known valid state
-      AudioApp.uiManager.setJumpTimeValue(NaN);
-      expect(jumpTimeInput.value).toBe("8"); // Should remain unchanged
-    });
-  });
-});
-
-````
---- End of File: tests/unit/uiManager.test.js ---
---- File: tests-e2e/player.e2e.spec.js ---
-````javascript
-// tests-e2e/player.e2e.spec.js
-import { test, expect } from '@playwright/test';
-import { PlayerPage } from './PlayerPage';
-
-// Helper function (keep as is)
-function parseTimeToSeconds(timeStr) {
-  if (!timeStr || !timeStr.includes(':') || timeStr.includes('NaN')) return 0;
-  const parts = timeStr.split(':');
-  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-}
-
-// FIX: Changed the test file from a .mp3 to a .wav for better CI compatibility
-const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
-const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
-
-test.describe('Vibe Player V2 E2E', () => {
-  let playerPage;
-
-  // Add this block to log browser console messages
-  test.beforeEach(async ({ page }) => {
-    // Listen for all console events and log them to the test output
-    page.on('console', msg => {
-      console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`);
-    });
-
-    playerPage = new PlayerPage(page);
-    await playerPage.goto();
-  });
-
-  test('should load an audio file and enable playback controls', async ({ page }) => {
-    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback();
-  });
-
-  test('should display initial time as "0:00 / 0:00" or similar', async () => {
-    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback();
-    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {timeout: 5000});
-  });
-
-  test('should play and pause audio', async ({ page }) => {
-    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback();
-
-    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
-
-    await playerPage.playButton.click();
-    await expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i, { timeout: 2000 });
-
-    await page.waitForFunction(
-      () => document.querySelector('[data-testid="time-display"]')?.textContent?.startsWith('0:00') === false,
-      null,
-      { timeout: 5000 }
-    );
-    const initialTime = await playerPage.timeDisplay.textContent();
-    expect(initialTime).not.toMatch(/^0:00 \//);
-
-    await playerPage.playButton.click();
-    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
-    const timeAfterPause = await playerPage.timeDisplay.textContent();
-    await page.waitForTimeout(500);
-    const timeAfterPauseAndDelay = await playerPage.timeDisplay.textContent();
-    expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
-  });
-
-  test('should seek audio using the seek bar', async ({ page }) => {
-    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback();
-    await playerPage.playButton.click();
-
-    await page.waitForFunction(
-        () => document.querySelector('[data-testid="time-display"]')?.textContent !== '0:00 / 0:00',
-        null,
-        {timeout: 5000}
-    );
-
-    const initialTimeText = await playerPage.timeDisplay.textContent();
-    const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
-    expect(durationSeconds).toBeGreaterThan(0); // WAV file is short, adjust expectation
-
-    const currentMax = parseFloat(await playerPage.seekSliderInput.getAttribute('max')) || durationSeconds;
-    await playerPage.setSliderValue(playerPage.seekSliderInput, String(currentMax / 2));
-
-    await page.waitForTimeout(500);
-
-    const timeAfterSeekText = await playerPage.timeDisplay.textContent();
-    const currentTimeAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[0]);
-    const durationAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[1]);
-
-    expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
-    expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
-    expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
-  });
-
-  test('should detect and display DTMF tones', async ({ page }) => {
-    await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
-
-    // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
-    const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
-    const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
-
-    const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
-
-    // Wait for the text to appear, giving time for audio processing and UI update
-    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
-  });
-
-  test.describe('URL State Serialization', () => {
-    test('should update URL when settings change', async ({ page }) => {
-        await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-        await playerPage.expectControlsToBeReadyForPlayback();
-
-        await playerPage.setSliderValue(playerPage.speedSliderInput, '1.5');
-        await expect(page).toHaveURL(/speed=1.5/, { timeout: 2000 });
-
-        await playerPage.setSliderValue(playerPage.pitchSliderInput, '2');
-        await expect(page).toHaveURL(/pitch=2/, { timeout: 2000 });
-        await expect(page).toHaveURL(/speed=1.5/);
-    });
-
-    test('should load settings from URL parameters on page load', async ({ page }) => {
-        await playerPage.page.goto(playerPage.devServerUrl + '?speed=1.75&pitch=-3');
-        await expect(playerPage.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
-        await expect(playerPage.fileInput).toBeVisible({timeout: 10000});
-
-        await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-        await playerPage.expectControlsToBeReadyForPlayback();
-
-        await expect(playerPage.speedSliderInput).toHaveValue('1.75', { timeout: 2000 });
-        await expect(playerPage.pitchSliderInput).toHaveValue('-3', { timeout: 2000 });
-    });
-  });
-});
-
-````
---- End of File: tests-e2e/player.e2e.spec.js ---
---- File: tests-e2e/PlayerPage.js ---
-````javascript
-// tests-e2e/PlayerPage.js
-const { expect } = require('@playwright/test');
-const path = require('path');
-
-exports.PlayerPage = class PlayerPage {
-  constructor(page) {
-    this.page = page;
-    this.devServerUrl = 'http://localhost:4173/';
-
-    // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
-    this.appBarTitle = page.getByTestId('app-bar-title');
-
-    // FileLoader.svelte locators (assuming data-testid attributes will be added)
-    this.fileInput = page.locator('input[type="file"]'); // General locator, refine if possible
-    this.fileNameDisplay = page.getByTestId('file-name-display');
-    this.fileStatusDisplay = page.getByTestId('file-status-display');
-    this.fileErrorDisplay = page.getByTestId('file-error-display');
-
-    // Controls.svelte locators (assuming data-testid attributes)
-    this.playButton = page.getByTestId('play-button'); // Should toggle text Play/Pause
-    this.stopButton = page.getByTestId('stop-button');
-    this.timeDisplay = page.getByTestId('time-display');
-
-    this.seekSliderInput = page.getByTestId('seek-slider-input');
-
-    this.speedSliderInput = page.getByTestId('speed-slider-input');
-    this.speedValueDisplay = page.getByTestId('speed-value');
-
-    this.pitchSliderInput = page.getByTestId('pitch-slider-input');
-    this.pitchValueDisplay = page.getByTestId('pitch-value');
-
-    this.gainSliderInput = page.getByTestId('gain-slider-input');
-    this.gainValueDisplay = page.getByTestId('gain-value');
-
-    this.vadPositiveSliderInput = page.getByTestId('vad-positive-slider-input');
-    this.vadPositiveValueDisplay = page.getByTestId('vad-positive-value');
-
-    this.vadNegativeSliderInput = page.getByTestId('vad-negative-slider-input');
-    this.vadNegativeValueDisplay = page.getByTestId('vad-negative-value');
-  }
-
-  async goto() {
-    await this.page.goto(this.devServerUrl);
-    await expect(this.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
-    // Wait for the file input to be visible as a sign of FileLoader.svelte being ready
-    await expect(this.fileInput).toBeVisible({timeout: 10000});
-  }
-
-  async loadAudioFile(fileName) {
-    // FIX: Corrected relative path from `../../` to `../`
-    const filePath = path.resolve(__dirname, '../test-audio/', fileName); // Path relative to PlayerPage.js
-    await this.fileInput.setInputFiles(filePath);
-    // Add a small wait for file processing to start, if necessary
-    await this.page.waitForTimeout(200);
-  }
-
-  async expectControlsToBeReadyForPlayback() {
-    // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
-    // This directly tests the #if block condition becoming true.
-    // Only after it's attached can we check if it's enabled.
-    // Using .first() ensures Playwright doesn't complain if the locator resolves to multiple items,
-    // and .waitFor() is the explicit way to wait for an element to appear.
-    await this.playButton.first().waitFor({ state: 'attached', timeout: 20000 });
-
-    // Now that we know the button exists, we can safely check if it's enabled.
-    await expect(this.playButton).toBeEnabled({ timeout: 1000 }); // Short timeout is fine now
-  }
-
-  async getPlayButtonText() {
-    return this.playButton.textContent(); // Assumes button text changes Play/Pause
-  }
-
-  async setSliderValue(sliderInputLocator, value) {
-    await sliderInputLocator.fill(String(value));
-    await sliderInputLocator.dispatchEvent('input'); // For live updates if component listens to input
-    await sliderInputLocator.dispatchEvent('change'); // For final value commit
-    await this.page.waitForTimeout(150); // Allow UI to react
-  }
-
-  async getSliderInputValue(sliderInputLocator) { // Renamed to avoid conflict with Playwright's own getValue
-    return sliderInputLocator.inputValue();
-  }
-};
-
-````
---- End of File: tests-e2e/PlayerPage.js ---
 --- File: vibe-player/architecture.md ---
 ````markdown
 <!-- /vibe-player/architecture.md -->
@@ -12345,6 +10235,56 @@ export default [
 
 ````
 --- End of File: vibe-player-v2/eslint.config.js ---
+--- File: vibe-player-v2/playwright.config.ts ---
+````typescript
+// vibe-player-v2/playwright.config.ts
+
+import { defineConfig, devices } from '@playwright/test';
+
+// SvelteKit's default preview port is 4173.
+const PORT = 4173;
+const baseURL = `http://localhost:${PORT}`;
+
+/**
+ * See https://playwright.dev/docs/test-configuration.
+ */
+export default defineConfig({
+  // The test directory is now relative to THIS config file.
+  testDir: './tests-e2e',
+
+  // Output dir for reports is also relative.
+  outputDir: './tests-e2e/test-results',
+
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+
+  use: {
+    baseURL: baseURL,
+    trace: 'on-first-retry',
+  },
+
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+  ],
+
+  // **THE KEY FIX IS HERE**
+  // We now run the standard SvelteKit preview command from within this directory.
+  // This command serves the production build of our app, which is the best
+  // way to run end-to-end tests.
+  webServer: {
+    command: 'npm run preview',
+    url: baseURL,
+    reuseExistingServer: !process.env.CI,
+  },
+});
+
+````
+--- End of File: vibe-player-v2/playwright.config.ts ---
 --- File: vibe-player-v2/postcss.config.js ---
 ````javascript
 export default {
@@ -13027,20 +10967,13 @@ describe("FileLoader.svelte", () => {
 --- End of File: vibe-player-v2/src/lib/index.ts ---
 --- File: vibe-player-v2/src/lib/services/analysis.service.test.ts ---
 ````typescript
-// vibe-player-v2/src/lib/services/analysis.service.test.ts (FIXED)
+// vibe-player-v2/src/lib/services/analysis.service.test.ts
 
-import { vi, describe, it, expect, beforeEach, afterEach, type Mocked } from "vitest";
-import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
-import analysisService from "./analysis.service";
-import { analysisStore } from "$lib/stores/analysis.store";
-import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
-// Mock Svelte stores
-vi.mock("$lib/stores/analysis.store", () => ({
-  analysisStore: { subscribe: vi.fn(), set: vi.fn(), update: vi.fn() },
-}));
+// --- Mock Dependencies ---
 
-// Mock Web Workers
+// Define the mock worker instance here, so it's available for the mock factory.
 const mockVadWorkerInstance = {
   postMessage: vi.fn(),
   terminate: vi.fn(),
@@ -13048,59 +10981,110 @@ const mockVadWorkerInstance = {
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
 
+// Hoisted mocks must use the variables defined above.
+vi.mock("$lib/stores/analysis.store", () => ({
+  analysisStore: {
+    subscribe: vi.fn(),
+    set: vi.fn(),
+    update: vi.fn(),
+  },
+}));
+
 vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
 
+// --- Test Suite ---
+import analysisService from "./analysis.service";
+import { VAD_CONSTANTS } from "$lib/utils";
+
 describe("AnalysisService (VAD Only)", () => {
   beforeEach(() => {
+    // Reset all mock history before each test.
     vi.clearAllMocks();
-    mockVadWorkerInstance.postMessage.mockClear();
-    mockVadWorkerInstance.terminate.mockClear();
-    mockVadWorkerInstance.onmessage = null;
-    mockVadWorkerInstance.onerror = null;
-    (analysisStore.update as Mocked<any>).mockClear();
-    (analysisStore.set as Mocked<any>).mockClear();
-    analysisService.dispose();
+
+    // Mock the global `fetch` API.
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+    } as Response);
   });
 
   afterEach(() => {
-    analysisService.dispose();
+    // Restore original implementations after each test.
+    vi.restoreAllMocks();
   });
 
   describe("initialize (VAD)", () => {
-    it("should create VAD worker and post INIT message", async () => {
+    it("should successfully initialize the VAD worker", async () => {
+      // Act: Call initialize, which returns a promise that now waits for a response.
       const initPromise = analysisService.initialize();
-      if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage({ data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" } } as MessageEvent);
-      }
-      await initPromise;
-      expect(SileroVadWorker).toHaveBeenCalledTimes(1);
-      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }));
+
+      // Assert (Immediate): Check that a worker was created.
+      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "vad_init" }),
+        expect.any(Array)
+      );
+
+      // Simulate (Completion): The worker sends a "success" message back.
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+      } as MessageEvent);
+
+      // Assert: Now await the promise. It should resolve without timing out.
+      await expect(initPromise).resolves.toBeUndefined();
+      
+      // Assert (Final): You can check post-conditions here.
+      expect(global.fetch).toHaveBeenCalledWith(VAD_CONSTANTS.ONNX_MODEL_URL);
+    });
+
+    it("should handle initialization failure from the worker", async () => {
+      // Act
+      const initPromise = analysisService.initialize();
+
+      // Simulate: The worker responds with an error message.
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_error", error: "Model load failed", messageId: "vad_msg_0" },
+      } as MessageEvent);
+      
+      // Assert: The promise should reject with the worker's error.
+      await expect(initPromise).rejects.toMatch("Model load failed");
     });
   });
 
   describe("dispose", () => {
-    it("should terminate the VAD worker and update store status", async () => {
+    it("should terminate the worker if it was initialized", async () => {
+      // Arrange: Ensure the service is fully initialized.
       const initPromise = analysisService.initialize();
-      if (mockVadWorkerInstance.onmessage) {
-        mockVadWorkerInstance.onmessage!({ data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" } } as MessageEvent);
-      }
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+      } as MessageEvent);
       await initPromise;
 
-      const vadTerminateSpy = vi.spyOn(mockVadWorkerInstance, 'terminate');
+      // Act
       analysisService.dispose();
-      expect(vadTerminateSpy).toHaveBeenCalledTimes(1);
+
+      // Assert
+      expect(mockVadWorkerInstance.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not throw an error if called before initialization", () => {
+      // We must reset the service's internal state to simulate this.
+      analysisService.dispose(); 
+      
+      // Act & Assert
+      expect(() => analysisService.dispose()).not.toThrow();
+      expect(mockVadWorkerInstance.terminate).not.toHaveBeenCalled();
     });
   });
 });
-
 ````
 --- End of File: vibe-player-v2/src/lib/services/analysis.service.test.ts ---
 --- File: vibe-player-v2/src/lib/services/analysis.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/analysis.service.ts
-
+import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
 import { get } from "svelte/store";
 import type { SileroVadInitPayload, SileroVadProcessPayload, SileroVadProcessResultPayload, WorkerMessage } from "$lib/types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
@@ -13139,18 +11123,23 @@ class AnalysisService {
     return `vad_msg_${this.nextMessageId++}`;
   }
 
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+  private postMessageToWorker<T>(message: WorkerMessage<T>, transferList?: Transferable[]): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
         return reject(new Error("VAD Worker not initialized."));
       }
       const messageId = this.generateMessageId();
       this.pendingRequests.set(messageId, { resolve, reject });
-      this.worker.postMessage({ ...message, messageId });
+      if (transferList) {
+        this.worker.postMessage({ ...message, messageId }, transferList);
+      } else {
+        this.worker.postMessage({ ...message, messageId });
+      }
     });
   }
 
   public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
+    if (!browser) return; // <-- ADD THIS GUARD
     if (this.isInitialized || this.isInitializing) {
       console.warn("AnalysisService already initialized or initializing.");
       return;
@@ -13206,17 +11195,28 @@ class AnalysisService {
       this.isInitializing = false;
     };
 
-    const initPayload: SileroVadInitPayload = {
-        origin: location.origin,
-        onnxModelPath: VAD_CONSTANTS.ONNX_MODEL_URL,
+    try {
+      // Fetch the ONNX model
+      const modelResponse = await fetch(VAD_CONSTANTS.ONNX_MODEL_URL);
+      if (!modelResponse.ok) {
+        throw new Error(`Failed to fetch ONNX model: ${modelResponse.statusText}`);
+      }
+      const modelBuffer = await modelResponse.arrayBuffer();
+
+      const initPayload: SileroVadInitPayload = {
+        // origin: location.origin, // origin is not part of SileroVadInitPayload anymore
+        modelBuffer,
         sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
         frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
         positiveThreshold: options?.positiveThreshold || VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
         negativeThreshold: options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
-    };
+      };
 
-    try {
-        await this.postMessageToWorker<SileroVadInitPayload>({ type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload });
+      // Post the message with the modelBuffer in the transfer list
+      await this.postMessageToWorker<SileroVadInitPayload>(
+        { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
+        [initPayload.modelBuffer]
+      );
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         this.isInitialized = false;
@@ -13269,30 +11269,21 @@ export default AnalysisService.getInstance();
 --- End of File: vibe-player-v2/src/lib/services/analysis.service.ts ---
 --- File: vibe-player-v2/src/lib/services/audioEngine.service.test.ts ---
 ````typescript
-import {
-  vi,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  type Mocked,
-} from "vitest";
-// Import the worker, it will be replaced by the mock
-import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
-import audioEngineService from "./audioEngine.service"; // Assuming default export
-import { playerStore } from "$lib/stores/player.store";
-import analysisService from "$lib/services/analysis.service";
-import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils"; // For message types
-import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
-import { writable } from "svelte/store"; // Import writable
+// vibe-player-v2/src/lib/services/audioEngine.service.test.ts
 
-// Mock Svelte stores
-const initialPlayerStoreState = {
+import { vi, describe, it, expect, beforeEach, afterEach, beforeAll } from "vitest";
+
+vi.resetModules();
+
+import { writable, get, type Writable } from "svelte/store";
+import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+
+// --- START: Mock Declarations ---
+const initialPlayerStoreStateForReset = {
   status: "Initial",
   fileName: null,
   duration: 0,
-  currentTime: 0, // Ensure currentTime is part of the initial state
+  currentTime: 0,
   isPlaying: false,
   isPlayable: false,
   speed: 1,
@@ -13300,346 +11291,200 @@ const initialPlayerStoreState = {
   gain: 1,
   waveformData: undefined,
   error: null,
-  // Add any other properties expected by the service or tests
+  audioBuffer: undefined,
+  audioContextResumed: false,
+  channels: undefined,
+  sampleRate: undefined,
+  lastProcessedChunk: undefined,
 };
-const mockPlayerStore = writable(initialPlayerStoreState); // This line is fine
 
-vi.mock("$lib/stores/player.store", () => ({
-  // Use a getter to ensure the test always gets the current instance, esp. after beforeEach reset
-  get playerStore() { return mockPlayerStore; }
-}));
+let storeSingletonRefForTestControl: Writable<typeof initialPlayerStoreStateForReset>;
 
-vi.mock("$lib/stores/analysis.store", () => {
-  // For analysisStore, if it's not directly read by get() with specific state needs in these tests,
-  // the simpler mock might be okay. If it also needs state for get(), apply similar writable pattern.
-  return {
-    analysisStore: {
-      subscribe: vi.fn(() => vi.fn()), // Must return an unsubscribe function
-      set: vi.fn(),
-      update: vi.fn(),
-    },
-  };
-});
-
-// Mock analysisService
-vi.mock("$lib/services/analysis.service", () => ({
-  default: {
-    initialize: vi.fn(),
-    startSpectrogramProcessing: vi.fn(),
-    // Add other methods if needed
-  },
-}));
-
-// Mock Web Workers
-const mockWorkerInstance = {
+var mockWorkerObject = {
   postMessage: vi.fn(),
   terminate: vi.fn(),
   onmessage: null as ((event: MessageEvent) => void) | null,
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
-// global.Worker = vi.fn(() => mockWorkerInstance); // This mocks the constructor
-// For Vite worker imports (?worker), we need to mock the module
-vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
-  default: vi.fn().mockImplementation(() => mockWorkerInstance),
-}));
 
-// Mock AudioContext
-const mockBufferSourceNode = {
-  buffer: null,
-  connect: vi.fn(),
-  start: vi.fn(),
-  stop: vi.fn(),
-  disconnect: vi.fn(), // Added missing disconnect mock
-  onended: null as (() => void) | null,
-};
-const mockGainNode = {
+var mockGainNode = {
   gain: { value: 1, setValueAtTime: vi.fn() },
   connect: vi.fn(),
+  disconnect: vi.fn(),
 };
-const mockAudioContextInstance = {
+
+var mockAudioContextInstance = {
   decodeAudioData: vi.fn(),
-  createBufferSource: vi.fn(() => mockBufferSourceNode),
+  createBufferSource: vi.fn(() => ({
+    buffer: null,
+    connect: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    disconnect: vi.fn(),
+    onended: null,
+  })),
   createGain: vi.fn(() => mockGainNode),
   resume: vi.fn(() => Promise.resolve()),
   close: vi.fn(() => Promise.resolve()),
   state: "running" as AudioContextState,
   currentTime: 0,
-  destination: {}, // Minimal mock for destination
+  destination: {},
   sampleRate: 44100,
 };
+// --- END: Mock Declarations ---
+
+
+// --- START: vi.mock() calls ---
+vi.mock("$lib/stores/player.store", () => {
+  const factoryInitialState = {
+    status: "Initial", fileName: null, duration: 0, currentTime: 0,
+    isPlaying: false, isPlayable: false, speed: 1, pitch: 0, gain: 1,
+    waveformData: undefined, error: null, audioBuffer: undefined,
+    audioContextResumed: false, channels: undefined, sampleRate: undefined,
+    lastProcessedChunk: undefined,
+  };
+  const storeInstance = writable(JSON.parse(JSON.stringify(factoryInitialState)));
+
+  return {
+    playerStore: storeInstance,
+    _getTestControlledInstance: () => storeInstance
+  };
+});
+
+vi.mock("$lib/stores/analysis.store", () => ({
+  analysisStore: {
+    subscribe: vi.fn(),
+    set: vi.fn(),
+    update: vi.fn(),
+  },
+}));
+
+vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
+  default: vi.fn(() => ({
+    postMessage: vi.fn(),
+    terminate: vi.fn(),
+    onmessage: null,
+    onerror: null,
+  }))
+}));
+
 global.AudioContext = vi.fn(() => mockAudioContextInstance);
+// --- END: vi.mock() calls ---
+
+
+// --- START: Service and Mocked Store Instance Import ---
+import audioEngineService from "./audioEngine.service";
+import { _getTestControlledInstance as getPlayerStoreTestInstance } from '$lib/stores/player.store';
+
 
 describe("AudioEngineService", () => {
+  beforeAll(() => {
+    storeSingletonRefForTestControl = getPlayerStoreTestInstance();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    storeSingletonRefForTestControl.set(JSON.parse(JSON.stringify(initialPlayerStoreStateForReset)));
 
-    // Reset worker instance mocks
-    mockWorkerInstance.postMessage.mockClear();
-    mockWorkerInstance.terminate.mockClear();
-    mockWorkerInstance.onmessage = null;
-    mockWorkerInstance.onerror = null;
-    // Reset the mock store state before each test
-    mockPlayerStore.set(initialPlayerStoreState); // initialPlayerStoreState is defined above mockPlayerStore
+    mockWorkerObject.postMessage = vi.fn();
+    mockWorkerObject.terminate = vi.fn();
+    mockWorkerObject.onmessage = null;
+    mockWorkerObject.onerror = null;
 
-    // Spy on the actual store methods for each test, after resetting state
-    // Important: Clear previous spies if any, or ensure this is the first time they are spied on in this scope.
-    // vi.clearAllMocks() handles clearing general mock call history.
-    // If we need to re-spy or ensure spies are fresh:
-    vi.spyOn(mockPlayerStore, 'subscribe').mockClear(); // Clear specific spy history
-    vi.spyOn(mockPlayerStore, 'update').mockClear();
-    vi.spyOn(mockPlayerStore, 'set').mockClear();
+    (audioEngineService as any).worker = mockWorkerObject;
+    if ((audioEngineService as any).worker) {
+      (audioEngineService as any).worker.onmessage = (audioEngineService as any).handleWorkerMessage.bind(audioEngineService);
+    }
+    (audioEngineService as any).isWorkerInitialized = false;
 
-    (analysisService.startSpectrogramProcessing as Mocked<any>).mockClear();
-
-    // Reset AudioContext instance mocks
+    mockAudioContextInstance.currentTime = 0;
+    mockAudioContextInstance.state = "running";
     mockAudioContextInstance.decodeAudioData.mockReset();
-    mockAudioContextInstance.createBufferSource.mockClear();
-    mockGainNode.gain.setValueAtTime.mockClear();
-    mockBufferSourceNode.start.mockClear();
-    mockBufferSourceNode.stop.mockClear();
+    mockAudioContextInstance.createBufferSource.mockReset().mockImplementation(() => ({
+        buffer: null, connect: vi.fn(), start: vi.fn(), stop: vi.fn(), disconnect: vi.fn(), onended: null,
+    }));
+    mockAudioContextInstance.createGain.mockReset().mockImplementation(() => mockGainNode);
+    mockAudioContextInstance.resume.mockReset().mockResolvedValue(undefined);
+    mockAudioContextInstance.close.mockReset().mockResolvedValue(undefined);
 
-    // Reset service state by calling dispose, then re-enable for next test
-    // This is a bit of a hack; true singleton reset is harder.
-    // audioEngineService.dispose(); // dispose might clear stores we want to check
-    // Re-getting instance or specific re-init for test might be needed if state persists badly
+    mockGainNode.gain.setValueAtTime.mockClear();
+    mockGainNode.connect.mockClear();
+    mockGainNode.disconnect.mockClear();
   });
 
   afterEach(() => {
-    audioEngineService.dispose(); // Clean up after each test
+    audioEngineService.dispose();
+    (audioEngineService as any).worker = null;
   });
 
-  describe("initialize", () => {
-    it("should create a worker and post an INIT message", async () => {
-      const initPromise = audioEngineService.initialize({
-        sampleRate: 44100,
-        channels: 1,
-        initialSpeed: 1,
-        initialPitch: 0,
-      });
-      // Simulate worker response to allow initialization to complete
-      if (mockWorkerInstance.onmessage) {
-        mockWorkerInstance.onmessage({
-          data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "rb_msg_0" },
-        } as MessageEvent);
-      }
-      await initPromise;
-      expect(RubberbandWorker).toHaveBeenCalledTimes(1); // Check if Worker constructor was called via the mock
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT }),
-      );
-    });
-
-    it("should update playerStore on INIT_SUCCESS", async () => {
-      const promise = audioEngineService.initialize({
-        sampleRate: 44100,
-        channels: 1,
-        initialSpeed: 1,
-        initialPitch: 0,
-      });
-      expect(mockWorkerInstance.onmessage).not.toBeNull();
-
-      const mockEvent = {
-        data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "rb_msg_0" },
-      } as MessageEvent;
-      if (mockWorkerInstance.onmessage) mockWorkerInstance.onmessage(mockEvent);
-
-      await promise;
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
-
-    it("should update playerStore on INIT_ERROR", async () => {
-      const promise = audioEngineService.initialize({
-        sampleRate: 44100,
-        channels: 1,
-        initialSpeed: 1,
-        initialPitch: 0,
-      });
-      expect(mockWorkerInstance.onmessage).not.toBeNull();
-
-      const mockErrorEvent = {
-        data: {
-          type: RB_WORKER_MSG_TYPE.INIT_ERROR,
-          error: "Test init error",
-          messageId: "rb_msg_0",
-        },
-      } as MessageEvent;
-      if (mockWorkerInstance.onmessage) mockWorkerInstance.onmessage(mockErrorEvent);
-
-      await promise;
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
-  });
-
-  describe("loadFile", () => {
+  it("should decode a file and update the store", async () => {
     const mockArrayBuffer = new ArrayBuffer(8);
-    const mockFileName = "test.wav";
     const mockDecodedBuffer = {
-      duration: 1.0,
-      numberOfChannels: 1,
-      sampleRate: 44100,
-      getChannelData: vi.fn(() => new Float32Array([0, 0, 0])),
+      duration: 1.0, numberOfChannels: 1, sampleRate: 44100, getChannelData: vi.fn(() => new Float32Array(1))
     };
+    mockAudioContextInstance.decodeAudioData.mockResolvedValue(mockDecodedBuffer as any);
 
-    beforeEach(async () => {
-      // Ensure service is initialized before loading a file
-      const initPromise = audioEngineService.initialize({
-        sampleRate: 44100,
-        channels: 1,
-        initialSpeed: 1,
-        initialPitch: 0,
-      });
-      if (mockWorkerInstance.onmessage) {
-        mockWorkerInstance.onmessage({
-          data: {
-            type: RB_WORKER_MSG_TYPE.INIT_SUCCESS,
-            messageId: "rb_msg_0",
-          },
-        } as MessageEvent);
+    mockWorkerObject.postMessage.mockImplementation((message: any) => {
+      if (message.type === RB_WORKER_MSG_TYPE.INIT) {
+        if (mockWorkerObject.onmessage) {
+          mockWorkerObject.onmessage({ data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS } } as MessageEvent);
+        }
       }
-      await initPromise;
-      mockAudioContextInstance.decodeAudioData.mockResolvedValue(
-        mockDecodedBuffer as unknown as AudioBuffer,
-      );
     });
 
-    it("should call decodeAudioData with the provided ArrayBuffer", async () => {
-      await audioEngineService.loadFile(mockArrayBuffer, mockFileName);
-      expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledWith(
-        mockArrayBuffer,
-      );
-    });
+    await audioEngineService.loadFile(mockArrayBuffer, "test.wav");
 
-    it("should update playerStore with decoded audio information", async () => {
-      await audioEngineService.loadFile(mockArrayBuffer, mockFileName);
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
+    expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledWith(mockArrayBuffer);
 
-    it("should update playerStore with isPlayable true and audioBuffer, and not call analysisService", async () => {
-      // analysisService is mocked, so we can check its calls
-      const mockedAnalysisService = analysisService as Mocked<typeof analysisService>;
+    // Explicitly check calls
+    expect(mockWorkerObject.postMessage).toHaveBeenCalledTimes(2);
+    // First call: RESET from stop()
+    expect(mockWorkerObject.postMessage.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET })
+    );
+    expect(mockWorkerObject.postMessage.mock.calls[0][1]).toBeUndefined();
+    // Second call: INIT from loadFile()
+    expect(mockWorkerObject.postMessage.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT, payload: expect.any(Object) })
+    );
+    expect(mockWorkerObject.postMessage.mock.calls[1][1]).toBeUndefined();
 
-      await audioEngineService.loadFile(mockArrayBuffer, mockFileName);
 
-      // Verify the playerStore.update was called
-      // playerStore itself is the mock instance from vi.mock
-      expect(playerStore.update).toHaveBeenCalled();
-
-      // Get the update function passed to playerStore.update in the last call
-      const updateFunction = (playerStore.update as Mocked<typeof playerStore.update>).mock.calls.slice(-1)[0][0];
-
-      // Define a representative current state that the update function would operate on
-      // This should ideally match the state just before this specific update is meant to occur
-      const previousState = {
-        ...initialPlayerStoreState, // from test setup
-        status: `Decoding ${mockFileName}...`, // Reflects state after initial update in loadFile
-        fileName: mockFileName,
-        error: null
-      };
-
-      const newState = updateFunction(previousState);
-
-      // Assertions on the new state
-      expect(newState.isPlayable).toBe(true);
-      expect(newState.audioBuffer).toEqual(mockDecodedBuffer); // mockDecodedBuffer is defined in the test setup
-      expect(newState.duration).toBe(mockDecodedBuffer.duration);
-      expect(newState.channels).toBe(mockDecodedBuffer.numberOfChannels);
-      expect(newState.sampleRate).toBe(mockDecodedBuffer.sampleRate);
-      expect(newState.waveformData).toBeDefined(); // Check that waveformData is part of the update
-
-      // Ensure analysisService.startSpectrogramProcessing was NOT called from loadFile
-      expect(mockedAnalysisService.startSpectrogramProcessing).not.toHaveBeenCalled();
-    });
-
-    it("should update playerStore on decoding error", async () => {
-      const decodeError = new Error("Test decoding error");
-      mockAudioContextInstance.decodeAudioData.mockRejectedValue(decodeError);
-
-      await expect(
-        audioEngineService.loadFile(mockArrayBuffer, mockFileName),
-      ).rejects.toThrow(decodeError.message);
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
+    const finalState = get(storeSingletonRefForTestControl);
+    expect(finalState.isPlayable).toBe(true);
+    expect(finalState.duration).toBe(1.0);
+    expect(finalState.waveformData).toBeDefined();
+    expect(finalState.waveformData?.[0].length).toBeGreaterThan(0);
   });
 
-  describe("play/pause/stop", () => {
-    // ... (loadFile setup from above)
-    const mockArrayBuffer = new ArrayBuffer(8);
-    const mockFileName = "test.wav";
+  it("should correctly start the processing loop on play", async () => {
+    const mockArrayBuffer = new ArrayBuffer(44100 * 4);
     const mockDecodedBuffer = {
-      duration: 1.0,
-      numberOfChannels: 1,
-      sampleRate: 44100,
-      getChannelData: vi.fn(() => new Float32Array([0, 0, 0])),
+      length: 44100, duration: 1.0, numberOfChannels: 1, sampleRate: 44100,
+      getChannelData: vi.fn(() => new Float32Array(44100).fill(0.1)),
     };
+    mockAudioContextInstance.decodeAudioData.mockResolvedValue(mockDecodedBuffer as any);
 
-    beforeEach(async () => {
-      const initPromise = audioEngineService.initialize({
-        sampleRate: 44100,
-        channels: 1,
-        initialSpeed: 1,
-        initialPitch: 0,
-      });
-      if (mockWorkerInstance.onmessage) {
-        mockWorkerInstance.onmessage({
-          data: {
-            type: RB_WORKER_MSG_TYPE.INIT_SUCCESS,
-            messageId: "rb_msg_0",
-          },
-        } as MessageEvent);
+    mockWorkerObject.postMessage.mockImplementation((message: any) => {
+      if (message.type === RB_WORKER_MSG_TYPE.INIT) {
+         if (mockWorkerObject.onmessage) {
+            mockWorkerObject.onmessage({ data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS } } as MessageEvent);
+        }
       }
-      await initPromise;
-      mockAudioContextInstance.decodeAudioData.mockResolvedValue(
-        mockDecodedBuffer as unknown as AudioBuffer,
-      );
-      await audioEngineService.loadFile(mockArrayBuffer, mockFileName); // Load a file so there's something to play
     });
 
-    it("play should start playback and update store", () => {
-      audioEngineService.play();
-      expect(mockAudioContextInstance.createBufferSource).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(mockBufferSourceNode.start).toHaveBeenCalledTimes(1);
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
+    await audioEngineService.loadFile(mockArrayBuffer, "test.wav");
 
-    it("pause should stop playback (effectively) and update store", () => {
-      audioEngineService.play(); // Start playing first
-      audioEngineService.pause();
-      expect(mockBufferSourceNode.stop).toHaveBeenCalledTimes(1); // Stop is called
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
+    mockWorkerObject.postMessage.mockClear();
 
-    it("stop should stop playback, reset currentTime and update store", () => {
-      audioEngineService.play(); // Start playing first
-      audioEngineService.stop();
-      // play() calls stop() once, then stop() calls stop() again.
-      expect(mockBufferSourceNode.stop).toHaveBeenCalledTimes(2);
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
-  });
+    await audioEngineService.play();
 
-  describe("dispose", () => {
-    it("should terminate the worker and close AudioContext", async () => {
-      const initPromise = audioEngineService.initialize({
-        sampleRate: 44100,
-        channels: 1,
-        initialSpeed: 1,
-        initialPitch: 0,
-      });
-      // Simulate worker init success to allow initialize() to complete
-      if (mockWorkerInstance.onmessage) {
-        mockWorkerInstance.onmessage({
-          data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "rb_msg_0" },
-        } as MessageEvent);
-      }
-      await initPromise; // Ensure initialization is complete before disposing
-
-      audioEngineService.dispose();
-      expect(mockWorkerInstance.terminate).toHaveBeenCalled();
-      expect(mockAudioContextInstance.close).toHaveBeenCalled();
-      expect(mockPlayerStore.update).toHaveBeenCalledWith(expect.any(Function));
-    });
+    expect(mockWorkerObject.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.PROCESS }),
+        expect.any(Array)
+    );
+    const playStoreState = get(storeSingletonRefForTestControl);
+    expect(playStoreState.isPlaying).toBe(true);
   });
 });
 
@@ -13648,59 +11493,46 @@ describe("AudioEngineService", () => {
 --- File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/audioEngine.service.ts
-import {get, writable} from "svelte/store";
-import type {RubberbandInitPayload, RubberbandProcessResultPayload, WorkerMessage,} from "$lib/types/worker.types";
-import {RB_WORKER_MSG_TYPE} from "$lib/types/worker.types";
-import {AUDIO_ENGINE_CONSTANTS} from "$lib/utils"; // Assuming AUDIO_ENGINE_CONSTANTS is in utils/index
-import {type PlayerState, playerStore} from "$lib/stores/player.store"; // Assuming playerStore exists
 
-// Import worker using Vite's ?worker syntax
-import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
+import { get, writable } from 'svelte/store';
+import type { WorkerMessage, RubberbandInitPayload, RubberbandProcessPayload, RubberbandProcessResultPayload } from '$lib/types/worker.types';
+import { RB_WORKER_MSG_TYPE } from '$lib/types/worker.types';
+import { playerStore } from '$lib/stores/player.store';
+import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
+import { AUDIO_ENGINE_CONSTANTS } from '$lib/utils';
+import { analysisStore } from '../stores/analysis.store';
 
-interface AudioEngineState {
-    isInitialized: boolean;
-    isInitializing: boolean;
-    error: string | null;
-    audioContext: AudioContext | null;
-    // Add other relevant state properties: gainNode, sourceNode, etc.
-}
-
-interface PendingRequest {
-    resolve: (value: unknown) => void;
-    reject: (reason?: unknown) => void;
-}
-
-interface AudioEngineInitializeOptions {
-    sampleRate: number;
-    channels: number;
-    initialSpeed: number;
-    initialPitch: number;
-    gain?: number;
-}
-
-const initialAudioEngineState: AudioEngineState = {
-    isInitialized: false,
-    isInitializing: false,
-    error: null,
-    audioContext: null,
-};
-
-// Internal store for the service's own state, not directly exposed but can update public stores.
-const serviceState = writable<AudioEngineState>(initialAudioEngineState);
-
+/**
+ * Manages the audio playback pipeline, including processing via the Rubberband worker.
+ * This service implements a buffered playback strategy suitable for a standard Web Worker.
+ *
+ * How it works:
+ * 1. `play()`: Kicks off the `processAndPlayLoop`.
+ * 2. `processAndPlayLoop()`: Takes a chunk of the original audio, sends it to the worker for processing.
+ * 3. `handleWorkerMessage()`: Receives the processed chunk from the worker.
+ * 4. `scheduleChunkPlayback()`: Takes the processed chunk, puts it in an AudioBuffer, and schedules it to play
+ *    at a precise time in the future (`nextChunkTime`).
+ * 5. The loop continues, ensuring there's always a buffer of processed audio ready to play, creating seamless playback.
+ */
 class AudioEngineService {
     private static instance: AudioEngineService;
     private worker: Worker | null = null;
-    private audioContextInternal: AudioContext | null = null; // Renamed to avoid conflict with serviceState property
+
+    // Web Audio API State
+    private audioContext: AudioContext | null = null;
     private gainNode: GainNode | null = null;
-    private originalAudioBuffer: AudioBuffer | null = null;
-    private decodedAudioPlayerNode: AudioBufferSourceNode | null = null; // For playing original/decoded audio
-    private isPlaying = writable(false); // Internal state for playback
-    private nextMessageId = 0;
-    private pendingRequests = new Map<string, PendingRequest>();
+    private originalBuffer: AudioBuffer | null = null;
+
+    // Playback State Machine
+    private isPlaying = false;
+    private isWorkerInitialized = false;
+    private isStopping = false; // Flag to gracefully stop the processing loop
+    private sourcePlaybackOffset = 0; // Tracks our position in the *original* audio buffer (in samples)
+    private nextChunkTime = 0; // The AudioContext time at which the next processed chunk should start playing
 
     private constructor() {
-        // Initialize serviceState if needed, or rely on default
+        // **CRITICAL CHANGE**: The constructor is now EMPTY.
+        // It no longer creates a worker, making it safe to run on the server.
     }
 
     public static getInstance(): AudioEngineService {
@@ -13710,492 +11542,229 @@ class AudioEngineService {
         return AudioEngineService.instance;
     }
 
+    /**
+     * Initializes the service for client-side execution.
+     * This method MUST be called from onMount in a Svelte component.
+     */
+    public initialize(): void {
+        // If already initialized (e.g., due to fast-refresh in dev), do nothing.
+        if (this.worker) return;
+
+        console.log("AudioEngineService: Initializing for client...");
+        this.worker = new RubberbandWorker();
+        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+    }
+
     private _getAudioContext(): AudioContext {
-        if (!this.audioContextInternal) {
-            this.audioContextInternal = new AudioContext();
-            // Create main gain node
-            this.gainNode = this.audioContextInternal.createGain();
-            this.gainNode.connect(this.audioContextInternal.destination);
-            console.log("AudioContext and GainNode created.");
+        if (!this.audioContext || this.audioContext.state === 'closed') {
+            this.audioContext = new AudioContext();
+            this.gainNode = this.audioContext.createGain();
+            this.gainNode.connect(this.audioContext.destination);
         }
-        return this.audioContextInternal;
+        return this.audioContext;
     }
 
     public async unlockAudio(): Promise<void> {
         const ctx = this._getAudioContext();
-        if (ctx.state === "suspended") {
-            try {
-                await ctx.resume();
-                console.log("AudioContext resumed successfully.");
-                playerStore.update((s: PlayerState) => ({...s, audioContextResumed: true}));
-            } catch (e: unknown) {
-                const errorMessage = e instanceof Error ? e.message : String(e);
-                console.error("Error resuming AudioContext:", e);
-                playerStore.update((s: PlayerState) => ({
-                    ...s,
-                    error: `Failed to resume audio context: ${errorMessage}`,
-                }));
-            }
+        if (ctx.state === 'suspended') {
+            await ctx.resume();
+            console.log("AudioContext resumed successfully.");
         }
     }
 
-    private generateMessageId(): string {
-        return `rb_msg_${this.nextMessageId++}`;
-    }
+    public async loadFile(audioFileBuffer: ArrayBuffer, fileName: string): Promise<void> {
+        await this.stop(); // Stop and reset any current playback
+        const ctx = this._getAudioContext();
 
-    private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.worker) {
-                reject(new Error("Worker not initialized."));
-                return;
-            }
-            const messageId = this.generateMessageId();
-            this.pendingRequests.set(messageId, {resolve, reject});
-            this.worker.postMessage({...message, messageId});
-        });
-    }
-
-    public async initialize(options: AudioEngineInitializeOptions): Promise<void> {
-        console.log('[AudioEngineService] Initialize called.');
-
-        if (get(serviceState).isInitialized || get(serviceState).isInitializing) {
-            console.warn("AudioEngineService already initialized or initializing.");
-            return;
-        }
-
-        serviceState.update((s: AudioEngineState) => ({...s, isInitializing: true, error: null}));
-        playerStore.update((s: PlayerState) => ({
-            ...s,
-            status: "Audio engine initializing...",
-        }));
-
-        this.worker = new RubberbandWorker();
-
-        this.worker.onmessage = (event: MessageEvent<WorkerMessage<unknown>>) => {
-            const {type, payload, error, messageId} = event.data;
-            const request = messageId
-                ? this.pendingRequests.get(messageId)
-                : undefined;
-            console.log(`[AudioEngineService] Received message from worker: type=${type}`);
-
-            if (error) {
-                const errorMsg = typeof error === 'string' ? error : (error as Error).message || 'Unknown worker error during message processing';
-                console.error(`AudioEngineService Worker Error (type ${type}):`, errorMsg);
-                serviceState.update((s: AudioEngineState) => ({...s, error: `Worker error: ${errorMsg}`}));
-                if (request) {
-                    request.reject(errorMsg);
-                    if (messageId) this.pendingRequests.delete(messageId);
-                }
-                if (type === RB_WORKER_MSG_TYPE.INIT_ERROR) {
-                    serviceState.update((s: AudioEngineState) => ({
-                        ...s,
-                        isInitialized: false,
-                        isInitializing: false,
-                    }));
-                    playerStore.update((s: PlayerState) => ({
-                        ...s,
-                        status: "Error initializing audio engine.",
-                        error: errorMsg,
-                    }));
-                }
-                return;
-            }
-
-            switch (type) {
-                case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
-                    console.log('[AudioEngineService] Worker reported INIT_SUCCESS.');
-
-                    serviceState.update((s: AudioEngineState) => ({
-                        ...s,
-                        isInitialized: true,
-                        isInitializing: false,
-                    }));
-                    playerStore.update((s: PlayerState) => ({
-                        ...s,
-                        status: "Audio engine initialized.",
-                    }));
-                    if (request) request.resolve(payload);
-                    break;
-
-                case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
-                    const resultPayload = payload as RubberbandProcessResultPayload;
-                    console.log(
-                        "Received processed audio chunk:",
-                        resultPayload.outputBuffer,
-                    );
-                    playerStore.update((s: PlayerState) => ({
-                        ...s,
-                        lastProcessedChunk: resultPayload.outputBuffer,
-                    }));
-                    if (request) request.resolve(resultPayload);
-                    break;
-
-                case RB_WORKER_MSG_TYPE.FLUSH_RESULT:
-                    console.log("Received flushed audio:", payload);
-                    if (request) request.resolve(payload as RubberbandProcessResultPayload);
-                    break;
-
-                default:
-                    console.log(
-                        "AudioEngineService received message from worker:",
-                        event.data,
-                    );
-                    if (request) request.resolve(payload); // Generic resolve for other messages
-            }
-            if (messageId && request) this.pendingRequests.delete(messageId);
-        };
-
-        this.worker.onerror = (err: Event | string) => {
-            const errorMsg = typeof err === 'string' ? err : (err instanceof ErrorEvent ? err.message : 'Unknown worker error');
-            console.error("Unhandled error in RubberbandWorker:", errorMsg);
-            serviceState.update((s: AudioEngineState) => ({
-                ...s,
-                error: `Worker onerror: ${errorMsg}`,
-                isInitialized: false,
-                isInitializing: false,
-            }));
-            playerStore.update((s: PlayerState) => ({...s, status: "Critical worker error.", error: errorMsg}));
-            // Reject all pending requests on a critical worker error
-            this.pendingRequests.forEach((req) =>
-                req.reject(new Error(`Worker failed critically: ${errorMsg}`)),
-            );
-            this.pendingRequests.clear();
-        };
-
-        const initPayload: RubberbandInitPayload = {
-            wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL,
-            loaderPath: AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
-            origin: location.origin,
-            sampleRate: options.sampleRate,
-            channels: options.channels,
-            initialSpeed: options.initialSpeed,
-            initialPitch: options.initialPitch,
-        };
+        playerStore.update(s => ({ ...s, status: `Decoding ${fileName}...`, error: null, fileName, isPlayable: false }));
 
         try {
-            console.log('[AudioEngineService] Posting INIT message to worker.');
+            this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
 
-            await this.postMessageToWorker<RubberbandInitPayload>({
-                type: RB_WORKER_MSG_TYPE.INIT,
-                payload: initPayload,
-            });
-            this._getAudioContext(); // Ensure AudioContext is created after worker init
-            if (options.gain !== undefined) this.setGain(options.gain);
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            serviceState.update((s: AudioEngineState) => ({
-                ...s,
-                error: errorMessage || "Initialization failed",
-                isInitialized: false,
-                isInitializing: false,
-            }));
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                status: "Error sending init to worker.",
-                error: errorMessage,
-            }));
-        }
-    }
+            // Re-initialize worker with correct file parameters
+            const initPayload: RubberbandInitPayload = {
+                wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL,
+                loaderPath: AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
+                origin: location.origin,
+                sampleRate: this.originalBuffer.sampleRate,
+                channels: this.originalBuffer.numberOfChannels,
+                initialSpeed: get(playerStore).speed,
+                initialPitch: get(playerStore).pitch
+            };
+            this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload });
 
-    public async loadFile(
-        audioFileBuffer: ArrayBuffer,
-        fileName: string,
-    ): Promise<void> {
-        if (!this.audioContextInternal) {
-            this._getAudioContext();
-            await this.unlockAudio();
-        }
-        if (!this.audioContextInternal) {
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                error: "AudioContext not available for decoding.",
-            }));
-            throw new Error("AudioContext not available for decoding.");
-        }
-
-        playerStore.update((s: PlayerState) => ({
-            ...s,
-            status: `Decoding ${fileName}...`,
-            error: null,
-            fileName,
-        }));
-        try {
-            this.originalAudioBuffer =
-                await this.audioContextInternal.decodeAudioData(audioFileBuffer);
-
-            let waveformDisplayData: number[][] = [];
-            if (this.originalAudioBuffer) {
-                const targetPoints = 1000;
-                for (let i = 0; i < this.originalAudioBuffer.numberOfChannels; i++) {
-                    const pcmData = this.originalAudioBuffer.getChannelData(i);
-                    const channelWaveform: number[] = [];
-                    const step = Math.max(1, Math.floor(pcmData.length / targetPoints));
-                    for (let j = 0; j < pcmData.length; j += step) {
-                        let blockMax = 0.0; // Changed from -1.0 to 0.0 as we use Math.abs
-                        for (let k = 0; k < step && j + k < pcmData.length; k++) {
-                            if (Math.abs(pcmData[j + k]) > blockMax) {
-                                blockMax = Math.abs(pcmData[j + k]);
-                            }
-                        }
-                        // To represent both positive and negative peaks, we could store min/max or just max abs value
-                        // For simplicity, using the first sample's value, but max abs is better for waveform visualization
-                        channelWaveform.push(pcmData[j]); // Or blockMax (needs adjustment if visualizer expects signed values)
-                    }
-                    waveformDisplayData.push(channelWaveform);
+            // **FIX**: Extract waveform data for the UI here
+            const waveformDisplayData: number[][] = [];
+            const targetPoints = 1000;
+            for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
+                const pcmData = this.originalBuffer.getChannelData(i);
+                const channelWaveform: number[] = [];
+                const step = Math.max(1, Math.floor(pcmData.length / targetPoints));
+                for (let j = 0; j < pcmData.length; j += step) {
+                    channelWaveform.push(pcmData[j]);
                 }
+                waveformDisplayData.push(channelWaveform);
             }
 
-            playerStore.update((s: PlayerState) => ({
+            playerStore.update(s => ({
                 ...s,
-                status: `${fileName} decoded. Duration: ${this.originalAudioBuffer!.duration.toFixed(2)}s`,
-                duration: this.originalAudioBuffer!.duration,
-                channels: this.originalAudioBuffer!.numberOfChannels,
-                sampleRate: this.originalAudioBuffer!.sampleRate,
-                waveformData: waveformDisplayData,
+                status: `Ready: ${fileName}`,
+                duration: this.originalBuffer!.duration,
                 isPlayable: true,
-                audioBuffer: this.originalAudioBuffer,
+                audioBuffer: this.originalBuffer,
+                waveformData: waveformDisplayData, // Add waveform data to the store
             }));
-            console.log(
-                "Decoded audio and extracted waveform data:",
-                this.originalAudioBuffer,
-            );
+            analysisStore.set({}); // Reset analysis store for the new file
 
-            console.warn(
-                "AudioEngine not re-initialized with new file parameters automatically yet. Manual re-init might be needed if SR/channels change.",
-            );
-        } catch (e: unknown) {
-            console.error("Error decoding audio data:", e);
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                status: `Error decoding ${fileName}.`,
-                error: errorMessage,
-                isPlayable: false,
-                waveformData: undefined,
-            }));
-            if (e instanceof Error) throw e; else throw new Error(String(e));
+        } catch (e) {
+            const error = e as Error;
+            playerStore.update(s => ({ ...s, status: `Error decoding`, error: error.message, isPlayable: false }));
+            throw error;
         }
     }
 
-    public setGain(level: number): void {
-        if (this.gainNode && this.audioContextInternal) {
-            this.gainNode.gain.setValueAtTime(
-                level,
-                this.audioContextInternal.currentTime
-            );
-            playerStore.update((s: PlayerState) => ({...s, gain: level}));
-        } else {
-            console.warn("GainNode or AudioContext not available for setGain.");
-        }
-    }
+    public async play(): Promise<void> {
+        if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) return;
 
-    public play(): void {
-        if (get(this.isPlaying)) {
-            console.log("AudioEngine: Already playing.");
-            return;
-        }
-        if (this.originalAudioBuffer && this.audioContextInternal && this.gainNode) {
-            if (this.decodedAudioPlayerNode) {
-                this.decodedAudioPlayerNode.stop();
-                this.decodedAudioPlayerNode.disconnect();
-            }
+        await this.unlockAudio();
+        const ctx = this._getAudioContext();
 
-            this.decodedAudioPlayerNode =
-                this.audioContextInternal.createBufferSource();
-            this.decodedAudioPlayerNode.buffer = this.originalAudioBuffer;
-            this.decodedAudioPlayerNode.connect(this.gainNode);
+        this.isPlaying = true;
+        this.isStopping = false;
+        playerStore.update(s => ({ ...s, isPlaying: true }));
 
-            if (this.decodedAudioPlayerNode) { // Check if node exists before setting onended
-                this.decodedAudioPlayerNode.onended = () => {
-                    this.isPlaying.set(false);
-                    playerStore.update((s: PlayerState) => ({
-                        ...s,
-                        status: "Playback ended.",
-                        isPlaying: false,
-                    }));
-                    this.decodedAudioPlayerNode = null;
-                };
-            }
-            this.decodedAudioPlayerNode.start(0, get(playerStore).currentTime || 0);
-            this.isPlaying.set(true);
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                status: "Playing original audio...",
-                isPlaying: true,
-            }));
-            console.log("AudioEngine: Play called. Playing original buffer.");
-        } else {
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                status: "No audio loaded or engine not ready.",
-                error: "Cannot play: No audio loaded or engine not ready."
-            }));
-            console.log("AudioEngine: Play called, but prerequisites not met.");
-        }
+        this.nextChunkTime = ctx.currentTime + 0.1; // Start playback with a small latency buffer
+        this.processAndPlayLoop(); // Start the processing pipeline
     }
 
     public pause(): void {
-        if (!get(this.isPlaying)) {
-            console.log("AudioEngine: Not playing.");
-            return;
-        }
-        if (this.decodedAudioPlayerNode && this.audioContextInternal) {
-            const nodeAsAny = this.decodedAudioPlayerNode as any;
-            let calculatedTime = 0;
-            if (typeof nodeAsAny._startTime === 'number') {
-                calculatedTime = this.audioContextInternal.currentTime - nodeAsAny._startTime;
-            } else {
-                console.warn("Could not determine node's start time for accurate pause position.");
-                calculatedTime = get(playerStore).currentTime || 0;
-            }
+        if (!this.isPlaying) return;
+        this.isPlaying = false;
+        this.isStopping = true;
+        playerStore.update(s => ({ ...s, isPlaying: false }));
+    }
 
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                currentTime: calculatedTime >= 0 ? calculatedTime : 0,
-            }));
-            this.decodedAudioPlayerNode.stop();
-            this.isPlaying.set(false);
-            playerStore.update((s: PlayerState) => ({
-                ...s,
-                status: "Playback paused.",
-                isPlaying: false,
-            }));
-            console.log("AudioEngine: Pause called.");
-        } else {
-            console.log("AudioEngine: Pause called, but no active player node or audio context.");
+    public async stop(): Promise<void> {
+        this.pause();
+        this.sourcePlaybackOffset = 0;
+        this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.RESET }); // Reset worker state
+        playerStore.update(s => ({ ...s, currentTime: 0 }));
+    }
+
+    public async seek(time: number): Promise<void> {
+        const wasPlaying = this.isPlaying;
+        if (wasPlaying) {
+            this.pause();
+        }
+
+        // Wait a moment for any in-flight processing to stop
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        this.sourcePlaybackOffset = this.originalBuffer ? Math.max(0, time) * this.originalBuffer.sampleRate : 0;
+        this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+        playerStore.update(s => ({ ...s, currentTime: time }));
+
+        if (wasPlaying) {
+            await this.play();
         }
     }
 
-    public stop(): void {
-        if (this.decodedAudioPlayerNode) {
-            this.decodedAudioPlayerNode.stop();
-            this.decodedAudioPlayerNode.disconnect();
-            this.decodedAudioPlayerNode = null;
-        }
-        this.isPlaying.set(false);
-        playerStore.update((s: PlayerState) => ({
-            ...s,
-            status: "Playback stopped.",
-            isPlaying: false,
-            currentTime: 0,
-        }));
-        console.log("AudioEngine: Stop called.");
+    public setSpeed(speed: number): void {
+        playerStore.update(s => ({ ...s, speed }));
+        this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed } });
     }
 
-    public async setSpeed(speed: number): Promise<void> {
-        if (!this.worker) {
-            throw new Error("Worker not initialized.");
-        }
-        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
-        await this.postMessageToWorker<object>({ // Assuming payload is an object like { speed }
-            type: RB_WORKER_MSG_TYPE.SET_SPEED,
-            payload: {speed},
-        });
-        playerStore.update((s: PlayerState) => ({...s, speed}));
+    public setPitch(pitch: number): void {
+        playerStore.update(s => ({ ...s, pitch }));
+        this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch } });
     }
 
-    public async setPitch(pitch: number): Promise<void> {
-        if (!this.worker) {
-            throw new Error("Worker not initialized.");
+    public setGain(level: number): void {
+        if (this.gainNode) {
+            this.gainNode.gain.setValueAtTime(level, this._getAudioContext().currentTime);
         }
-        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
-        await this.postMessageToWorker<object>({ // Assuming payload is an object like { pitch }
-            type: RB_WORKER_MSG_TYPE.SET_PITCH,
-            payload: {pitch},
-        });
-        playerStore.update((s: PlayerState) => ({...s, pitch}));
-    }
-
-    public async processAudioChunk(
-        inputBuffer: Float32Array[],
-    ): Promise<RubberbandProcessResultPayload | null> {
-        if (!this.worker) {
-            throw new Error("Worker not initialized.");
-        }
-        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
-        try {
-            const result = await this.postMessageToWorker<{ inputBuffer: Float32Array[] }>({
-                type: RB_WORKER_MSG_TYPE.PROCESS,
-                payload: {inputBuffer},
-            });
-            return result as RubberbandProcessResultPayload;
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error("Error processing audio chunk:", errorMessage);
-            playerStore.update((s: PlayerState) => ({...s, error: `Error processing audio: ${errorMessage}`}));
-            return null;
-        }
-    }
-
-    public async flush(): Promise<RubberbandProcessResultPayload | null> {
-        if (!this.worker) {
-            throw new Error("Worker not initialized.");
-        }
-        if (!get(serviceState).isInitialized) throw new Error("Service not initialized.");
-        try {
-            const result = await this.postMessageToWorker<undefined>({ // No payload for flush typically
-                type: RB_WORKER_MSG_TYPE.FLUSH,
-            });
-            return result as RubberbandProcessResultPayload;
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error("Error flushing audio:", errorMessage);
-            playerStore.update((s: PlayerState) => ({...s, error: `Error flushing audio: ${errorMessage}`}));
-            return null;
-        }
-    }
-
-    public playAudioBuffer(buffer: Float32Array[], sampleRate: number): void {
-        const ctx = this._getAudioContext();
-        if (!this.gainNode) {
-            console.error("GainNode not initialized!");
-            playerStore.update((s: PlayerState) => ({...s, error: "Cannot play buffer: GainNode missing."}));
-            return;
-        }
-
-        const audioBuffer = ctx.createBuffer(
-            buffer.length, // Number of channels
-            buffer[0].length, // Length of each channel array (number of frames)
-            sampleRate,
-        );
-        for (let i = 0; i < buffer.length; i++) {
-            audioBuffer.copyToChannel(buffer[i], i);
-        }
-
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(this.gainNode);
-        source.start();
+        playerStore.update(s => ({ ...s, gain: level }));
     }
 
     public dispose(): void {
-        if (this.worker) {
-            this.worker.terminate();
-            this.worker = null;
+        this.stop();
+        this.worker?.terminate();
+        this.worker = null;
+        this.audioContext?.close();
+        this.audioContext = null;
+    }
+
+    private processAndPlayLoop(): void {
+        if (!this.originalBuffer || !this.worker || this.isStopping || !this.isPlaying) {
+            if (this.isStopping) this.isStopping = false; // Reset flag after stopping
+            return;
         }
-        if (this.audioContextInternal) {
-            this.audioContextInternal.close().then(() => {
-                this.audioContextInternal = null;
-                this.gainNode = null;
-            }).catch(e => console.error("Error closing AudioContext: ", e));
+
+        const CHUNK_SIZE = 8192; // Process 8192 samples at a time
+
+        if (this.sourcePlaybackOffset >= this.originalBuffer.length) {
+            this.stop(); // End of buffer reached
+            return;
         }
-        this.pendingRequests.clear();
-        this.nextMessageId = 0;
-        serviceState.set(initialAudioEngineState);
-        playerStore.update((s: PlayerState) => ({
-            ...s,
-            status: "Audio engine disposed.",
-            isPlayable: false, // Should not be playable after dispose
-            isPlaying: false,
-            // Reset other relevant player states
-            fileName: null,
-            duration: 0,
-            currentTime: 0,
-            audioBuffer: undefined,
-            waveformData: undefined,
-            error: null,
-        }));
-        console.log("AudioEngineService disposed.");
+
+        const chunkEnd = Math.min(this.sourcePlaybackOffset + CHUNK_SIZE, this.originalBuffer.length);
+        const inputSlices: Float32Array[] = [];
+        const transferable: ArrayBuffer[] = [];
+
+        for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
+            const slice = this.originalBuffer.getChannelData(i).subarray(this.sourcePlaybackOffset, chunkEnd);
+            inputSlices.push(slice);
+            transferable.push(slice.buffer);
+        }
+
+        const payload: RubberbandProcessPayload = { inputBuffer: inputSlices };
+        this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS, payload }, transferable);
+
+        this.sourcePlaybackOffset = chunkEnd;
+        playerStore.update(s => ({ ...s, currentTime: this.sourcePlaybackOffset / this.originalBuffer!.sampleRate }));
+    }
+
+    private handleWorkerMessage(event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload>>): void {
+        const { type, payload } = event.data;
+
+        if (type === RB_WORKER_MSG_TYPE.INIT_SUCCESS) {
+            this.isWorkerInitialized = true;
+            console.log("AudioEngine worker initialized.");
+            if (get(playerStore).audioBuffer) {
+                playerStore.update(s => ({...s, isPlayable: true}));
+            }
+        } else if (type === RB_WORKER_MSG_TYPE.PROCESS_RESULT && payload?.outputBuffer) {
+            this.scheduleChunkPlayback(payload.outputBuffer);
+            // The loop continues by calling processAndPlayLoop again from here
+            if (this.isPlaying) {
+                this.processAndPlayLoop();
+            }
+        }
+    }
+
+    private scheduleChunkPlayback(processedChannels: Float32Array[]): void {
+        if (processedChannels.length === 0 || processedChannels[0].length === 0) return;
+
+        const ctx = this._getAudioContext();
+        if (ctx.state === 'closed') return;
+
+        const frameCount = processedChannels[0].length;
+        const processedBuffer = ctx.createBuffer(
+            processedChannels.length,
+            frameCount,
+            this.originalBuffer!.sampleRate
+        );
+
+        for (let i = 0; i < processedChannels.length; i++) {
+            processedBuffer.copyToChannel(processedChannels[i], i);
+        }
+
+        const sourceNode = ctx.createBufferSource();
+        sourceNode.buffer = processedBuffer;
+        sourceNode.connect(this.gainNode!);
+        sourceNode.start(this.nextChunkTime);
+
+        this.nextChunkTime += processedBuffer.duration;
     }
 }
 
@@ -14449,7 +12018,7 @@ describe("DtmfService", () => {
 --- File: vibe-player-v2/src/lib/services/dtmf.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/dtmf.service.ts
-
+import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
 import DtmfWorker from '$lib/workers/dtmf.worker?worker&inline';
 import { dtmfStore } from '$lib/stores/dtmf.store';
 
@@ -14467,6 +12036,8 @@ class DtmfService {
   }
 
   public initialize(sampleRate: number): void {
+    if (!browser) return; // <-- ADD THIS GUARD
+
     if (this.worker) {
       this.worker.terminate();
     }
@@ -14807,7 +12378,7 @@ describe("SpectrogramService", () => {
 --- File: vibe-player-v2/src/lib/services/spectrogram.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/spectrogram.service.ts
-
+import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
 import type { WorkerMessage, SpectrogramInitPayload, SpectrogramProcessPayload, SpectrogramResultPayload } from '$lib/types/worker.types';
 import { SPEC_WORKER_MSG_TYPE } from '$lib/types/worker.types';
 import { VISUALIZER_CONSTANTS } from '$lib/utils/constants';
@@ -14846,6 +12417,8 @@ class SpectrogramService {
   }
 
   public async initialize(options: { sampleRate: number }): Promise<void> {
+    if (!browser) return; // <-- ADD THIS GUARD
+
     if (this.isInitialized) {
       console.log("SpectrogramService: Re-initializing. Disposing existing worker first.");
       this.dispose();
@@ -15176,7 +12749,8 @@ export const VAD_WORKER_MSG_TYPE = {
 };
 
 export interface SileroVadInitPayload {
-    onnxModelPath: string; // Path to silero_vad.onnx
+    // onnxModelPath: string; // Path to silero_vad.onnx
+    modelBuffer: ArrayBuffer; // ArrayBuffer of the ONNX model
     // onnxWasmPath: string; // Path to ORT WASM files (usually handled by ORT itself if copied to static root)
     sampleRate: number; // e.g., 16000
     frameSamples: number; // e.g., 1536
@@ -15247,8 +12821,10 @@ export function isSileroVadInitPayload(
     return (
         payload !== null &&
         typeof payload === 'object' &&
-        'onnxModelPath' in payload &&
-        typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
+        // 'onnxModelPath' in payload && // No longer checking for onnxModelPath
+        // typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
+        'modelBuffer' in payload && // Check for modelBuffer instead
+        (payload as Record<string, unknown>).modelBuffer instanceof ArrayBuffer && // Verify it's an ArrayBuffer
         'sampleRate' in payload &&
         typeof (payload as Record<string, unknown>).sampleRate === "number"
     );
@@ -16350,176 +13926,168 @@ self.onmessage = (event: MessageEvent) => {
 --- File: vibe-player-v2/src/lib/workers/rubberband.worker.ts ---
 ````typescript
 // vibe-player-v2/src/lib/workers/rubberband.worker.ts
-import type {RubberbandInitPayload, WorkerMessage,} from "../types/worker.types";
-import {RB_WORKER_MSG_TYPE} from "../types/worker.types";
+import type { RubberbandInitPayload, WorkerMessage, RubberbandProcessPayload, RubberbandProcessResultPayload } from "../types/worker.types";
+import { RB_WORKER_MSG_TYPE } from "../types/worker.types";
 
-// These will be populated by the loader script when it's initialized
+// --- Type definitions for the Emscripten/WASM Module ---
 interface RubberbandModule {
-  _malloc: (size: number) => number;
-  _rubberband_new: (sampleRate: number, channels: number, options: number, timeRatio: number, pitchScale: number) => number;
-  _rubberband_set_time_ratio: (stretcher: number, ratio: number) => void;
-  _rubberband_set_pitch_scale: (stretcher: number, scale: number) => void;
-  _rubberband_reset: (stretcher: number) => void;
-  HEAPF32: Float32Array;
-  RubberBandOptionFlag?: {
-    ProcessRealTime?: number;
-    PitchHighQuality?: number;
-    PhaseIndependent?: number;
-  };
+    _malloc: (size: number) => number;
+    _free: (ptr: number) => void;
+    _rubberband_new: (sampleRate: number, channels: number, options: number, timeRatio: number, pitchScale: number) => number;
+    _rubberband_delete: (stretcher: number) => void;
+    _rubberband_set_time_ratio: (stretcher: number, ratio: number) => void;
+    _rubberband_set_pitch_scale: (stretcher: number, scale: number) => void;
+    _rubberband_reset: (stretcher: number) => void;
+    _rubberband_process: (stretcher: number, inputPtrs: number, samples: number, final: number) => void;
+    _rubberband_available: (stretcher: number) => number;
+    _rubberband_retrieve: (stretcher: number, outputPtrs: number, samples: number) => number;
+    HEAPU32: Uint32Array;
+    HEAPF32: Float32Array;
+    RubberBandOptionFlag?: { [key: string]: number };
 }
 
-declare function Rubberband(moduleArg: {
-  instantiateWasm: (
-    imports: WebAssembly.Imports,
-    successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
-  ) => Record<string, unknown>;
-}): Promise<RubberbandModule>;
+declare function Rubberband(moduleArg: { instantiateWasm: Function }): Promise<RubberbandModule>;
 
+// --- Worker State ---
 let wasmModule: RubberbandModule | null = null;
-let rubberbandStretcher: number = 0; // This is an opaque pointer (an integer)
+let stretcher: number = 0; // Opaque pointer to the C++ RubberbandStretcher object
 
-let sampleRate = 44100;
-let channels = 1;
-let lastKnownPitchScale = 1.0;
-
-// --- Helper to create pointers in WASM memory for our audio data ---
-function inPlaceCreate(buffer: Float32Array): number {
-    if (!wasmModule || !wasmModule._malloc) {
-        throw new Error("WASM module or malloc not initialized for inPlaceCreate.");
-    }
-    const ptr = wasmModule._malloc(buffer.length * buffer.BYTES_PER_ELEMENT);
-    wasmModule.HEAPF32.set(buffer, ptr / buffer.BYTES_PER_ELEMENT);
-    return ptr;
-}
-
-// --- Main message handler for the worker ---
+// --- Main Worker Logic ---
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-    const {type, payload, messageId} = event.data;
+    const { type, payload, messageId } = event.data;
 
     try {
         switch (type) {
-            case RB_WORKER_MSG_TYPE.INIT: { // Using a block scope for clarity
-                const initPayload = payload as RubberbandInitPayload;
-                sampleRate = initPayload.sampleRate;
-                channels = initPayload.channels;
-                lastKnownPitchScale = Math.pow(2, (initPayload.initialPitch || 0) / 12.0);
-
-                // 1. Load the custom loader script. This defines the global `Rubberband` function.
-                // --- FIX START ---
-                // Construct the full, absolute URL for the loader script
-                if (!initPayload.origin) {
-                    throw new Error("RubberbandWorker INIT: origin is missing in payload");
-                }
-                const loaderUrl = new URL(initPayload.loaderPath, initPayload.origin).href;
-
-                // 1. Load the custom loader script using the full URL
-                self.importScripts(loaderUrl);
-
-                // --- FIX START ---
-                // Construct the full, absolute URL for the WASM binary
-                const wasmUrl = new URL(initPayload.wasmPath, initPayload.origin).href;
-
-                // Fetch the WASM binary using the full URL
-                const wasmBinaryResponse = await fetch(wasmUrl);
-                // --- FIX END ---
-
-                if (!wasmBinaryResponse.ok) {
-                    throw new Error(`Failed to fetch WASM binary from ${initPayload.wasmPath}`);
-                }
-                const wasmBinary = await wasmBinaryResponse.arrayBuffer();
-
-                // 3. The critical hook that the loader script expects. It provides the WASM binary.
-                const instantiateWasm = (
-                    imports: WebAssembly.Imports,
-                    successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void
-                ): Record<string, unknown> => {
-                    WebAssembly.instantiate(wasmBinary, imports)
-                        .then(output => successCallback(output.instance, output.module))
-                        .catch(e => console.error("WASM instantiation failed inside hook:", e));
-                    return {}; // Emscripten loader convention
-                };
-
-                // 4. Call the loader function, providing the hook. It returns a promise that resolves with the initialized module.
-                wasmModule = await Rubberband({instantiateWasm});
-
-                // does this work?
-                // not sure why there was this block
-                // Construct loaderUrl from origin
-                // if (!initPayload.origin) {
-                //   throw new Error("RubberbandWorker INIT: origin is missing in payload");
-                // }
-                // const loaderUrl = `${initPayload.origin}/rubberband-loader.js`;
-                //
-                // if (self.importScripts) {
-                //   self.importScripts(loaderUrl); // Load rubberband-loader.js
-                // } else {
-                //   // For environments where importScripts might not be available directly in module workers (less common for Vite ?worker)
-                //   // Consider alternative loading or ensure build process handles it.
-                //   // For now, assume importScripts works as Vite usually bundles it correctly.
-                //   await import(loaderUrl);
-                // }
-
-                if (!wasmModule || typeof wasmModule._rubberband_new !== 'function') {
-                    throw new Error("Rubberband WASM module failed to load or initialize correctly.");
-                }
-
-                // 5. Now that the module is loaded, create the stretcher instance
-                const RBOptions = wasmModule.RubberBandOptionFlag || {};
-                const options = (RBOptions.ProcessRealTime ?? 0x01) | (RBOptions.PitchHighQuality ?? 0x02000000) | (RBOptions.PhaseIndependent ?? 0x2000);
-
-                rubberbandStretcher = wasmModule._rubberband_new(
-                    sampleRate,
-                    channels,
-                    options,
-                    1.0 / (initPayload.initialSpeed || 1.0), // The C++ library uses a time ratio
-                    lastKnownPitchScale
-                );
-
-                if (!rubberbandStretcher) {
-                    throw new Error("_rubberband_new failed to create stretcher instance.");
-                }
-
-                self.postMessage({type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId});
+            case RB_WORKER_MSG_TYPE.INIT:
+                await handleInit(payload as RubberbandInitPayload);
+                self.postMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
                 break;
-            }
 
             case RB_WORKER_MSG_TYPE.SET_SPEED:
-                if (wasmModule && rubberbandStretcher && payload?.speed !== undefined) {
-                    wasmModule._rubberband_set_time_ratio(rubberbandStretcher, 1.0 / payload.speed);
+                if (stretcher && wasmModule && payload?.speed) {
+                    wasmModule._rubberband_set_time_ratio(stretcher, 1.0 / payload.speed);
                 }
                 break;
 
             case RB_WORKER_MSG_TYPE.SET_PITCH:
-                if (wasmModule && rubberbandStretcher && payload?.pitch !== undefined) {
-                    // V2 uses semitones, but the C++ library expects a frequency ratio.
+                if (stretcher && wasmModule && payload?.pitch !== undefined) {
                     const pitchScale = Math.pow(2, payload.pitch / 12.0);
-                    lastKnownPitchScale = pitchScale; // Store for potential resets
-                    wasmModule._rubberband_set_pitch_scale(rubberbandStretcher, pitchScale);
+                    wasmModule._rubberband_set_pitch_scale(stretcher, pitchScale);
+                }
+                break;
+
+            case RB_WORKER_MSG_TYPE.RESET:
+                 if (stretcher && wasmModule) {
+                    wasmModule._rubberband_reset(stretcher);
                 }
                 break;
 
             case RB_WORKER_MSG_TYPE.PROCESS:
-                // This is a complex operation that was not fully implemented.
-                // For the tests to pass, we only need initialization to succeed.
-                // We can leave this as a placeholder that does nothing but resolves the promise.
-                self.postMessage({type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: {outputBuffer: []}, messageId});
+                const result = handleProcess(payload as RubberbandProcessPayload);
+                self.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: result, messageId }, result.outputBuffer.map(b => b.buffer));
                 break;
 
-            case RB_WORKER_MSG_TYPE.RESET:
-                if (wasmModule && rubberbandStretcher) {
-                    wasmModule._rubberband_reset(rubberbandStretcher);
-                }
+            case RB_WORKER_MSG_TYPE.FLUSH:
+                // This would be used to get the last remaining samples from the stretcher.
+                // For simplicity in this fix, we are not fully implementing a separate flush logic.
+                // The main loop stops when it runs out of source samples.
+                self.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: { outputBuffer: [] }, messageId });
                 break;
-
-            default:
-                self.postMessage({type: "unknown_message", error: `Unknown message type: ${type}`, messageId});
         }
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`Error in RubberbandWorker (type: ${type}):`, error);
-        self.postMessage({type: `${type}_ERROR`, error: errorMessage, messageId});
+    } catch (e) {
+        const error = e as Error;
+        self.postMessage({ type: `${type}_ERROR`, error: error.message, messageId });
     }
 };
+
+async function handleInit(payload: RubberbandInitPayload) {
+    if (stretcher && wasmModule) {
+        wasmModule._rubberband_delete(stretcher);
+    }
+
+    // The loader script and WASM binary must be fetched by the worker.
+    // The main thread provides the full paths.
+    const loaderUrl = new URL(payload.loaderPath, payload.origin).href;
+    self.importScripts(loaderUrl);
+
+    const wasmUrl = new URL(payload.wasmPath, payload.origin).href;
+    const wasmBinaryResponse = await fetch(wasmUrl);
+    const wasmBinary = await wasmBinaryResponse.arrayBuffer();
+
+    // The loader script expects an `instantiateWasm` function to be provided.
+    const instantiateWasm = (imports: WebAssembly.Imports, cb: (instance: WebAssembly.Instance) => void) => {
+        WebAssembly.instantiate(wasmBinary, imports).then(output => cb(output.instance));
+        return {};
+    };
+
+    wasmModule = await Rubberband({ instantiateWasm });
+
+    const RBOptions = wasmModule.RubberBandOptionFlag || {};
+    const options = (RBOptions.ProcessRealTime ?? 0) | (RBOptions.PitchHighQuality ?? 0);
+
+    stretcher = wasmModule._rubberband_new(
+        payload.sampleRate,
+        payload.channels,
+        options,
+        1.0 / payload.initialSpeed,
+        Math.pow(2, payload.initialPitch / 12.0)
+    );
+    if (!stretcher) throw new Error("Failed to create Rubberband stretcher instance.");
+}
+
+function handleProcess(payload: RubberbandProcessPayload): RubberbandProcessResultPayload {
+    if (!wasmModule || !stretcher) throw new Error("Worker not initialized for processing.");
+
+    const { inputBuffer } = payload;
+    const channels = inputBuffer.length;
+    if (channels === 0) return { outputBuffer: [] };
+    const frameCount = inputBuffer[0].length;
+
+    // 1. Allocate memory in the WASM heap for an array of pointers (one for each channel).
+    const inputPtrs = wasmModule._malloc(channels * 4);
+
+    // 2. For each channel, allocate memory and copy the audio data into the WASM heap.
+    //    Store the pointer to this memory in the pointers array.
+    for (let i = 0; i < channels; i++) {
+        const bufferPtr = wasmModule._malloc(frameCount * 4);
+        wasmModule.HEAPF32.set(inputBuffer[i], bufferPtr / 4);
+        wasmModule.HEAPU32[inputPtrs / 4 + i] = bufferPtr;
+    }
+
+    // 3. Call the C++ `rubberband_process` function.
+    wasmModule._rubberband_process(stretcher, inputPtrs, frameCount, 0);
+
+    // 4. Free the memory we allocated for the input buffers and the pointer array.
+    for (let i = 0; i < channels; i++) {
+        wasmModule._free(wasmModule.HEAPU32[inputPtrs / 4 + i]);
+    }
+    wasmModule._free(inputPtrs);
+
+    // 5. Retrieve the processed audio from Rubberband's internal buffers.
+    const available = wasmModule._rubberband_available(stretcher);
+    const outputBuffer: Float32Array[] = [];
+    if (available > 0) {
+        const outputPtrs = wasmModule._malloc(channels * 4);
+        const retrievedPtrs: number[] = [];
+        for (let i = 0; i < channels; i++) {
+            const bufferPtr = wasmModule._malloc(available * 4);
+            wasmModule.HEAPU32[outputPtrs / 4 + i] = bufferPtr;
+            retrievedPtrs.push(bufferPtr);
+        }
+
+        const retrievedCount = wasmModule._rubberband_retrieve(stretcher, outputPtrs, available);
+
+        for (let i = 0; i < channels; i++) {
+            const channelData = new Float32Array(retrievedCount);
+            channelData.set(wasmModule.HEAPF32.subarray(retrievedPtrs[i] / 4, retrievedPtrs[i] / 4 + retrievedCount));
+            outputBuffer.push(channelData);
+            wasmModule._free(retrievedPtrs[i]);
+        }
+        wasmModule._free(outputPtrs);
+    }
+
+    return { outputBuffer };
+}
 
 ````
 --- End of File: vibe-player-v2/src/lib/workers/rubberband.worker.ts ---
@@ -16563,14 +14131,16 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         // It's crucial that ORT WASM files are served from the expected path.
         // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
-        if (!initPayload.origin) {
-          throw new Error("SileroVadWorker INIT: origin is missing in payload");
-        }
-        ort.env.wasm.wasmPaths = `${initPayload.origin}/`; // Set base path for ORT WASM files
+        // ort.env.wasm.wasmPaths should be set globally if needed or ORT will fetch from CDN.
+        // We are now passing the model as an ArrayBuffer, so path resolution for the model itself is not needed here.
         // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
 
+        if (!initPayload.modelBuffer) { // Ensure modelBuffer is provided
+          throw new Error("SileroVadWorker INIT: modelBuffer is missing in payload");
+        }
+
         vadSession = await ort.InferenceSession.create(
-          initPayload.onnxModelPath,
+          initPayload.modelBuffer, // Use modelBuffer directly
         );
 
         // Initialize h, c, sr tensors
@@ -17891,6 +15461,234 @@ export default {
 
 ````
 --- End of File: vibe-player-v2/tailwind.config.ts ---
+--- File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
+````javascript
+// tests-e2e/player.e2e.spec.js
+import { test, expect } from '@playwright/test';
+import { PlayerPage } from './PlayerPage.mjs';
+
+// Helper function (keep as is)
+function parseTimeToSeconds(timeStr) {
+  if (!timeStr || !timeStr.includes(':') || timeStr.includes('NaN')) return 0;
+  const parts = timeStr.split(':');
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+
+// FIX: Changed the test file from a .mp3 to a .wav for better CI compatibility
+const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
+const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
+
+test.describe('Vibe Player V2 E2E', () => {
+  let playerPage;
+
+  // Add this block to log browser console messages
+  test.beforeEach(async ({ page }) => {
+    // Listen for all console events and log them to the test output
+    page.on('console', msg => {
+      console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`);
+    });
+
+    playerPage = new PlayerPage(page);
+    await playerPage.goto();
+  });
+
+  test('should load an audio file and enable playback controls', async ({ page }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+  });
+
+  test('should display initial time as "0:00 / 0:00" or similar', async () => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {timeout: 5000});
+  });
+
+  test('should play and pause audio', async ({ page }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
+
+    await playerPage.playButton.click();
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i, { timeout: 2000 });
+
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="time-display"]')?.textContent?.startsWith('0:00') === false,
+      null,
+      { timeout: 5000 }
+    );
+    const initialTime = await playerPage.timeDisplay.textContent();
+    expect(initialTime).not.toMatch(/^0:00 \//);
+
+    await playerPage.playButton.click();
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
+    const timeAfterPause = await playerPage.timeDisplay.textContent();
+    await page.waitForTimeout(500);
+    const timeAfterPauseAndDelay = await playerPage.timeDisplay.textContent();
+    expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
+  });
+
+  test('should seek audio using the seek bar', async ({ page }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+    await playerPage.playButton.click();
+
+    await page.waitForFunction(
+        () => document.querySelector('[data-testid="time-display"]')?.textContent !== '0:00 / 0:00',
+        null,
+        {timeout: 5000}
+    );
+
+    const initialTimeText = await playerPage.timeDisplay.textContent();
+    const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
+    expect(durationSeconds).toBeGreaterThan(0); // WAV file is short, adjust expectation
+
+    const currentMax = parseFloat(await playerPage.seekSliderInput.getAttribute('max')) || durationSeconds;
+    await playerPage.setSliderValue(playerPage.seekSliderInput, String(currentMax / 2));
+
+    await page.waitForTimeout(500);
+
+    const timeAfterSeekText = await playerPage.timeDisplay.textContent();
+    const currentTimeAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[0]);
+    const durationAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[1]);
+
+    expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
+    expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
+    expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
+  });
+
+  test('should detect and display DTMF tones', async ({ page }) => {
+    await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
+
+    // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
+    const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
+    const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
+
+    const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
+
+    // Wait for the text to appear, giving time for audio processing and UI update
+    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
+  });
+
+  test.describe('URL State Serialization', () => {
+    test('should update URL when settings change', async ({ page }) => {
+        await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+        await playerPage.expectControlsToBeReadyForPlayback();
+
+        await playerPage.setSliderValue(playerPage.speedSliderInput, '1.5');
+        await expect(page).toHaveURL(/speed=1.5/, { timeout: 2000 });
+
+        await playerPage.setSliderValue(playerPage.pitchSliderInput, '2');
+        await expect(page).toHaveURL(/pitch=2/, { timeout: 2000 });
+        await expect(page).toHaveURL(/speed=1.5/);
+    });
+
+    test('should load settings from URL parameters on page load', async ({ page }) => {
+        await playerPage.page.goto(playerPage.devServerUrl + '?speed=1.75&pitch=-3');
+        await expect(playerPage.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
+        await expect(playerPage.fileInput).toBeVisible({timeout: 10000});
+
+        await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+        await playerPage.expectControlsToBeReadyForPlayback();
+
+        await expect(playerPage.speedSliderInput).toHaveValue('1.75', { timeout: 2000 });
+        await expect(playerPage.pitchSliderInput).toHaveValue('-3', { timeout: 2000 });
+    });
+  });
+});
+
+````
+--- End of File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
+--- File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
+````mjs
+// tests-e2e/PlayerPage.js
+import { expect } from '@playwright/test';
+import path from 'path';
+
+export class PlayerPage {
+  constructor(page) {
+    this.page = page;
+    this.devServerUrl = 'http://localhost:4173/';
+
+    // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
+    this.appBarTitle = page.getByTestId('app-bar-title');
+
+    // FileLoader.svelte locators (assuming data-testid attributes will be added)
+    this.fileInput = page.locator('input[type="file"]'); // General locator, refine if possible
+    this.fileNameDisplay = page.getByTestId('file-name-display');
+    this.fileStatusDisplay = page.getByTestId('file-status-display');
+    this.fileErrorDisplay = page.getByTestId('file-error-display');
+
+    // Controls.svelte locators (assuming data-testid attributes)
+    this.playButton = page.getByTestId('play-button'); // Should toggle text Play/Pause
+    this.stopButton = page.getByTestId('stop-button');
+    this.timeDisplay = page.getByTestId('time-display');
+
+    this.seekSliderInput = page.getByTestId('seek-slider-input');
+
+    this.speedSliderInput = page.getByTestId('speed-slider-input');
+    this.speedValueDisplay = page.getByTestId('speed-value');
+
+    this.pitchSliderInput = page.getByTestId('pitch-slider-input');
+    this.pitchValueDisplay = page.getByTestId('pitch-value');
+
+    this.gainSliderInput = page.getByTestId('gain-slider-input');
+    this.gainValueDisplay = page.getByTestId('gain-value');
+
+    this.vadPositiveSliderInput = page.getByTestId('vad-positive-slider-input');
+    this.vadPositiveValueDisplay = page.getByTestId('vad-positive-value');
+
+    this.vadNegativeSliderInput = page.getByTestId('vad-negative-slider-input');
+    this.vadNegativeValueDisplay = page.getByTestId('vad-negative-value');
+  }
+
+  async goto() {
+    await this.page.goto(this.devServerUrl);
+    await expect(this.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
+    // Wait for the file input to be visible as a sign of FileLoader.svelte being ready
+    await expect(this.fileInput).toBeVisible({timeout: 10000});
+  }
+
+  async loadAudioFile(fileName) {
+    // FIX: Corrected relative path from `../../` to `../`
+    // FIX: Replaced __dirname with a relative path from project root
+    const filePath = path.resolve('./test-audio/', fileName); // Path relative to project root
+    await this.fileInput.setInputFiles(filePath);
+    // Add a small wait for file processing to start, if necessary
+    await this.page.waitForTimeout(200);
+  }
+
+  async expectControlsToBeReadyForPlayback() {
+    // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
+    // This directly tests the #if block condition becoming true.
+    // Only after it's attached can we check if it's enabled.
+    // Using .first() ensures Playwright doesn't complain if the locator resolves to multiple items,
+    // and .waitFor() is the explicit way to wait for an element to appear.
+    await this.playButton.first().waitFor({ state: 'attached', timeout: 20000 });
+
+    // Now that we know the button exists, we can safely check if it's enabled.
+    await expect(this.playButton).toBeEnabled({ timeout: 1000 }); // Short timeout is fine now
+  }
+
+  async getPlayButtonText() {
+    return this.playButton.textContent(); // Assumes button text changes Play/Pause
+  }
+
+  async setSliderValue(sliderInputLocator, value) {
+    await sliderInputLocator.fill(String(value));
+    await sliderInputLocator.dispatchEvent('input'); // For live updates if component listens to input
+    await sliderInputLocator.dispatchEvent('change'); // For final value commit
+    await this.page.waitForTimeout(150); // Allow UI to react
+  }
+
+  async getSliderInputValue(sliderInputLocator) { // Renamed to avoid conflict with Playwright's own getValue
+    return sliderInputLocator.inputValue();
+  }
+};
+
+````
+--- End of File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 --- File: vibe-player-v2/tsconfig.json ---
 ````json
 // vibe-player-v2/tsconfig.json
