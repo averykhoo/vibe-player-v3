@@ -1,6 +1,6 @@
 // tests-e2e/PlayerPage.js
-const { expect } = require('@playwright/test');
-const path = require('path');
+import { expect } from '@playwright/test';
+import path from 'path';
 
 export class PlayerPage {
   constructor(page) {
