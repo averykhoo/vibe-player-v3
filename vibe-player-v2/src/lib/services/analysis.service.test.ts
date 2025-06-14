@@ -10,6 +10,7 @@ const mockVadWorkerInstance = {
   terminate: vi.fn(),
   onmessage: null as ((event: MessageEvent) => void) | null,
   onerror: null as ((event: ErrorEvent) => void) | null,
+  __IS_MOCK__: true // Unique property
 };
 
 // Hoisted mocks must use the variables defined above.
@@ -21,77 +22,115 @@ vi.mock("$lib/stores/analysis.store", () => ({
   },
 }));
 
-vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
-  default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
-}));
+vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => {
+  const MockConstructor = vi.fn().mockImplementation(() => {
+    return mockVadWorkerInstance; // mockVadWorkerInstance is from the outer (test file) scope
+  });
+  return { default: MockConstructor };
+});
 
 // --- Test Suite ---
-import analysisService from "./analysis.service";
+// import analysisService from "./analysis.service"; // No longer imported at top level
 import { VAD_CONSTANTS } from "$lib/utils";
+import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types"; // <-- ADD THIS IMPORT
 
 describe("AnalysisService (VAD Only)", () => {
-  beforeEach(() => {
-    // Reset all mock history before each test.
-    vi.clearAllMocks();
+  let analysisService: typeof import('./analysis.service').default; // Type for the service
 
-    // Mock the global `fetch` API.
+  beforeEach(async () => {
+    vi.resetModules(); // Reset modules before each test
+
+    // Dynamically import the service to get a fresh instance with fresh mocks
+    const serviceModule = await import("./analysis.service");
+    analysisService = serviceModule.default;
+
+    // Spies on mockVadWorkerInstance will be new for each test if it were re-defined,
+    // but it's from outer scope. clearAllMocks will handle its spies.
+    vi.clearAllMocks(); // Still useful for clearing history on mockVadWorkerInstance's methods
+
+    // Mock the global `fetch` API (needs to be re-applied after resetModules)
     vi.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     } as Response);
+
+    // Dispose the freshly imported service instance to ensure clean state before test logic
+    analysisService.dispose();
   });
 
   afterEach(() => {
     // Restore original implementations after each test.
-    vi.restoreAllMocks();
+    // vi.restoreAllMocks(); // restoreAllMocks might be too broad if fetch is spied globally
+    // vi.resetAllMocks() could also be an option if preferred over clearAllMocks.
+    // For now, beforeEach handles spy setup.
   });
 
   describe("initialize (VAD)", () => {
+    // FIX: Correctly test the asynchronous flow.
     it("should successfully initialize the VAD worker", async () => {
-      // Act: Call initialize, which returns a promise that now waits for a response.
+      // Act: Start the initialization process.
       const initPromise = analysisService.initialize();
 
-      // Assert (Immediate): Check that a worker was created.
+      // Give a chance for async operations within initialize() to proceed up to postMessage
+      await new Promise(resolve => setImmediate(resolve)); // Ensures any sync code in initialize runs
+
+      // Directly check if postMessage spy was called
+      expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
       expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "vad_init" }),
+        expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }),
         expect.any(Array)
       );
 
-      // Simulate (Completion): The worker sends a "success" message back.
+      // Simulate: The worker sends a "success" message back.
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
       } as MessageEvent);
 
-      // Assert: Now await the promise. It should resolve without timing out.
+      // Assert: The main initialization promise should now resolve without errors.
       await expect(initPromise).resolves.toBeUndefined();
       
-      // Assert (Final): You can check post-conditions here.
+      // Assert (Final): Check that fetch was also called as expected.
       expect(global.fetch).toHaveBeenCalledWith(VAD_CONSTANTS.ONNX_MODEL_URL);
     });
 
+    // FIX: Correctly test the rejection flow.
     it("should handle initialization failure from the worker", async () => {
-      // Act
+      // Act: Start the initialization process.
       const initPromise = analysisService.initialize();
+
+      // Give a chance for async operations within initialize() to proceed up to postMessage
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Directly check if postMessage spy was called (it should be, to register the promise)
+      expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
 
       // Simulate: The worker responds with an error message.
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_error", error: "Model load failed", messageId: "vad_msg_0" },
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_ERROR, error: "Model load failed", messageId: "vad_msg_0" },
       } as MessageEvent);
       
       // Assert: The promise should reject with the worker's error.
-      await expect(initPromise).rejects.toMatch("Model load failed");
+      await expect(initPromise).rejects.toThrowError("Model load failed");
     });
   });
 
+  // ... (dispose tests should now pass due to the beforeEach fix)
   describe("dispose", () => {
     it("should terminate the worker if it was initialized", async () => {
-      // Arrange: Ensure the service is fully initialized.
+      // Arrange
       const initPromise = analysisService.initialize();
+
+      // Give a chance for async operations within initialize() to proceed up to postMessage
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Check postMessage was called for initialization
+      expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
+
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
       } as MessageEvent);
-      await initPromise;
+      await initPromise; // This should now resolve
 
       // Act
       analysisService.dispose();
@@ -101,8 +140,7 @@ describe("AnalysisService (VAD Only)", () => {
     });
 
     it("should not throw an error if called before initialization", () => {
-      // We must reset the service's internal state to simulate this.
-      analysisService.dispose(); 
+      // Arrange: The beforeEach hook already ensures a clean state.
       
       // Act & Assert
       expect(() => analysisService.dispose()).not.toThrow();

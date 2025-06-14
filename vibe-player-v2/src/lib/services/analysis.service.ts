@@ -137,6 +137,9 @@ class AnalysisService {
         this.isInitialized = false;
         this.isInitializing = false;
         analysisStore.update(s => ({ ...s, vadStatus: "Error sending VAD init to worker.", vadError: errorMessage, vadInitialized: false }));
+
+        // FIX: Re-throw the error so the calling promise rejects.
+        throw err;
     }
   }
 
