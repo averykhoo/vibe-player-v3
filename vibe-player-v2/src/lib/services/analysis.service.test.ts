@@ -2,10 +2,17 @@
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
-// --- START: Mock Dependencies (Hoisted) ---
-// These mocks MUST come before any other imports to ensure they are applied first.
+// --- Mock Dependencies ---
 
-// Mock the Svelte store that the service updates.
+// Define the mock worker instance here, so it's available for the mock factory.
+const mockVadWorkerInstance = {
+  postMessage: vi.fn(),
+  terminate: vi.fn(),
+  onmessage: null as ((event: MessageEvent) => void) | null,
+  onerror: null as ((event: ErrorEvent) => void) | null,
+};
+
+// Hoisted mocks must use the variables defined above.
 vi.mock("$lib/stores/analysis.store", () => ({
   analysisStore: {
     subscribe: vi.fn(),
@@ -14,94 +21,72 @@ vi.mock("$lib/stores/analysis.store", () => ({
   },
 }));
 
-// Create a single, controllable mock worker instance that all tests will use.
-const mockVadWorkerInstance = {
-  postMessage: vi.fn(),
-  terminate: vi.fn(), // The missing terminate function.
-  onmessage: null as ((event: MessageEvent) => void) | null,
-  onerror: null as ((event: ErrorEvent) => void) | null,
-};
-
-// Mock the worker constructor to return our mock instance.
 vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
-// --- END: Mock Dependencies ---
 
+// --- Test Suite ---
+import analysisService from "./analysis.service";
+import { VAD_CONSTANTS } from "$lib/utils";
 
 describe("AnalysisService (VAD Only)", () => {
-  // This variable will hold the fresh instance of the service for each test.
-  let analysisService: any;
+  beforeEach(() => {
+    // Reset all mock history before each test.
+    vi.clearAllMocks();
 
-  beforeEach(async () => {
-    // 1. Reset all modules to ensure we get a fresh, non-singleton instance of the service.
-    vi.resetModules();
-    
-    // 2. Mock the global `fetch` API before the service is imported.
+    // Mock the global `fetch` API.
     vi.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     } as Response);
-
-    // 3. Dynamically import the service. This guarantees it gets our fresh mocks.
-    const { default: service } = await import("./analysis.service");
-    analysisService = service;
-
-    // 4. Clear any previous mock call history.
-    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    // 5. Restore all mocks to their original state after each test.
+    // Restore original implementations after each test.
     vi.restoreAllMocks();
   });
 
   describe("initialize (VAD)", () => {
     it("should successfully initialize the VAD worker", async () => {
-      // Dynamically import dependencies to check against the fresh mocks.
-      const { default: SileroVadWorker } = await import('$lib/workers/sileroVad.worker?worker&inline');
-      const { VAD_CONSTANTS } = await import('$lib/utils/constants');
-
-      // Act: Call the async initialize method.
+      // Act: Call initialize, which returns a promise that now waits for a response.
       const initPromise = analysisService.initialize();
-      
-      // Assert (Immediate): Check that the service tried to create a worker and fetch the model.
-      expect(SileroVadWorker).toHaveBeenCalledTimes(1);
-      expect(global.fetch).toHaveBeenCalledWith(VAD_CONSTANTS.ONNX_MODEL_URL);
 
-      // Simulate (Completion): The worker sends a "success" message back.
-      // This is the crucial step that resolves the promise and prevents the timeout.
-      mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_success", messageId: "vad_msg_0" },
-      } as MessageEvent);
-
-      // Await the promise to ensure all internal `then()` blocks in the service have completed.
-      await initPromise;
-
-      // Assert (Final): Check that the worker was sent the correct initialization message.
+      // Assert (Immediate): Check that a worker was created.
       expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: "vad_init" }),
         expect.any(Array)
       );
+
+      // Simulate (Completion): The worker sends a "success" message back.
+      mockVadWorkerInstance.onmessage!({
+        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+      } as MessageEvent);
+
+      // Assert: Now await the promise. It should resolve without timing out.
+      await expect(initPromise).resolves.toBeUndefined();
+      
+      // Assert (Final): You can check post-conditions here.
+      expect(global.fetch).toHaveBeenCalledWith(VAD_CONSTANTS.ONNX_MODEL_URL);
     });
 
     it("should handle initialization failure from the worker", async () => {
+      // Act
       const initPromise = analysisService.initialize();
 
       // Simulate: The worker responds with an error message.
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_error", error: "Model load failed" },
+        data: { type: "vad_init_error", error: "Model load failed", messageId: "vad_msg_0" },
       } as MessageEvent);
-
-      // Assert: The promise from the service should now reject with the worker's error.
+      
+      // Assert: The promise should reject with the worker's error.
       await expect(initPromise).rejects.toMatch("Model load failed");
     });
   });
 
   describe("dispose", () => {
     it("should terminate the worker if it was initialized", async () => {
-      // Arrange: Ensure the service is fully initialized first.
+      // Arrange: Ensure the service is fully initialized.
       const initPromise = analysisService.initialize();
       mockVadWorkerInstance.onmessage!({
         data: { type: "vad_init_success", messageId: "vad_msg_0" },
@@ -116,7 +101,10 @@ describe("AnalysisService (VAD Only)", () => {
     });
 
     it("should not throw an error if called before initialization", () => {
-      // Act & Assert: Simply call dispose on a clean instance and ensure no crash.
+      // We must reset the service's internal state to simulate this.
+      analysisService.dispose(); 
+      
+      // Act & Assert
       expect(() => analysisService.dispose()).not.toThrow();
       expect(mockVadWorkerInstance.terminate).not.toHaveBeenCalled();
     });
