@@ -1,5 +1,5 @@
 // vibe-player-v2/src/lib/services/spectrogram.service.ts
-
+import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
 import type { WorkerMessage, SpectrogramInitPayload, SpectrogramProcessPayload, SpectrogramResultPayload } from '$lib/types/worker.types';
 import { SPEC_WORKER_MSG_TYPE } from '$lib/types/worker.types';
 import { VISUALIZER_CONSTANTS } from '$lib/utils/constants';
@@ -38,6 +38,8 @@ class SpectrogramService {
   }
 
   public async initialize(options: { sampleRate: number }): Promise<void> {
+    if (!browser) return; // <-- ADD THIS GUARD
+
     if (this.isInitialized) {
       console.log("SpectrogramService: Re-initializing. Disposing existing worker first.");
       this.dispose();

@@ -37,8 +37,8 @@ class AudioEngineService {
     private nextChunkTime = 0; // The AudioContext time at which the next processed chunk should start playing
 
     private constructor() {
-        this.worker = new RubberbandWorker();
-        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+        // **CRITICAL CHANGE**: The constructor is now EMPTY.
+        // It no longer creates a worker, making it safe to run on the server.
     }
 
     public static getInstance(): AudioEngineService {
@@ -46,6 +46,19 @@ class AudioEngineService {
             AudioEngineService.instance = new AudioEngineService();
         }
         return AudioEngineService.instance;
+    }
+
+    /**
+     * Initializes the service for client-side execution.
+     * This method MUST be called from onMount in a Svelte component.
+     */
+    public initialize(): void {
+        // If already initialized (e.g., due to fast-refresh in dev), do nothing.
+        if (this.worker) return;
+
+        console.log("AudioEngineService: Initializing for client...");
+        this.worker = new RubberbandWorker();
+        this.worker.onmessage = this.handleWorkerMessage.bind(this);
     }
 
     private _getAudioContext(): AudioContext {

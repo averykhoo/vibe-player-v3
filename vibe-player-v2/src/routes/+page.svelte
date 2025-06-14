@@ -4,48 +4,63 @@
   import Controls from '$lib/components/Controls.svelte';
   import Waveform from '$lib/components/visualizers/Waveform.svelte';
   import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
-  import ToneDisplay from '$lib/components/ToneDisplay.svelte'; // Added
+  import ToneDisplay from '$lib/components/ToneDisplay.svelte';
   import { playerStore } from '$lib/stores/player.store';
-  import audioEngineService from '$lib/services/audioEngine.service';
-  import analysisService from '$lib/services/analysis.service';
-  import spectrogramService from '$lib/services/spectrogram.service';
-  import dtmfService from '$lib/services/dtmf.service'; // Added
 
-  onMount(() => {
-    console.log('[+page.svelte onMount] Initializing services...');
-    // Initialize services with default parameters.
-    // They will now be ready before any file is loaded.
-    audioEngineService.initialize({
-      sampleRate: 44100, // A default, can be re-initialized later if needed
-      channels: 1,
-      initialSpeed: 1.0,
-      initialPitch: 0.0,
-    });
-    analysisService.initialize();
-    dtmfService.initialize(16000); // Added - DTMF worker uses a fixed 16kHz, service handles resampling
-    console.log('[+page.svelte onMount] Services initialization called.');
+  // Service imports are moved into onMount for SSR safety
+  import type { AnalysisService } from '$lib/services/analysis.service';
+  import type { DtmfService } from '$lib/services/dtmf.service';
+  import type { SpectrogramService } from '$lib/services/spectrogram.service';
+  import type { AudioEngineService } from '$lib/services/audioEngine.service';
+
+  // Define local variables to hold the service instances
+  let analysisService: AnalysisService;
+  let dtmfService: DtmfService;
+  let spectrogramService: SpectrogramService;
+  let audioEngineService: AudioEngineService;
+
+
+  onMount(async () => {
+    // Dynamically import services only on the client-side
+    const audioModule = await import('$lib/services/audioEngine.service');
+    audioEngineService = audioModule.default;
+    audioEngineService.initialize();
+
+    const analysisModule = await import('$lib/services/analysis.service');
+    analysisService = analysisModule.default;
+    analysisService.initialize(); // For VAD
+
+    const specModule = await import('$lib/services/spectrogram.service');
+    spectrogramService = specModule.default;
+    // Note: SpectrogramService init requires sampleRate, which we don't have yet.
+    // It will be initialized later when a file is loaded. This is fine.
+
+    const dtmfModule = await import('$lib/services/dtmf.service');
+    dtmfService = dtmfModule.default;
+    dtmfService.initialize(16000); // Initialize with default DTMF sample rate
 
     // Cleanup services when the component is destroyed
     return () => {
       console.log('[+page.svelte onDestroy] Disposing services...');
-      audioEngineService.dispose();
-      analysisService.dispose();
-      spectrogramService.dispose();
-      dtmfService.dispose(); // Added
+      audioEngineService?.dispose();
+      analysisService?.dispose();
+      spectrogramService?.dispose();
+      dtmfService?.dispose();
       console.log('[+page.svelte onDestroy] Services disposed.');
     };
   });
 
-  // Reactive statement to trigger spectrogram and DTMF processing when a file is loaded and playable
-  $: if ($playerStore.isPlayable && $playerStore.audioBuffer) {
+  // Reactive statement to trigger analysis when a file is ready
+  $: if ($playerStore.isPlayable && $playerStore.audioBuffer && audioEngineService && analysisService && spectrogramService && dtmfService) {
     console.log('[+page.svelte reactive] isPlayable is true, starting background analysis.');
     const audioBuffer = $playerStore.audioBuffer; // Capture buffer
 
-    // Spectrogram Processing (existing)
+    // Spectrogram Processing
     const processSpectrogram = async () => {
-      if (!audioBuffer) return;
+      if (!audioBuffer || !spectrogramService) return;
       try {
         console.log('[+page.svelte] Initializing spectrogram service with sample rate:', audioBuffer.sampleRate);
+        // Initialize spectrogram service here as we have the sampleRate
         await spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
 
         const pcmData = audioBuffer.getChannelData(0); // Assuming mono
@@ -62,9 +77,9 @@
     };
     processSpectrogram();
 
-    // DTMF Processing (new)
+    // DTMF Processing
     const processTones = () => {
-      if (!audioBuffer) return;
+      if (!audioBuffer || !dtmfService) return;
       try {
         console.log('[+page.svelte] Processing audio for DTMF tones...');
         dtmfService.process(audioBuffer); // audioBuffer is passed, service handles resampling
@@ -76,25 +91,19 @@
   }
 </script>
 
-<div class="container mx-auto p-4 space-y-4">
-  <header>
-    <h1 class="h1 font-bold" data-testid="app-bar-title">Vibe Player V2</h1>
-  </header>
+<!-- Add a wrapper to prevent UI from showing before services are ready -->
+{#if audioEngineService}
+  <div class="p-4 space-y-4 max-w-4xl mx-auto">
+    <h1 data-testid="app-bar-title" class="text-2xl font-bold">Vibe Player V2</h1>
 
-  <main class="space-y-4">
     <FileLoader />
+    <Controls />
+    <Waveform />
+    <Spectrogram />
+    <ToneDisplay />
 
-    {#if $playerStore.isPlayable}
-      <Controls />
-      <Waveform />
-      <Spectrogram />
-      <ToneDisplay /> <!-- Added -->
-    {:else}
-      <div class="text-center p-8 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
-        <p class="text-lg text-neutral-500">
-          Load an audio file to begin analysis.
-        </p>
-      </div>
-    {/if}
-  </main>
-</div>
+    <!-- Add other components as needed -->
+  </div>
+{:else}
+  <p>Loading application...</p>
+{/if}

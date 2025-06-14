@@ -1,5 +1,5 @@
 // vibe-player-v2/src/lib/services/dtmf.service.ts
-
+import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
 import DtmfWorker from '$lib/workers/dtmf.worker?worker&inline';
 import { dtmfStore } from '$lib/stores/dtmf.store';
 
@@ -17,6 +17,8 @@ class DtmfService {
   }
 
   public initialize(sampleRate: number): void {
+    if (!browser) return; // <-- ADD THIS GUARD
+
     if (this.worker) {
       this.worker.terminate();
     }

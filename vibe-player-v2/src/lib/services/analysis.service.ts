@@ -1,5 +1,5 @@
 // vibe-player-v2/src/lib/services/analysis.service.ts
-
+import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
 import { get } from "svelte/store";
 import type { SileroVadInitPayload, SileroVadProcessPayload, SileroVadProcessResultPayload, WorkerMessage } from "$lib/types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
@@ -50,6 +50,7 @@ class AnalysisService {
   }
 
   public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
+    if (!browser) return; // <-- ADD THIS GUARD
     if (this.isInitialized || this.isInitializing) {
       console.warn("AnalysisService already initialized or initializing.");
       return;
