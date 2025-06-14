@@ -37,7 +37,7 @@ class DtmfService {
     this.worker.postMessage({ type: 'init', payload: { sampleRate } });
   }
 
-  public process(audioBuffer: AudioBuffer): void {
+  public async process(audioBuffer: AudioBuffer): Promise<void> {
     if (!this.worker) {
       dtmfStore.update(s => ({ ...s, status: 'error', error: 'DTMF Worker not initialized.' }));
       return;
@@ -52,13 +52,16 @@ class DtmfService {
     source.connect(offlineCtx.destination);
     source.start();
 
-    offlineCtx.startRendering().then(resampled => {
-      const pcmData = resampled.getChannelData(0);
-      this.worker?.postMessage({ type: 'process', payload: { pcmData } });
-    }).catch(e => {
-       const error = e as Error;
-       dtmfStore.update(s => ({ ...s, status: 'error', error: `Resampling failed: ${error.message}` }));
-    });
+   try {
+     const resampled = await offlineCtx.startRendering();
+     const pcmData = resampled.getChannelData(0);
+     this.worker?.postMessage({ type: 'process', payload: { pcmData } });
+   } catch (e) {
+     const error = e as Error;
+     dtmfStore.update(s => ({ ...s, status: 'error', error: `Resampling failed: ${error.message}` }));
+     // Re-throw the error so the caller (like a test) can know it failed.
+     throw error;
+   }
   }
 
   public dispose(): void {
