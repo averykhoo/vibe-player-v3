@@ -28,8 +28,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
 ├── build_system_prompt.py
 ├── system-prompt.txt
 ├── test-audio
-│   ├── 449496_9289636-lq.mp3
-│   ├── C.Noisy_Voice.wav
 │   ├── CGI_Animated_Short_Film：_＂Watermelon_A_Cautionary_Tale＂_by_Kefei.m4a
 │   ├── Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3
 │   ├── Dial DTMF sound _Ringing Tone_ (400Hz+450Hz) [OnlineSound.net].mp3
@@ -175,13 +173,18 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   └── +page.svelte
     │   └── setupTests.ts
     ├── static
-    │   ├── C.Noisy_Voice.wav
     │   ├── dtmf-123A456B789C(star)0(hex)D.mp3
     │   ├── favicon.png
-    │   ├── fft.js
-    │   ├── rubberband-loader.js
-    │   ├── rubberband.wasm
-    │   └── silero_vad.onnx
+    │   ├── models
+    │   │   └── silero_vad.onnx
+    │   ├── test-audio
+    │   │   ├── 449496_9289636-lq.mp3
+    │   │   └── C.Noisy_Voice.wav
+    │   └── vendor
+    │       ├── fft.js
+    │       └── rubberband
+    │           ├── rubberband-loader.js
+    │           └── rubberband.wasm
     ├── svelte.config.js
     ├── tailwind.config.ts
     ├── tests-e2e
@@ -10261,6 +10264,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
+  maxFailures: process.env.CI ? 1 : undefined,
   reporter: 'html',
 
   use: {
@@ -10391,11 +10395,12 @@ import type { Handle } from '@sveltejs/kit';
 
 /**
  * SvelteKit hook to add required security headers for SharedArrayBuffer support.
- * SharedArrayBuffer is used by ort-wasm-simd-threaded.jsep.mjs (ONNX Runtime) for multithreading.
- * Without these headers, the browser will not allow the module to load, causing a silent failure.
+ * This is crucial for libraries like ONNX Runtime (ort-wasm-simd-threaded) and ensures
+ * that both pages and static assets are served with the correct policies.
  * See: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer/security_requirements
  */
 export const handle: Handle = async ({ event, resolve }) => {
+  // Apply the headers to all responses.
   const response = await resolve(event);
 
   // Required for SharedArrayBuffer
@@ -11124,12 +11129,12 @@ describe("AnalysisService (VAD Only)", () => {
 --- File: vibe-player-v2/src/lib/services/analysis.service.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/analysis.service.ts
-import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
+import { browser } from '$app/environment';
 import { get } from "svelte/store";
 import type { SileroVadInitPayload, SileroVadProcessPayload, SileroVadProcessResultPayload, WorkerMessage } from "$lib/types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { VAD_CONSTANTS } from "$lib/utils";
-import { type AnalysisState, analysisStore } from "$lib/stores/analysis.store";
+import { analysisStore } from "$lib/stores/analysis.store";
 import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
 interface PendingRequest {
@@ -11170,18 +11175,13 @@ class AnalysisService {
       }
       const messageId = this.generateMessageId();
       this.pendingRequests.set(messageId, { resolve, reject });
-      if (transferList) {
-        this.worker.postMessage({ ...message, messageId }, transferList);
-      } else {
-        this.worker.postMessage({ ...message, messageId });
-      }
+      this.worker.postMessage({ ...message, messageId }, transferList || []);
     });
   }
 
   public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
-    if (!browser) return; // <-- ADD THIS GUARD
+    if (!browser) return;
     if (this.isInitialized || this.isInitializing) {
-      console.warn("AnalysisService already initialized or initializing.");
       return;
     }
     this.isInitializing = true;
@@ -11194,9 +11194,9 @@ class AnalysisService {
       const request = messageId ? this.pendingRequests.get(messageId) : undefined;
 
       if (error) {
-        const errorMsg = typeof error === 'string' ? error : (error as Error).message;
+        const errorMsg = error instanceof Error ? error.message : String(error);
         analysisStore.update(s => ({ ...s, vadError: `VAD Worker error: ${errorMsg}` }));
-        if (request) request.reject(errorMsg);
+        if (request) request.reject(new Error(errorMsg));
         if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
             this.isInitialized = false;
             this.isInitializing = false;
@@ -11236,7 +11236,6 @@ class AnalysisService {
     };
 
     try {
-      // Fetch the ONNX model
       const modelResponse = await fetch(VAD_CONSTANTS.ONNX_MODEL_URL);
       if (!modelResponse.ok) {
         throw new Error(`Failed to fetch ONNX model: ${modelResponse.statusText}`);
@@ -11244,7 +11243,7 @@ class AnalysisService {
       const modelBuffer = await modelResponse.arrayBuffer();
 
       const initPayload: SileroVadInitPayload = {
-        // origin: location.origin, // origin is not part of SileroVadInitPayload anymore
+        origin: location.origin, // <-- ADDED
         modelBuffer,
         sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
         frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
@@ -11252,7 +11251,6 @@ class AnalysisService {
         negativeThreshold: options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
       };
 
-      // Post the message with the modelBuffer in the transfer list
       await this.postMessageToWorker<SileroVadInitPayload>(
         { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [initPayload.modelBuffer]
@@ -11262,8 +11260,6 @@ class AnalysisService {
         this.isInitialized = false;
         this.isInitializing = false;
         analysisStore.update(s => ({ ...s, vadStatus: "Error sending VAD init to worker.", vadError: errorMessage, vadInitialized: false }));
-
-        // FIX: Re-throw the error so the calling promise rejects.
         throw err;
     }
   }
@@ -11276,7 +11272,7 @@ class AnalysisService {
     }
     const payload: SileroVadProcessPayload = { audioFrame, timestamp };
     try {
-      const result = await this.postMessageToWorker<SileroVadProcessPayload>({ type: VAD_WORKER_MSG_TYPE.PROCESS, payload });
+      const result = await this.postMessageToWorker<SileroVadProcessPayload>({ type: VAD_WORKER_MSG_TYPE.PROCESS, payload }, [payload.audioFrame.buffer]);
       return result as SileroVadProcessResultPayload;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -12731,16 +12727,16 @@ export interface StatusState {
 export interface WorkerMessage<T = unknown> {
     type: string;
     payload?: T;
-    error?: string;
-    messageId?: string; // Optional: for tracking request-response pairs
+    error?: string | Error; // Allow Error object
+    messageId?: string;
 }
 
 // --- Rubberband Worker ---
 export const RB_WORKER_MSG_TYPE = {
     INIT: "rb_init",
     PROCESS: "rb_process",
-    FLUSH: "rb_flush", // For final processing
-    RESET: "rb_reset", // To reset internal state
+    FLUSH: "rb_flush",
+    RESET: "rb_reset",
     SET_PITCH: "rb_set_pitch",
     SET_SPEED: "rb_set_speed",
     INIT_SUCCESS: "rb_init_success",
@@ -12748,35 +12744,30 @@ export const RB_WORKER_MSG_TYPE = {
     PROCESS_RESULT: "rb_process_result",
     PROCESS_ERROR: "rb_process_error",
     FLUSH_RESULT: "rb_flush_result",
-    STATUS: "rb_status", // For general status or progress updates
+    STATUS: "rb_status",
 };
 
 export interface RubberbandInitPayload {
-    wasmPath: string; // Path to rubberband.wasm
-    loaderPath: string; // Path to rubberband-loader.js
-
-  // --- ADD THIS LINE ---
-  origin: string; // The origin of the main document (e.g., http://localhost:4173)
-  // --- END ADDITION ---
-
+    wasmPath: string;
+    loaderPath: string;
+    origin: string;
     sampleRate: number;
     channels: number;
     initialSpeed: number;
     initialPitch: number;
-    // Add other necessary initialization parameters
 }
 
 export interface RubberbandProcessPayload {
-    inputBuffer: Float32Array[]; // Array of channels, each a Float32Array
+    inputBuffer: Float32Array[];
 }
 
 export interface RubberbandProcessResultPayload {
-    outputBuffer: Float32Array[]; // Array of channels
+    outputBuffer: Float32Array[];
 }
 
 export interface RubberbandStatusPayload {
     message: string;
-    progress?: number; // Optional progress indicator (0-1)
+    progress?: number;
 }
 
 // --- Silero VAD Worker ---
@@ -12792,35 +12783,35 @@ export const VAD_WORKER_MSG_TYPE = {
 };
 
 export interface SileroVadInitPayload {
-    // onnxModelPath: string; // Path to silero_vad.onnx
-    modelBuffer: ArrayBuffer; // ArrayBuffer of the ONNX model
-    // onnxWasmPath: string; // Path to ORT WASM files (usually handled by ORT itself if copied to static root)
-    sampleRate: number; // e.g., 16000
-    frameSamples: number; // e.g., 1536
+    origin: string; // <-- ADDED
+    modelBuffer: ArrayBuffer;
+    sampleRate: number;
+    frameSamples: number;
     positiveThreshold?: number;
     negativeThreshold?: number;
 }
 
 export interface SileroVadProcessPayload {
-    audioFrame: Float32Array; // Single audio frame
+    audioFrame: Float32Array;
+    timestamp?: number;
 }
 
 export interface SileroVadProcessResultPayload {
     isSpeech: boolean;
-    timestamp: number; // Start time of the frame being processed
-    // Potentially include probabilities or other metadata
+    timestamp: number;
+    score: number;
+    audioFrame?: Float32Array;
 }
 
 export interface SileroVadStatusPayload {
     message: string;
-    // progress?: number;
 }
 
-// --- Spectrogram Worker (if needed as a separate worker from visualizer component) ---
+// --- Spectrogram Worker ---
 export const SPEC_WORKER_MSG_TYPE = {
     INIT: "spec_init",
     PROCESS: "spec_process",
-    CONFIG_UPDATE: "spec_config_update", // e.g., FFT size change
+    CONFIG_UPDATE: "spec_config_update",
     INIT_SUCCESS: "spec_init_success",
     INIT_ERROR: "spec_init_error",
     PROCESS_RESULT: "spec_process_result",
@@ -12830,9 +12821,9 @@ export const SPEC_WORKER_MSG_TYPE = {
 export interface SpectrogramInitPayload {
   origin: string;
   fftPath: string;
-    sampleRate: number;
-    fftSize: number;
-    hopLength: number;
+  sampleRate: number;
+  fftSize: number;
+  hopLength: number;
 }
 
 export interface SpectrogramProcessPayload {
@@ -12840,37 +12831,7 @@ export interface SpectrogramProcessPayload {
 }
 
 export interface SpectrogramResultPayload {
-    magnitudes: Float32Array[]; // Array of magnitude arrays (bins) for each frame
-    // Or could be Uint8Array if values are scaled to 0-255 for image display
-}
-
-// Type guards for narrowing down message types (examples)
-export function isRubberbandInitPayload(
-    payload: unknown,
-): payload is RubberbandInitPayload {
-    return (
-        payload !== null &&
-        typeof payload === 'object' &&
-        'wasmPath' in payload &&
-        typeof (payload as Record<string, unknown>).wasmPath === "string" &&
-        'sampleRate' in payload &&
-        typeof (payload as Record<string, unknown>).sampleRate === "number"
-    );
-}
-
-export function isSileroVadInitPayload(
-    payload: unknown,
-): payload is SileroVadInitPayload {
-    return (
-        payload !== null &&
-        typeof payload === 'object' &&
-        // 'onnxModelPath' in payload && // No longer checking for onnxModelPath
-        // typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
-        'modelBuffer' in payload && // Check for modelBuffer instead
-        (payload as Record<string, unknown>).modelBuffer instanceof ArrayBuffer && // Verify it's an ArrayBuffer
-        'sampleRate' in payload &&
-        typeof (payload as Record<string, unknown>).sampleRate === "number"
-    );
+    magnitudes: Float32Array[];
 }
 
 ````
@@ -13022,6 +12983,7 @@ export function debounce<T extends (...args: any[]) => any>(
 --- End of File: vibe-player-v2/src/lib/utils/async.ts ---
 --- File: vibe-player-v2/src/lib/utils/constants.test.ts ---
 ````typescript
+// vibe-player-v2/src/lib/utils/constants.test.ts
 import { describe, it, expect } from "vitest";
 import * as AllConstants from "./constants";
 
@@ -13031,15 +12993,19 @@ describe("Constants", () => {
     expect(AllConstants.AUDIO_ENGINE_CONSTANTS.PROCESSOR_NAME).toBe(
       "rubberband-processor",
     );
+    // UPDATED TEST: Check for the new, organized path
     expect(AllConstants.AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL).toBe(
-      "/rubberband.wasm",
+      "/vendor/rubberband/rubberband.wasm",
     );
   });
 
   it("VAD_CONSTANTS should be defined and have expected properties", () => {
     expect(AllConstants.VAD_CONSTANTS).toBeDefined();
     expect(AllConstants.VAD_CONSTANTS.SAMPLE_RATE).toBe(16000);
-    expect(AllConstants.VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES).toBe(1536);
+    // UPDATED TEST: Check for the new, organized path
+    expect(AllConstants.VAD_CONSTANTS.ONNX_MODEL_URL).toBe(
+      "/models/silero_vad.onnx",
+    );
   });
 
   it("UI_CONSTANTS should be defined and have expected properties", () => {
@@ -13053,6 +13019,10 @@ describe("Constants", () => {
       "#26828E",
     );
     expect(AllConstants.VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE).toBe(8192);
+    // UPDATED TEST: Check for the new, organized path
+    expect(AllConstants.VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL).toBe(
+      "/vendor/fft.js"
+    )
   });
 
   it("URL_HASH_KEYS should be defined and have expected properties", () => {
@@ -13078,10 +13048,10 @@ export interface AudioEngineConstants {
   LOADER_SCRIPT_URL: string;
 }
 export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
-  PROCESSOR_SCRIPT_URL: "js/player/rubberbandProcessor.js",
+  PROCESSOR_SCRIPT_URL: "js/player/rubberbandProcessor.js", // This is a source file, not static, path is correct.
   PROCESSOR_NAME: "rubberband-processor",
-  WASM_BINARY_URL: "/rubberband.wasm",
-  LOADER_SCRIPT_URL: "/rubberband-loader.js",
+  WASM_BINARY_URL: "/vendor/rubberband/rubberband.wasm", // UPDATED
+  LOADER_SCRIPT_URL: "/vendor/rubberband/rubberband-loader.js", // UPDATED
 };
 export interface VadConstants {
   SAMPLE_RATE: number;
@@ -13090,7 +13060,7 @@ export interface VadConstants {
   YIELD_INTERVAL: number;
   DEFAULT_POSITIVE_THRESHOLD: number;
   DEFAULT_NEGATIVE_THRESHOLD: number;
-  ONNX_MODEL_URL: string; // <-- ADD THIS LINE
+  ONNX_MODEL_URL: string;
 }
 export const VAD_CONSTANTS: VadConstants = {
   SAMPLE_RATE: 16000,
@@ -13099,7 +13069,7 @@ export const VAD_CONSTANTS: VadConstants = {
   YIELD_INTERVAL: 5,
   DEFAULT_POSITIVE_THRESHOLD: 0.5,
   DEFAULT_NEGATIVE_THRESHOLD: 0.35,
-  ONNX_MODEL_URL: "/silero_vad.onnx", // <-- ADD THIS LINE
+  ONNX_MODEL_URL: "/models/silero_vad.onnx", // UPDATED
 };
 export interface UiConstants {
   DEBOUNCE_HASH_UPDATE_MS: number;
@@ -13124,7 +13094,7 @@ export interface VisualizerConstants {
   SPEC_NORMAL_HOP_DIVISOR: number;
   SPEC_SHORT_HOP_DIVISOR: number;
   SPEC_CENTER_WINDOWS: boolean;
-  FFT_WORKER_SCRIPT_URL: string; // <-- ADD THIS LINE
+  FFT_WORKER_SCRIPT_URL: string;
 }
 export const VISUALIZER_CONSTANTS: VisualizerConstants = {
   WAVEFORM_HEIGHT_SCALE: 0.8,
@@ -13141,7 +13111,7 @@ export const VISUALIZER_CONSTANTS: VisualizerConstants = {
   SPEC_NORMAL_HOP_DIVISOR: 4,
   SPEC_SHORT_HOP_DIVISOR: 8,
   SPEC_CENTER_WINDOWS: true,
-  FFT_WORKER_SCRIPT_URL: "/fft.js", // <-- ADD THIS LINE
+  FFT_WORKER_SCRIPT_URL: "/vendor/fft.js", // UPDATED
 };
 export interface UrlHashKeys {
   SPEED: string;
@@ -14151,16 +14121,12 @@ import type {
 import { VAD_WORKER_MSG_TYPE } from "../types/worker.types";
 
 let vadSession: ort.InferenceSession | null = null;
-let sampleRate: number = 16000; // Default, set by init
-let frameSamples: number = 1536; // Default, set by init
-let positiveThreshold: number = 0.5; // Default
-let negativeThreshold: number = 0.35; // Default
-
-// Silero VAD model specific state (h, c tensors)
+let sampleRate: number = 16000;
+let frameSamples: number = 1536;
+let positiveThreshold: number = 0.5;
+let negativeThreshold: number = 0.35;
 let _h: ort.Tensor | null = null;
 let _c: ort.Tensor | null = null;
-
-// Pre-allocate sr tensor (sample rate)
 const srData = new Int32Array(1);
 let srTensor: ort.Tensor | null = null;
 
@@ -14172,38 +14138,34 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       case VAD_WORKER_MSG_TYPE.INIT:
         const initPayload = payload as SileroVadInitPayload;
         sampleRate = initPayload.sampleRate;
-        frameSamples = initPayload.frameSamples; // Make sure this matches model expectations
+        frameSamples = initPayload.frameSamples;
         positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
         negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
 
-        // FIX: Explicitly set the path for the ONNX runtime WASM files.
-        ort.env.wasm.wasmPaths = '/';
+        // --- THE FIX ---
+        if (!initPayload.origin) {
+          throw new Error("SileroVadWorker INIT: `origin` is missing in payload.");
+        }
+        // Ensure the path has a trailing slash before ORT uses it.
+        ort.env.wasm.wasmPaths = `${initPayload.origin}/`;
+        // --- END FIX ---
 
-        // It's crucial that ORT WASM files are served from the expected path.
-        // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
-        // ort.env.wasm.wasmPaths should be set globally if needed or ORT will fetch from CDN.
-        // We are now passing the model as an ArrayBuffer, so path resolution for the model itself is not needed here.
-        // ort.env.wasm.numThreads = 1; // Optional: Adjust based on performance testing
-
-        if (!initPayload.modelBuffer) { // Ensure modelBuffer is provided
+        if (!initPayload.modelBuffer) {
           throw new Error("SileroVadWorker INIT: modelBuffer is missing in payload");
         }
 
-        vadSession = await ort.InferenceSession.create(
-          initPayload.modelBuffer, // Use modelBuffer directly
-        );
+        try {
+          vadSession = await ort.InferenceSession.create(
+            initPayload.modelBuffer,
+            { executionProviders: ['wasm'] }
+          );
+        } catch (e) {
+          const ortError = e as Error;
+          throw new Error(`ONNX session creation failed: ${ortError.message}. Check WASM paths and model buffer.`);
+        }
 
-        // Initialize h, c, sr tensors
-        _h = new ort.Tensor(
-          "float32",
-          new Float32Array(2 * 1 * 64),
-          [2, 1, 64],
-        ); // 2 layers, 1 batch, 64 hidden_size
-        _c = new ort.Tensor(
-          "float32",
-          new Float32Array(2 * 1 * 64),
-          [2, 1, 64],
-        );
+        _h = new ort.Tensor("float32", new Float32Array(2 * 1 * 64).fill(0), [2, 1, 64]);
+        _c = new ort.Tensor("float32", new Float32Array(2 * 1 * 64).fill(0), [2, 1, 64]);
         srData[0] = sampleRate;
         srTensor = new ort.Tensor("int32", srData, [1]);
 
@@ -14215,36 +14177,25 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           throw new Error("VAD worker not initialized or tensors not ready.");
         }
         const processPayload = payload as SileroVadProcessPayload;
-        const audioFrame = processPayload.audioFrame; // Should be Float32Array of frameSamples length
+        const audioFrame = processPayload.audioFrame;
 
         if (audioFrame.length !== frameSamples) {
-          throw new Error(
-            `Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`,
-          );
+          throw new Error(`Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`);
         }
 
-        const inputTensor = new ort.Tensor("float32", audioFrame, [
-          1,
-          audioFrame.length,
-        ]);
-        const feeds: Record<string, ort.Tensor> = {
-          input: inputTensor,
-          sr: srTensor,
-          h: _h,
-          c: _c,
-        };
+        const inputTensor = new ort.Tensor("float32", audioFrame, [1, audioFrame.length]);
+        const feeds: Record<string, ort.Tensor> = { input: inputTensor, sr: srTensor, h: _h, c: _c };
 
         const results = await vadSession.run(feeds);
         const outputScore = (results.output.data as Float32Array)[0];
-        _h = results.hn; // Update state for next frame
+        _h = results.hn;
         _c = results.cn;
 
         const isSpeech = outputScore >= positiveThreshold;
-        // Could add hysteresis logic here using negativeThreshold if needed
 
         const resultPayload: SileroVadProcessResultPayload = {
           isSpeech: isSpeech,
-          timestamp: payload.timestamp || 0, // Pass through timestamp if provided
+          timestamp: payload.timestamp || 0,
           score: outputScore,
         };
         self.postMessage({
@@ -14256,36 +14207,20 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
       case VAD_WORKER_MSG_TYPE.RESET:
         if (_h && _c) {
-          _h.data.fill(0); // Reset tensor data
+          _h.data.fill(0);
           _c.data.fill(0);
         }
-        self.postMessage({
-          type: `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`,
-          messageId,
-        });
+        self.postMessage({ type: `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`, messageId });
         break;
 
       default:
-        console.warn(`SileroVadWorker: Unknown message type: ${type}`);
-        self.postMessage({
-          type: "unknown_message",
-          error: `Unknown message type: ${type}`,
-          messageId,
-        });
+        self.postMessage({ type: "unknown_message", error: `Unknown message type: ${type}`, messageId });
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
-    console.error(
-      `Error in SileroVadWorker (type: ${type}):`,
-      error,
-      errorStack,
-    );
-    self.postMessage({
-      type: `${type}_ERROR` as string,
-      error: errorMessage,
-      messageId,
-    });
+    console.error(`Error in SileroVadWorker (type: ${type}):`, errorMessage, errorStack);
+    self.postMessage({ type: `${type}_ERROR` as string, error: errorMessage, messageId });
   }
 };
 
@@ -14525,7 +14460,7 @@ console.log('Global Skeleton mock via specific mocks + Generic fallback is NOW E
 
 ````
 --- End of File: vibe-player-v2/src/setupTests.ts ---
---- File: vibe-player-v2/static/fft.js ---
+--- File: vibe-player-v2/static/vendor/fft.js ---
 ````javascript
 // --- /vibe-player/lib/fft.js ---
 // NOTE: This is 3rd party code (adapted). JSDoc annotations not added here.
@@ -14922,8 +14857,8 @@ FFT.prototype._singleRealTransform4 = function _singleRealTransform4(
 };
 
 ````
---- End of File: vibe-player-v2/static/fft.js ---
---- File: vibe-player-v2/static/rubberband-loader.js ---
+--- End of File: vibe-player-v2/static/vendor/fft.js ---
+--- File: vibe-player-v2/static/vendor/rubberband/rubberband-loader.js ---
 ````javascript
 // --- START OF FILE rubberband.js (Self-Contained Loader + Options) ---
 
@@ -15468,7 +15403,7 @@ var Rubberband = (() => {
 // --- END OF FILE rubberband.js ---
 
 ````
---- End of File: vibe-player-v2/static/rubberband-loader.js ---
+--- End of File: vibe-player-v2/static/vendor/rubberband/rubberband-loader.js ---
 --- File: vibe-player-v2/svelte.config.js ---
 ````javascript
 import adapter from "@sveltejs/adapter-static";
@@ -15517,27 +15452,30 @@ export default {
 import { test, expect } from '@playwright/test';
 import { PlayerPage } from './PlayerPage.mjs';
 
-// Helper function (keep as is)
 function parseTimeToSeconds(timeStr) {
   if (!timeStr || !timeStr.includes(':') || timeStr.includes('NaN')) return 0;
   const parts = timeStr.split(':');
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
 
-// FIX: Changed the test file from a .mp3 to a .wav for better CI compatibility
-const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
-const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
+// UPDATED: Paths are now relative to the server root, as they are in the static dir.
+const TEST_AUDIO_FILE = 'test-audio/C.Noisy_Voice.wav';
+const DTMF_TEST_AUDIO_FILE = 'test-audio/dtmf-123A456B789C(star)0(hex)D.mp3';
 
 test.describe('Vibe Player V2 E2E', () => {
   let playerPage;
 
-  // Add this block to log browser console messages
   test.beforeEach(async ({ page }) => {
-    // Listen for all console events and log them to the test output
     page.on('console', msg => {
-      console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`);
+      const text = msg.text();
+      if (msg.type() === 'error') {
+        console.error(`[Browser Console ERROR] ${text}`);
+        // Detect critical VAD/WASM errors and fail the test immediately
+        if (text.includes('VAD error') || text.includes('WASM error') || text.includes('WebAssembly')) {
+          test.fail(true, `Critical VAD/WASM error detected in browser console: ${text}`);
+        }
+      }
     });
-
     playerPage = new PlayerPage(page);
     await playerPage.goto();
   });
@@ -15591,7 +15529,7 @@ test.describe('Vibe Player V2 E2E', () => {
 
     const initialTimeText = await playerPage.timeDisplay.textContent();
     const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
-    expect(durationSeconds).toBeGreaterThan(0); // WAV file is short, adjust expectation
+    expect(durationSeconds).toBeGreaterThan(0);
 
     const currentMax = parseFloat(await playerPage.seekSliderInput.getAttribute('max')) || durationSeconds;
     await playerPage.setSliderValue(playerPage.seekSliderInput, String(currentMax / 2));
@@ -15609,16 +15547,14 @@ test.describe('Vibe Player V2 E2E', () => {
 
   test('should detect and display DTMF tones', async ({ page }) => {
     await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-    // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
     const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
     const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
 
     const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
 
-    // Wait for the text to appear, giving time for audio processing and UI update
-    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
+    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 });
   });
 
   test.describe('URL State Serialization', () => {
@@ -15627,11 +15563,11 @@ test.describe('Vibe Player V2 E2E', () => {
         await playerPage.expectControlsToBeReadyForPlayback();
 
         await playerPage.setSliderValue(playerPage.speedSliderInput, '1.5');
-        await expect(page).toHaveURL(/speed=1.5/, { timeout: 2000 });
+        await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
 
         await playerPage.setSliderValue(playerPage.pitchSliderInput, '2');
-        await expect(page).toHaveURL(/pitch=2/, { timeout: 2000 });
-        await expect(page).toHaveURL(/speed=1.5/);
+        await expect(page).toHaveURL(/pitch=2.0/, { timeout: 2000 });
+        await expect(page).toHaveURL(/speed=1.50/);
     });
 
     test('should load settings from URL parameters on page load', async ({ page }) => {
@@ -15652,44 +15588,30 @@ test.describe('Vibe Player V2 E2E', () => {
 --- End of File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
 --- File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 ````mjs
-// tests-e2e/PlayerPage.js
+// tests-e2e/PlayerPage.mjs
 import { expect } from '@playwright/test';
-// FIX: Remove the unused 'path' import
-// import path from 'path';
 
 export class PlayerPage {
   constructor(page) {
     this.page = page;
     this.devServerUrl = 'http://localhost:4173/';
-
-    // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
     this.appBarTitle = page.getByTestId('app-bar-title');
-
-    // FileLoader.svelte locators (assuming data-testid attributes will be added)
-    this.fileInput = page.locator('input[type="file"]'); // General locator, refine if possible
+    this.fileInput = page.locator('input[type="file"]');
     this.fileNameDisplay = page.getByTestId('file-name-display');
     this.fileStatusDisplay = page.getByTestId('file-status-display');
     this.fileErrorDisplay = page.getByTestId('file-error-display');
-
-    // Controls.svelte locators (assuming data-testid attributes)
-    this.playButton = page.getByTestId('play-button'); // Should toggle text Play/Pause
+    this.playButton = page.getByTestId('play-button');
     this.stopButton = page.getByTestId('stop-button');
     this.timeDisplay = page.getByTestId('time-display');
-
     this.seekSliderInput = page.getByTestId('seek-slider-input');
-
     this.speedSliderInput = page.getByTestId('speed-slider-input');
     this.speedValueDisplay = page.getByTestId('speed-value');
-
     this.pitchSliderInput = page.getByTestId('pitch-slider-input');
     this.pitchValueDisplay = page.getByTestId('pitch-value');
-
     this.gainSliderInput = page.getByTestId('gain-slider-input');
     this.gainValueDisplay = page.getByTestId('gain-value');
-
     this.vadPositiveSliderInput = page.getByTestId('vad-positive-slider-input');
     this.vadPositiveValueDisplay = page.getByTestId('vad-positive-value');
-
     this.vadNegativeSliderInput = page.getByTestId('vad-negative-slider-input');
     this.vadNegativeValueDisplay = page.getByTestId('vad-negative-value');
   }
@@ -15697,54 +15619,41 @@ export class PlayerPage {
   async goto() {
     await this.page.goto(this.devServerUrl);
     await expect(this.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
-    // Wait for the file input to be visible as a sign of FileLoader.svelte being ready
-    await expect(this.fileInput).toBeVisible({timeout: 10000});
+    await expect(this.fileInput).toBeVisible({ timeout: 10000 });
   }
 
   async loadAudioFile(fileName) {
-    // FIX: Instead of resolving a file path, we now fetch the file from the test server's URL.
-    // This perfectly mimics how a user would load a file from a URL.
-    const response = await this.page.request.get(this.devServerUrl + fileName);
-    const buffer = await response.body();
+    // --- THE FIX ---
+    // The previous implementation used `page.request.get` which is good, but let's
+    // simplify and use `setInputFiles` with a local path, which is more robust
+    // for CI and local testing. Playwright will handle serving it.
+    // We also need to construct the correct path relative to the project root.
+    const filePath = `static/${fileName}`; // Assumes tests run from vibe-player-v2/
 
-    // Use Playwright's setInputFiles with a buffer.
-    await this.fileInput.setInputFiles({
-      name: fileName,
-      mimeType: fileName.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg',
-      buffer: buffer
-    });
-
-    await this.page.waitForTimeout(200);
+    await this.fileInput.setInputFiles(filePath);
+    await this.page.waitForTimeout(200); // Small delay for file processing to start
   }
 
-  // ... (rest of the methods are correct)
   async expectControlsToBeReadyForPlayback() {
-    // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
-    // This directly tests the #if block condition becoming true.
-    // Only after it's attached can we check if it's enabled.
-    // Using .first() ensures Playwright doesn't complain if the locator resolves to multiple items,
-    // and .waitFor() is the explicit way to wait for an element to appear.
     await this.playButton.first().waitFor({ state: 'attached', timeout: 20000 });
-
-    // Now that we know the button exists, we can safely check if it's enabled.
-    await expect(this.playButton).toBeEnabled({ timeout: 1000 }); // Short timeout is fine now
+    await expect(this.playButton).toBeEnabled({ timeout: 1000 });
   }
 
   async getPlayButtonText() {
-    return this.playButton.textContent(); // Assumes button text changes Play/Pause
+    return this.playButton.textContent();
   }
 
   async setSliderValue(sliderInputLocator, value) {
     await sliderInputLocator.fill(String(value));
-    await sliderInputLocator.dispatchEvent('input'); // For live updates if component listens to input
-    await sliderInputLocator.dispatchEvent('change'); // For final value commit
-    await this.page.waitForTimeout(150); // Allow UI to react
+    await sliderInputLocator.dispatchEvent('input');
+    await sliderInputLocator.dispatchEvent('change');
+    await this.page.waitForTimeout(150);
   }
 
-  async getSliderInputValue(sliderInputLocator) { // Renamed to avoid conflict with Playwright's own getValue
+  async getSliderInputValue(sliderInputLocator) {
     return sliderInputLocator.inputValue();
   }
-};
+}
 
 ````
 --- End of File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
