@@ -106,17 +106,14 @@ describe("Controls.svelte", () => {
 
     // --- NEW TEST to replace the old pause test ---
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
-    // Arrange: Ensure component is rendered and in a "playing" state
+    // Arrange
     render(Controls);
     act(() => {
       mockPlayerStoreWritable.update(s => ({ ...s, isPlayable: true, isPlaying: true }));
     });
 
-    // The button text should now be "Pause"
-    const pauseButton = screen.getByRole("button", { name: /Pause/i });
-    expect(pauseButton).toBeInTheDocument();
-
-    // Act
+    // Act: Use findBy* to wait for the button text to change to "Pause"
+    const pauseButton = await screen.findByRole("button", { name: /Pause/i }); // This line is key
     await fireEvent.click(pauseButton);
 
     // Assert
@@ -141,7 +138,7 @@ describe("Controls.svelte", () => {
     const speedSlider = screen.getByLabelText<HTMLInputElement>(/Speed/i);
     await fireEvent.input(speedSlider, { target: { value: "1.5" } });
     expect(audioEngineService.setSpeed).toHaveBeenCalledWith(1.5);
-    expect(screen.getByLabelText(/Speed: 1.50x/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Speed: 1.50x/i)).toBeInTheDocument();
   });
 
   it("calls audioEngine.setPitch() when pitch slider changes", async () => {
@@ -149,7 +146,7 @@ describe("Controls.svelte", () => {
     const pitchSlider = screen.getByLabelText<HTMLInputElement>(/Pitch/i);
     await fireEvent.input(pitchSlider, { target: { value: "-5.0" } });
     expect(audioEngineService.setPitch).toHaveBeenCalledWith(-5.0);
-    expect(screen.getByLabelText(/Pitch: -5.0 semitones/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Pitch: -5.0 semitones/i)).toBeInTheDocument();
   });
 
   it("calls audioEngine.setGain() when gain slider changes", async () => {
@@ -157,7 +154,7 @@ describe("Controls.svelte", () => {
     const gainSlider = screen.getByLabelText<HTMLInputElement>(/Gain/i);
     await fireEvent.input(gainSlider, { target: { value: "0.7" } });
     expect(audioEngineService.setGain).toHaveBeenCalledWith(0.7);
-    expect(screen.getByLabelText(/Gain: 0.70/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Gain: 0.70/i)).toBeInTheDocument();
   });
 
   it("updates analysisStore when VAD Positive Threshold slider changes", async () => {
@@ -167,7 +164,7 @@ describe("Controls.svelte", () => {
     );
     await fireEvent.input(vadSlider, { target: { value: "0.85" } });
     expect(analysisStore.update).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText(/VAD Positive Threshold: 0.85/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/VAD Positive Threshold: 0.85/i)).toBeInTheDocument();
   });
 
   it("updates analysisStore when VAD Negative Threshold slider changes", async () => {
@@ -177,7 +174,7 @@ describe("Controls.svelte", () => {
     );
     await fireEvent.input(vadSlider, { target: { value: "0.25" } });
     expect(analysisStore.update).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText(/VAD Negative Threshold: 0.25/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/VAD Negative Threshold: 0.25/i)).toBeInTheDocument();
   });
 
   it("slider values update if store changes externally", async () => {
@@ -186,15 +183,15 @@ describe("Controls.svelte", () => {
       mockPlayerStoreWritable.set({ ...initialMockPlayerStoreValues, speed: 1.8, pitch: 3.0, gain: 0.5 });
     });
     await screen.findByLabelText(/Speed: 1.80x/i);
-    expect(screen.getByLabelText<HTMLInputElement>(/Speed/i).value).toBe("1.8");
-    expect(screen.getByLabelText<HTMLInputElement>(/Pitch/i).value).toBe("3");
-    expect(screen.getByLabelText<HTMLInputElement>(/Gain/i).value).toBe("0.5");
+    expect((await screen.findByLabelText<HTMLInputElement>(/Speed/i)).value).toBe("1.8");
+    expect((await screen.findByLabelText<HTMLInputElement>(/Pitch/i)).value).toBe("3");
+    expect((await screen.findByLabelText<HTMLInputElement>(/Gain/i)).value).toBe("0.5");
 
     act(() => {
       mockAnalysisStoreWritable.set({ ...initialMockAnalysisStoreValues, vadPositiveThreshold: 0.9, vadNegativeThreshold: 0.1 });
     });
     await screen.findByLabelText(/VAD Positive Threshold: 0.90/i);
-    expect(screen.getByLabelText<HTMLInputElement>(/VAD Positive Threshold/i).value).toBe("0.9");
-    expect(screen.getByLabelText<HTMLInputElement>(/VAD Negative Threshold/i).value).toBe("0.1");
+    expect((await screen.findByLabelText<HTMLInputElement>(/VAD Positive Threshold/i)).value).toBe("0.9");
+    expect((await screen.findByLabelText<HTMLInputElement>(/VAD Negative Threshold/i)).value).toBe("0.1");
   });
 });
