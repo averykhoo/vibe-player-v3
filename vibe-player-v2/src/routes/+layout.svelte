@@ -6,8 +6,7 @@
 
 <AppBar>
   <svelte:fragment slot="lead">
-    <!-- FIX: Added a data-testid attribute for robust E2E testing -->
-    <strong class="text-xl uppercase" data-testid="app-bar-title">Vibe Player V2</strong>
+    <strong class="text-xl uppercase">Vibe Player V2</strong>
   </svelte:fragment>
   <svelte:fragment slot="trail">
     <!-- Other nav elements could go here -->
