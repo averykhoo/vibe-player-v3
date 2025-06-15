@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/utils/constants.test.ts
 import { describe, it, expect } from "vitest";
 import * as AllConstants from "./constants";
 
@@ -7,15 +8,19 @@ describe("Constants", () => {
     expect(AllConstants.AUDIO_ENGINE_CONSTANTS.PROCESSOR_NAME).toBe(
       "rubberband-processor",
     );
+    // UPDATED TEST: Check for the new, organized path
     expect(AllConstants.AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL).toBe(
-      "/rubberband.wasm",
+      "/vendor/rubberband/rubberband.wasm",
     );
   });
 
   it("VAD_CONSTANTS should be defined and have expected properties", () => {
     expect(AllConstants.VAD_CONSTANTS).toBeDefined();
     expect(AllConstants.VAD_CONSTANTS.SAMPLE_RATE).toBe(16000);
-    expect(AllConstants.VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES).toBe(1536);
+    // UPDATED TEST: Check for the new, organized path
+    expect(AllConstants.VAD_CONSTANTS.ONNX_MODEL_URL).toBe(
+      "/models/silero_vad.onnx",
+    );
   });
 
   it("UI_CONSTANTS should be defined and have expected properties", () => {
@@ -29,6 +34,10 @@ describe("Constants", () => {
       "#26828E",
     );
     expect(AllConstants.VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE).toBe(8192);
+    // UPDATED TEST: Check for the new, organized path
+    expect(AllConstants.VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL).toBe(
+      "/vendor/fft.js"
+    )
   });
 
   it("URL_HASH_KEYS should be defined and have expected properties", () => {

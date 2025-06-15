@@ -6,10 +6,10 @@ export interface AudioEngineConstants {
   LOADER_SCRIPT_URL: string;
 }
 export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
-  PROCESSOR_SCRIPT_URL: "js/player/rubberbandProcessor.js",
+  PROCESSOR_SCRIPT_URL: "js/player/rubberbandProcessor.js", // This is a source file, not static, path is correct.
   PROCESSOR_NAME: "rubberband-processor",
-  WASM_BINARY_URL: "/rubberband.wasm",
-  LOADER_SCRIPT_URL: "/rubberband-loader.js",
+  WASM_BINARY_URL: "/vendor/rubberband/rubberband.wasm", // UPDATED
+  LOADER_SCRIPT_URL: "/vendor/rubberband/rubberband-loader.js", // UPDATED
 };
 export interface VadConstants {
   SAMPLE_RATE: number;
@@ -18,7 +18,7 @@ export interface VadConstants {
   YIELD_INTERVAL: number;
   DEFAULT_POSITIVE_THRESHOLD: number;
   DEFAULT_NEGATIVE_THRESHOLD: number;
-  ONNX_MODEL_URL: string; // <-- ADD THIS LINE
+  ONNX_MODEL_URL: string;
 }
 export const VAD_CONSTANTS: VadConstants = {
   SAMPLE_RATE: 16000,
@@ -27,7 +27,7 @@ export const VAD_CONSTANTS: VadConstants = {
   YIELD_INTERVAL: 5,
   DEFAULT_POSITIVE_THRESHOLD: 0.5,
   DEFAULT_NEGATIVE_THRESHOLD: 0.35,
-  ONNX_MODEL_URL: "/silero_vad.onnx", // <-- ADD THIS LINE
+  ONNX_MODEL_URL: "/models/silero_vad.onnx", // UPDATED
 };
 export interface UiConstants {
   DEBOUNCE_HASH_UPDATE_MS: number;
@@ -52,7 +52,7 @@ export interface VisualizerConstants {
   SPEC_NORMAL_HOP_DIVISOR: number;
   SPEC_SHORT_HOP_DIVISOR: number;
   SPEC_CENTER_WINDOWS: boolean;
-  FFT_WORKER_SCRIPT_URL: string; // <-- ADD THIS LINE
+  FFT_WORKER_SCRIPT_URL: string;
 }
 export const VISUALIZER_CONSTANTS: VisualizerConstants = {
   WAVEFORM_HEIGHT_SCALE: 0.8,
@@ -69,7 +69,7 @@ export const VISUALIZER_CONSTANTS: VisualizerConstants = {
   SPEC_NORMAL_HOP_DIVISOR: 4,
   SPEC_SHORT_HOP_DIVISOR: 8,
   SPEC_CENTER_WINDOWS: true,
-  FFT_WORKER_SCRIPT_URL: "/fft.js", // <-- ADD THIS LINE
+  FFT_WORKER_SCRIPT_URL: "/vendor/fft.js", // UPDATED
 };
 export interface UrlHashKeys {
   SPEED: string;

@@ -1,10 +1,10 @@
 // vibe-player-v2/src/lib/services/analysis.service.ts
-import { browser } from '$app/environment'; // <-- ADD THIS IMPORT
+import { browser } from '$app/environment';
 import { get } from "svelte/store";
 import type { SileroVadInitPayload, SileroVadProcessPayload, SileroVadProcessResultPayload, WorkerMessage } from "$lib/types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { VAD_CONSTANTS } from "$lib/utils";
-import { type AnalysisState, analysisStore } from "$lib/stores/analysis.store";
+import { analysisStore } from "$lib/stores/analysis.store";
 import SileroVadWorker from '$lib/workers/sileroVad.worker?worker&inline';
 
 interface PendingRequest {
@@ -45,18 +45,13 @@ class AnalysisService {
       }
       const messageId = this.generateMessageId();
       this.pendingRequests.set(messageId, { resolve, reject });
-      if (transferList) {
-        this.worker.postMessage({ ...message, messageId }, transferList);
-      } else {
-        this.worker.postMessage({ ...message, messageId });
-      }
+      this.worker.postMessage({ ...message, messageId }, transferList || []);
     });
   }
 
   public async initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
-    if (!browser) return; // <-- ADD THIS GUARD
+    if (!browser) return;
     if (this.isInitialized || this.isInitializing) {
-      console.warn("AnalysisService already initialized or initializing.");
       return;
     }
     this.isInitializing = true;
@@ -69,9 +64,9 @@ class AnalysisService {
       const request = messageId ? this.pendingRequests.get(messageId) : undefined;
 
       if (error) {
-        const errorMsg = typeof error === 'string' ? error : (error as Error).message;
+        const errorMsg = error instanceof Error ? error.message : String(error);
         analysisStore.update(s => ({ ...s, vadError: `VAD Worker error: ${errorMsg}` }));
-        if (request) request.reject(errorMsg);
+        if (request) request.reject(new Error(errorMsg));
         if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
             this.isInitialized = false;
             this.isInitializing = false;
@@ -111,7 +106,6 @@ class AnalysisService {
     };
 
     try {
-      // Fetch the ONNX model
       const modelResponse = await fetch(VAD_CONSTANTS.ONNX_MODEL_URL);
       if (!modelResponse.ok) {
         throw new Error(`Failed to fetch ONNX model: ${modelResponse.statusText}`);
@@ -119,7 +113,7 @@ class AnalysisService {
       const modelBuffer = await modelResponse.arrayBuffer();
 
       const initPayload: SileroVadInitPayload = {
-        // origin: location.origin, // origin is not part of SileroVadInitPayload anymore
+        origin: location.origin, // <-- ADDED
         modelBuffer,
         sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
         frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
@@ -127,7 +121,6 @@ class AnalysisService {
         negativeThreshold: options?.negativeThreshold || VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
       };
 
-      // Post the message with the modelBuffer in the transfer list
       await this.postMessageToWorker<SileroVadInitPayload>(
         { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [initPayload.modelBuffer]
@@ -137,8 +130,6 @@ class AnalysisService {
         this.isInitialized = false;
         this.isInitializing = false;
         analysisStore.update(s => ({ ...s, vadStatus: "Error sending VAD init to worker.", vadError: errorMessage, vadInitialized: false }));
-
-        // FIX: Re-throw the error so the calling promise rejects.
         throw err;
     }
   }
@@ -151,7 +142,7 @@ class AnalysisService {
     }
     const payload: SileroVadProcessPayload = { audioFrame, timestamp };
     try {
-      const result = await this.postMessageToWorker<SileroVadProcessPayload>({ type: VAD_WORKER_MSG_TYPE.PROCESS, payload });
+      const result = await this.postMessageToWorker<SileroVadProcessPayload>({ type: VAD_WORKER_MSG_TYPE.PROCESS, payload }, [payload.audioFrame.buffer]);
       return result as SileroVadProcessResultPayload;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

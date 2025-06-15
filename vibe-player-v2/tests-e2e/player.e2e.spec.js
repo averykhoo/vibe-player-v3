@@ -2,27 +2,25 @@
 import { test, expect } from '@playwright/test';
 import { PlayerPage } from './PlayerPage.mjs';
 
-// Helper function (keep as is)
 function parseTimeToSeconds(timeStr) {
   if (!timeStr || !timeStr.includes(':') || timeStr.includes('NaN')) return 0;
   const parts = timeStr.split(':');
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
 
-// FIX: Changed the test file from a .mp3 to a .wav for better CI compatibility
-const TEST_AUDIO_FILE = 'C.Noisy_Voice.wav';
-const DTMF_TEST_AUDIO_FILE = 'dtmf-123A456B789C(star)0(hex)D.mp3';
+// UPDATED: Paths are now relative to the server root, as they are in the static dir.
+const TEST_AUDIO_FILE = 'test-audio/C.Noisy_Voice.wav';
+const DTMF_TEST_AUDIO_FILE = 'test-audio/dtmf-123A456B789C(star)0(hex)D.mp3';
 
 test.describe('Vibe Player V2 E2E', () => {
   let playerPage;
 
-  // Add this block to log browser console messages
   test.beforeEach(async ({ page }) => {
-    // Listen for all console events and log them to the test output
     page.on('console', msg => {
-      console.log(`[Browser Console] ${msg.type().toUpperCase()}: ${msg.text()}`);
+      if (msg.type() === 'error') { // Only log errors to reduce noise
+        console.error(`[Browser Console ERROR] ${msg.text()}`);
+      }
     });
-
     playerPage = new PlayerPage(page);
     await playerPage.goto();
   });
@@ -76,7 +74,7 @@ test.describe('Vibe Player V2 E2E', () => {
 
     const initialTimeText = await playerPage.timeDisplay.textContent();
     const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
-    expect(durationSeconds).toBeGreaterThan(0); // WAV file is short, adjust expectation
+    expect(durationSeconds).toBeGreaterThan(0);
 
     const currentMax = parseFloat(await playerPage.seekSliderInput.getAttribute('max')) || durationSeconds;
     await playerPage.setSliderValue(playerPage.seekSliderInput, String(currentMax / 2));
@@ -94,16 +92,14 @@ test.describe('Vibe Player V2 E2E', () => {
 
   test('should detect and display DTMF tones', async ({ page }) => {
     await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
-    await playerPage.expectControlsToBeReadyForPlayback(); // Ensures audio processing has likely started
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-    // Selector for the paragraph displaying DTMF tones within the ToneDisplay component
     const dtmfDisplaySelector = 'div.card:has(h3:text("Detected Tones")) p.font-mono';
     const dtmfDisplayElement = playerPage.page.locator(dtmfDisplaySelector);
 
     const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
 
-    // Wait for the text to appear, giving time for audio processing and UI update
-    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 }); // Increased timeout for processing
+    await expect(dtmfDisplayElement).toHaveText(expectedDtmfSequence, { timeout: 15000 });
   });
 
   test.describe('URL State Serialization', () => {
@@ -112,11 +108,11 @@ test.describe('Vibe Player V2 E2E', () => {
         await playerPage.expectControlsToBeReadyForPlayback();
 
         await playerPage.setSliderValue(playerPage.speedSliderInput, '1.5');
-        await expect(page).toHaveURL(/speed=1.5/, { timeout: 2000 });
+        await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
 
         await playerPage.setSliderValue(playerPage.pitchSliderInput, '2');
-        await expect(page).toHaveURL(/pitch=2/, { timeout: 2000 });
-        await expect(page).toHaveURL(/speed=1.5/);
+        await expect(page).toHaveURL(/pitch=2.0/, { timeout: 2000 });
+        await expect(page).toHaveURL(/speed=1.50/);
     });
 
     test('should load settings from URL parameters on page load', async ({ page }) => {

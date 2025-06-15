@@ -4,16 +4,16 @@
 export interface WorkerMessage<T = unknown> {
     type: string;
     payload?: T;
-    error?: string;
-    messageId?: string; // Optional: for tracking request-response pairs
+    error?: string | Error; // Allow Error object
+    messageId?: string;
 }
 
 // --- Rubberband Worker ---
 export const RB_WORKER_MSG_TYPE = {
     INIT: "rb_init",
     PROCESS: "rb_process",
-    FLUSH: "rb_flush", // For final processing
-    RESET: "rb_reset", // To reset internal state
+    FLUSH: "rb_flush",
+    RESET: "rb_reset",
     SET_PITCH: "rb_set_pitch",
     SET_SPEED: "rb_set_speed",
     INIT_SUCCESS: "rb_init_success",
@@ -21,35 +21,30 @@ export const RB_WORKER_MSG_TYPE = {
     PROCESS_RESULT: "rb_process_result",
     PROCESS_ERROR: "rb_process_error",
     FLUSH_RESULT: "rb_flush_result",
-    STATUS: "rb_status", // For general status or progress updates
+    STATUS: "rb_status",
 };
 
 export interface RubberbandInitPayload {
-    wasmPath: string; // Path to rubberband.wasm
-    loaderPath: string; // Path to rubberband-loader.js
-
-  // --- ADD THIS LINE ---
-  origin: string; // The origin of the main document (e.g., http://localhost:4173)
-  // --- END ADDITION ---
-
+    wasmPath: string;
+    loaderPath: string;
+    origin: string;
     sampleRate: number;
     channels: number;
     initialSpeed: number;
     initialPitch: number;
-    // Add other necessary initialization parameters
 }
 
 export interface RubberbandProcessPayload {
-    inputBuffer: Float32Array[]; // Array of channels, each a Float32Array
+    inputBuffer: Float32Array[];
 }
 
 export interface RubberbandProcessResultPayload {
-    outputBuffer: Float32Array[]; // Array of channels
+    outputBuffer: Float32Array[];
 }
 
 export interface RubberbandStatusPayload {
     message: string;
-    progress?: number; // Optional progress indicator (0-1)
+    progress?: number;
 }
 
 // --- Silero VAD Worker ---
@@ -65,35 +60,35 @@ export const VAD_WORKER_MSG_TYPE = {
 };
 
 export interface SileroVadInitPayload {
-    // onnxModelPath: string; // Path to silero_vad.onnx
-    modelBuffer: ArrayBuffer; // ArrayBuffer of the ONNX model
-    // onnxWasmPath: string; // Path to ORT WASM files (usually handled by ORT itself if copied to static root)
-    sampleRate: number; // e.g., 16000
-    frameSamples: number; // e.g., 1536
+    origin: string; // <-- ADDED
+    modelBuffer: ArrayBuffer;
+    sampleRate: number;
+    frameSamples: number;
     positiveThreshold?: number;
     negativeThreshold?: number;
 }
 
 export interface SileroVadProcessPayload {
-    audioFrame: Float32Array; // Single audio frame
+    audioFrame: Float32Array;
+    timestamp?: number;
 }
 
 export interface SileroVadProcessResultPayload {
     isSpeech: boolean;
-    timestamp: number; // Start time of the frame being processed
-    // Potentially include probabilities or other metadata
+    timestamp: number;
+    score: number;
+    audioFrame?: Float32Array;
 }
 
 export interface SileroVadStatusPayload {
     message: string;
-    // progress?: number;
 }
 
-// --- Spectrogram Worker (if needed as a separate worker from visualizer component) ---
+// --- Spectrogram Worker ---
 export const SPEC_WORKER_MSG_TYPE = {
     INIT: "spec_init",
     PROCESS: "spec_process",
-    CONFIG_UPDATE: "spec_config_update", // e.g., FFT size change
+    CONFIG_UPDATE: "spec_config_update",
     INIT_SUCCESS: "spec_init_success",
     INIT_ERROR: "spec_init_error",
     PROCESS_RESULT: "spec_process_result",
@@ -103,9 +98,9 @@ export const SPEC_WORKER_MSG_TYPE = {
 export interface SpectrogramInitPayload {
   origin: string;
   fftPath: string;
-    sampleRate: number;
-    fftSize: number;
-    hopLength: number;
+  sampleRate: number;
+  fftSize: number;
+  hopLength: number;
 }
 
 export interface SpectrogramProcessPayload {
@@ -113,35 +108,5 @@ export interface SpectrogramProcessPayload {
 }
 
 export interface SpectrogramResultPayload {
-    magnitudes: Float32Array[]; // Array of magnitude arrays (bins) for each frame
-    // Or could be Uint8Array if values are scaled to 0-255 for image display
-}
-
-// Type guards for narrowing down message types (examples)
-export function isRubberbandInitPayload(
-    payload: unknown,
-): payload is RubberbandInitPayload {
-    return (
-        payload !== null &&
-        typeof payload === 'object' &&
-        'wasmPath' in payload &&
-        typeof (payload as Record<string, unknown>).wasmPath === "string" &&
-        'sampleRate' in payload &&
-        typeof (payload as Record<string, unknown>).sampleRate === "number"
-    );
-}
-
-export function isSileroVadInitPayload(
-    payload: unknown,
-): payload is SileroVadInitPayload {
-    return (
-        payload !== null &&
-        typeof payload === 'object' &&
-        // 'onnxModelPath' in payload && // No longer checking for onnxModelPath
-        // typeof (payload as Record<string, unknown>).onnxModelPath === "string" &&
-        'modelBuffer' in payload && // Check for modelBuffer instead
-        (payload as Record<string, unknown>).modelBuffer instanceof ArrayBuffer && // Verify it's an ArrayBuffer
-        'sampleRate' in payload &&
-        typeof (payload as Record<string, unknown>).sampleRate === "number"
-    );
+    magnitudes: Float32Array[];
 }
