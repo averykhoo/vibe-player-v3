@@ -175,6 +175,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   └── +page.svelte
     │   └── setupTests.ts
     ├── static
+    │   ├── C.Noisy_Voice.wav
+    │   ├── dtmf-123A456B789C(star)0(hex)D.mp3
     │   ├── favicon.png
     │   ├── fft.js
     │   ├── rubberband-loader.js
@@ -10979,6 +10981,7 @@ const mockVadWorkerInstance = {
   terminate: vi.fn(),
   onmessage: null as ((event: MessageEvent) => void) | null,
   onerror: null as ((event: ErrorEvent) => void) | null,
+  __IS_MOCK__: true // Unique property
 };
 
 // Hoisted mocks must use the variables defined above.
@@ -10990,77 +10993,115 @@ vi.mock("$lib/stores/analysis.store", () => ({
   },
 }));
 
-vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
-  default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
-}));
+vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => {
+  const MockConstructor = vi.fn().mockImplementation(() => {
+    return mockVadWorkerInstance; // mockVadWorkerInstance is from the outer (test file) scope
+  });
+  return { default: MockConstructor };
+});
 
 // --- Test Suite ---
-import analysisService from "./analysis.service";
+// import analysisService from "./analysis.service"; // No longer imported at top level
 import { VAD_CONSTANTS } from "$lib/utils";
+import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types"; // <-- ADD THIS IMPORT
 
 describe("AnalysisService (VAD Only)", () => {
-  beforeEach(() => {
-    // Reset all mock history before each test.
-    vi.clearAllMocks();
+  let analysisService: typeof import('./analysis.service').default; // Type for the service
 
-    // Mock the global `fetch` API.
+  beforeEach(async () => {
+    vi.resetModules(); // Reset modules before each test
+
+    // Dynamically import the service to get a fresh instance with fresh mocks
+    const serviceModule = await import("./analysis.service");
+    analysisService = serviceModule.default;
+
+    // Spies on mockVadWorkerInstance will be new for each test if it were re-defined,
+    // but it's from outer scope. clearAllMocks will handle its spies.
+    vi.clearAllMocks(); // Still useful for clearing history on mockVadWorkerInstance's methods
+
+    // Mock the global `fetch` API (needs to be re-applied after resetModules)
     vi.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     } as Response);
+
+    // Dispose the freshly imported service instance to ensure clean state before test logic
+    analysisService.dispose();
   });
 
   afterEach(() => {
     // Restore original implementations after each test.
-    vi.restoreAllMocks();
+    // vi.restoreAllMocks(); // restoreAllMocks might be too broad if fetch is spied globally
+    // vi.resetAllMocks() could also be an option if preferred over clearAllMocks.
+    // For now, beforeEach handles spy setup.
   });
 
   describe("initialize (VAD)", () => {
+    // FIX: Correctly test the asynchronous flow.
     it("should successfully initialize the VAD worker", async () => {
-      // Act: Call initialize, which returns a promise that now waits for a response.
+      // Act: Start the initialization process.
       const initPromise = analysisService.initialize();
 
-      // Assert (Immediate): Check that a worker was created.
+      // Give a chance for async operations within initialize() to proceed up to postMessage
+      await new Promise(resolve => setImmediate(resolve)); // Ensures any sync code in initialize runs
+
+      // Directly check if postMessage spy was called
+      expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
       expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "vad_init" }),
+        expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }),
         expect.any(Array)
       );
 
-      // Simulate (Completion): The worker sends a "success" message back.
+      // Simulate: The worker sends a "success" message back.
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
       } as MessageEvent);
 
-      // Assert: Now await the promise. It should resolve without timing out.
+      // Assert: The main initialization promise should now resolve without errors.
       await expect(initPromise).resolves.toBeUndefined();
       
-      // Assert (Final): You can check post-conditions here.
+      // Assert (Final): Check that fetch was also called as expected.
       expect(global.fetch).toHaveBeenCalledWith(VAD_CONSTANTS.ONNX_MODEL_URL);
     });
 
+    // FIX: Correctly test the rejection flow.
     it("should handle initialization failure from the worker", async () => {
-      // Act
+      // Act: Start the initialization process.
       const initPromise = analysisService.initialize();
+
+      // Give a chance for async operations within initialize() to proceed up to postMessage
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Directly check if postMessage spy was called (it should be, to register the promise)
+      expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
 
       // Simulate: The worker responds with an error message.
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_error", error: "Model load failed", messageId: "vad_msg_0" },
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_ERROR, error: "Model load failed", messageId: "vad_msg_0" },
       } as MessageEvent);
       
       // Assert: The promise should reject with the worker's error.
-      await expect(initPromise).rejects.toMatch("Model load failed");
+      await expect(initPromise).rejects.toThrowError("Model load failed");
     });
   });
 
+  // ... (dispose tests should now pass due to the beforeEach fix)
   describe("dispose", () => {
     it("should terminate the worker if it was initialized", async () => {
-      // Arrange: Ensure the service is fully initialized.
+      // Arrange
       const initPromise = analysisService.initialize();
+
+      // Give a chance for async operations within initialize() to proceed up to postMessage
+      await new Promise(resolve => setImmediate(resolve));
+
+      // Check postMessage was called for initialization
+      expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
+
       mockVadWorkerInstance.onmessage!({
-        data: { type: "vad_init_success", messageId: "vad_msg_0" },
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
       } as MessageEvent);
-      await initPromise;
+      await initPromise; // This should now resolve
 
       // Act
       analysisService.dispose();
@@ -11070,8 +11111,7 @@ describe("AnalysisService (VAD Only)", () => {
     });
 
     it("should not throw an error if called before initialization", () => {
-      // We must reset the service's internal state to simulate this.
-      analysisService.dispose(); 
+      // Arrange: The beforeEach hook already ensures a clean state.
       
       // Act & Assert
       expect(() => analysisService.dispose()).not.toThrow();
@@ -11222,6 +11262,9 @@ class AnalysisService {
         this.isInitialized = false;
         this.isInitializing = false;
         analysisStore.update(s => ({ ...s, vadStatus: "Error sending VAD init to worker.", vadError: errorMessage, vadInitialized: false }));
+
+        // FIX: Re-throw the error so the calling promise rejects.
+        throw err;
     }
   }
 
@@ -13047,6 +13090,7 @@ export interface VadConstants {
   YIELD_INTERVAL: number;
   DEFAULT_POSITIVE_THRESHOLD: number;
   DEFAULT_NEGATIVE_THRESHOLD: number;
+  ONNX_MODEL_URL: string; // <-- ADD THIS LINE
 }
 export const VAD_CONSTANTS: VadConstants = {
   SAMPLE_RATE: 16000,
@@ -13055,6 +13099,7 @@ export const VAD_CONSTANTS: VadConstants = {
   YIELD_INTERVAL: 5,
   DEFAULT_POSITIVE_THRESHOLD: 0.5,
   DEFAULT_NEGATIVE_THRESHOLD: 0.35,
+  ONNX_MODEL_URL: "/silero_vad.onnx", // <-- ADD THIS LINE
 };
 export interface UiConstants {
   DEBOUNCE_HASH_UPDATE_MS: number;
@@ -13079,6 +13124,7 @@ export interface VisualizerConstants {
   SPEC_NORMAL_HOP_DIVISOR: number;
   SPEC_SHORT_HOP_DIVISOR: number;
   SPEC_CENTER_WINDOWS: boolean;
+  FFT_WORKER_SCRIPT_URL: string; // <-- ADD THIS LINE
 }
 export const VISUALIZER_CONSTANTS: VisualizerConstants = {
   WAVEFORM_HEIGHT_SCALE: 0.8,
@@ -13095,6 +13141,7 @@ export const VISUALIZER_CONSTANTS: VisualizerConstants = {
   SPEC_NORMAL_HOP_DIVISOR: 4,
   SPEC_SHORT_HOP_DIVISOR: 8,
   SPEC_CENTER_WINDOWS: true,
+  FFT_WORKER_SCRIPT_URL: "/fft.js", // <-- ADD THIS LINE
 };
 export interface UrlHashKeys {
   SPEED: string;
@@ -14128,6 +14175,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         frameSamples = initPayload.frameSamples; // Make sure this matches model expectations
         positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
         negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
+
+        // FIX: Explicitly set the path for the ONNX runtime WASM files.
+        ort.env.wasm.wasmPaths = '/';
 
         // It's crucial that ORT WASM files are served from the expected path.
         // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
@@ -15604,7 +15654,8 @@ test.describe('Vibe Player V2 E2E', () => {
 ````mjs
 // tests-e2e/PlayerPage.js
 import { expect } from '@playwright/test';
-import path from 'path';
+// FIX: Remove the unused 'path' import
+// import path from 'path';
 
 export class PlayerPage {
   constructor(page) {
@@ -15651,14 +15702,22 @@ export class PlayerPage {
   }
 
   async loadAudioFile(fileName) {
-    // FIX: Corrected relative path from `../../` to `../`
-    // FIX: Replaced __dirname with a relative path from project root
-    const filePath = path.resolve('./test-audio/', fileName); // Path relative to project root
-    await this.fileInput.setInputFiles(filePath);
-    // Add a small wait for file processing to start, if necessary
+    // FIX: Instead of resolving a file path, we now fetch the file from the test server's URL.
+    // This perfectly mimics how a user would load a file from a URL.
+    const response = await this.page.request.get(this.devServerUrl + fileName);
+    const buffer = await response.body();
+
+    // Use Playwright's setInputFiles with a buffer.
+    await this.fileInput.setInputFiles({
+      name: fileName,
+      mimeType: fileName.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg',
+      buffer: buffer
+    });
+
     await this.page.waitForTimeout(200);
   }
 
+  // ... (rest of the methods are correct)
   async expectControlsToBeReadyForPlayback() {
     // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
     // This directly tests the #if block condition becoming true.
