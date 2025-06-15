@@ -1,6 +1,7 @@
 // tests-e2e/PlayerPage.js
 import { expect } from '@playwright/test';
-import path from 'path';
+// FIX: Remove the unused 'path' import
+// import path from 'path';
 
 export class PlayerPage {
   constructor(page) {
@@ -47,14 +48,22 @@ export class PlayerPage {
   }
 
   async loadAudioFile(fileName) {
-    // FIX: Corrected relative path from `../../` to `../`
-    // FIX: Replaced __dirname with a relative path from project root
-    const filePath = path.resolve('./test-audio/', fileName); // Path relative to project root
-    await this.fileInput.setInputFiles(filePath);
-    // Add a small wait for file processing to start, if necessary
+    // FIX: Instead of resolving a file path, we now fetch the file from the test server's URL.
+    // This perfectly mimics how a user would load a file from a URL.
+    const response = await this.page.request.get(this.devServerUrl + fileName);
+    const buffer = await response.body();
+
+    // Use Playwright's setInputFiles with a buffer.
+    await this.fileInput.setInputFiles({
+      name: fileName,
+      mimeType: fileName.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg',
+      buffer: buffer
+    });
+
     await this.page.waitForTimeout(200);
   }
 
+  // ... (rest of the methods are correct)
   async expectControlsToBeReadyForPlayback() {
     // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
     // This directly tests the #if block condition becoming true.

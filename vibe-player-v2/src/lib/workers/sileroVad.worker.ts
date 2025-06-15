@@ -34,6 +34,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
         negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
 
+        // FIX: Explicitly set the path for the ONNX runtime WASM files.
+        ort.env.wasm.wasmPaths = '/';
+
         // It's crucial that ORT WASM files are served from the expected path.
         // vite-plugin-static-copy in vite.config.js should copy them to the root of the build output.
         // ort.env.wasm.wasmPaths should be set globally if needed or ORT will fetch from CDN.
