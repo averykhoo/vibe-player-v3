@@ -82,9 +82,24 @@ class SpectrogramService {
       this.isInitialized = false;
     };
 
+    // Fetch the FFT script text
+    let fftScriptText: string;
+    try {
+      const fftResponse = await fetch(VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL);
+      if (!fftResponse.ok) {
+        throw new Error(`Failed to fetch FFT script: ${fftResponse.status} ${fftResponse.statusText}`);
+      }
+      fftScriptText = await fftResponse.text();
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      analysisStore.update(s => ({ ...s, spectrogramError: `FFT script fetch error: ${errorMessage}`, spectrogramInitialized: false }));
+      this.isInitialized = false;
+      return; // Stop initialization if script fetch fails
+    }
+
     const initPayload: SpectrogramInitPayload = {
       origin: location.origin,
-      fftPath: VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL,
+      fftScriptText, // Pass the fetched script content
       sampleRate: options.sampleRate,
       fftSize: VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
       hopLength: Math.floor(VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE / 4),

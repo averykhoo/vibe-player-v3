@@ -52,21 +52,20 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
                 fftSize = initPayload.fftSize;
                 hopLength = initPayload.hopLength;
 
-                // --- FIX START ---
-                // Construct the full, absolute URL for the FFT script
-                if (!initPayload.origin) {
-                    throw new Error("SpectrogramWorker INIT: origin is missing in payload.");
+                // --- MODIFICATION START ---
+                if (!initPayload.fftScriptText) {
+                    throw new Error("SpectrogramWorker INIT: fftScriptText is missing in payload.");
                 }
-                // NOTE: The worker itself is at `.../src/lib/workers/spectrogram.worker.ts`
-                // So `new URL('../fft.js', ...)` resolves correctly relative to the worker's own location.
-                const fftUrl = new URL(initPayload.fftPath, initPayload.origin).href;
-                self.importScripts(fftUrl);
-                // --- FIX END ---
 
-                if (typeof FFT === "undefined") {
-                    throw new Error("FFT class not loaded. Check path to fft.js.");
+                // Dynamically create the FFT class from the script text
+                const getFftClass = new Function(initPayload.fftScriptText + '; return FFT;');
+                const FftClass = getFftClass() as FFTClass | undefined;
+
+                if (typeof FftClass === "undefined") {
+                    throw new Error("Failed to define FFT class from fftScriptText.");
                 }
-                fftInstance = new FFT(fftSize);
+                fftInstance = new FftClass(fftSize);
+                // --- MODIFICATION END ---
 
                 // --- BEGIN NEW: Generate Hann Window ---
                 hannWindow = generateHannWindow(fftSize);
