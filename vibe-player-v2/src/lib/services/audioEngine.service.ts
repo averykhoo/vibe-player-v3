@@ -252,7 +252,7 @@ class AudioEngineService {
         const transferable: ArrayBuffer[] = [];
 
         for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
-            const slice = this.originalBuffer.getChannelData(i).subarray(this.sourcePlaybackOffset, chunkEnd);
+            const slice = new Float32Array(this.originalBuffer.getChannelData(i).subarray(this.sourcePlaybackOffset, chunkEnd));
             inputSlices.push(slice);
             transferable.push(slice.buffer);
         }
