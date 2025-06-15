@@ -192,15 +192,26 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
 
     // Explicitly check calls after loadFile
     // loadFile calls stop(), which sends a RESET.
-    // The INIT message is now sent by _initializeWorker when the service is initialized,
-    // not directly by loadFile.
-    expect(mockWorkerObject.postMessage).toHaveBeenCalledTimes(1);
-    expect(mockWorkerObject.postMessage).toHaveBeenCalledWith(
+    // The INIT message is now sent by _initializeWorker when the service is initialized.
+    // loadFile itself calls stop(), which sends a RESET.
+    // loadFile calls stop() (which sends RESET) and then sends another RESET explicitly.
+    // The _initializeWorker (which sends INIT) should not be called and post to mockWorkerObject here.
+
+    expect(mockWorkerObject.postMessage).toHaveBeenCalledTimes(2);
+
+    // Check that both calls were RESET messages
+    expect(mockWorkerObject.postMessage).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET })
     );
-    // Ensure no INIT call was made *by loadFile* to the mockWorkerObject
+    expect(mockWorkerObject.postMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET })
+    );
+
+    // Ensure no INIT call was made to mockWorkerObject by loadFile
     expect(mockWorkerObject.postMessage).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT })
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT })
     );
 
     const finalState = get(storeSingletonRefForTestControl);

@@ -63,8 +63,10 @@ class AudioEngineService {
     }
 
     private async _initializeWorker(): Promise<void> {
-        if (!this.worker) {
-            console.error("AudioEngineService: Worker is null. Cannot initialize.");
+        const workerAtStartTime = this.worker; // Capture worker instance
+
+        if (!workerAtStartTime) {
+            console.error("AudioEngineService: Worker is null at the beginning of _initializeWorker. This should not happen.");
             return;
         }
 
@@ -81,6 +83,12 @@ class AudioEngineService {
             }
             const loaderScriptText = await loaderResponse.text();
 
+            // Stale initialization check
+            if (this.worker !== workerAtStartTime || !this.worker) {
+                console.warn("AudioEngineService: Worker changed or was disposed during initialization. Aborting INIT message.");
+                return;
+            }
+
             const initPayload: RubberbandInitPayload = {
                 wasmBinary,
                 loaderScriptText,
@@ -90,7 +98,7 @@ class AudioEngineService {
                 initialSpeed: get(playerStore).speed,
                 initialPitch: get(playerStore).pitch
             };
-            this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload }, [wasmBinary]);
+            workerAtStartTime.postMessage({ type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload }, [wasmBinary]);
         } catch (error) {
             console.error("Failed to initialize Rubberband worker:", error);
             playerStore.update(s => ({ ...s, error: `Worker init failed: ${(error as Error).message}` }));
