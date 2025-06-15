@@ -87,17 +87,33 @@ class AudioEngineService {
         try {
             this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
 
+            // --- START of CHANGE ---
+            // Pre-fetch the WASM binary and loader script on the main thread
+            const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
+            if (!wasmResponse.ok) throw new Error(`Failed to fetch Rubberband WASM: ${wasmResponse.statusText}`);
+            const wasmBinary = await wasmResponse.arrayBuffer();
+
+            const loaderResponse = await fetch(AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL);
+            if (!loaderResponse.ok) throw new Error(`Failed to fetch Rubberband Loader: ${loaderResponse.statusText}`);
+            const loaderScriptText = await loaderResponse.text();
+            // --- END of CHANGE ---
+
+
             // Re-initialize worker with correct file parameters
             const initPayload: RubberbandInitPayload = {
-                wasmPath: AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL,
-                loaderPath: AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
+                wasmBinary: wasmBinary,             // CHANGED
+                loaderScriptText: loaderScriptText, // CHANGED
                 origin: location.origin,
                 sampleRate: this.originalBuffer.sampleRate,
                 channels: this.originalBuffer.numberOfChannels,
                 initialSpeed: get(playerStore).speed,
                 initialPitch: get(playerStore).pitch
             };
-            this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload });
+            // Post the message and include the wasmBinary in the transferable list for a zero-copy transfer
+            this.worker?.postMessage(
+              { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
+              [ wasmBinary ] // CHANGED
+            );
 
             // **FIX**: Extract waveform data for the UI here
             const waveformDisplayData: number[][] = [];

@@ -25,8 +25,8 @@ export const RB_WORKER_MSG_TYPE = {
 };
 
 export interface RubberbandInitPayload {
-    wasmPath: string;
-    loaderPath: string;
+    wasmBinary: ArrayBuffer; // CHANGED
+    loaderScriptText: string; // CHANGED
     origin: string;
     sampleRate: number;
     channels: number;

@@ -78,14 +78,17 @@ async function handleInit(payload: RubberbandInitPayload) {
         wasmModule._rubberband_delete(stretcher);
     }
 
-    // The loader script and WASM binary must be fetched by the worker.
-    // The main thread provides the full paths.
-    const loaderUrl = new URL(payload.loaderPath, payload.origin).href;
-    self.importScripts(loaderUrl);
+    // --- START of CHANGE ---
+    const { wasmBinary, loaderScriptText } = payload;
+    if (!wasmBinary || !loaderScriptText) {
+        throw new Error("Worker handleInit: Missing wasmBinary or loaderScriptText in payload.");
+    }
 
-    const wasmUrl = new URL(payload.wasmPath, payload.origin).href;
-    const wasmBinaryResponse = await fetch(wasmUrl);
-    const wasmBinary = await wasmBinaryResponse.arrayBuffer();
+    // The loader script is designed to be executed to produce a factory function.
+    // We use new Function() to safely evaluate the text we received and get the factory.
+    const getRubberbandFactory = new Function(loaderScriptText + "\nreturn Rubberband;")(); // MODIFIED LINE
+    const Rubberband = getRubberbandFactory; // Ensure Rubberband is the factory itself
+    // --- END of CHANGE ---
 
     // The loader script expects an `instantiateWasm` function to be provided.
     const instantiateWasm = (imports: WebAssembly.Imports, cb: (instance: WebAssembly.Instance) => void) => {
