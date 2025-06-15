@@ -32,6 +32,19 @@ const mockAudioData = new Float32Array(16000); // Sample audio data
 describe("SpectrogramService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Mock global fetch
+    vi.spyOn(global, 'fetch').mockImplementation((url) => {
+      if (String(url).includes('fft.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve('// Mock FFT script content'),
+        } as Response);
+      }
+      return Promise.reject(new Error(`Unhandled fetch in test: ${url}`));
+    });
+
     // Reset worker instance mocks
     mockSpecWorkerInstance.postMessage.mockClear();
     mockSpecWorkerInstance.terminate.mockClear();
