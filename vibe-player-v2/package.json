@@ -44,6 +44,7 @@
     "vitest": "^3.2.3"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.22.0"
+    "onnxruntime-web": "^1.22.0",
+    "svelte-sonner": "^1.0.5"
   }
 }
