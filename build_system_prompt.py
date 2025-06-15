@@ -57,7 +57,7 @@ INCLUDED_EXTENSIONS = {
     "tex", "less", "lua", "mk", "makefile", "md", "markdown", "m", "mm",
     "ml", "mli", "pas", "pl", "pm", "php", "ps1", "pro", "proto", "py", "pyw",
     "r", "rb", "rs", "sass", "scss", "scala", "scm", "ss", "sh", "bash", "zsh",
-    "sql", "swift", "tcl", "tf", "toml", "tsv", "tsx", "ts", "vb", "vbs",
+    "sql", "svelte", "swift", "tcl", "tf", "toml", "tsv", "tsx", "ts", "vb", "vbs",
     "v", "sv", "vhdl", "xml", "yaml", "yml",
 }
 # Define extensions (lowercase, without the dot) to explicitly exclude,
@@ -83,6 +83,8 @@ EXTENSION_TO_LANGUAGE_HINT = {
     "f90": "fortran", "f95": "fortran", "groovy": "groovy", "ini": "ini", "toml": "toml",
     "less": "less", "tcl": "tcl", "gql": "graphql", "graphql": "graphql", "cmake": "cmake",
     "jsp": "jsp", "vbs": "vbscript", "txt": "", "text": "", "log": "",
+    "svelte": "svelte",
+
 }
 
 # --- Prompt Template ---

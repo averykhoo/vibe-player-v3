@@ -10509,6 +10509,152 @@ export function sparkles(
 
 ````
 --- End of File: vibe-player-v2/src/lib/actions/sparkles.action.ts ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
+````svelte
+<script>
+  // Mock Button
+  export let color = 'primary'; // Example prop
+  // Add any other props your component might expect to avoid runtime warnings/errors
+</script>
+
+<button class="mock-button btn variant-filled-{color}" on:click>
+  <slot />
+</button>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
+````svelte
+<script lang="ts">
+  // Generic mock for any Skeleton component
+  // It can accept any props via $$props
+</script>
+
+<div data-testid="generic-skeleton-mock" {...$$props}>
+  <!-- Generic mock content -->
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
+````svelte
+<script lang="ts">
+  // Minimal mock for ProgressBar.svelte
+  export let value: number | undefined = undefined;
+  export let max: number = 100;
+  // Add any other props that might be minimally required if type checking is strict
+</script>
+
+<div data-testid="mock-progress-bar" role="progressbar" aria-valuenow={value} aria-valuemax={max}>
+  <!-- Mock content -->
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
+````svelte
+<script>
+  // Mock RangeSlider
+  export let value = 0;
+  export let name = ''; // This will be used as the ID for the label's 'for' attribute
+  export let min = 0;
+  export let max = 100;
+  export let step = 1;
+  // Add any other props your component might expect
+  // Use the 'name' prop also as 'id' to match <label for="...">
+  const id = name;
+</script>
+
+<input type="range" class="mock-range-slider" {id} {name} bind:value {min} {max} {step} on:input on:change />
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
+--- File: vibe-player-v2/src/lib/components/Controls.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/Controls.svelte -->
+<script lang="ts">
+    import { RangeSlider } from '@skeletonlabs/skeleton';
+    import audioEngine from '$lib/services/audioEngine.service';
+    import analysisService from '$lib/services/analysis.service';
+    import { playerStore } from '$lib/stores/player.store'; // For speed, pitch, gain
+    import { analysisStore } from '$lib/stores/analysis.store'; // For VAD thresholds
+
+    // Local state for sliders, to be synced with stores/services
+    let speed = $playerStore?.speed || 1.0;
+    let pitch = $playerStore?.pitch || 0.0;
+    let gain = $playerStore?.gain || 1.0;
+    let vadPositive = $analysisStore?.vadPositiveThreshold || 0.5;
+    let vadNegative = $analysisStore?.vadNegativeThreshold || 0.35;
+
+    // Subscribe to store changes to update local slider values if they change elsewhere
+    playerStore.subscribe(val => {
+        if (val.speed !== undefined) speed = val.speed;
+        if (val.pitch !== undefined) pitch = val.pitch;
+        if (val.gain !== undefined) gain = val.gain;
+    });
+    analysisStore.subscribe(val => {
+        if (val.vadPositiveThreshold !== undefined) vadPositive = val.vadPositiveThreshold;
+        if (val.vadNegativeThreshold !== undefined) vadNegative = val.vadNegativeThreshold;
+    });
+
+    function handlePlay() {
+        audioEngine.play();
+    }
+    function handlePause() {
+        audioEngine.pause();
+    }
+    function handleStop() {
+        audioEngine.stop();
+    }
+
+    function updateSpeed() {
+        audioEngine.setSpeed(speed);
+    }
+    function updatePitch() {
+        audioEngine.setPitch(pitch);
+    }
+    function updateGain() {
+        audioEngine.setGain(gain); // Call the new service method
+    }
+    function updateVadThresholds() {
+        // analysisService.setVadThresholds(vadPositive, vadNegative); // Example
+        console.log('VAD thresholds changed:', vadPositive, vadNegative);
+        analysisStore.update(s => ({...s, vadPositiveThreshold: vadPositive, vadNegativeThreshold: vadNegative }));
+    }
+
+</script>
+
+<div class="card p-4 space-y-4">
+    <h3 class="h3">Controls</h3>
+    <div class="flex space-x-2">
+        <button type="button" class="btn" data-testid="play-button" on:click={handlePlay} disabled={!$playerStore.isPlayable}>Play</button>
+        <button type="button" class="btn" data-testid="pause-button" on:click={handlePause} disabled={!$playerStore.isPlayable}>Pause</button>
+        <button type="button" class="btn" data-testid="stop-button" on:click={handleStop} disabled={!$playerStore.isPlayable}>Stop</button>
+    </div>
+    <div>
+        <label for="speedSlider" class="label">Speed: {speed.toFixed(2)}x</label>
+        <RangeSlider name="speedSlider" bind:value={speed} min={0.5} max={2.0} step={0.01} on:input={updateSpeed} />
+    </div>
+    <div>
+        <label for="pitchSlider" class="label">Pitch: {pitch.toFixed(1)} semitones</label>
+        <RangeSlider name="pitchSlider" bind:value={pitch} min={-12} max={12} step={0.1} on:input={updatePitch} />
+    </div>
+    <div>
+        <label for="gainSlider" class="label">Gain: {gain.toFixed(2)}</label>
+        <RangeSlider name="gainSlider" bind:value={gain} min={0} max={2.0} step={0.01} on:input={updateGain} />
+    </div>
+    <div>
+        <label for="vadPositiveSlider" class="label">VAD Positive Threshold: {vadPositive.toFixed(2)}</label>
+        <RangeSlider name="vadPositiveSlider" bind:value={vadPositive} min={0.05} max={0.95} step={0.01} on:input={updateVadThresholds} />
+    </div>
+    <div>
+        <label for="vadNegativeSlider" class="label">VAD Negative Threshold: {vadNegative.toFixed(2)}</label>
+        <RangeSlider name="vadNegativeSlider" bind:value={vadNegative} min={0.05} max={0.95} step={0.01} on:input={updateVadThresholds} />
+    </div>
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/Controls.svelte ---
 --- File: vibe-player-v2/src/lib/components/Controls.test.ts ---
 ````typescript
 import { render, fireEvent, screen, act } from "@testing-library/svelte";
@@ -10765,6 +10911,63 @@ describe("Controls.svelte", () => {
 
 ````
 --- End of File: vibe-player-v2/src/lib/components/Controls.test.ts ---
+--- File: vibe-player-v2/src/lib/components/FileLoader.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/FileLoader.svelte -->
+
+<script lang="ts">
+    import audioEngine from '$lib/services/audioEngine.service';
+    import { playerStore } from '$lib/stores/player.store'; // To show status or file name
+
+    let currentFile: File | null = null;
+    let isLoading = false;
+
+    async function handleFileSelect(event: Event) {
+        const input = event.target as HTMLInputElement;
+        if (input.files && input.files.length > 0) {
+            currentFile = input.files[0];
+            playerStore.update(s => ({ ...s, fileName: currentFile?.name, error: null, status: 'File selected', isPlayable: false }));
+            isLoading = true;
+
+            try {
+                await audioEngine.unlockAudio(); // Ensure AudioContext is ready
+
+                const arrayBuffer = await currentFile.arrayBuffer();
+                await audioEngine.loadFile(arrayBuffer, currentFile.name);
+                // Status updates will now come from audioEngine via playerStore
+
+            } catch (e: any) {
+                console.error('Error processing file:', e);
+                playerStore.update(s => ({ ...s, error: `Error processing file: ${e.message}`, isPlayable: false }));
+            } finally {
+                isLoading = false;
+                // Clear the file input so the same file can be re-selected if needed after an error
+                input.value = '';
+            }
+        }
+    }
+</script>
+
+<div class="card p-4">
+    <h3 class="h3 mb-2">Load Audio File</h3>
+    <input type="file" id="fileInput" class="input" on:change={handleFileSelect} accept="audio/*" disabled={isLoading} />
+    {#if currentFile}
+        <p class="mt-2 text-sm">Selected: {currentFile.name} ({ (currentFile.size / 1024 / 1024).toFixed(2) } MB)</p>
+    {/if}
+    {#if isLoading}
+        <p class="mt-2 text-sm">Loading...</p>
+    {/if}
+    <!-- Status messages from playerStore can be displayed here -->
+    {#if $playerStore?.status}
+        <p class="mt-2 text-sm text-gray-500">Status: {$playerStore.status}</p>
+    {/if}
+    {#if $playerStore?.error}
+        <p class="mt-2 text-sm text-error-500">Error: {$playerStore.error}</p>
+    {/if}
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/FileLoader.svelte ---
 --- File: vibe-player-v2/src/lib/components/FileLoader.test.ts ---
 ````typescript
 /**
@@ -10960,6 +11163,262 @@ describe("FileLoader.svelte", () => {
 
 ````
 --- End of File: vibe-player-v2/src/lib/components/FileLoader.test.ts ---
+--- File: vibe-player-v2/src/lib/components/ToneDisplay.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/ToneDisplay.svelte -->
+<script lang="ts">
+  import { dtmfStore } from '$lib/stores/dtmf.store';
+</script>
+
+<div class="card p-4 space-y-4">
+  <h3 class="h3">Detected Tones</h3>
+  <div>
+    <h4 class="font-bold">DTMF (Dial Tones):</h4>
+    {#if $dtmfStore.status === 'processing'}
+      <p class="text-sm text-surface-500">Processing...</p>
+    {:else if $dtmfStore.dtmf.length > 0}
+      <p class="font-mono text-lg p-2 bg-surface-100 dark:bg-surface-800 rounded">
+        {$dtmfStore.dtmf.join(' ')}
+      </p>
+    {:else}
+      <p class="text-sm text-surface-500">None detected.</p>
+    {/if}
+  </div>
+  <!-- You would add a similar block for CPTs here -->
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/ToneDisplay.svelte ---
+--- File: vibe-player-v2/src/lib/components/visualizers/Spectrogram.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/visualizers/Spectrogram.svelte -->
+
+<script lang="ts">
+    import { onMount, onDestroy } from 'svelte';
+    import { get } from 'svelte/store';
+    import { analysisStore } from '$lib/stores/analysis.store';
+    import { viridisColor } from '$lib/utils/dsp'; // Assuming dsp.ts has viridisColor
+    import { VISUALIZER_CONSTANTS } from '$lib/utils';
+
+    let canvasElement: HTMLCanvasElement;
+    let canvasCtx: CanvasRenderingContext2D | null = null;
+    let spectrogramData: Float32Array[] | null = null;
+
+    // Example: Trigger spectrogram processing after file is loaded via audioEngine
+    // This is a bit indirect. A more robust system might have audioEngine emit an event
+    // or update a store that analysisService listens to, to get the full audio buffer.
+    // For now, this is a placeholder for how processing might be initiated.
+    // playerStore.subscribe(value => {
+    //     if (value.originalAudioBuffer && analysisService && get(analysisStore).spectrogramWorkerInitialized) {
+    //          const pcmData = value.originalAudioBuffer.getChannelData(0); // Mono for spec for now
+    //          analysisService.processAudioForSpectrogram(pcmData);
+    //     }
+    // });
+
+    analysisStore.subscribe(value => {
+        if (value.spectrogramData && value.spectrogramData.length > 0) {
+            spectrogramData = value.spectrogramData;
+            drawSpectrogram();
+        } else if (spectrogramData && (!value.spectrogramData || value.spectrogramData.length === 0)) {
+            spectrogramData = null;
+            clearCanvas();
+        }
+    });
+
+    function clearCanvas() {
+        if (canvasCtx && canvasElement) {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        }
+    }
+
+    function drawSpectrogram() {
+        if (!canvasCtx || !canvasElement || !spectrogramData || spectrogramData.length === 0) {
+            clearCanvas();
+            return;
+        }
+
+        const numFrames = spectrogramData.length; // Time axis
+        const numBins = spectrogramData[0].length; // Frequency axis (FFT_SIZE / 2 + 1)
+
+        const width = canvasElement.width;
+        const height = canvasElement.height;
+
+        const cellWidth = width / numFrames;
+        const cellHeight = height / numBins;
+
+        canvasCtx.clearRect(0, 0, width, height);
+
+        // Find global min/max magnitude for better color scaling (or use fixed range)
+        let minMag = Infinity, maxMag = -Infinity;
+        for (let t = 0; t < numFrames; t++) {
+            for (let f = 0; f < numBins; f++) {
+                const mag = spectrogramData[t][f];
+                if (mag < minMag) minMag = mag;
+                if (mag > maxMag) maxMag = mag;
+            }
+        }
+        // Basic log scaling for magnitudes can improve visualization
+        // const logMinMag = Math.log10(Math.max(1e-6, minMag)); // Avoid log(0)
+        // const logMaxMag = Math.log10(Math.max(1e-6, maxMag));
+        // const magRange = logMaxMag - logMinMag;
+
+        // For linear scaling from 0 to maxMag (assuming magnitudes are positive)
+        maxMag = Math.max(maxMag, 0.00001); // ensure maxMag is not zero for division
+
+        for (let t = 0; t < numFrames; t++) { // Time
+            for (let f = 0; f < numBins; f++) { // Frequency
+                const magnitude = spectrogramData[t][f];
+
+                // Normalize magnitude (0 to 1) - simple linear scaling
+                let normalizedMag = magnitude / maxMag;
+                // Or log scale:
+                // if (magRange > 1e-6) {
+                //    normalizedMag = (Math.log10(Math.max(1e-6, magnitude)) - logMinMag) / magRange;
+                // } else {
+                //    normalizedMag = 0;
+                // }
+                normalizedMag = Math.max(0, Math.min(1, normalizedMag)); // Clamp
+
+                const [r, g, b] = viridisColor(normalizedMag);
+                canvasCtx.fillStyle = `rgb(${r},${g},${b})`;
+
+                // Draw from top (high freq) to bottom (low freq)
+                canvasCtx.fillRect(t * cellWidth, height - (f + 1) * cellHeight, cellWidth, cellHeight);
+            }
+        }
+    }
+
+    onMount(() => {
+        if (!canvasElement) return;
+        canvasElement.width = canvasElement.offsetWidth;
+        canvasElement.height = canvasElement.offsetHeight;
+        canvasCtx = canvasElement.getContext('2d');
+
+        const currentAnalysisData = get(analysisStore);
+        if (currentAnalysisData.spectrogramData) {
+            spectrogramData = currentAnalysisData.spectrogramData;
+        }
+        drawSpectrogram();
+    });
+
+</script>
+
+<div class="card p-1 bg-surface-200-700-token aspect-[4/1] w-full h-full">
+    <canvas bind:this={canvasElement} class="w-full h-full"></canvas>
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/visualizers/Spectrogram.svelte ---
+--- File: vibe-player-v2/src/lib/components/visualizers/Waveform.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/visualizers/Waveform.svelte -->
+
+<script lang="ts">
+    import { onMount, onDestroy } from 'svelte';
+    import { playerStore } from '$lib/stores/player.store';
+    import { VISUALIZER_CONSTANTS } from '$lib/utils/constants'; // For colors etc.
+    import { get } from 'svelte/store'; // To read store value once if needed
+
+    let canvasElement: HTMLCanvasElement;
+    let canvasCtx: CanvasRenderingContext2D | null = null;
+    let waveformData: number[][] = []; // Store current waveform data
+
+    const WAVEFORM_COLOR_DEFAULT = VISUALIZER_CONSTANTS.WAVEFORM_COLOR_DEFAULT || '#26828E';
+    const WAVEFORM_HEIGHT_SCALE = VISUALIZER_CONSTANTS.WAVEFORM_HEIGHT_SCALE || 0.8;
+
+
+    playerStore.subscribe(value => {
+        if (value.waveformData && value.waveformData.length > 0) {
+            waveformData = value.waveformData;
+            drawWaveform();
+        } else if (waveformData.length > 0 && (!value.waveformData || value.waveformData.length === 0)) {
+            // Clear canvas if waveform data is removed (e.g. new file loading, error)
+            waveformData = [];
+            clearCanvas();
+        }
+    });
+
+    function clearCanvas() {
+        if (canvasCtx && canvasElement) {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        }
+    }
+
+    function drawWaveform() {
+        if (!canvasCtx || !canvasElement || !waveformData || waveformData.length === 0) {
+            clearCanvas();
+            return;
+        }
+
+        const width = canvasElement.width;
+        const height = canvasElement.height;
+        const numChannels = waveformData.length;
+        const channelHeight = height / numChannels;
+
+        canvasCtx.clearRect(0, 0, width, height);
+        canvasCtx.strokeStyle = WAVEFORM_COLOR_DEFAULT;
+        canvasCtx.lineWidth = 1;
+
+        for (let c = 0; c < numChannels; c++) {
+            const channelData = waveformData[c];
+            if (!channelData || channelData.length === 0) continue;
+
+            const dataPoints = channelData.length;
+            const stepX = width / dataPoints;
+            const channelCenterY = (channelHeight * c) + (channelHeight / 2);
+
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(0, channelCenterY - (channelData[0] * channelHeight / 2 * WAVEFORM_HEIGHT_SCALE));
+
+            for (let i = 1; i < dataPoints; i++) {
+                const x = i * stepX;
+                const yValue = channelData[i] * channelHeight / 2 * WAVEFORM_HEIGHT_SCALE; // Scale amplitude to fit channel height
+                canvasCtx.lineTo(x, channelCenterY - yValue);
+            }
+            canvasCtx.stroke();
+        }
+    }
+
+    onMount(() => {
+        if (!canvasElement) return;
+        // Ensure canvas has a size for drawing, falling back to CSS size if not set directly
+        // For responsive canvas, often done with ResizeObserver or binding width/height
+        // Here, we'll use offsetWidth/Height for initial sizing.
+        canvasElement.width = canvasElement.offsetWidth;
+        canvasElement.height = canvasElement.offsetHeight;
+        canvasCtx = canvasElement.getContext('2d');
+
+        // Initial draw in case store already has data (e.g. page reload with URL state)
+        const currentPlayerData = get(playerStore);
+        if (currentPlayerData.waveformData) {
+             waveformData = currentPlayerData.waveformData;
+        }
+        drawWaveform();
+
+        // Optional: Handle window resize to redraw (more complex, involves debouncing)
+        // window.addEventListener('resize', handleResize);
+    });
+
+    // function handleResize() { // Debounced resize handler
+    //     if(canvasElement) {
+    //         canvasElement.width = canvasElement.offsetWidth;
+    //         canvasElement.height = canvasElement.offsetHeight;
+    //         drawWaveform();
+    //     }
+    // }
+
+    onDestroy(() => {
+        // window.removeEventListener('resize', handleResize);
+    });
+
+</script>
+
+<div class="card p-1 bg-surface-200-700-token aspect-[4/1] w-full h-full">
+    <canvas bind:this={canvasElement} class="w-full h-full"></canvas>
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/visualizers/Waveform.svelte ---
 --- File: vibe-player-v2/src/lib/index.ts ---
 ````typescript
 // place files you want to import through the `$lib` alias in this folder.
@@ -14545,6 +15004,169 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
 ````
 --- End of File: vibe-player-v2/src/lib/workers/spectrogram.worker.ts ---
+--- File: vibe-player-v2/src/routes/+layout.svelte ---
+````svelte
+<script lang="ts">
+  import "../app.css";
+  // Assuming use of Skeleton UI's AppBar component for the header
+  import { AppBar } from '@skeletonlabs/skeleton';
+</script>
+
+<AppBar>
+  <svelte:fragment slot="lead">
+    <strong class="text-xl uppercase">Vibe Player V2</strong>
+  </svelte:fragment>
+  <svelte:fragment slot="trail">
+    <!-- Other nav elements could go here -->
+    <a href="https://github.com/averykhoo/vibe-player" target="_blank" rel="noopener noreferrer" class="btn btn-sm variant-ghost-surface">GitHub</a>
+  </svelte:fragment>
+</AppBar>
+
+<!-- Main content slot -->
+<main class="p-4">
+  <slot />
+</main>
+
+````
+--- End of File: vibe-player-v2/src/routes/+layout.svelte ---
+--- File: vibe-player-v2/src/routes/+page.svelte ---
+````svelte
+<!-- vibe-player-v2/src/routes/+page.svelte -->
+<script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+	import { get } from 'svelte/store';
+  import { Toaster } from 'svelte-sonner';
+	import { RangeSlider } from '@skeletonlabs/skeleton'; // <-- ADD THIS IMPORT
+
+  // Components
+  import Controls from '$lib/components/Controls.svelte';
+  import FileLoader from '$lib/components/FileLoader.svelte';
+  import ToneDisplay from '$lib/components/ToneDisplay.svelte';
+  import Waveform from '$lib/components/visualizers/Waveform.svelte';
+  import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
+
+	// Services and Stores
+  import audioEngineService from '$lib/services/audioEngine.service';
+  import analysisService from '$lib/services/analysis.service';
+  import dtmfService from '$lib/services/dtmf.service';
+  import spectrogramService from '$lib/services/spectrogram.service';
+  import { VAD_CONSTANTS } from '$lib/utils/constants';
+  import { playerStore } from '$lib/stores/player.store';
+	import { analysisStore } from '$lib/stores/analysis.store'; // analysisStore is needed
+	import { formatTime } from '$lib/utils/formatters'; // <-- ADD THIS IMPORT
+
+	// --- NEW: Function to handle seeking ---
+	function handleSeek(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const time = parseFloat(target.value);
+		if (!isNaN(time)) {
+			audioEngineService.seek(time);
+		}
+	}
+
+  onMount(() => {
+    // Initialize all services eagerly when the application component mounts.
+    // This is the most robust approach to ensure everything is ready.
+    console.log('Initializing all services onMount...');
+
+    // Initialize the audio engine, which prepares the Rubberband worker.
+    audioEngineService.initialize();
+
+    // Initialize the analysis service, which prepares the SileroVAD worker.
+    analysisService.initialize();
+
+    // Initialize the DTMF service and its worker.
+    dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
+
+    // Subscribe to the playerStore to initialize the spectrogram service
+    // once an audio file's sample rate is known.
+    const unsub = playerStore.subscribe(state => {
+      // Initialize the spectrogram service as soon as we have a sample rate.
+      // This will happen after the first file is loaded.
+      if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
+        console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
+        spectrogramService.initialize({ sampleRate: state.sampleRate });
+      }
+    });
+
+    // Original keydown handler can remain if needed for global shortcuts
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        event.preventDefault();
+        // Play/pause logic here if not handled within Controls component
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup function
+    return () => {
+      console.log('Disposing all services onDestroy...');
+      window.removeEventListener('keydown', handleKeyDown);
+
+      // Dispose all services when the component is destroyed.
+      audioEngineService.dispose();
+      analysisService.dispose();
+      dtmfService.dispose();
+      spectrogramService.dispose();
+      unsub(); // Unsubscribe from the player store
+    };
+  });
+</script>
+
+<Toaster />
+
+<div class="container mx-auto p-4 max-w-4xl">
+  <header class="mb-6 text-center">
+		<h1 class="text-4xl font-bold text-primary" data-testid="app-bar-title">Vibe Player V2</h1>
+    <p class="text-muted-foreground">Experimental Audio Analysis & Playback</p>
+  </header>
+
+  <section id="file-loader" class="mb-8 p-6 bg-card rounded-lg shadow">
+    <FileLoader />
+  </section>
+
+	<section class="mb-8 p-6 bg-card rounded-lg shadow">
+		<div class="text-center font-mono text-lg" data-testid="time-display">
+			{formatTime($playerStore.currentTime)} / {formatTime($playerStore.duration)}
+		</div>
+		<RangeSlider
+			name="seek"
+			bind:value={$playerStore.currentTime}
+			max={$playerStore.duration || 1}
+			on:input={handleSeek}
+			disabled={!$playerStore.isPlayable}
+			data-testid="seek-slider-input"
+		/>
+	</section>
+
+  <section id="controls" class="mb-8 p-6 bg-card rounded-lg shadow">
+    <Controls />
+  </section>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+    <section id="waveform" class="p-6 bg-card rounded-lg shadow">
+      <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Waveform</h2>
+      <Waveform />
+    </section>
+
+    <section id="tone-display" class="p-6 bg-card rounded-lg shadow">
+      <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Tone Activity</h2>
+      <ToneDisplay />
+    </section>
+  </div>
+
+  <section id="spectrogram" class="p-6 bg-card rounded-lg shadow">
+    <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Spectrogram</h2>
+    <Spectrogram />
+  </section>
+
+  <footer class="mt-12 text-center text-sm text-muted-foreground">
+    <p>Vibe Player V2 written mostly by Gemini and Jules</p>
+  </footer>
+</div>
+````
+--- End of File: vibe-player-v2/src/routes/+page.svelte ---
 --- File: vibe-player-v2/src/setupTests.ts ---
 ````typescript
 // General setup for Svelte component testing with Vitest and Testing Library
