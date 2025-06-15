@@ -75,6 +75,8 @@ describe("SpectrogramService", () => {
       );
       expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function)); // Initial 'Initializing' update
 
+      await vi.runAllTimersAsync(); // <-- THIS IS THE ADDED LINE
+
       // Simulate worker response for INIT_SUCCESS
       const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
       if (mockSpecWorkerInstance.onmessage) {
