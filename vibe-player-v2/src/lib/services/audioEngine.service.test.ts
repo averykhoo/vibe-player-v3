@@ -115,6 +115,30 @@ describe("AudioEngineService", () => {
     vi.clearAllMocks();
     storeSingletonRefForTestControl.set(JSON.parse(JSON.stringify(initialPlayerStoreStateForReset)));
 
+// --- START of CHANGE ---
+// Mock the global fetch API to prevent network errors in the Node.js test environment.
+vi.spyOn(global, 'fetch').mockImplementation((url) => {
+    // Based on the URL, we can return different mock responses.
+    // For this test, both WASM and the loader script can return simple, empty data.
+    if (typeof url === 'string' && url.includes('rubberband.wasm')) {
+        return Promise.resolve({
+            ok: true,
+            status: 200,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), // Return a dummy ArrayBuffer
+        } as Response);
+    }
+    if (typeof url === 'string' && url.includes('rubberband-loader.js')) {
+        return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve('// Mock loader script'), // Return a dummy script text
+        } as Response);
+    }
+    // Fallback for any other fetch calls
+    return Promise.reject(new Error(`Unhandled fetch request in test: ${url}`));
+});
+// --- END of CHANGE ---
+
     mockWorkerObject.postMessage = vi.fn();
     mockWorkerObject.terminate = vi.fn();
     mockWorkerObject.onmessage = null;
