@@ -1,109 +1,114 @@
+<!-- vibe-player-v2/src/routes/+page.svelte -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import FileLoader from '$lib/components/FileLoader.svelte';
+  import { Toaster } from 'svelte-sonner';
+
+  // Components
   import Controls from '$lib/components/Controls.svelte';
+  import FileLoader from '$lib/components/FileLoader.svelte';
+  import ToneDisplay from '$lib/components/ToneDisplay.svelte';
   import Waveform from '$lib/components/visualizers/Waveform.svelte';
   import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
-  import ToneDisplay from '$lib/components/ToneDisplay.svelte';
+
+  // --- START of CHANGE ---
+  // Import all services that need initialization
+  import audioEngineService from '$lib/services/audioEngine.service';
+  import analysisService from '$lib/services/analysis.service';
+  import dtmfService from '$lib/services/dtmf.service';
+  import spectrogramService from '$lib/services/spectrogram.service';
+  import { VAD_CONSTANTS } from '$lib/utils/constants';
   import { playerStore } from '$lib/stores/player.store';
+  import { get } from 'svelte/store';
+  // --- END of CHANGE ---
 
-  // Service imports are moved into onMount for SSR safety
-  import type { AnalysisService } from '$lib/services/analysis.service';
-  import type { DtmfService } from '$lib/services/dtmf.service';
-  import type { SpectrogramService } from '$lib/services/spectrogram.service';
-  import type { AudioEngineService } from '$lib/services/audioEngine.service';
+  onMount(() => {
+    // --- START of CHANGE ---
+    // Initialize all services eagerly when the application component mounts.
+    // This is the most robust approach to ensure everything is ready.
+    console.log('Initializing all services onMount...');
 
-  // Define local variables to hold the service instances
-  let analysisService: AnalysisService;
-  let dtmfService: DtmfService;
-  let spectrogramService: SpectrogramService;
-  let audioEngineService: AudioEngineService;
-
-
-  onMount(async () => {
-    // Dynamically import services only on the client-side
-    const audioModule = await import('$lib/services/audioEngine.service');
-    audioEngineService = audioModule.default;
+    // Initialize the audio engine, which prepares the Rubberband worker.
     audioEngineService.initialize();
 
-    const analysisModule = await import('$lib/services/analysis.service');
-    analysisService = analysisModule.default;
-    analysisService.initialize(); // For VAD
+    // Initialize the analysis service, which prepares the SileroVAD worker.
+    analysisService.initialize();
 
-    const specModule = await import('$lib/services/spectrogram.service');
-    spectrogramService = specModule.default;
-    // Note: SpectrogramService init requires sampleRate, which we don't have yet.
-    // It will be initialized later when a file is loaded. This is fine.
+    // Initialize the DTMF service and its worker.
+    dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
 
-    const dtmfModule = await import('$lib/services/dtmf.service');
-    dtmfService = dtmfModule.default;
-    dtmfService.initialize(16000); // Initialize with default DTMF sample rate
+    // Subscribe to the playerStore to initialize the spectrogram service
+    // once an audio file's sample rate is known.
+    const unsub = playerStore.subscribe(state => {
+      // Initialize the spectrogram service as soon as we have a sample rate.
+      // This will happen after the first file is loaded.
+      if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
+        console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
+        spectrogramService.initialize({ sampleRate: state.sampleRate });
+      }
+    });
+    // --- END of CHANGE ---
 
-    // Cleanup services when the component is destroyed
+    // Original keydown handler can remain if needed for global shortcuts
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        event.preventDefault();
+        // Play/pause logic here if not handled within Controls component
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup function
     return () => {
-      console.log('[+page.svelte onDestroy] Disposing services...');
-      audioEngineService?.dispose();
-      analysisService?.dispose();
-      spectrogramService?.dispose();
-      dtmfService?.dispose();
-      console.log('[+page.svelte onDestroy] Services disposed.');
+      console.log('Disposing all services onDestroy...');
+      window.removeEventListener('keydown', handleKeyDown);
+
+      // --- START of CHANGE ---
+      // Dispose all services when the component is destroyed.
+      audioEngineService.dispose();
+      analysisService.dispose();
+      dtmfService.dispose();
+      spectrogramService.dispose();
+      unsub(); // Unsubscribe from the player store
+      // --- END of CHANGE ---
     };
   });
-
-  // Reactive statement to trigger analysis when a file is ready
-  $: if ($playerStore.isPlayable && $playerStore.audioBuffer && audioEngineService && analysisService && spectrogramService && dtmfService) {
-    console.log('[+page.svelte reactive] isPlayable is true, starting background analysis.');
-    const audioBuffer = $playerStore.audioBuffer; // Capture buffer
-
-    // Spectrogram Processing
-    const processSpectrogram = async () => {
-      if (!audioBuffer || !spectrogramService) return;
-      try {
-        console.log('[+page.svelte] Initializing spectrogram service with sample rate:', audioBuffer.sampleRate);
-        // Initialize spectrogram service here as we have the sampleRate
-        await spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
-
-        const pcmData = audioBuffer.getChannelData(0); // Assuming mono
-        if (pcmData && pcmData.length > 0) {
-          console.log('[+page.svelte] Processing PCM data for spectrogram...');
-          await spectrogramService.process(pcmData);
-          console.log('[+page.svelte] Spectrogram processing initiated.');
-        } else {
-          console.warn('[+page.svelte] No PCM data found in audioBuffer or data is empty.');
-        }
-      } catch (error) {
-        console.error('[+page.svelte] Error during spectrogram processing:', error);
-      }
-    };
-    processSpectrogram();
-
-    // DTMF Processing
-    const processTones = () => {
-      if (!audioBuffer || !dtmfService) return;
-      try {
-        console.log('[+page.svelte] Processing audio for DTMF tones...');
-        dtmfService.process(audioBuffer); // audioBuffer is passed, service handles resampling
-      } catch (error) {
-        console.error('[+page.svelte] Error during DTMF processing:', error);
-      }
-    };
-    processTones();
-  }
 </script>
 
-<!-- Add a wrapper to prevent UI from showing before services are ready -->
-{#if audioEngineService}
-  <div class="p-4 space-y-4 max-w-4xl mx-auto">
-    <h1 data-testid="app-bar-title" class="text-2xl font-bold">Vibe Player V2</h1>
+<Toaster />
 
+<div class="container mx-auto p-4 max-w-4xl">
+  <header class="mb-6 text-center">
+    <h1 class="text-4xl font-bold text-primary">Vibe Player V2</h1>
+    <p class="text-muted-foreground">Experimental Audio Analysis & Playback</p>
+  </header>
+
+  <section id="file-loader" class="mb-8 p-6 bg-card rounded-lg shadow">
     <FileLoader />
-    <Controls />
-    <Waveform />
-    <Spectrogram />
-    <ToneDisplay />
+  </section>
 
-    <!-- Add other components as needed -->
+  <section id="controls" class="mb-8 p-6 bg-card rounded-lg shadow">
+    <Controls />
+  </section>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+    <section id="waveform" class="p-6 bg-card rounded-lg shadow">
+      <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Waveform</h2>
+      <Waveform />
+    </section>
+
+    <section id="tone-display" class="p-6 bg-card rounded-lg shadow">
+      <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Tone Activity</h2>
+      <ToneDisplay />
+    </section>
   </div>
-{:else}
-  <p>Loading application...</p>
-{/if}
+
+  <section id="spectrogram" class="p-6 bg-card rounded-lg shadow">
+    <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Spectrogram</h2>
+    <Spectrogram />
+  </section>
+
+  <footer class="mt-12 text-center text-sm text-muted-foreground">
+    <p>&copy; 2024 Vibe Player V2. All rights reserved.</p>
+  </footer>
+</div>
