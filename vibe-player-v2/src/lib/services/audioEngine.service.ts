@@ -1,7 +1,7 @@
 // vibe-player-v2/src/lib/services/audioEngine.service.ts
 
 import { get, writable } from 'svelte/store';
-import type { WorkerMessage, RubberbandInitPayload, RubberbandProcessPayload, RubberbandProcessResultPayload } from '$lib/types/worker.types';
+import type { WorkerMessage, RubberbandInitPayload, RubberbandProcessPayload, RubberbandProcessResultPayload, WorkerErrorPayload } from '$lib/types/worker.types';
 import { RB_WORKER_MSG_TYPE } from '$lib/types/worker.types';
 import { playerStore } from '$lib/stores/player.store';
 import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
@@ -59,6 +59,42 @@ class AudioEngineService {
         console.log("AudioEngineService: Initializing for client...");
         this.worker = new RubberbandWorker();
         this.worker.onmessage = this.handleWorkerMessage.bind(this);
+        this._initializeWorker();
+    }
+
+    private async _initializeWorker(): Promise<void> {
+        if (!this.worker) {
+            console.error("AudioEngineService: Worker is null. Cannot initialize.");
+            return;
+        }
+
+        try {
+            const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
+            if (!wasmResponse.ok) {
+                throw new Error(`Failed to fetch WASM binary: ${wasmResponse.statusText}`);
+            }
+            const wasmBinary = await wasmResponse.arrayBuffer();
+
+            const loaderResponse = await fetch(AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL);
+            if (!loaderResponse.ok) {
+                throw new Error(`Failed to fetch loader script: ${loaderResponse.statusText}`);
+            }
+            const loaderScriptText = await loaderResponse.text();
+
+            const initPayload: RubberbandInitPayload = {
+                wasmBinary,
+                loaderScriptText,
+                origin: location.origin,
+                sampleRate: this._getAudioContext()?.sampleRate || 44100,
+                channels: 2, // TODO: make this dynamic based on input, or ensure worker can handle it
+                initialSpeed: get(playerStore).speed,
+                initialPitch: get(playerStore).pitch
+            };
+            this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload }, [wasmBinary]);
+        } catch (error) {
+            console.error("Failed to initialize Rubberband worker:", error);
+            playerStore.update(s => ({ ...s, error: `Worker init failed: ${(error as Error).message}` }));
+        }
     }
 
     private _getAudioContext(): AudioContext {
@@ -87,12 +123,9 @@ class AudioEngineService {
         try {
             this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
 
-            // --- START of CHANGE ---
-            // REMOVED: Worker initialization is now handled eagerly at application startup.
-            // We no longer need to fetch dependencies or send the INIT message here.
-            // --- END of CHANGE ---
+            this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.RESET }); // Reset worker for new file
 
-            // **FIX**: Extract waveform data for the UI here
+            // Extract waveform data for the UI
             const waveformDisplayData: number[][] = [];
             const targetPoints = 1000;
             for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
@@ -223,17 +256,21 @@ class AudioEngineService {
         playerStore.update(s => ({ ...s, currentTime: this.sourcePlaybackOffset / this.originalBuffer!.sampleRate }));
     }
 
-    private handleWorkerMessage(event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload>>): void {
+    private handleWorkerMessage(event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>): void {
         const { type, payload } = event.data;
 
         if (type === RB_WORKER_MSG_TYPE.INIT_SUCCESS) {
             this.isWorkerInitialized = true;
             console.log("AudioEngine worker initialized.");
-            if (get(playerStore).audioBuffer) {
+            if (get(playerStore).audioBuffer) { // if a buffer was loaded before worker was ready
                 playerStore.update(s => ({...s, isPlayable: true}));
             }
-        } else if (type === RB_WORKER_MSG_TYPE.PROCESS_RESULT && payload?.outputBuffer) {
-            this.scheduleChunkPlayback(payload.outputBuffer);
+        } else if (type === RB_WORKER_MSG_TYPE.ERROR) {
+            console.error("Worker error:", (payload as WorkerErrorPayload).message);
+            playerStore.update(s => ({ ...s, error: (payload as WorkerErrorPayload).message, isPlaying: false }));
+            this.isStopping = true; // Stop processing loop on critical worker error
+        } else if (type === RB_WORKER_MSG_TYPE.PROCESS_RESULT && payload) {
+            this.scheduleChunkPlayback((payload as RubberbandProcessResultPayload).outputBuffer);
             // The loop continues by calling processAndPlayLoop again from here
             if (this.isPlaying) {
                 this.processAndPlayLoop();

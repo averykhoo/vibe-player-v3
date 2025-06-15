@@ -189,19 +189,18 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
 
     expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledWith(mockArrayBuffer);
 
-    // Explicitly check calls
-    expect(mockWorkerObject.postMessage).toHaveBeenCalledTimes(2);
-    // First call: RESET from stop()
-    expect(mockWorkerObject.postMessage.mock.calls[0][0]).toEqual(
+    // Explicitly check calls after loadFile
+    // loadFile calls stop(), which sends a RESET.
+    // The INIT message is now sent by _initializeWorker when the service is initialized,
+    // not directly by loadFile.
+    expect(mockWorkerObject.postMessage).toHaveBeenCalledTimes(1);
+    expect(mockWorkerObject.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET })
     );
-    expect(mockWorkerObject.postMessage.mock.calls[0][1]).toBeUndefined();
-    // Second call: INIT from loadFile()
-    expect(mockWorkerObject.postMessage.mock.calls[1][0]).toEqual(
-      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT, payload: expect.any(Object) })
+    // Ensure no INIT call was made *by loadFile* to the mockWorkerObject
+    expect(mockWorkerObject.postMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT })
     );
-    expect(mockWorkerObject.postMessage.mock.calls[1][1]).toEqual([expect.any(ArrayBuffer)]);
-
 
     const finalState = get(storeSingletonRefForTestControl);
     expect(finalState.isPlayable).toBe(true);
@@ -226,8 +225,14 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
       }
     });
 
+    // Simulate that the worker has been initialized via _initializeWorker
+    // This would have been called when the service was initialized.
+    (audioEngineService as any).isWorkerInitialized = true;
+
     await audioEngineService.loadFile(mockArrayBuffer, "test.wav");
 
+    // Clear any calls made during loadFile (e.g., the RESET from stop())
+    // before checking calls made by play().
     mockWorkerObject.postMessage.mockClear();
 
     await audioEngineService.play();
