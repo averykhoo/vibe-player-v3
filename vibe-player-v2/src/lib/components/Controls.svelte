@@ -53,9 +53,9 @@
 <div class="card p-4 space-y-4">
     <h3 class="h3">Controls</h3>
     <div class="flex space-x-2">
-        <button type="button" class="btn" data-testid="play-button" on:click={handlePlay}>Play</button>
-        <button type="button" class="btn" data-testid="pause-button" on:click={handlePause}>Pause</button>
-        <button type="button" class="btn" data-testid="stop-button" on:click={handleStop}>Stop</button>
+        <button type="button" class="btn" data-testid="play-button" on:click={handlePlay} disabled={!$playerStore.isPlayable}>Play</button>
+        <button type="button" class="btn" data-testid="pause-button" on:click={handlePause} disabled={!$playerStore.isPlayable}>Pause</button>
+        <button type="button" class="btn" data-testid="stop-button" on:click={handleStop} disabled={!$playerStore.isPlayable}>Stop</button>
     </div>
     <div>
         <label for="speedSlider" class="label">Speed: {speed.toFixed(2)}x</label>
