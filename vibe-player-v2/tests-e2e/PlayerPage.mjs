@@ -1,41 +1,27 @@
-// tests-e2e/PlayerPage.js
+// tests-e2e/PlayerPage.mjs
 import { expect } from '@playwright/test';
-// FIX: Remove the unused 'path' import
-// import path from 'path';
 
 export class PlayerPage {
   constructor(page) {
     this.page = page;
     this.devServerUrl = 'http://localhost:4173/';
-
-    // FIX: Changed from a fragile CSS selector to a stable data-testid attribute
     this.appBarTitle = page.getByTestId('app-bar-title');
-
-    // FileLoader.svelte locators (assuming data-testid attributes will be added)
-    this.fileInput = page.locator('input[type="file"]'); // General locator, refine if possible
+    this.fileInput = page.locator('input[type="file"]');
     this.fileNameDisplay = page.getByTestId('file-name-display');
     this.fileStatusDisplay = page.getByTestId('file-status-display');
     this.fileErrorDisplay = page.getByTestId('file-error-display');
-
-    // Controls.svelte locators (assuming data-testid attributes)
-    this.playButton = page.getByTestId('play-button'); // Should toggle text Play/Pause
+    this.playButton = page.getByTestId('play-button');
     this.stopButton = page.getByTestId('stop-button');
     this.timeDisplay = page.getByTestId('time-display');
-
     this.seekSliderInput = page.getByTestId('seek-slider-input');
-
     this.speedSliderInput = page.getByTestId('speed-slider-input');
     this.speedValueDisplay = page.getByTestId('speed-value');
-
     this.pitchSliderInput = page.getByTestId('pitch-slider-input');
     this.pitchValueDisplay = page.getByTestId('pitch-value');
-
     this.gainSliderInput = page.getByTestId('gain-slider-input');
     this.gainValueDisplay = page.getByTestId('gain-value');
-
     this.vadPositiveSliderInput = page.getByTestId('vad-positive-slider-input');
     this.vadPositiveValueDisplay = page.getByTestId('vad-positive-value');
-
     this.vadNegativeSliderInput = page.getByTestId('vad-negative-slider-input');
     this.vadNegativeValueDisplay = page.getByTestId('vad-negative-value');
   }
@@ -43,51 +29,38 @@ export class PlayerPage {
   async goto() {
     await this.page.goto(this.devServerUrl);
     await expect(this.appBarTitle).toHaveText('Vibe Player V2', { timeout: 15000 });
-    // Wait for the file input to be visible as a sign of FileLoader.svelte being ready
-    await expect(this.fileInput).toBeVisible({timeout: 10000});
+    await expect(this.fileInput).toBeVisible({ timeout: 10000 });
   }
 
   async loadAudioFile(fileName) {
-    // FIX: Instead of resolving a file path, we now fetch the file from the test server's URL.
-    // This perfectly mimics how a user would load a file from a URL.
-    const response = await this.page.request.get(this.devServerUrl + fileName);
-    const buffer = await response.body();
+    // --- THE FIX ---
+    // The previous implementation used `page.request.get` which is good, but let's
+    // simplify and use `setInputFiles` with a local path, which is more robust
+    // for CI and local testing. Playwright will handle serving it.
+    // We also need to construct the correct path relative to the project root.
+    const filePath = `static/${fileName}`; // Assumes tests run from vibe-player-v2/
 
-    // Use Playwright's setInputFiles with a buffer.
-    await this.fileInput.setInputFiles({
-      name: fileName,
-      mimeType: fileName.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg',
-      buffer: buffer
-    });
-
-    await this.page.waitForTimeout(200);
+    await this.fileInput.setInputFiles(filePath);
+    await this.page.waitForTimeout(200); // Small delay for file processing to start
   }
 
-  // ... (rest of the methods are correct)
   async expectControlsToBeReadyForPlayback() {
-    // FIX: Change the assertion to first wait for the element to be ATTACHED to the DOM.
-    // This directly tests the #if block condition becoming true.
-    // Only after it's attached can we check if it's enabled.
-    // Using .first() ensures Playwright doesn't complain if the locator resolves to multiple items,
-    // and .waitFor() is the explicit way to wait for an element to appear.
     await this.playButton.first().waitFor({ state: 'attached', timeout: 20000 });
-
-    // Now that we know the button exists, we can safely check if it's enabled.
-    await expect(this.playButton).toBeEnabled({ timeout: 1000 }); // Short timeout is fine now
+    await expect(this.playButton).toBeEnabled({ timeout: 1000 });
   }
 
   async getPlayButtonText() {
-    return this.playButton.textContent(); // Assumes button text changes Play/Pause
+    return this.playButton.textContent();
   }
 
   async setSliderValue(sliderInputLocator, value) {
     await sliderInputLocator.fill(String(value));
-    await sliderInputLocator.dispatchEvent('input'); // For live updates if component listens to input
-    await sliderInputLocator.dispatchEvent('change'); // For final value commit
-    await this.page.waitForTimeout(150); // Allow UI to react
+    await sliderInputLocator.dispatchEvent('input');
+    await sliderInputLocator.dispatchEvent('change');
+    await this.page.waitForTimeout(150);
   }
 
-  async getSliderInputValue(sliderInputLocator) { // Renamed to avoid conflict with Playwright's own getValue
+  async getSliderInputValue(sliderInputLocator) {
     return sliderInputLocator.inputValue();
   }
-};
+}

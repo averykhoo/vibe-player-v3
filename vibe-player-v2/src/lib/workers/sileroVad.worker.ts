@@ -34,7 +34,8 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         if (!initPayload.origin) {
           throw new Error("SileroVadWorker INIT: `origin` is missing in payload.");
         }
-        ort.env.wasm.wasmPaths = initPayload.origin;
+        // Ensure the path has a trailing slash before ORT uses it.
+        ort.env.wasm.wasmPaths = `${initPayload.origin}/`;
         // --- END FIX ---
 
         if (!initPayload.modelBuffer) {
