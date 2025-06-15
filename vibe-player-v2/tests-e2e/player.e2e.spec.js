@@ -17,8 +17,13 @@ test.describe('Vibe Player V2 E2E', () => {
 
   test.beforeEach(async ({ page }) => {
     page.on('console', msg => {
-      if (msg.type() === 'error') { // Only log errors to reduce noise
-        console.error(`[Browser Console ERROR] ${msg.text()}`);
+      const text = msg.text();
+      if (msg.type() === 'error') {
+        console.error(`[Browser Console ERROR] ${text}`);
+        // Detect critical VAD/WASM errors and fail the test immediately
+        if (text.includes('VAD error') || text.includes('WASM error') || text.includes('WebAssembly')) {
+          test.fail(true, `Critical VAD/WASM error detected in browser console: ${text}`);
+        }
       }
     });
     playerPage = new PlayerPage(page);
