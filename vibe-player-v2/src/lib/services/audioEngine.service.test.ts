@@ -185,6 +185,7 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
       }
     });
 
+    mockWorkerObject.postMessage.mockClear();
     await audioEngineService.loadFile(mockArrayBuffer, "test.wav");
 
     expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledWith(mockArrayBuffer);
