@@ -1,7 +1,9 @@
 <!-- vibe-player-v2/src/routes/+page.svelte -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+	import { get } from 'svelte/store';
   import { Toaster } from 'svelte-sonner';
+	import { RangeSlider } from '@skeletonlabs/skeleton'; // <-- ADD THIS IMPORT
 
   // Components
   import Controls from '$lib/components/Controls.svelte';
@@ -10,19 +12,26 @@
   import Waveform from '$lib/components/visualizers/Waveform.svelte';
   import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
 
-  // --- START of CHANGE ---
-  // Import all services that need initialization
+	// Services and Stores
   import audioEngineService from '$lib/services/audioEngine.service';
   import analysisService from '$lib/services/analysis.service';
   import dtmfService from '$lib/services/dtmf.service';
   import spectrogramService from '$lib/services/spectrogram.service';
   import { VAD_CONSTANTS } from '$lib/utils/constants';
   import { playerStore } from '$lib/stores/player.store';
-  import { get } from 'svelte/store';
-  // --- END of CHANGE ---
+	import { analysisStore } from '$lib/stores/analysis.store'; // analysisStore is needed
+	import { formatTime } from '$lib/utils/formatters'; // <-- ADD THIS IMPORT
+
+	// --- NEW: Function to handle seeking ---
+	function handleSeek(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const time = parseFloat(target.value);
+		if (!isNaN(time)) {
+			audioEngineService.seek(time);
+		}
+	}
 
   onMount(() => {
-    // --- START of CHANGE ---
     // Initialize all services eagerly when the application component mounts.
     // This is the most robust approach to ensure everything is ready.
     console.log('Initializing all services onMount...');
@@ -46,7 +55,6 @@
         spectrogramService.initialize({ sampleRate: state.sampleRate });
       }
     });
-    // --- END of CHANGE ---
 
     // Original keydown handler can remain if needed for global shortcuts
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -63,14 +71,12 @@
       console.log('Disposing all services onDestroy...');
       window.removeEventListener('keydown', handleKeyDown);
 
-      // --- START of CHANGE ---
       // Dispose all services when the component is destroyed.
       audioEngineService.dispose();
       analysisService.dispose();
       dtmfService.dispose();
       spectrogramService.dispose();
       unsub(); // Unsubscribe from the player store
-      // --- END of CHANGE ---
     };
   });
 </script>
@@ -79,13 +85,27 @@
 
 <div class="container mx-auto p-4 max-w-4xl">
   <header class="mb-6 text-center">
-    <h1 class="text-4xl font-bold text-primary">Vibe Player V2</h1>
+		<h1 class="text-4xl font-bold text-primary" data-testid="app-bar-title">Vibe Player V2</h1>
     <p class="text-muted-foreground">Experimental Audio Analysis & Playback</p>
   </header>
 
   <section id="file-loader" class="mb-8 p-6 bg-card rounded-lg shadow">
     <FileLoader />
   </section>
+
+	<section class="mb-8 p-6 bg-card rounded-lg shadow">
+		<div class="text-center font-mono text-lg" data-testid="time-display">
+			{formatTime($playerStore.currentTime)} / {formatTime($playerStore.duration)}
+		</div>
+		<RangeSlider
+			name="seek"
+			bind:value={$playerStore.currentTime}
+			max={$playerStore.duration || 1}
+			on:input={handleSeek}
+			disabled={!$playerStore.isPlayable}
+			data-testid="seek-slider-input"
+		/>
+	</section>
 
   <section id="controls" class="mb-8 p-6 bg-card rounded-lg shadow">
     <Controls />
@@ -109,6 +129,6 @@
   </section>
 
   <footer class="mt-12 text-center text-sm text-muted-foreground">
-    <p>&copy; 2024 Vibe Player V2. All rights reserved.</p>
+    <p>Vibe Player V2 written mostly by Gemini and Jules</p>
   </footer>
 </div>

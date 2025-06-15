@@ -1,3 +1,4 @@
+<!-- vibe-player-v2/src/lib/components/Controls.svelte -->
 <script lang="ts">
     import { RangeSlider } from '@skeletonlabs/skeleton';
     import audioEngine from '$lib/services/audioEngine.service';

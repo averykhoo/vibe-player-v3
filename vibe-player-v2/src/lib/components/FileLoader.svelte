@@ -1,3 +1,5 @@
+<!-- vibe-player-v2/src/lib/components/FileLoader.svelte -->
+
 <script lang="ts">
     import audioEngine from '$lib/services/audioEngine.service';
     import { playerStore } from '$lib/stores/player.store'; // To show status or file name
