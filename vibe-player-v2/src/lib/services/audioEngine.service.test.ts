@@ -200,7 +200,7 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
     expect(mockWorkerObject.postMessage.mock.calls[1][0]).toEqual(
       expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT, payload: expect.any(Object) })
     );
-    expect(mockWorkerObject.postMessage.mock.calls[1][1]).toBeUndefined();
+    expect(mockWorkerObject.postMessage.mock.calls[1][1]).toEqual([expect.any(ArrayBuffer)]);
 
 
     const finalState = get(storeSingletonRefForTestControl);
