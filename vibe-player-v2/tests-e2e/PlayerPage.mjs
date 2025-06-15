@@ -54,9 +54,12 @@ export class PlayerPage {
   }
 
   async setSliderValue(sliderInputLocator, value) {
-    await sliderInputLocator.fill(String(value));
-    await sliderInputLocator.dispatchEvent('input');
-    await sliderInputLocator.dispatchEvent('change');
+    await sliderInputLocator.evaluate((el, val) => {
+        const inputElement = el as HTMLInputElement;
+        inputElement.value = val;
+        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+        inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+    }, String(value));
     await this.page.waitForTimeout(150);
   }
 

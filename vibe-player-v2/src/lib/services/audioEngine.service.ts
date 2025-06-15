@@ -252,8 +252,10 @@ class AudioEngineService {
         const transferable: ArrayBuffer[] = [];
 
         for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
+            // FIX: Create a new Float32Array to make a copy of the data.
             const slice = new Float32Array(this.originalBuffer.getChannelData(i).subarray(this.sourcePlaybackOffset, chunkEnd));
             inputSlices.push(slice);
+            // Now we transfer the ArrayBuffer of the COPY, leaving the original buffer untouched.
             transferable.push(slice.buffer);
         }
 
