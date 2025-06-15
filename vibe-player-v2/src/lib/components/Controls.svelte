@@ -53,11 +53,10 @@
 <div class="card p-4 space-y-4">
     <h3 class="h3">Controls</h3>
     <div class="flex space-x-2">
-        <button type="button" class="btn" on:click={handlePlay}>Play</button>
-        <button type="button" class="btn" on:click={handlePause}>Pause</button>
-        <button type="button" class="btn" on:click={handleStop}>Stop</button>
+        <button type="button" class="btn" data-testid="play-button" on:click={handlePlay}>Play</button>
+        <button type="button" class="btn" data-testid="pause-button" on:click={handlePause}>Pause</button>
+        <button type="button" class="btn" data-testid="stop-button" on:click={handleStop}>Stop</button>
     </div>
-
     <div>
         <label for="speedSlider" class="label">Speed: {speed.toFixed(2)}x</label>
         <RangeSlider name="speedSlider" bind:value={speed} min={0.5} max={2.0} step={0.01} on:input={updateSpeed} />
