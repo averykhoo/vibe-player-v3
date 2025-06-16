@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/utils/dsp.test.ts
 import { describe, it, expect, vi } from "vitest";
 import { hannWindow, viridisColor } from "./dsp";
 
