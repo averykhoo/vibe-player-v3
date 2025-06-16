@@ -199,9 +199,9 @@ name: Vibe Player CI
 
 on:
   push:
-    branches: [ "**" ] # Run on pushes to all branches
+    branches: [ "**" ]
   pull_request:
-    branches: [ "main", "master" ] # Run on PRs targeting main or master
+    branches: [ "main" ]
 
 jobs:
   test:
@@ -212,9 +212,6 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # 1. Setup Node.js and configure caching for npm packages
-      # This step handles caching for both the root and the /vibe-player-v2 directories
-      # by looking at both package-lock.json files.
       - name: Use Node.js 18.x
         uses: actions/setup-node@v4
         with:
@@ -222,13 +219,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'vibe-player-v2/package-lock.json'
 
-      # 2. Install dependencies for the V2 app and the root project.
-      # The `setup-node` action automatically handles skipping this if the cache was restored.
       - name: Install V2 dependencies
         working-directory: ./vibe-player-v2
         run: npm ci
 
-      # 3. Run all tests and builds as before
       - name: Lint V2
         working-directory: ./vibe-player-v2
         run: npm run lint
@@ -241,17 +235,14 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npm run build
 
-      # 4. Correctly cache Playwright browsers
       - name: Cache Playwright browsers
         id: cache-playwright-browsers
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2/package-lock.json') }}
+          path: /home/runner/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      # 5. Install Playwright browsers only if the cache was not restored
       - name: Install Playwright and OS dependencies
-        if: steps.cache-playwright-browsers.outputs.cache-hit != 'true'
         working-directory: ./vibe-player-v2
         run: npx playwright install --with-deps
 
@@ -259,7 +250,6 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npx playwright test
 
-      # 6. Cleanup and Reporting
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -14950,10 +14940,10 @@ self.onmessage = (event: MessageEvent) => {
 ````typescript
 // vibe-player-v2/src/lib/workers/rubberband.worker.ts
 import type {
-  RubberbandInitPayload,
-  RubberbandProcessPayload,
-  RubberbandProcessResultPayload,
-  WorkerMessage,
+    RubberbandInitPayload,
+    RubberbandProcessPayload,
+    RubberbandProcessResultPayload,
+    WorkerMessage,
 } from "../types/worker.types";
 import {RB_WORKER_MSG_TYPE} from "../types/worker.types";
 
@@ -15574,10 +15564,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   import analysisService from '$lib/services/analysis.service';
   import dtmfService from '$lib/services/dtmf.service';
   import spectrogramService from '$lib/services/spectrogram.service';
-  import { VAD_CONSTANTS } from '$lib/utils/constants';
+  import { VAD_CONSTANTS, URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants';
   import { playerStore } from '$lib/stores/player.store';
-	import { analysisStore } from '$lib/stores/analysis.store'; // analysisStore is needed
-	import { formatTime } from '$lib/utils/formatters'; // <-- ADD THIS IMPORT
+	import { analysisStore } from '$lib/stores/analysis.store';
+	import { formatTime } from '$lib/utils/formatters';
+  import { debounce, updateUrlWithParams } from '$lib/utils';
 
 	// --- NEW: Function to handle seeking ---
 	function handleSeek(event: Event) {
@@ -15603,11 +15594,31 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     // Initialize the DTMF service and its worker.
     dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
 
-    // Subscribe to the playerStore to initialize the spectrogram service
-    // once an audio file's sample rate is known.
-    const unsub = playerStore.subscribe(state => {
-      // Check if a new, valid audioBuffer has been loaded for DTMF.
-      // The status check prevents re-triggering on every store update.
+    // --- URL State Serialization Logic ---
+    const serializeStateToUrl = () => {
+        const pStore = get(playerStore);
+        const aStore = get(analysisStore);
+
+        if (!pStore.isPlayable) return; // Don't serialize if nothing is loaded
+
+        const params: Record<string, string> = {
+            [URL_HASH_KEYS.SPEED]: pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : "",
+            [URL_HASH_KEYS.PITCH]: pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : "",
+            [URL_HASH_KEYS.GAIN]: pStore.gain !== 1.0 ? pStore.gain.toFixed(2) : "",
+            [URL_HASH_KEYS.VAD_POSITIVE]: aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD ? aStore.vadPositiveThreshold.toFixed(2) : "",
+            [URL_HASH_KEYS.VAD_NEGATIVE]: aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD ? aStore.vadNegativeThreshold.toFixed(2) : ""
+        };
+        updateUrlWithParams(params);
+    };
+
+    const debouncedUrlUpdate = debounce(serializeStateToUrl, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
+
+    // Subscribe to stores to trigger URL updates
+    const unsubPlayer = playerStore.subscribe(debouncedUrlUpdate);
+    const unsubAnalysis = analysisStore.subscribe(debouncedUrlUpdate);
+    // --- End URL State Serialization Logic ---
+
+    const unsubSpec = playerStore.subscribe(state => {
       if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
           console.log('New audio buffer detected, triggering DTMF analysis service...');
           dtmfService.process(state.audioBuffer);
@@ -15641,7 +15652,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       analysisService.dispose();
       dtmfService.dispose();
       spectrogramService.dispose();
-      unsub(); // Unsubscribe from the player store
+      unsubSpec();
+      unsubPlayer();
+      unsubAnalysis();
     };
   });
 </script>
@@ -16808,7 +16821,7 @@ export default {
 --- End of File: vibe-player-v2/tailwind.config.ts ---
 --- File: vibe-player-v2/tests-e2e/00-load.e2e.spec.js ---
 ````javascript
-// tests-e2e/00-load.e2e.spec.js
+// vibe-player-v2/tests-e2e/00-load.e2e.spec.js
 import {expect, test} from "@playwright/test";
 import {PlayerPage} from "./PlayerPage.mjs";
 
@@ -16856,7 +16869,7 @@ test.describe("Application Startup Smoke Test", () => {
 --- End of File: vibe-player-v2/tests-e2e/00-load.e2e.spec.js ---
 --- File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
 ````javascript
-// tests-e2e/player.e2e.spec.js
+// vibe-player-v2/tests-e2e/player.e2e.spec.js
 import {expect, test} from "@playwright/test";
 import {PlayerPage} from "./PlayerPage.mjs";
 
@@ -17013,15 +17026,15 @@ test.describe("Vibe Player V2 E2E", () => {
             await playerPage.expectControlsToBeReadyForPlayback();
 
             await playerPage.setSliderValue(playerPage.speedSliderInput, "1.5");
-            // --- FIX: Wait for the debounced function to execute ---
-            await page.waitForURL("**/*speed=1.50", {timeout: 2000});
-            await expect(page).toHaveURL(/speed=1.50/); // Keep this assertion
+            // The `expect().toHaveURL()` function has a built-in retry mechanism
+            // that is perfect for waiting for debounced client-side URL changes.
+            // We give it a generous timeout to account for any debounce logic.
+            await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
 
             await playerPage.setSliderValue(playerPage.pitchSliderInput, "2");
-            // --- FIX: Wait for the next change ---
-            await page.waitForURL("**/*pitch=2.0", {timeout: 2000});
-            await expect(page).toHaveURL(/pitch=2.0/, {timeout: 2000}); // It's fine to re-assert
-            await expect(page).toHaveURL(/speed=1.50/); // Ensure previous param is still there
+            // Wait for the next change using the same reliable method.
+            await expect(page).toHaveURL(/pitch=2.0/, { timeout: 2000 });
+            await expect(page).toHaveURL(/speed=1.50/); // Also ensure the previous param is still there
         });
 
         test("should load settings from URL parameters on page load", async ({
@@ -17052,7 +17065,7 @@ test.describe("Vibe Player V2 E2E", () => {
 --- End of File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
 --- File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 ````mjs
-// tests-e2e/PlayerPage.mjs
+// vibe-player-v2/tests-e2e/PlayerPage.mjs
 import {expect} from "@playwright/test";
 
 export class PlayerPage {
