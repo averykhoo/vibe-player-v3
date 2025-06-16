@@ -196,6 +196,11 @@ class AudioEngineService {
 
   // Contains the actual logic of one iteration of the processing loop
   private _performSingleProcessAndPlayIteration(): void {
+    assert(this.isPlaying, "Processing loop ran while not playing.");
+    assert(!this.isStopping, "Processing loop ran while stopping.");
+    assert(this.originalBuffer, "Processing loop ran without an audio buffer.");
+    assert(this.audioContext, "Processing loop ran without an audio context.");
+
     if (
       !this.isPlaying ||
       !this.originalBuffer ||
@@ -411,6 +416,17 @@ class AudioEngineService {
     processedChunk: Float32Array,
     startTime: number,
   ): void {
+    assert(
+      this.audioContext,
+      "Attempted to schedule chunk without an audio context.",
+    );
+    assert(this.gainNode, "Attempted to schedule chunk without a gain node.");
+    assert(
+      this.originalBuffer,
+      "Attempted to schedule chunk without an original buffer.",
+    );
+    assert(!this.isStopping, "Attempted to schedule chunk while stopping.");
+
     if (
       !this.audioContext ||
       !this.gainNode ||
@@ -424,6 +440,17 @@ class AudioEngineService {
     const numberOfChannels = this.originalBuffer.numberOfChannels;
     // Ensure processedChunk length is a multiple of numberOfChannels
     // This basic check assumes interleaved data if multi-channel
+    assert(
+      processedChunk.length > 0,
+      `Received an empty processed chunk from the worker. This should not happen during active playback.`,
+    );
+    assert(
+      processedChunk.length % numberOfChannels === 0,
+      `Processed chunk length (${processedChunk.length}) is not a valid multiple of the channel count (${numberOfChannels}).`,
+    );
+
+    // The original production guard can be removed or simplified, as the assertion now covers the logic.
+    // We'll keep a production-safe guard for the channel count mismatch just in case.
     if (
       processedChunk.length === 0 ||
       processedChunk.length % numberOfChannels !== 0
