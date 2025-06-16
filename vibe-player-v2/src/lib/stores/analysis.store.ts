@@ -1,20 +1,20 @@
-import { writable } from "svelte/store";
-import type { AnalysisState } from "$lib/types/analysis.types";
+import {writable} from "svelte/store";
+import type {AnalysisState} from "$lib/types/analysis.types";
 
 const initialState: AnalysisState = {
-  vadStatus: undefined,
-  lastVadResult: null,
-  isSpeaking: undefined,
-  vadStateResetted: undefined,
-  vadError: null,
-  vadInitialized: false,
+    vadStatus: undefined,
+    lastVadResult: null,
+    isSpeaking: undefined,
+    vadStateResetted: undefined,
+    vadError: null,
+    vadInitialized: false,
 
-  spectrogramStatus: undefined,
-  spectrogramError: null,
-  spectrogramData: null,
-  spectrogramInitialized: false,
+    spectrogramStatus: undefined,
+    spectrogramError: null,
+    spectrogramData: null,
+    spectrogramInitialized: false,
 
-  isLoading: false,
+    isLoading: false,
 };
 
 export const analysisStore = writable<AnalysisState>(initialState);

@@ -24,16 +24,16 @@ export class PlayerPage {
         this.vadPositiveValueDisplay = page.getByTestId("vad-positive-value");
         this.vadNegativeSliderInput = page.getByTestId("vad-negative-slider-input");
         this.vadNegativeValueDisplay = page.getByTestId("vad-negative-value");
-    this.dtmfDisplay = page.getByTestId("dtmf-display");
-  }
+        this.dtmfDisplay = page.getByTestId("dtmf-display");
+    }
 
     async goto() {
         await this.page.goto(this.devServerUrl);
         await expect(this.appBarTitle).toHaveText("Vibe Player V2", {
-      timeout: 15000,
-    });
-    await expect(this.fileInput).toBeVisible({ timeout: 10000 });
-  }
+            timeout: 15000,
+        });
+        await expect(this.fileInput).toBeVisible({timeout: 10000});
+    }
 
     async loadAudioFile(fileName) {
         // --- THE FIX ---
@@ -43,32 +43,32 @@ export class PlayerPage {
         // We also need to construct the correct path relative to the project root.
         const filePath = `static/${fileName}`; // Assumes tests run from vibe-player-v2/
 
-    await this.fileInput.setInputFiles(filePath);
-  }
+        await this.fileInput.setInputFiles(filePath);
+    }
 
     async expectControlsToBeReadyForPlayback() {
         // *** REPLACE with robust wait ***
-    await expect(
-      this.timeDisplay,
-      "Time display did not update with audio duration",
-    ).not.toHaveText("0:00 / 0:00", { timeout: 20000 });
+        await expect(
+            this.timeDisplay,
+            "Time display did not update with audio duration",
+        ).not.toHaveText("0:00 / 0:00", {timeout: 20000});
 
-    await expect(
-      this.playButton,
-      "Play button was not enabled after file load",
-    ).toBeEnabled({ timeout: 1000 });
-  }
+        await expect(
+            this.playButton,
+            "Play button was not enabled after file load",
+        ).toBeEnabled({timeout: 1000});
+    }
 
     async getPlayButtonText() {
         return this.playButton.textContent();
     }
 
-  async setSliderValue(sliderInputLocator, value) {
-    await sliderInputLocator.evaluate((el, val) => {
-      const inputElement = el; // as HTMLInputElement; <-- not valid in mjs
-      inputElement.value = val;
-      inputElement.dispatchEvent(new Event("input", { bubbles: true }));
-      inputElement.dispatchEvent(new Event("change", {bubbles: true}));
+    async setSliderValue(sliderInputLocator, value) {
+        await sliderInputLocator.evaluate((el, val) => {
+            const inputElement = el; // as HTMLInputElement; <-- not valid in mjs
+            inputElement.value = val;
+            inputElement.dispatchEvent(new Event("input", {bubbles: true}));
+            inputElement.dispatchEvent(new Event("change", {bubbles: true}));
         }, String(value));
         await this.page.waitForTimeout(150);
     }
