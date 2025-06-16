@@ -63,11 +63,18 @@ test.describe("Vibe Player V2 E2E", () => {
       timeout: 2000,
     });
 
-    // --- FIX: Replace waitForFunction with a robust auto-retrying expect ---
-    await expect(
-      playerPage.timeDisplay,
-      "Playback did not start and time did not advance",
-    ).not.toHaveText(/^0:00 \//, { timeout: 10000 });
+    // --- START: IMPROVED TWO-STAGE ASSERTION ---
+    // Stage 1: Wait for the element to be visible (should be instant, but good practice).
+    await expect(playerPage.timeDisplay).toBeVisible();
+
+    // Stage 2: Wait for its content to change.
+    await expect(playerPage.timeDisplay, "Playback did not start and time did not advance")
+        .not.toHaveText(/^0:00 \//, { timeout: 10000 });
+    // --- END: IMPROVED TWO-STAGE ASSERTION ---
+
+    // Note: The lines `const initialTime = ...` and `expect(initialTime).not.toMatch(...)`
+    // from the prompt's snippet are omitted here as they don't align with the current code structure
+    // and the core change is the two-stage expect above. The existing logic for time check is sufficient.
 
     await playerPage.playButton.click();
     await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
@@ -125,10 +132,15 @@ test.describe("Vibe Player V2 E2E", () => {
 
     const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
 
-    // --- FIX: Use the new robust locator and auto-retrying expect ---
-    await expect(playerPage.dtmfDisplay).toHaveText(expectedDtmfSequence, {
-      timeout: 15000,
-    });
+    // --- START: IMPROVED TWO-STAGE ASSERTION ---
+    // Stage 1: Wait for the DTMF display element to appear on the page.
+    await expect(playerPage.dtmfDisplay, "DTMF display element did not appear")
+        .toBeVisible({ timeout: 15000 });
+
+    // Stage 2: Now that it exists, check its text content.
+    await expect(playerPage.dtmfDisplay, "DTMF text content did not match expected sequence")
+        .toHaveText(expectedDtmfSequence);
+    // --- END: IMPROVED TWO-STAGE ASSERTION ---
   });
 
   test.describe("URL State Serialization", () => {

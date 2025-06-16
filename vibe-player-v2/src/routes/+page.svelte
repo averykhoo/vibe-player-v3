@@ -49,8 +49,15 @@
     // Subscribe to the playerStore to initialize the spectrogram service
     // once an audio file's sample rate is known.
     const unsub = playerStore.subscribe(state => {
-      // Initialize the spectrogram service as soon as we have a sample rate.
-      // This will happen after the first file is loaded.
+      // Check if a new, valid audioBuffer has been loaded for DTMF.
+      // The status check prevents re-triggering on every store update.
+      if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
+          console.log('New audio buffer detected, triggering DTMF analysis service...');
+          dtmfService.process(state.audioBuffer);
+      }
+
+      // Initialize spectrogram service if conditions are met.
+      // This is independent of the DTMF logic above.
       if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
         console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
         spectrogramService.initialize({ sampleRate: state.sampleRate });

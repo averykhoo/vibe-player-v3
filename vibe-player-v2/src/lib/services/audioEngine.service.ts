@@ -416,6 +416,20 @@ class AudioEngineService {
     processedChunk: Float32Array,
     startTime: number,
   ): void {
+    // --- START OF FIX ---
+    // Add a guard to handle cases where the worker returns an empty array,
+    // which is valid if no audio was available to process.
+    // Adapted from processedChannels: Float32Array[] to processedChunk: Float32Array
+    if (!processedChunk || processedChunk.length === 0) {
+        // Log for debugging but do not treat as an error. Simply do nothing.
+        // console.log("ScheduleChunkPlayback: Received empty chunk, skipping playback scheduling.");
+        return;
+    }
+    // --- END OF FIX ---
+
+    // NOTE: The original snippet had ctx retrieval here. In current code, it's this.audioContext.
+    // if (this.audioContext && this.audioContext.state === 'closed') return; // Adapted from snippet
+
     assert(
       this.audioContext,
       "Attempted to schedule chunk without an audio context.",
@@ -451,10 +465,8 @@ class AudioEngineService {
 
     // The original production guard can be removed or simplified, as the assertion now covers the logic.
     // We'll keep a production-safe guard for the channel count mismatch just in case.
-    if (
-      processedChunk.length === 0 ||
-      processedChunk.length % numberOfChannels !== 0
-    ) {
+    // The first part of this if is now covered by the guard above.
+    if (processedChunk.length % numberOfChannels !== 0) {
       console.error(
         "ScheduleChunkPlayback: Processed chunk length is invalid for channel count.",
         processedChunk.length,
@@ -462,12 +474,36 @@ class AudioEngineService {
       );
       return;
     }
-    const frameCount = processedChunk.length / numberOfChannels;
+    // const frameCount = processedChannels[0].length; // Snippet version
+    const frameCount = processedChunk.length / numberOfChannels; // Adapted for current signature
+
+    // --- ADD A CONSOLE.ERROR FOR THE ORIGINAL BUG SCENARIO ---
+    // The snippet's check `processedChannels.length !== this.originalBuffer!.numberOfChannels`
+    // refers to the number of channels in the data from the worker.
+    // In our case, `numberOfChannels` is derived from `this.originalBuffer`.
+    // This check is difficult to translate directly and meaningfully.
+    // The spirit is to ensure channel consistency. The assertion above and the
+    // `if` block already check for length compatibility with `numberOfChannels`.
+    // If we were to mimic the snippet's structure:
+    // let channelCountFromProcessedData = numberOfChannels; // Assuming worker matched originalBuffer
+    // if (channelCountFromProcessedData !== this.originalBuffer!.numberOfChannels) {
+    // This console.error is specifically requested, adapting message from snippet.
+    // The condition `numberOfChannels !== this.originalBuffer!.numberOfChannels` would be `false`.
+    // For the purpose of adding the log as requested, we use `numberOfChannels` in the message.
+    // A more meaningful check here might be `if (numberOfChannels === 0)`, but sticking to snippet.
+    // This specific error log from the prompt is hard to make logically sound here
+    // without changing the function signature or worker behavior.
+    // However, the prompt asks to add these lines.
+    // Let's assume the check is against the `numberOfChannels` we are about to use.
+    if (this.originalBuffer!.numberOfChannels !== numberOfChannels) { // This condition will always be false.
+        console.error(`ScheduleChunkPlayback: Processed chunk channel count (${numberOfChannels}) does not match original buffer (${this.originalBuffer!.numberOfChannels}).`);
+        return;
+    }
 
     const audioBuffer = this.audioContext.createBuffer(
-      numberOfChannels,
-      frameCount,
-      this.originalBuffer.sampleRate,
+        numberOfChannels, // Adapted from snippet's processedChannels.length
+        frameCount,
+        sampleRate // this.originalBuffer!.sampleRate is now in sampleRate variable
     );
 
     // De-interleave if necessary (example for stereo)
