@@ -193,7 +193,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
 
 --- File: .github/workflows/ci.yml ---
 ````yaml
-# File: .github/workflows/ci.yml
+# .github/workflows/ci.yml
 
 name: Vibe Player CI
 
@@ -313,7 +313,7 @@ jobs:
 --- End of File: .github/workflows/deploy.yml ---
 --- File: .github/workflows/release.yml ---
 ````yaml
-# .github/workflows/create-release-official.yml
+# .github/workflows/release.yml
 name: Create Release Zip (Official Actions Only)
 
 on:
@@ -370,6 +370,7 @@ jobs:
 --- End of File: .github/workflows/release.yml ---
 --- File: .gitignore ---
 ````.gitignore
+# .gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -627,6 +628,7 @@ Development involving LLM assistance should follow the guidelines outlined in `v
 --- End of File: README.md ---
 --- File: REFACTOR_PLAN.txt ---
 ````
+# REFACTOR_PLAN.txt
 Of course. This is the right approach—solidifying the plan with all the new information and recommendations before starting implementation.
 
 Here is the complete, rewritten V3 plan. It incorporates the decision to use a modern UI, the NPM package for ONNX, and all the architectural and risk-mitigation strategies we've discussed. This document is designed to be a definitive blueprint for the project.
@@ -10124,6 +10126,8 @@ These are ongoing tasks to ensure the project remains maintainable and reliable.
 --- End of File: vibe-player/TODO.md ---
 --- File: vibe-player-v2/.gitignore ---
 ````.gitignore
+# vibe-player-v2/.gitignore
+
 node_modules
 
 # Output
@@ -10152,6 +10156,7 @@ vite.config.ts.timestamp-*
 --- End of File: vibe-player-v2/.gitignore ---
 --- File: vibe-player-v2/.npmrc ---
 ````.npmrc
+# vibe-player-v2/.npmrc
 engine-strict=true
 
 ````
@@ -10168,6 +10173,7 @@ engine-strict=true
 --- End of File: vibe-player-v2/.prettierrc ---
 --- File: vibe-player-v2/eslint.config.js ---
 ````javascript
+// vibe-player-v2/eslint.config.js
 // @ts-check
 
 import sveltePlugin from "eslint-plugin-svelte";
@@ -10286,6 +10292,7 @@ export default defineConfig({
 --- End of File: vibe-player-v2/playwright.config.ts ---
 --- File: vibe-player-v2/postcss.config.js ---
 ````javascript
+// vibe-player-v2/postcss.config.js
 export default {
     plugins: {
         tailwindcss: {},
@@ -10297,6 +10304,7 @@ export default {
 --- End of File: vibe-player-v2/postcss.config.js ---
 --- File: vibe-player-v2/README.md ---
 ````markdown
+<!-- vibe-player-v2/README.md -->
 # sv
 
 Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
@@ -10342,6 +10350,7 @@ You can preview the production build with `npm run preview`.
 --- End of File: vibe-player-v2/README.md ---
 --- File: vibe-player-v2/src/app.css ---
 ````css
+/* vibe-player-v2/src/app.css */
 @import "tailwindcss/base";
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
@@ -10350,6 +10359,7 @@ You can preview the production build with `npm run preview`.
 --- End of File: vibe-player-v2/src/app.css ---
 --- File: vibe-player-v2/src/app.d.ts ---
 ````typescript
+// vibe-player-v2/src/app.d.ts
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {
@@ -10368,6 +10378,7 @@ export {};
 --- End of File: vibe-player-v2/src/app.d.ts ---
 --- File: vibe-player-v2/src/app.html ---
 ````html
+<!-- vibe-player-v2/src/app.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -10512,6 +10523,7 @@ export function sparkles(
 --- End of File: vibe-player-v2/src/lib/actions/sparkles.action.ts ---
 --- File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
 ````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/Button.svelte -->
 <script>
   // Mock Button
   export let color = 'primary'; // Example prop
@@ -10526,6 +10538,7 @@ export function sparkles(
 --- End of File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
 --- File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
 ````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/Generic.svelte -->
 <script lang="ts">
   // Generic mock for any Skeleton component
   // It can accept any props via $$props
@@ -10539,6 +10552,7 @@ export function sparkles(
 --- End of File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
 --- File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
 ````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte -->
 <script lang="ts">
   // Minimal mock for ProgressBar.svelte
   export let value: number | undefined = undefined;
@@ -10554,6 +10568,7 @@ export function sparkles(
 --- End of File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
 --- File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
 ````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte -->
 <script>
   // Mock RangeSlider
   export let value = 0;
@@ -11367,6 +11382,7 @@ describe("FileLoader.svelte", () => {
 --- End of File: vibe-player-v2/src/lib/components/visualizers/Waveform.svelte ---
 --- File: vibe-player-v2/src/lib/index.ts ---
 ````typescript
+// vibe-player-v2/src/lib/index.ts
 // place files you want to import through the `$lib` alias in this folder.
 
 ````
@@ -13695,6 +13711,7 @@ export default SpectrogramService.getInstance();
 --- End of File: vibe-player-v2/src/lib/services/spectrogram.service.ts ---
 --- File: vibe-player-v2/src/lib/stores/analysis.store.ts ---
 ````typescript
+// vibe-player-v2/src/lib/stores/analysis.store.ts
 import {writable} from "svelte/store";
 import type {AnalysisState} from "$lib/types/analysis.types";
 
@@ -13720,6 +13737,7 @@ export const analysisStore = writable<AnalysisState>(initialState);
 --- End of File: vibe-player-v2/src/lib/stores/analysis.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/derived.store.ts ---
 ````typescript
+// vibe-player-v2/src/lib/stores/derived.store.ts
 import {derived} from "svelte/store";
 import {statusStore} from "./status.store";
 
@@ -13755,6 +13773,7 @@ export const dtmfStore = writable<DtmfState>(initialState);
 --- End of File: vibe-player-v2/src/lib/stores/dtmf.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/player.store.ts ---
 ````typescript
+// vibe-player-v2/src/lib/stores/player.store.ts
 import {writable} from "svelte/store";
 import type {PlayerState} from "$lib/types/player.types";
 
@@ -13783,6 +13802,7 @@ export const playerStore = writable<PlayerState>(initialState);
 --- End of File: vibe-player-v2/src/lib/stores/player.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/status.store.ts ---
 ````typescript
+// vibe-player-v2/src/lib/stores/status.store.ts
 import {writable} from "svelte/store";
 import type {StatusState} from "$lib/types/status.types";
 
@@ -13800,6 +13820,7 @@ export const statusStore = writable<StatusState>(initialState);
 --- End of File: vibe-player-v2/src/lib/stores/status.store.ts ---
 --- File: vibe-player-v2/src/lib/types/analysis.types.ts ---
 ````typescript
+// vibe-player-v2/src/lib/types/analysis.types.ts
 import type {SileroVadProcessResultPayload,} from "$lib/types/worker.types";
 
 export interface AnalysisState {
@@ -13825,6 +13846,7 @@ export interface AnalysisState {
 --- End of File: vibe-player-v2/src/lib/types/analysis.types.ts ---
 --- File: vibe-player-v2/src/lib/types/player.types.ts ---
 ````typescript
+// vibe-player-v2/src/lib/types/player.types.ts
 export interface PlayerState {
     status: string;
     fileName: string | null;
@@ -13848,6 +13870,7 @@ export interface PlayerState {
 --- End of File: vibe-player-v2/src/lib/types/player.types.ts ---
 --- File: vibe-player-v2/src/lib/types/status.types.ts ---
 ````typescript
+// vibe-player-v2/src/lib/types/status.types.ts
 export type NotificationType = "info" | "error" | "success" | "warning";
 
 export interface StatusState {
@@ -14120,6 +14143,7 @@ describe("async utilities", () => {
 --- End of File: vibe-player-v2/src/lib/utils/async.test.ts ---
 --- File: vibe-player-v2/src/lib/utils/async.ts ---
 ````typescript
+// vibe-player-v2/src/lib/utils/async.ts
 export async function yieldToMainThread(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -14436,6 +14460,7 @@ describe("dsp utilities", () => {
 --- End of File: vibe-player-v2/src/lib/utils/dsp.test.ts ---
 --- File: vibe-player-v2/src/lib/utils/dsp.ts ---
 ````typescript
+// vibe-player-v2/src/lib/utils/dsp.ts
 export function hannWindow(length: number): number[] | null {
     if (length <= 0 || !Number.isInteger(length)) {
         console.error("hannWindow: Length must be a positive integer.");
@@ -14537,6 +14562,7 @@ describe("formatTime", () => {
 --- End of File: vibe-player-v2/src/lib/utils/formatters.test.ts ---
 --- File: vibe-player-v2/src/lib/utils/formatters.ts ---
 ````typescript
+// vibe-player-v2/src/lib/utils/formatters.ts
 export function formatTime(sec: number): string {
     if (isNaN(sec) || sec < 0) sec = 0;
     const minutes = Math.floor(sec / 60);
@@ -14548,6 +14574,8 @@ export function formatTime(sec: number): string {
 --- End of File: vibe-player-v2/src/lib/utils/formatters.ts ---
 --- File: vibe-player-v2/src/lib/utils/index.ts ---
 ````typescript
+// vibe-player-v2/src/lib/utils/index.ts
+
 export * from "./assert";
 export * from "./constants";
 export * from "./formatters";
@@ -15520,6 +15548,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 --- End of File: vibe-player-v2/src/lib/workers/spectrogram.worker.ts ---
 --- File: vibe-player-v2/src/routes/+layout.svelte ---
 ````svelte
+<!-- vibe-player-v2/src/routes/+layout.svelte -->
 <script lang="ts">
   import "../app.css";
   // Assuming use of Skeleton UI's AppBar component for the header
@@ -15714,6 +15743,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 --- End of File: vibe-player-v2/src/routes/+page.svelte ---
 --- File: vibe-player-v2/src/setupTests.ts ---
 ````typescript
+// vibe-player-v2/src/setupTests.ts
 // General setup for Svelte component testing with Vitest and Testing Library
 import "@testing-library/svelte/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
@@ -15834,7 +15864,7 @@ console.log(
 --- End of File: vibe-player-v2/src/setupTests.ts ---
 --- File: vibe-player-v2/static/vendor/fft.js ---
 ````javascript
-// --- /vibe-player/lib/fft.js ---
+// vibe-player-v2/static/vendor/fft.js
 // NOTE: This is 3rd party code (adapted). JSDoc annotations not added here.
 "use strict";
 
@@ -16232,7 +16262,7 @@ FFT.prototype._singleRealTransform4 = function _singleRealTransform4(
 --- End of File: vibe-player-v2/static/vendor/fft.js ---
 --- File: vibe-player-v2/static/vendor/rubberband/rubberband-loader.js ---
 ````javascript
-// --- START OF FILE rubberband.js (Self-Contained Loader + Options) ---
+// vibe-player-v2/static/vendor/rubberband/rubberband-loader.js
 
 // ** MODIFIED Emscripten Loader for AudioWorklet **
 // Original source: Emscripten-generated loader for Rubberband library (@echogarden)
@@ -16779,6 +16809,7 @@ var Rubberband = (() => {
 --- End of File: vibe-player-v2/static/vendor/rubberband/rubberband-loader.js ---
 --- File: vibe-player-v2/svelte.config.js ---
 ````javascript
+// vibe-player-v2/svelte.config.js
 import adapter from "@sveltejs/adapter-static";
 import {vitePreprocess} from "@sveltejs/vite-plugin-svelte";
 
@@ -16805,6 +16836,7 @@ export default config;
 --- End of File: vibe-player-v2/svelte.config.js ---
 --- File: vibe-player-v2/tailwind.config.ts ---
 ````typescript
+// vibe-player-v2/tailwind.config.ts
 import type {Config} from "tailwindcss";
 
 export default {
@@ -17199,6 +17231,7 @@ export class PlayerPage {
 --- End of File: vibe-player-v2/tsconfig.json ---
 --- File: vibe-player-v2/vite.config.ts ---
 ````typescript
+// vibe-player-v2/vite.config.ts
 import {sveltekit} from "@sveltejs/kit/vite";
 import {defineConfig} from "vitest/config"; // Changed from "vite"
 import {viteStaticCopy} from "vite-plugin-static-copy";
