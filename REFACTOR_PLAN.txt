@@ -1,3 +1,4 @@
+# REFACTOR_PLAN.txt
 Of course. This is the right approach—solidifying the plan with all the new information and recommendations before starting implementation.
 
 Here is the complete, rewritten V3 plan. It incorporates the decision to use a modern UI, the NPM package for ONNX, and all the architectural and risk-mitigation strategies we've discussed. This document is designed to be a definitive blueprint for the project.

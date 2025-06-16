@@ -1,3 +1,4 @@
+// vibe-player-v2/eslint.config.js
 // @ts-check
 
 import sveltePlugin from "eslint-plugin-svelte";

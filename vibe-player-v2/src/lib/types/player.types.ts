@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/types/player.types.ts
 export interface PlayerState {
     status: string;
     fileName: string | null;

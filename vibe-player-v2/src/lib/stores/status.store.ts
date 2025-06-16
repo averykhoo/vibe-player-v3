@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/stores/status.store.ts
 import {writable} from "svelte/store";
 import type {StatusState} from "$lib/types/status.types";
 

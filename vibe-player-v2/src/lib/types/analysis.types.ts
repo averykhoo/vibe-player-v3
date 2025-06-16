@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/types/analysis.types.ts
 import type {SileroVadProcessResultPayload,} from "$lib/types/worker.types";
 
 export interface AnalysisState {

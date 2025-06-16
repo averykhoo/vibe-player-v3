@@ -1,3 +1,4 @@
+<!-- vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte -->
 <script lang="ts">
   // Minimal mock for ProgressBar.svelte
   export let value: number | undefined = undefined;

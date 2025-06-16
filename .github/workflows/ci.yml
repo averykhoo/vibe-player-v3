@@ -1,4 +1,4 @@
-# File: .github/workflows/ci.yml
+# .github/workflows/ci.yml
 
 name: Vibe Player CI
 

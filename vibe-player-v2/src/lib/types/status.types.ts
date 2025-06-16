@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/types/status.types.ts
 export type NotificationType = "info" | "error" | "success" | "warning";
 
 export interface StatusState {

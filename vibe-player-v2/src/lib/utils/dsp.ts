@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/utils/dsp.ts
 export function hannWindow(length: number): number[] | null {
     if (length <= 0 || !Number.isInteger(length)) {
         console.error("hannWindow: Length must be a positive integer.");

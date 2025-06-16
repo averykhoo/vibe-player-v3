@@ -1,3 +1,4 @@
+<!-- vibe-player-v2/src/routes/+layout.svelte -->
 <script lang="ts">
   import "../app.css";
   // Assuming use of Skeleton UI's AppBar component for the header

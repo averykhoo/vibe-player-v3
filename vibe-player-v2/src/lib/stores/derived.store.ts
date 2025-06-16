@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/stores/derived.store.ts
 import {derived} from "svelte/store";
 import {statusStore} from "./status.store";
 

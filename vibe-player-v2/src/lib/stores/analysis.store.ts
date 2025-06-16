@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/stores/analysis.store.ts
 import {writable} from "svelte/store";
 import type {AnalysisState} from "$lib/types/analysis.types";
 

@@ -1,4 +1,4 @@
-# .github/workflows/create-release-official.yml
+# .github/workflows/release.yml
 name: Create Release Zip (Official Actions Only)
 
 on:

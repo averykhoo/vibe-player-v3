@@ -1,3 +1,4 @@
+// vibe-player-v2/src/lib/utils/formatters.ts
 export function formatTime(sec: number): string {
     if (isNaN(sec) || sec < 0) sec = 0;
     const minutes = Math.floor(sec / 60);
