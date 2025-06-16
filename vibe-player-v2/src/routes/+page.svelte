@@ -17,10 +17,11 @@
   import analysisService from '$lib/services/analysis.service';
   import dtmfService from '$lib/services/dtmf.service';
   import spectrogramService from '$lib/services/spectrogram.service';
-  import { VAD_CONSTANTS } from '$lib/utils/constants';
+  import { VAD_CONSTANTS, URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants';
   import { playerStore } from '$lib/stores/player.store';
-	import { analysisStore } from '$lib/stores/analysis.store'; // analysisStore is needed
-	import { formatTime } from '$lib/utils/formatters'; // <-- ADD THIS IMPORT
+	import { analysisStore } from '$lib/stores/analysis.store';
+	import { formatTime } from '$lib/utils/formatters';
+  import { debounce, updateUrlWithParams } from '$lib/utils';
 
 	// --- NEW: Function to handle seeking ---
 	function handleSeek(event: Event) {
@@ -46,11 +47,31 @@
     // Initialize the DTMF service and its worker.
     dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
 
-    // Subscribe to the playerStore to initialize the spectrogram service
-    // once an audio file's sample rate is known.
-    const unsub = playerStore.subscribe(state => {
-      // Check if a new, valid audioBuffer has been loaded for DTMF.
-      // The status check prevents re-triggering on every store update.
+    // --- URL State Serialization Logic ---
+    const serializeStateToUrl = () => {
+        const pStore = get(playerStore);
+        const aStore = get(analysisStore);
+
+        if (!pStore.isPlayable) return; // Don't serialize if nothing is loaded
+
+        const params: Record<string, string> = {
+            [URL_HASH_KEYS.SPEED]: pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : "",
+            [URL_HASH_KEYS.PITCH]: pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : "",
+            [URL_HASH_KEYS.GAIN]: pStore.gain !== 1.0 ? pStore.gain.toFixed(2) : "",
+            [URL_HASH_KEYS.VAD_POSITIVE]: aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD ? aStore.vadPositiveThreshold.toFixed(2) : "",
+            [URL_HASH_KEYS.VAD_NEGATIVE]: aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD ? aStore.vadNegativeThreshold.toFixed(2) : ""
+        };
+        updateUrlWithParams(params);
+    };
+
+    const debouncedUrlUpdate = debounce(serializeStateToUrl, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
+
+    // Subscribe to stores to trigger URL updates
+    const unsubPlayer = playerStore.subscribe(debouncedUrlUpdate);
+    const unsubAnalysis = analysisStore.subscribe(debouncedUrlUpdate);
+    // --- End URL State Serialization Logic ---
+
+    const unsubSpec = playerStore.subscribe(state => {
       if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
           console.log('New audio buffer detected, triggering DTMF analysis service...');
           dtmfService.process(state.audioBuffer);
@@ -84,7 +105,9 @@
       analysisService.dispose();
       dtmfService.dispose();
       spectrogramService.dispose();
-      unsub(); // Unsubscribe from the player store
+      unsubSpec();
+      unsubPlayer();
+      unsubAnalysis();
     };
   });
 </script>
