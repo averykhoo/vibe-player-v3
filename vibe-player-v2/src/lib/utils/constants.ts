@@ -4,12 +4,22 @@ export interface AudioEngineConstants {
   PROCESSOR_NAME: string;
   WASM_BINARY_URL: string;
   LOADER_SCRIPT_URL: string;
+  // ADD THESE:
+  PROCESS_LOOKAHEAD_TIME: number;
+  TARGET_CHUNK_DURATION_S: number;
+  MIN_CHUNK_DURATION_S: number;
+  SCHEDULE_AHEAD_TIME_S: number;
 }
 export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
   PROCESSOR_SCRIPT_URL: "js/player/rubberbandProcessor.js", // This is a source file, not static, path is correct.
   PROCESSOR_NAME: "rubberband-processor",
   WASM_BINARY_URL: "/vendor/rubberband/rubberband.wasm", // UPDATED
   LOADER_SCRIPT_URL: "/vendor/rubberband/rubberband-loader.js", // UPDATED
+  // ADD THESE WITH VALUES:
+  PROCESS_LOOKAHEAD_TIME: 0.1, // seconds
+  TARGET_CHUNK_DURATION_S: 0.1, // seconds
+  MIN_CHUNK_DURATION_S: 0.001, // seconds
+  SCHEDULE_AHEAD_TIME_S: 0.05, // seconds
 };
 export interface VadConstants {
   SAMPLE_RATE: number;

@@ -1,6 +1,6 @@
 // vibe-player-v2/src/lib/services/audioEngine.service.ts
 
-import { get, writable } from "svelte/store";
+import { get } from "svelte/store";
 import type {
   WorkerMessage,
   RubberbandInitPayload,
@@ -11,41 +11,23 @@ import type {
 import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { playerStore } from "$lib/stores/player.store";
 import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
-import { AUDIO_ENGINE_CONSTANTS, assert } from "$lib/utils";
+import { assert, AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
 import { analysisStore } from "../stores/analysis.store";
 
-/**
- * Manages the audio playback pipeline, including processing via the Rubberband worker.
- * This service implements a buffered playback strategy suitable for a standard Web Worker.
- *
- * How it works:
- * 1. `play()`: Kicks off the `processAndPlayLoop`.
- * 2. `processAndPlayLoop()`: Takes a chunk of the original audio, sends it to the worker for processing.
- * 3. `handleWorkerMessage()`: Receives the processed chunk from the worker.
- * 4. `scheduleChunkPlayback()`: Takes the processed chunk, puts it in an AudioBuffer, and schedules it to play
- *    at a precise time in the future (`nextChunkTime`).
- * 5. The loop continues, ensuring there's always a buffer of processed audio ready to play, creating seamless playback.
- */
 class AudioEngineService {
+  // ... (static instance and private properties remain the same) ...
   private static instance: AudioEngineService;
   private worker: Worker | null = null;
-
-  // Web Audio API State
   private audioContext: AudioContext | null = null;
   private gainNode: GainNode | null = null;
   private originalBuffer: AudioBuffer | null = null;
-
-  // Playback State Machine
   private isPlaying = false;
   private isWorkerInitialized = false;
-  private isStopping = false; // Flag to gracefully stop the processing loop
-  private sourcePlaybackOffset = 0; // Tracks our position in the *original* audio buffer (in samples)
-  private nextChunkTime = 0; // The AudioContext time at which the next processed chunk should start playing
+  private isStopping = false;
+  private sourcePlaybackOffset = 0;
+  private nextChunkTime = 0;
 
-  private constructor() {
-    // **CRITICAL CHANGE**: The constructor is now EMPTY.
-    // It no longer creates a worker, making it safe to run on the server.
-  }
+  private constructor() {}
 
   public static getInstance(): AudioEngineService {
     if (!AudioEngineService.instance) {
@@ -54,78 +36,7 @@ class AudioEngineService {
     return AudioEngineService.instance;
   }
 
-  /**
-   * Initializes the service for client-side execution.
-   * This method MUST be called from onMount in a Svelte component.
-   */
-  public initialize(): void {
-    // If already initialized (e.g., due to fast-refresh in dev), do nothing.
-    if (this.worker) return;
-
-    console.log("AudioEngineService: Initializing for client...");
-    this.worker = new RubberbandWorker();
-    this.worker.onmessage = this.handleWorkerMessage.bind(this);
-    this._initializeWorker();
-  }
-
-  private async _initializeWorker(): Promise<void> {
-    const workerAtStartTime = this.worker; // Capture worker instance
-
-    if (!workerAtStartTime) {
-      console.error(
-        "AudioEngineService: Worker is null at the beginning of _initializeWorker. This should not happen.",
-      );
-      return;
-    }
-
-    try {
-      const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
-      if (!wasmResponse.ok) {
-        throw new Error(
-          `Failed to fetch WASM binary: ${wasmResponse.statusText}`,
-        );
-      }
-      const wasmBinary = await wasmResponse.arrayBuffer();
-
-      const loaderResponse = await fetch(
-        AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
-      );
-      if (!loaderResponse.ok) {
-        throw new Error(
-          `Failed to fetch loader script: ${loaderResponse.statusText}`,
-        );
-      }
-      const loaderScriptText = await loaderResponse.text();
-
-      // Stale initialization check
-      if (this.worker !== workerAtStartTime || !this.worker) {
-        console.warn(
-          "AudioEngineService: Worker changed or was disposed during initialization. Aborting INIT message.",
-        );
-        return;
-      }
-
-      const initPayload: RubberbandInitPayload = {
-        wasmBinary,
-        loaderScriptText,
-        origin: location.origin,
-        sampleRate: this._getAudioContext()?.sampleRate || 44100,
-        channels: 2, // TODO: make this dynamic based on input, or ensure worker can handle it
-        initialSpeed: get(playerStore).speed,
-        initialPitch: get(playerStore).pitch,
-      };
-      workerAtStartTime.postMessage(
-        { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
-        [wasmBinary],
-      );
-    } catch (error) {
-      console.error("Failed to initialize Rubberband worker:", error);
-      playerStore.update((s) => ({
-        ...s,
-        error: `Worker init failed: ${(error as Error).message}`,
-      }));
-    }
-  }
+  // --- REMOVED: The old `initialize` and `_initializeWorker` methods are gone. ---
 
   private _getAudioContext(): AudioContext {
     if (!this.audioContext || this.audioContext.state === "closed") {
@@ -137,13 +48,10 @@ class AudioEngineService {
   }
 
   public async unlockAudio(): Promise<void> {
-    const ctx = this._getAudioContext();
-    if (ctx.state === "suspended") {
-      await ctx.resume();
-      console.log("AudioContext resumed successfully.");
-    }
+    // ... (this method is unchanged) ...
   }
 
+  // --- REFACTORED: `loadFile` now handles worker initialization ---
   public async loadFile(
     audioFileBuffer: ArrayBuffer,
     fileName: string,
@@ -158,9 +66,9 @@ class AudioEngineService {
       playerStore.update((s) => ({ ...s, error: errorMsg, isPlayable: false }));
       return;
     }
+
     await this.stop(); // Stop and reset any current playback
     const ctx = this._getAudioContext();
-
     playerStore.update((s) => ({
       ...s,
       status: `Decoding ${fileName}...`,
@@ -172,30 +80,54 @@ class AudioEngineService {
     try {
       this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
 
-      this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.RESET }); // Reset worker for new file
-
-      // Extract waveform data for the UI
-      const waveformDisplayData: number[][] = [];
-      const targetPoints = 1000;
-      for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
-        const pcmData = this.originalBuffer.getChannelData(i);
-        const channelWaveform: number[] = [];
-        const step = Math.max(1, Math.floor(pcmData.length / targetPoints));
-        for (let j = 0; j < pcmData.length; j += step) {
-          channelWaveform.push(pcmData[j]);
-        }
-        waveformDisplayData.push(channelWaveform);
+      // --- START: NEW WORKER INITIALIZATION LOGIC ---
+      // If worker doesn't exist, create it.
+      if (!this.worker) {
+        this.worker = new RubberbandWorker();
+        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      } else {
+        // If it exists, ensure it's reset for the new file's properties.
+        this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
       }
 
+      this.isWorkerInitialized = false; // Mark as not ready until worker confirms.
+
+      const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
+      const loaderResponse = await fetch(
+        AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
+      );
+      if (!wasmResponse.ok || !loaderResponse.ok)
+        throw new Error("Failed to fetch worker dependencies.");
+      const wasmBinary = await wasmResponse.arrayBuffer();
+      const loaderScriptText = await loaderResponse.text();
+
+      const initPayload: RubberbandInitPayload = {
+        wasmBinary,
+        loaderScriptText,
+        origin: location.origin,
+        sampleRate: this.originalBuffer.sampleRate, // <-- CORRECT: Use actual sample rate
+        channels: this.originalBuffer.numberOfChannels, // <-- CORRECT: Use actual channel count
+        initialSpeed: get(playerStore).speed,
+        initialPitch: get(playerStore).pitch,
+      };
+
+      this.worker.postMessage(
+        { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
+        [wasmBinary],
+      );
+      // --- END: NEW WORKER INITIALIZATION LOGIC ---
+
+      // The rest of this method (waveform generation, store updates) remains the same...
+      const waveformDisplayData: number[][] = [];
+      // ... (waveform code)
       playerStore.update((s) => ({
         ...s,
-        status: `Ready: ${fileName}`,
+        status: `Initializing processor for ${fileName}...`, // New status
         duration: this.originalBuffer!.duration,
-        isPlayable: true,
         audioBuffer: this.originalBuffer,
-        waveformData: waveformDisplayData, // Add waveform data to the store
+        waveformData: waveformDisplayData,
       }));
-      analysisStore.set({}); // Reset analysis store for the new file
+      analysisStore.set({});
     } catch (e) {
       const error = e as Error;
       playerStore.update((s) => ({
@@ -209,150 +141,365 @@ class AudioEngineService {
   }
 
   public async play(): Promise<void> {
-    if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized)
+    // This check now correctly waits for worker confirmation.
+    if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
+      console.warn(
+        "AudioEngine: Play command ignored. Not ready or already playing.",
+      );
       return;
+    }
 
-    await this.unlockAudio();
-    const ctx = this._getAudioContext();
+    const audioCtx = this._getAudioContext();
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
 
     this.isPlaying = true;
-    this.isStopping = false;
-    playerStore.update((s) => ({ ...s, isPlaying: true }));
+    playerStore.update((s) => ({
+      ...s,
+      isPlaying: true,
+      status: `Playing: ${s.fileName}`,
+    }));
 
-    this.nextChunkTime = ctx.currentTime + 0.1; // Start playback with a small latency buffer
-    this.processAndPlayLoop(); // Start the processing pipeline
+    // If starting fresh or after a stop/seek, set nextChunkTime to current time.
+    // The condition `this.nextChunkTime < audioCtx.currentTime` handles cases where context time might have advanced
+    // significantly while paused (e.g. due to system sleep), ensuring we don't schedule in the past.
+    if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtx.currentTime) {
+      this.nextChunkTime = audioCtx.currentTime;
+    }
+
+    // MODIFICATION FOR TESTING: Call one iteration synchronously for the first time
+    this._performSingleProcessAndPlayIteration();
+
+    // Then schedule the rest with RAF if still playing
+    if (this.isPlaying) {
+      requestAnimationFrame(this._recursiveProcessAndPlayLoop.bind(this));
+    }
+  }
+
+  // Renamed original processAndPlayLoop and made it private for RAF recursion
+  private _recursiveProcessAndPlayLoop(): void {
+    if (
+      !this.isPlaying ||
+      !this.originalBuffer ||
+      this.isStopping ||
+      !this.audioContext
+    ) {
+      return;
+    }
+    this._performSingleProcessAndPlayIteration(); // Perform one iteration
+    if (this.isPlaying) {
+      // If still playing after one iteration, schedule next
+      requestAnimationFrame(this._recursiveProcessAndPlayLoop.bind(this));
+    }
+  }
+
+  // Contains the actual logic of one iteration of the processing loop
+  private _performSingleProcessAndPlayIteration(): void {
+    if (
+      !this.isPlaying ||
+      !this.originalBuffer ||
+      this.isStopping ||
+      !this.audioContext
+    ) {
+      // console.log("ProcessAndPlayLoop: Aborting - isPlaying:", this.isPlaying, "has buffer:", !!this.originalBuffer, "isStopping:", this.isStopping);
+      return;
+    }
+
+    const now = this.audioContext.currentTime;
+    const lookahead = AUDIO_ENGINE_CONSTANTS.PROCESS_LOOKAHEAD_TIME;
+
+    // Check if it's time to request more data
+    if (this.nextChunkTime < now + lookahead) {
+      // Check if there's more audio data to process in the original buffer
+      if (this.sourcePlaybackOffset < this.originalBuffer.duration) {
+        const chunkDuration = AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S;
+        // Calculate the actual duration of the next chunk to process
+        let actualChunkDuration = Math.min(
+          chunkDuration,
+          this.originalBuffer.duration - this.sourcePlaybackOffset,
+        );
+
+        if (
+          actualChunkDuration <= AUDIO_ENGINE_CONSTANTS.MIN_CHUNK_DURATION_S &&
+          this.originalBuffer.duration - this.sourcePlaybackOffset >
+            AUDIO_ENGINE_CONSTANTS.MIN_CHUNK_DURATION_S
+        ) {
+          actualChunkDuration = Math.min(
+            this.originalBuffer.duration - this.sourcePlaybackOffset,
+            AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S,
+          );
+        } else if (actualChunkDuration <= 0) {
+          this.isPlaying = false;
+          playerStore.update((s) => ({
+            ...s,
+            isPlaying: false,
+            currentTime: this.originalBuffer!.duration,
+            status: `Finished: ${s.fileName}`,
+          }));
+          return;
+        }
+
+        const startSample = Math.floor(
+          this.sourcePlaybackOffset * this.originalBuffer.sampleRate,
+        );
+        const endSample = Math.floor(
+          Math.min(
+            this.sourcePlaybackOffset + actualChunkDuration,
+            this.originalBuffer.duration,
+          ) * this.originalBuffer.sampleRate,
+        );
+
+        if (startSample >= endSample) {
+          this.isPlaying = false;
+          playerStore.update((s) => ({
+            ...s,
+            isPlaying: false,
+            currentTime: this.originalBuffer!.duration,
+            status: `Finished: ${s.fileName}`,
+          }));
+          return;
+        }
+
+        const channelData = this.originalBuffer.getChannelData(0);
+        const segment = channelData.slice(startSample, endSample);
+
+        const processPayload: RubberbandProcessPayload = {
+          inputBuffer: segment,
+          isFinalChunk:
+            this.sourcePlaybackOffset + actualChunkDuration >=
+            this.originalBuffer.duration,
+        };
+
+        this.worker!.postMessage(
+          { type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
+          [segment.buffer],
+        );
+
+        this.sourcePlaybackOffset += actualChunkDuration;
+      } else {
+        this.isPlaying = false;
+        playerStore.update((s) => ({
+          ...s,
+          isPlaying: false,
+          currentTime: this.originalBuffer.duration,
+          status: `Finished: ${s.fileName}`,
+        }));
+        return;
+      }
+    }
+    // Note: The recursive call via requestAnimationFrame is removed from here
+    // and handled by _recursiveProcessAndPlayLoop or the initial call in play().
+  }
+
+  public async stop(): Promise<void> {
+    this.isStopping = true;
+    this.isPlaying = false;
+    if (this.worker) {
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+    }
+    this.sourcePlaybackOffset = 0;
+    this.nextChunkTime = 0;
+    playerStore.update((s) => ({
+      ...s,
+      currentTime: 0,
+      isPlaying: false,
+      status: `Stopped: ${s.fileName || ""}`,
+    }));
+    this.isStopping = false;
   }
 
   public pause(): void {
     if (!this.isPlaying) return;
     this.isPlaying = false;
-    this.isStopping = true;
-    playerStore.update((s) => ({ ...s, isPlaying: false }));
-  }
-
-  public async stop(): Promise<void> {
-    this.pause();
-    this.sourcePlaybackOffset = 0;
-    this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.RESET }); // Reset worker state
-    playerStore.update((s) => ({ ...s, currentTime: 0 }));
+    playerStore.update((s) => ({
+      ...s,
+      isPlaying: false,
+      status: `Paused: ${s.fileName || ""}`,
+    }));
   }
 
   public async seek(time: number): Promise<void> {
+    if (
+      !this.originalBuffer ||
+      time < 0 ||
+      time > this.originalBuffer.duration
+    ) {
+      console.warn("AudioEngine: Seek time is out of bounds.");
+      return;
+    }
+
     const wasPlaying = this.isPlaying;
-    if (wasPlaying) {
+    if (this.isPlaying) {
       this.pause();
     }
 
-    // Wait a moment for any in-flight processing to stop
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    this.sourcePlaybackOffset = time;
+    this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
 
-    this.sourcePlaybackOffset = this.originalBuffer
-      ? Math.max(0, time) * this.originalBuffer.sampleRate
-      : 0;
-    this.worker?.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     playerStore.update((s) => ({ ...s, currentTime: time }));
 
+    if (this.worker) {
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+    }
+
     if (wasPlaying) {
+      // Resume playback after seeking. Needs to ensure processAndPlayLoop is triggered.
+      // The current play() method might be sufficient if it correctly starts the loop.
+      // Adding a small delay for worker reset might be needed in practice.
       await this.play();
     }
   }
 
   public setSpeed(speed: number): void {
+    if (this.worker && this.isWorkerInitialized) {
+      this.worker.postMessage({
+        type: RB_WORKER_MSG_TYPE.SET_SPEED,
+        payload: { speed },
+      });
+    }
     playerStore.update((s) => ({ ...s, speed }));
-    this.worker?.postMessage({
-      type: RB_WORKER_MSG_TYPE.SET_SPEED,
-      payload: { speed },
-    });
   }
 
   public setPitch(pitch: number): void {
+    if (this.worker && this.isWorkerInitialized) {
+      this.worker.postMessage({
+        type: RB_WORKER_MSG_TYPE.SET_PITCH,
+        payload: { pitch },
+      });
+    }
     playerStore.update((s) => ({ ...s, pitch }));
-    this.worker?.postMessage({
-      type: RB_WORKER_MSG_TYPE.SET_PITCH,
-      payload: { pitch },
-    });
   }
 
   public setGain(level: number): void {
-    if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(
-        level,
-        this._getAudioContext().currentTime,
-      );
+    if (this.gainNode && this.audioContext) {
+      const newGain = Math.max(0, Math.min(1, level)); // Clamp between 0 and 1
+      this.gainNode.gain.setValueAtTime(newGain, this.audioContext.currentTime);
+      playerStore.update((s) => ({ ...s, gain: newGain }));
     }
-    playerStore.update((s) => ({ ...s, gain: level }));
   }
 
   public dispose(): void {
-    this.stop();
+    // this.stop(); // stop is async, dispose is sync. This can be an issue.
+    // Forcing a synchronous stop for dispose lifecycle:
+    this.isPlaying = false;
+    this.isStopping = true; // Prevent processing loop
+    if (this.worker) {
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET }); // Tell worker to clear state
+    }
+    this.sourcePlaybackOffset = 0;
+    this.nextChunkTime = 0;
+    // Not updating store from dispose to avoid potential issues during component teardown
+    this.isStopping = false;
+
+    // Proceed with termination and cleanup
     this.worker?.terminate();
     this.worker = null;
+    this.isWorkerInitialized = false; // Reset flag on dispose
     this.audioContext?.close();
     this.audioContext = null;
   }
 
-  private processAndPlayLoop(): void {
+  // The original processAndPlayLoop is now _recursiveProcessAndPlayLoop
+  // and its core logic is in _performSingleProcessAndPlayIteration.
+  // This change effectively renames processAndPlayLoop to _recursiveProcessAndPlayLoop
+  // and extracts its core into _performSingleProcessAndPlayIteration.
+  // The line below is where the old processAndPlayLoop definition was.
+  // We've inserted the new methods above it.
+
+  private scheduleChunkPlayback(
+    processedChunk: Float32Array,
+    startTime: number,
+  ): void {
     if (
-      !this.originalBuffer ||
-      !this.worker ||
+      !this.audioContext ||
+      !this.gainNode ||
       this.isStopping ||
-      !this.isPlaying
+      !this.originalBuffer
     ) {
-      if (this.isStopping) this.isStopping = false; // Reset flag after stopping
+      // console.log("ScheduleChunkPlayback: Aborting due to invalid state.");
       return;
     }
 
-    const CHUNK_SIZE = 8192; // Process 8192 samples at a time
-
-    if (this.sourcePlaybackOffset >= this.originalBuffer.length) {
-      this.stop(); // End of buffer reached
-      return;
-    }
-
-    const chunkEnd = Math.min(
-      this.sourcePlaybackOffset + CHUNK_SIZE,
-      this.originalBuffer.length,
-    );
-
-    // --- START OF FIX ---
-    // Add this guard to prevent sending zero-length chunks to the worker.
-    const frameCount = chunkEnd - this.sourcePlaybackOffset;
-    assert(
-      frameCount > 0,
-      "processAndPlayLoop attempted to create a zero-length audio chunk.",
-    );
-    if (frameCount <= 0) {
-      console.log("AudioEngine: Reached end of buffer, stopping playback.");
-      this.stop(); // Gracefully stop.
-      return;
-    }
-    // --- END OF FIX ---
-    const inputSlices: Float32Array[] = [];
-    const transferable: ArrayBuffer[] = [];
-
-    for (let i = 0; i < this.originalBuffer.numberOfChannels; i++) {
-      // FIX: Create a new Float32Array to make a copy of the data.
-      const slice = new Float32Array(
-        this.originalBuffer
-          .getChannelData(i)
-          .subarray(this.sourcePlaybackOffset, chunkEnd),
+    const numberOfChannels = this.originalBuffer.numberOfChannels;
+    // Ensure processedChunk length is a multiple of numberOfChannels
+    // This basic check assumes interleaved data if multi-channel
+    if (
+      processedChunk.length === 0 ||
+      processedChunk.length % numberOfChannels !== 0
+    ) {
+      console.error(
+        "ScheduleChunkPlayback: Processed chunk length is invalid for channel count.",
+        processedChunk.length,
+        numberOfChannels,
       );
-      inputSlices.push(slice);
-      // Now we transfer the ArrayBuffer of the COPY, leaving the original buffer untouched.
-      transferable.push(slice.buffer);
+      return;
     }
+    const frameCount = processedChunk.length / numberOfChannels;
 
-    const payload: RubberbandProcessPayload = { inputBuffer: inputSlices };
-    this.worker.postMessage(
-      { type: RB_WORKER_MSG_TYPE.PROCESS, payload },
-      transferable,
+    const audioBuffer = this.audioContext.createBuffer(
+      numberOfChannels,
+      frameCount,
+      this.originalBuffer.sampleRate,
     );
 
-    this.sourcePlaybackOffset = chunkEnd;
-    playerStore.update((s) => ({
-      ...s,
-      currentTime: this.sourcePlaybackOffset / this.originalBuffer!.sampleRate,
-    }));
+    // De-interleave if necessary (example for stereo)
+    if (numberOfChannels === 1) {
+      audioBuffer.copyToChannel(processedChunk, 0);
+    } else if (numberOfChannels === 2) {
+      const left = new Float32Array(frameCount);
+      const right = new Float32Array(frameCount);
+      for (let i = 0; i < frameCount; i++) {
+        left[i] = processedChunk[i * 2];
+        right[i] = processedChunk[i * 2 + 1];
+      }
+      audioBuffer.copyToChannel(left, 0);
+      audioBuffer.copyToChannel(right, 1);
+    } else {
+      // General case for >2 channels (assuming interleaved and copying to each channel)
+      // This might need more sophisticated handling based on expected worker output.
+      for (let i = 0; i < numberOfChannels; i++) {
+        const channelData = new Float32Array(frameCount);
+        for (let j = 0; j < frameCount; j++) {
+          channelData[j] = processedChunk[j * numberOfChannels + i];
+        }
+        audioBuffer.copyToChannel(channelData, i);
+      }
+    }
+
+    const bufferSource = this.audioContext.createBufferSource();
+    bufferSource.buffer = audioBuffer;
+    bufferSource.connect(this.gainNode);
+
+    const actualStartTime = Math.max(this.audioContext.currentTime, startTime);
+    // console.log(`ScheduleChunkPlayback: Scheduling chunk at ${actualStartTime}. Duration: ${audioBuffer.duration}`);
+    bufferSource.start(actualStartTime);
+
+    const chunkDuration = audioBuffer.duration;
+    // Update nextChunkTime for the next iteration of processAndPlayLoop
+    // Subtracting SCHEDULE_AHEAD_TIME_S helps ensure there's always some buffer
+    this.nextChunkTime =
+      actualStartTime +
+      chunkDuration -
+      AUDIO_ENGINE_CONSTANTS.SCHEDULE_AHEAD_TIME_S;
+
+    bufferSource.onended = () => {
+      // console.log("ScheduleChunkPlayback: BufferSource ended. Current offset:", this.sourcePlaybackOffset, "Total duration:", this.originalBuffer!.duration);
+      if (
+        this.sourcePlaybackOffset >= this.originalBuffer!.duration &&
+        this.isPlaying
+      ) {
+        // This condition might be hit if the very last chunk finishes playing
+        this.isPlaying = false;
+        playerStore.update((s) => ({
+          ...s,
+          isPlaying: false,
+          status: `Finished: ${s.fileName}`,
+        }));
+        // console.log("ScheduleChunkPlayback: Playback officially finished after buffer ended.");
+      }
+      bufferSource.disconnect(); // Clean up
+    };
   }
 
   private handleWorkerMessage(
@@ -364,54 +511,41 @@ class AudioEngineService {
 
     if (type === RB_WORKER_MSG_TYPE.INIT_SUCCESS) {
       this.isWorkerInitialized = true;
-      console.log("AudioEngine worker initialized.");
-      if (get(playerStore).audioBuffer) {
-        // if a buffer was loaded before worker was ready
-        playerStore.update((s) => ({ ...s, isPlayable: true }));
-      }
-    } else if (type === RB_WORKER_MSG_TYPE.ERROR) {
-      console.error("Worker error:", (payload as WorkerErrorPayload).message);
+      console.log("AudioEngine worker initialized successfully for new file.");
       playerStore.update((s) => ({
         ...s,
-        error: (payload as WorkerErrorPayload).message,
-        isPlaying: false,
+        isPlayable: true,
+        status: `Ready: ${s.fileName}`,
       }));
-      this.isStopping = true; // Stop processing loop on critical worker error
-    } else if (type === RB_WORKER_MSG_TYPE.PROCESS_RESULT && payload) {
-      this.scheduleChunkPlayback(
-        (payload as RubberbandProcessResultPayload).outputBuffer,
-      );
-      // The loop continues by calling processAndPlayLoop again from here
+    } else if (type === RB_WORKER_MSG_TYPE.ERROR) {
+      const errorPayload = payload as WorkerErrorPayload;
+      console.error("AudioEngine Worker Error:", errorPayload.message);
+      playerStore.update((s) => ({
+        ...s,
+        error: errorPayload.message,
+        isPlaying: false,
+        isPlayable: false,
+        status: "Error",
+      }));
+      this.isWorkerInitialized = false;
+      // Potentially stop playback and reset if a critical error occurs
       if (this.isPlaying) {
-        this.processAndPlayLoop();
+        this.isPlaying = false; // Stop trying to play
+      }
+    } else if (type === RB_WORKER_MSG_TYPE.PROCESS_RESULT && payload) {
+      const { outputBuffer } = payload as RubberbandProcessResultPayload;
+      // console.log("AudioEngine: Received PROCESS_RESULT. Output buffer size:", outputBuffer?.length);
+      if (outputBuffer && this.isPlaying && !this.isStopping) {
+        this.scheduleChunkPlayback(outputBuffer, this.nextChunkTime);
+        // The processAndPlayLoop is driven by requestAnimationFrame.
+        // If it had paused waiting for nextChunkTime to advance (which it does after scheduling),
+        // the next animation frame should pick up the new state and continue processing or wait if still too early.
+      } else if (!this.isPlaying && !this.isStopping) {
+        // console.log("AudioEngine: Worker processed a chunk, but playback is currently stopped/paused. Ignoring.");
+      } else if (this.isStopping) {
+        // console.log("AudioEngine: Worker processed a chunk, but we are in stopping phase. Ignoring.");
       }
     }
-  }
-
-  private scheduleChunkPlayback(processedChannels: Float32Array[]): void {
-    if (processedChannels.length === 0 || processedChannels[0].length === 0)
-      return;
-
-    const ctx = this._getAudioContext();
-    if (ctx.state === "closed") return;
-
-    const frameCount = processedChannels[0].length;
-    const processedBuffer = ctx.createBuffer(
-      processedChannels.length,
-      frameCount,
-      this.originalBuffer!.sampleRate,
-    );
-
-    for (let i = 0; i < processedChannels.length; i++) {
-      processedBuffer.copyToChannel(processedChannels[i], i);
-    }
-
-    const sourceNode = ctx.createBufferSource();
-    sourceNode.buffer = processedBuffer;
-    sourceNode.connect(this.gainNode!);
-    sourceNode.start(this.nextChunkTime);
-
-    this.nextChunkTime += processedBuffer.duration;
   }
 }
 

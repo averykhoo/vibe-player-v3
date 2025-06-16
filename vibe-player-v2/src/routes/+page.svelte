@@ -40,9 +40,6 @@
     // This is the most robust approach to ensure everything is ready.
     console.log('Initializing all services onMount...');
 
-    // Initialize the audio engine, which prepares the Rubberband worker.
-    audioEngineService.initialize();
-
     // Initialize the analysis service, which prepares the SileroVAD worker.
     analysisService.initialize();
 
