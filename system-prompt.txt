@@ -167,13 +167,13 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   └── +page.svelte
     │   └── setupTests.ts
     ├── static
-    │   ├── dtmf-123A456B789C(star)0(hex)D.mp3
     │   ├── favicon.png
     │   ├── models
     │   │   └── silero_vad.onnx
     │   ├── test-audio
     │   │   ├── 449496_9289636-lq.mp3
-    │   │   └── C.Noisy_Voice.wav
+    │   │   ├── C.Noisy_Voice.wav
+    │   │   └── dtmf-123A456B789C(star)0(hex)D.mp3
     │   └── vendor
     │       ├── fft.js
     │       └── rubberband
