@@ -1,5 +1,5 @@
-import { writable } from 'svelte/store';
-import type { AnalysisState } from '$lib/types/analysis.types';
+import { writable } from "svelte/store";
+import type { AnalysisState } from "$lib/types/analysis.types";
 
 const initialState: AnalysisState = {
   vadStatus: undefined,

@@ -1,5 +1,5 @@
 // vibe-player-v2/src/hooks.server.ts
-import type { Handle } from '@sveltejs/kit';
+import type { Handle } from "@sveltejs/kit";
 
 /**
  * SvelteKit hook to add required security headers for SharedArrayBuffer support.
@@ -12,8 +12,8 @@ export const handle: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
 
   // Required for SharedArrayBuffer
-  response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-  response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  response.headers.set("Cross-Origin-Embedder-Policy", "require-corp");
 
   return response;
 };

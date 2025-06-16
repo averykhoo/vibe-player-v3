@@ -36,8 +36,8 @@ describe("Constants", () => {
     expect(AllConstants.VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE).toBe(8192);
     // UPDATED TEST: Check for the new, organized path
     expect(AllConstants.VISUALIZER_CONSTANTS.FFT_WORKER_SCRIPT_URL).toBe(
-      "/vendor/fft.js"
-    )
+      "/vendor/fft.js",
+    );
   });
 
   it("URL_HASH_KEYS should be defined and have expected properties", () => {

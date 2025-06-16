@@ -1,6 +1,14 @@
 // vibe-player-v2/src/lib/services/audioEngine.service.test.ts
 
-import { vi, describe, it, expect, beforeEach, afterEach, beforeAll } from "vitest";
+import {
+  vi,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+} from "vitest";
 
 vi.resetModules();
 
@@ -27,7 +35,9 @@ const initialPlayerStoreStateForReset = {
   lastProcessedChunk: undefined,
 };
 
-let storeSingletonRefForTestControl: Writable<typeof initialPlayerStoreStateForReset>;
+let storeSingletonRefForTestControl: Writable<
+  typeof initialPlayerStoreStateForReset
+>;
 
 var mockWorkerObject = {
   postMessage: vi.fn(),
@@ -62,21 +72,33 @@ var mockAudioContextInstance = {
 };
 // --- END: Mock Declarations ---
 
-
 // --- START: vi.mock() calls ---
 vi.mock("$lib/stores/player.store", () => {
   const factoryInitialState = {
-    status: "Initial", fileName: null, duration: 0, currentTime: 0,
-    isPlaying: false, isPlayable: false, speed: 1, pitch: 0, gain: 1,
-    waveformData: undefined, error: null, audioBuffer: undefined,
-    audioContextResumed: false, channels: undefined, sampleRate: undefined,
+    status: "Initial",
+    fileName: null,
+    duration: 0,
+    currentTime: 0,
+    isPlaying: false,
+    isPlayable: false,
+    speed: 1,
+    pitch: 0,
+    gain: 1,
+    waveformData: undefined,
+    error: null,
+    audioBuffer: undefined,
+    audioContextResumed: false,
+    channels: undefined,
+    sampleRate: undefined,
     lastProcessedChunk: undefined,
   };
-  const storeInstance = writable(JSON.parse(JSON.stringify(factoryInitialState)));
+  const storeInstance = writable(
+    JSON.parse(JSON.stringify(factoryInitialState)),
+  );
 
   return {
     playerStore: storeInstance,
-    _getTestControlledInstance: () => storeInstance
+    _getTestControlledInstance: () => storeInstance,
   };
 });
 
@@ -94,17 +116,15 @@ vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
     terminate: vi.fn(),
     onmessage: null,
     onerror: null,
-  }))
+  })),
 }));
 
 global.AudioContext = vi.fn(() => mockAudioContextInstance);
 // --- END: vi.mock() calls ---
 
-
 // --- START: Service and Mocked Store Instance Import ---
 import audioEngineService from "./audioEngine.service";
-import { _getTestControlledInstance as getPlayerStoreTestInstance } from '$lib/stores/player.store';
-
+import { _getTestControlledInstance as getPlayerStoreTestInstance } from "$lib/stores/player.store";
 
 describe("AudioEngineService", () => {
   beforeAll(() => {
@@ -113,31 +133,35 @@ describe("AudioEngineService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    storeSingletonRefForTestControl.set(JSON.parse(JSON.stringify(initialPlayerStoreStateForReset)));
+    storeSingletonRefForTestControl.set(
+      JSON.parse(JSON.stringify(initialPlayerStoreStateForReset)),
+    );
 
-// --- START of CHANGE ---
-// Mock the global fetch API to prevent network errors in the Node.js test environment.
-vi.spyOn(global, 'fetch').mockImplementation((url) => {
-    // Based on the URL, we can return different mock responses.
-    // For this test, both WASM and the loader script can return simple, empty data.
-    if (typeof url === 'string' && url.includes('rubberband.wasm')) {
+    // --- START of CHANGE ---
+    // Mock the global fetch API to prevent network errors in the Node.js test environment.
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      // Based on the URL, we can return different mock responses.
+      // For this test, both WASM and the loader script can return simple, empty data.
+      if (typeof url === "string" && url.includes("rubberband.wasm")) {
         return Promise.resolve({
-            ok: true,
-            status: 200,
-            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), // Return a dummy ArrayBuffer
+          ok: true,
+          status: 200,
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), // Return a dummy ArrayBuffer
         } as Response);
-    }
-    if (typeof url === 'string' && url.includes('rubberband-loader.js')) {
+      }
+      if (typeof url === "string" && url.includes("rubberband-loader.js")) {
         return Promise.resolve({
-            ok: true,
-            status: 200,
-            text: () => Promise.resolve('// Mock loader script'), // Return a dummy script text
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve("// Mock loader script"), // Return a dummy script text
         } as Response);
-    }
-    // Fallback for any other fetch calls
-    return Promise.reject(new Error(`Unhandled fetch request in test: ${url}`));
-});
-// --- END of CHANGE ---
+      }
+      // Fallback for any other fetch calls
+      return Promise.reject(
+        new Error(`Unhandled fetch request in test: ${url}`),
+      );
+    });
+    // --- END of CHANGE ---
 
     mockWorkerObject.postMessage = vi.fn();
     mockWorkerObject.terminate = vi.fn();
@@ -146,17 +170,28 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
 
     (audioEngineService as any).worker = mockWorkerObject;
     if ((audioEngineService as any).worker) {
-      (audioEngineService as any).worker.onmessage = (audioEngineService as any).handleWorkerMessage.bind(audioEngineService);
+      (audioEngineService as any).worker.onmessage = (
+        audioEngineService as any
+      ).handleWorkerMessage.bind(audioEngineService);
     }
     (audioEngineService as any).isWorkerInitialized = false;
 
     mockAudioContextInstance.currentTime = 0;
     mockAudioContextInstance.state = "running";
     mockAudioContextInstance.decodeAudioData.mockReset();
-    mockAudioContextInstance.createBufferSource.mockReset().mockImplementation(() => ({
-        buffer: null, connect: vi.fn(), start: vi.fn(), stop: vi.fn(), disconnect: vi.fn(), onended: null,
-    }));
-    mockAudioContextInstance.createGain.mockReset().mockImplementation(() => mockGainNode);
+    mockAudioContextInstance.createBufferSource
+      .mockReset()
+      .mockImplementation(() => ({
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        disconnect: vi.fn(),
+        onended: null,
+      }));
+    mockAudioContextInstance.createGain
+      .mockReset()
+      .mockImplementation(() => mockGainNode);
     mockAudioContextInstance.resume.mockReset().mockResolvedValue(undefined);
     mockAudioContextInstance.close.mockReset().mockResolvedValue(undefined);
 
@@ -173,14 +208,21 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
   it("should decode a file and update the store", async () => {
     const mockArrayBuffer = new ArrayBuffer(8);
     const mockDecodedBuffer = {
-      duration: 1.0, numberOfChannels: 1, sampleRate: 44100, getChannelData: vi.fn(() => new Float32Array(1))
+      duration: 1.0,
+      numberOfChannels: 1,
+      sampleRate: 44100,
+      getChannelData: vi.fn(() => new Float32Array(1)),
     };
-    mockAudioContextInstance.decodeAudioData.mockResolvedValue(mockDecodedBuffer as any);
+    mockAudioContextInstance.decodeAudioData.mockResolvedValue(
+      mockDecodedBuffer as any,
+    );
 
     mockWorkerObject.postMessage.mockImplementation((message: any) => {
       if (message.type === RB_WORKER_MSG_TYPE.INIT) {
         if (mockWorkerObject.onmessage) {
-          mockWorkerObject.onmessage({ data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS } } as MessageEvent);
+          mockWorkerObject.onmessage({
+            data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS },
+          } as MessageEvent);
         }
       }
     });
@@ -188,7 +230,9 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
     mockWorkerObject.postMessage.mockClear();
     await audioEngineService.loadFile(mockArrayBuffer, "test.wav");
 
-    expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledWith(mockArrayBuffer);
+    expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledWith(
+      mockArrayBuffer,
+    );
 
     // Explicitly check calls after loadFile
     // loadFile calls stop(), which sends a RESET.
@@ -202,16 +246,16 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
     // Check that both calls were RESET messages
     expect(mockWorkerObject.postMessage).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET })
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET }),
     );
     expect(mockWorkerObject.postMessage).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET })
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.RESET }),
     );
 
     // Ensure no INIT call was made to mockWorkerObject by loadFile
     expect(mockWorkerObject.postMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT })
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT }),
     );
 
     const finalState = get(storeSingletonRefForTestControl);
@@ -219,20 +263,57 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
     expect(finalState.duration).toBe(1.0);
     expect(finalState.waveformData).toBeDefined();
     expect(finalState.waveformData?.[0].length).toBeGreaterThan(0);
+
+    // --- START: NEW PREEMPTIVE ASSERTIONS ---
+    // Simulate playback by calling play().
+    await audioEngineService.play();
+
+    // Manually trigger the worker message that indicates a chunk has been processed.
+    // This will cause the processAndPlayLoop to run again. We'll simulate this
+    // a few times to advance playback past the end of our small mock buffer.
+    for (let i = 0; i < 10; i++) {
+      // Loop enough times to ensure buffer is consumed
+      if (
+        get(storeSingletonRefForTestControl).isPlaying &&
+        mockWorkerObject.onmessage
+      ) {
+        mockWorkerObject.onmessage({
+          data: {
+            type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
+            payload: { outputBuffer: [new Float32Array(1024)] },
+          },
+        } as MessageEvent);
+      } else {
+        break; // Stop if playback stops
+      }
+    }
+
+    // Now, assert that the store reflects the final 'stopped' state.
+    const stateAfterPlayback = get(storeSingletonRefForTestControl);
+    expect(stateAfterPlayback.isPlaying).toBe(false);
+    expect(stateAfterPlayback.currentTime).toBe(0); // stop() should reset the time.
+    // --- END: NEW PREEMPTIVE ASSERTIONS ---
   });
 
   it("should correctly start the processing loop on play", async () => {
     const mockArrayBuffer = new ArrayBuffer(44100 * 4);
     const mockDecodedBuffer = {
-      length: 44100, duration: 1.0, numberOfChannels: 1, sampleRate: 44100,
+      length: 44100,
+      duration: 1.0,
+      numberOfChannels: 1,
+      sampleRate: 44100,
       getChannelData: vi.fn(() => new Float32Array(44100).fill(0.1)),
     };
-    mockAudioContextInstance.decodeAudioData.mockResolvedValue(mockDecodedBuffer as any);
+    mockAudioContextInstance.decodeAudioData.mockResolvedValue(
+      mockDecodedBuffer as any,
+    );
 
     mockWorkerObject.postMessage.mockImplementation((message: any) => {
       if (message.type === RB_WORKER_MSG_TYPE.INIT) {
-         if (mockWorkerObject.onmessage) {
-            mockWorkerObject.onmessage({ data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS } } as MessageEvent);
+        if (mockWorkerObject.onmessage) {
+          mockWorkerObject.onmessage({
+            data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS },
+          } as MessageEvent);
         }
       }
     });
@@ -250,8 +331,8 @@ vi.spyOn(global, 'fetch').mockImplementation((url) => {
     await audioEngineService.play();
 
     expect(mockWorkerObject.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.PROCESS }),
-        expect.any(Array)
+      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.PROCESS }),
+      expect.any(Array),
     );
     const playStoreState = get(storeSingletonRefForTestControl);
     expect(playStoreState.isPlaying).toBe(true);

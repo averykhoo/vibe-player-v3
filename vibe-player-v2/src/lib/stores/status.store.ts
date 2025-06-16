@@ -1,5 +1,5 @@
-import { writable } from 'svelte/store';
-import type { StatusState } from '$lib/types/status.types';
+import { writable } from "svelte/store";
+import type { StatusState } from "$lib/types/status.types";
 
 const initialState: StatusState = {
   message: null,

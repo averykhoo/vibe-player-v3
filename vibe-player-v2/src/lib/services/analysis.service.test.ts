@@ -10,7 +10,7 @@ const mockVadWorkerInstance = {
   terminate: vi.fn(),
   onmessage: null as ((event: MessageEvent) => void) | null,
   onerror: null as ((event: ErrorEvent) => void) | null,
-  __IS_MOCK__: true // Unique property
+  __IS_MOCK__: true, // Unique property
 };
 
 // Hoisted mocks must use the variables defined above.
@@ -35,7 +35,7 @@ import { VAD_CONSTANTS } from "$lib/utils";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types"; // <-- ADD THIS IMPORT
 
 describe("AnalysisService (VAD Only)", () => {
-  let analysisService: typeof import('./analysis.service').default; // Type for the service
+  let analysisService: typeof import("./analysis.service").default; // Type for the service
 
   beforeEach(async () => {
     vi.resetModules(); // Reset modules before each test
@@ -49,7 +49,7 @@ describe("AnalysisService (VAD Only)", () => {
     vi.clearAllMocks(); // Still useful for clearing history on mockVadWorkerInstance's methods
 
     // Mock the global `fetch` API (needs to be re-applied after resetModules)
-    vi.spyOn(global, 'fetch').mockResolvedValue({
+    vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
@@ -73,23 +73,26 @@ describe("AnalysisService (VAD Only)", () => {
       const initPromise = analysisService.initialize();
 
       // Give a chance for async operations within initialize() to proceed up to postMessage
-      await new Promise(resolve => setImmediate(resolve)); // Ensures any sync code in initialize runs
+      await new Promise((resolve) => setImmediate(resolve)); // Ensures any sync code in initialize runs
 
       // Directly check if postMessage spy was called
       expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
       expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: VAD_WORKER_MSG_TYPE.INIT }),
-        expect.any(Array)
+        expect.any(Array),
       );
 
       // Simulate: The worker sends a "success" message back.
       mockVadWorkerInstance.onmessage!({
-        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
+        data: {
+          type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS,
+          messageId: "vad_msg_0",
+        },
       } as MessageEvent);
 
       // Assert: The main initialization promise should now resolve without errors.
       await expect(initPromise).resolves.toBeUndefined();
-      
+
       // Assert (Final): Check that fetch was also called as expected.
       expect(global.fetch).toHaveBeenCalledWith(VAD_CONSTANTS.ONNX_MODEL_URL);
     });
@@ -100,16 +103,20 @@ describe("AnalysisService (VAD Only)", () => {
       const initPromise = analysisService.initialize();
 
       // Give a chance for async operations within initialize() to proceed up to postMessage
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       // Directly check if postMessage spy was called (it should be, to register the promise)
       expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
 
       // Simulate: The worker responds with an error message.
       mockVadWorkerInstance.onmessage!({
-        data: { type: VAD_WORKER_MSG_TYPE.INIT_ERROR, error: "Model load failed", messageId: "vad_msg_0" },
+        data: {
+          type: VAD_WORKER_MSG_TYPE.INIT_ERROR,
+          error: "Model load failed",
+          messageId: "vad_msg_0",
+        },
       } as MessageEvent);
-      
+
       // Assert: The promise should reject with the worker's error.
       await expect(initPromise).rejects.toThrowError("Model load failed");
     });
@@ -122,13 +129,16 @@ describe("AnalysisService (VAD Only)", () => {
       const initPromise = analysisService.initialize();
 
       // Give a chance for async operations within initialize() to proceed up to postMessage
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       // Check postMessage was called for initialization
       expect(mockVadWorkerInstance.postMessage.mock.calls.length).toBe(1);
 
       mockVadWorkerInstance.onmessage!({
-        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: "vad_msg_0" },
+        data: {
+          type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS,
+          messageId: "vad_msg_0",
+        },
       } as MessageEvent);
       await initPromise; // This should now resolve
 
@@ -141,7 +151,7 @@ describe("AnalysisService (VAD Only)", () => {
 
     it("should not throw an error if called before initialization", () => {
       // Arrange: The beforeEach hook already ensures a clean state.
-      
+
       // Act & Assert
       expect(() => analysisService.dispose()).not.toThrow();
       expect(mockVadWorkerInstance.terminate).not.toHaveBeenCalled();

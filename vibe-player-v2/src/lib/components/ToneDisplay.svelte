@@ -10,7 +10,7 @@
     {#if $dtmfStore.status === 'processing'}
       <p class="text-sm text-surface-500">Processing...</p>
     {:else if $dtmfStore.dtmf.length > 0}
-      <p class="font-mono text-lg p-2 bg-surface-100 dark:bg-surface-800 rounded">
+      <p data-testid="dtmf-display" class="font-mono text-lg p-2 bg-surface-100 dark:bg-surface-800 rounded">
         {$dtmfStore.dtmf.join(' ')}
       </p>
     {:else}

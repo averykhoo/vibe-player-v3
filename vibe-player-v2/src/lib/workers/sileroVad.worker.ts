@@ -32,28 +32,42 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
         // --- THE FIX ---
         if (!initPayload.origin) {
-          throw new Error("SileroVadWorker INIT: `origin` is missing in payload.");
+          throw new Error(
+            "SileroVadWorker INIT: `origin` is missing in payload.",
+          );
         }
         // Ensure the path has a trailing slash before ORT uses it.
         ort.env.wasm.wasmPaths = `${initPayload.origin}/`;
         // --- END FIX ---
 
         if (!initPayload.modelBuffer) {
-          throw new Error("SileroVadWorker INIT: modelBuffer is missing in payload");
+          throw new Error(
+            "SileroVadWorker INIT: modelBuffer is missing in payload",
+          );
         }
 
         try {
           vadSession = await ort.InferenceSession.create(
             initPayload.modelBuffer,
-            { executionProviders: ['wasm'] }
+            { executionProviders: ["wasm"] },
           );
         } catch (e) {
           const ortError = e as Error;
-          throw new Error(`ONNX session creation failed: ${ortError.message}. Check WASM paths and model buffer.`);
+          throw new Error(
+            `ONNX session creation failed: ${ortError.message}. Check WASM paths and model buffer.`,
+          );
         }
 
-        _h = new ort.Tensor("float32", new Float32Array(2 * 1 * 64).fill(0), [2, 1, 64]);
-        _c = new ort.Tensor("float32", new Float32Array(2 * 1 * 64).fill(0), [2, 1, 64]);
+        _h = new ort.Tensor(
+          "float32",
+          new Float32Array(2 * 1 * 64).fill(0),
+          [2, 1, 64],
+        );
+        _c = new ort.Tensor(
+          "float32",
+          new Float32Array(2 * 1 * 64).fill(0),
+          [2, 1, 64],
+        );
         srData[0] = sampleRate;
         srTensor = new ort.Tensor("int32", srData, [1]);
 
@@ -68,11 +82,21 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         const audioFrame = processPayload.audioFrame;
 
         if (audioFrame.length !== frameSamples) {
-          throw new Error(`Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`);
+          throw new Error(
+            `Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`,
+          );
         }
 
-        const inputTensor = new ort.Tensor("float32", audioFrame, [1, audioFrame.length]);
-        const feeds: Record<string, ort.Tensor> = { input: inputTensor, sr: srTensor, h: _h, c: _c };
+        const inputTensor = new ort.Tensor("float32", audioFrame, [
+          1,
+          audioFrame.length,
+        ]);
+        const feeds: Record<string, ort.Tensor> = {
+          input: inputTensor,
+          sr: srTensor,
+          h: _h,
+          c: _c,
+        };
 
         const results = await vadSession.run(feeds);
         const outputScore = (results.output.data as Float32Array)[0];
@@ -98,16 +122,31 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           _h.data.fill(0);
           _c.data.fill(0);
         }
-        self.postMessage({ type: `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`, messageId });
+        self.postMessage({
+          type: `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`,
+          messageId,
+        });
         break;
 
       default:
-        self.postMessage({ type: "unknown_message", error: `Unknown message type: ${type}`, messageId });
+        self.postMessage({
+          type: "unknown_message",
+          error: `Unknown message type: ${type}`,
+          messageId,
+        });
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
-    console.error(`Error in SileroVadWorker (type: ${type}):`, errorMessage, errorStack);
-    self.postMessage({ type: `${type}_ERROR` as string, error: errorMessage, messageId });
+    console.error(
+      `Error in SileroVadWorker (type: ${type}):`,
+      errorMessage,
+      errorStack,
+    );
+    self.postMessage({
+      type: `${type}_ERROR` as string,
+      error: errorMessage,
+      messageId,
+    });
   }
 };

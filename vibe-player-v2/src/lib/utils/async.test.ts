@@ -96,7 +96,7 @@ describe("async utilities", () => {
     });
 
     it("should maintain `this` context for the debounced function", () => {
-      const obj = { method: mockFn, name: 'testObject' };
+      const obj = { method: mockFn, name: "testObject" };
       const debouncedFn = debounce(obj.method, 100);
 
       // Call it in a way that sets the `this` context to `obj`

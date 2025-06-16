@@ -16,11 +16,11 @@ export default defineConfig({
   ],
   test: {
     globals: true,
-    environment: 'jsdom',
-    include: ['src/**/*.{test,spec}.{js,ts}'],
-    setupFiles: ['./src/setupTests.ts'],
+    environment: "jsdom",
+    include: ["src/**/*.{test,spec}.{js,ts}"],
+    setupFiles: ["./src/setupTests.ts"],
   },
   resolve: {
-    conditions: ['browser', 'svelte'],
+    conditions: ["browser", "svelte"],
   },
 });

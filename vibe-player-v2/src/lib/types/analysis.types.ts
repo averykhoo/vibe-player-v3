@@ -1,4 +1,7 @@
-import type { SileroVadProcessResultPayload, SpectrogramResultPayload } from '$lib/types/worker.types';
+import type {
+  SileroVadProcessResultPayload,
+  SpectrogramResultPayload,
+} from "$lib/types/worker.types";
 
 export interface AnalysisState {
   // VAD related properties

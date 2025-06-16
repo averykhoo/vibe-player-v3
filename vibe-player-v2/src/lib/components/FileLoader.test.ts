@@ -7,7 +7,7 @@ import { playerStore } from "$lib/stores/player.store";
 import { writable, type Writable } from "svelte/store";
 
 // Hoisted Mocks for store structure
-vi.mock('$lib/stores/player.store', () => ({
+vi.mock("$lib/stores/player.store", () => ({
   playerStore: {
     subscribe: vi.fn(),
     update: vi.fn(),
@@ -51,14 +51,22 @@ describe("FileLoader.svelte", () => {
     vi.useFakeTimers(); // Add fake timers
     // Polyfill/mock File.prototype.arrayBuffer if it doesn't exist in JSDOM
     if (!File.prototype.arrayBuffer) {
-      File.prototype.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(10));
+      File.prototype.arrayBuffer = vi
+        .fn()
+        .mockResolvedValue(new ArrayBuffer(10));
     }
     mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
 
-    const playerStoreMocks = await import('$lib/stores/player.store');
-    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(mockPlayerStoreWritable.subscribe);
-    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(mockPlayerStoreWritable.update);
-    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(mockPlayerStoreWritable.set);
+    const playerStoreMocks = await import("$lib/stores/player.store");
+    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
+      mockPlayerStoreWritable.subscribe,
+    );
+    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
+      mockPlayerStoreWritable.update,
+    );
+    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(
+      mockPlayerStoreWritable.set,
+    );
 
     // Reset store state
     act(() => {
@@ -68,20 +76,26 @@ describe("FileLoader.svelte", () => {
     vi.clearAllMocks(); // Clear service mocks etc.
 
     // Re-apply store mock implementations after vi.clearAllMocks()
-    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(mockPlayerStoreWritable.subscribe);
-    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(mockPlayerStoreWritable.update);
-    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(mockPlayerStoreWritable.set);
+    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
+      mockPlayerStoreWritable.subscribe,
+    );
+    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
+      mockPlayerStoreWritable.update,
+    );
+    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(
+      mockPlayerStoreWritable.set,
+    );
   });
 
   it("renders the file input", () => {
     const { container } = render(FileLoader);
-    const fileInput = container.querySelector('#fileInput');
+    const fileInput = container.querySelector("#fileInput");
     expect(fileInput).toBeInTheDocument();
   });
 
   it("calls audioEngine.unlockAudio and loadFile on file selection", async () => {
     const { container } = render(FileLoader);
-    const fileInput = container.querySelector('#fileInput');
+    const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy content"], "test.mp3", {
@@ -104,7 +118,7 @@ describe("FileLoader.svelte", () => {
 
   it("displays selected file name and size", async () => {
     const { container } = render(FileLoader);
-    const fileInput = container.querySelector('#fileInput');
+    const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy content"], "example.wav", {
@@ -126,14 +140,16 @@ describe("FileLoader.svelte", () => {
       () => new Promise((resolve) => setTimeout(resolve, 100)), // Simulate delay
     );
     const { container } = render(FileLoader);
-    const fileInput = container.querySelector('#fileInput');
+    const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy"], "loading_test.mp3", {
       type: "audio/mpeg",
     });
     // Spy on the potentially polyfilled/mocked arrayBuffer
-    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(new ArrayBuffer(8));
+    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(
+      new ArrayBuffer(8),
+    );
 
     // Don't await this, to check intermediate loading state
     fireEvent.change(fileInput, { target: { files: [mockFile] } });
@@ -150,12 +166,14 @@ describe("FileLoader.svelte", () => {
       () => new Promise((resolve) => setTimeout(resolve, 100)),
     );
     const { container } = render(FileLoader);
-    const fileInput = container.querySelector('#fileInput');
+    const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy"], "test.mp3", { type: "audio/mpeg" });
     // Spy on the potentially polyfilled/mocked arrayBuffer
-    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(new ArrayBuffer(8));
+    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(
+      new ArrayBuffer(8),
+    );
 
     fireEvent.change(fileInput, { target: { files: [mockFile] } });
     await screen.findByText("Loading..."); // Wait for loading state to be true
@@ -175,7 +193,9 @@ describe("FileLoader.svelte", () => {
       }));
     });
     // Use findByText to wait for potential DOM updates after store change
-    expect(await screen.findByText("Status: Test Status Message")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Status: Test Status Message"),
+    ).toBeInTheDocument();
 
     act(() => {
       mockPlayerStoreWritable.update((s) => ({
@@ -183,6 +203,8 @@ describe("FileLoader.svelte", () => {
         error: "Test Error Message",
       }));
     });
-    expect(await screen.findByText("Error: Test Error Message")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Error: Test Error Message"),
+    ).toBeInTheDocument();
   });
 });

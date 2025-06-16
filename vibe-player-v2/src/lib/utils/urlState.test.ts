@@ -1,6 +1,10 @@
 // vibe-player-v2/src/lib/utils/urlState.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadStateFromUrl, subscribeToStoresForUrlUpdate, _resetUrlStateInitializationFlagForTesting } from "./urlState";
+import {
+  loadStateFromUrl,
+  subscribeToStoresForUrlUpdate,
+  _resetUrlStateInitializationFlagForTesting,
+} from "./urlState";
 import { page } from "$app/stores";
 import { goto } from "$app/navigation";
 import { playerStore } from "../stores/player.store";
@@ -18,7 +22,8 @@ const mockPageData = {
 const mockPageStoreInstance = writable(mockPageData);
 
 vi.mock("$app/stores", () => ({
-  get page() { // Use a getter to ensure the mock instance is used
+  get page() {
+    // Use a getter to ensure the mock instance is used
     return mockPageStoreInstance;
   },
 }));
@@ -41,7 +46,7 @@ const initialPlayerState = {
   error: null,
   gain: 1,
   waveformData: null,
-  status: 'Ready',
+  status: "Ready",
 };
 const mockPlayerStoreInstance = writable(initialPlayerState);
 
@@ -51,8 +56,8 @@ const initialAnalysisState = {
   // Add other relevant analysis store properties
   spectrogramData: null,
   isSpeaking: false,
-  status: 'Ready',
-  spectrogramStatus: 'Ready',
+  status: "Ready",
+  spectrogramStatus: "Ready",
   error: null,
   spectrogramError: null,
   lastVadResult: null,
@@ -61,11 +66,15 @@ const initialAnalysisState = {
 const mockAnalysisStoreInstance = writable(initialAnalysisState);
 
 vi.mock("../stores/player.store", () => ({
-  get playerStore() { return mockPlayerStoreInstance; }
+  get playerStore() {
+    return mockPlayerStoreInstance;
+  },
 }));
 
 vi.mock("../stores/analysis.store", () => ({
-  get analysisStore() { return mockAnalysisStoreInstance; }
+  get analysisStore() {
+    return mockAnalysisStoreInstance;
+  },
 }));
 
 // Helper to update the mock Svelte's page store
@@ -93,7 +102,9 @@ describe("urlState utilities", () => {
     vi.runAllTimers(); // This is crucial for the hasInitializedFromUrl flag
 
     // Reset the store to default for each test
-    mockPageStoreInstance.set({ url: { searchParams: new URLSearchParams(), pathname: "/" } });
+    mockPageStoreInstance.set({
+      url: { searchParams: new URLSearchParams(), pathname: "/" },
+    });
     mockPlayerStoreInstance.set(initialPlayerState);
     mockAnalysisStoreInstance.set(initialAnalysisState);
 
@@ -102,12 +113,12 @@ describe("urlState utilities", () => {
 
     // Re-spy on store methods as vi.restoreAllMocks() in afterEach clears them
     // (or if vi.clearAllMocks() was used above, which it is not currently)
-    vi.spyOn(mockPlayerStoreInstance, 'update');
-    vi.spyOn(mockPlayerStoreInstance, 'subscribe');
-    vi.spyOn(mockPlayerStoreInstance, 'set');
-    vi.spyOn(mockAnalysisStoreInstance, 'update');
-    vi.spyOn(mockAnalysisStoreInstance, 'subscribe');
-    vi.spyOn(mockAnalysisStoreInstance, 'set');
+    vi.spyOn(mockPlayerStoreInstance, "update");
+    vi.spyOn(mockPlayerStoreInstance, "subscribe");
+    vi.spyOn(mockPlayerStoreInstance, "set");
+    vi.spyOn(mockAnalysisStoreInstance, "update");
+    vi.spyOn(mockAnalysisStoreInstance, "subscribe");
+    vi.spyOn(mockAnalysisStoreInstance, "set");
   });
 
   afterEach(() => {
@@ -198,7 +209,7 @@ describe("urlState utilities", () => {
       subscribeToStoresForUrlUpdate(); // This sets up the subscriptions
 
       // Simulate a store change by updating the actual store instance
-      mockPlayerStoreInstance.update(s => ({ ...s, speed: 1.5 }));
+      mockPlayerStoreInstance.update((s) => ({ ...s, speed: 1.5 }));
       // vi.runAllTimers(); // Ensure store update is processed if it involves async operations (it shouldn't here)
 
       // goto might be called once immediately upon subscription if hasInitializedFromUrl is true,
@@ -207,10 +218,11 @@ describe("urlState utilities", () => {
       vi.advanceTimersByTime(UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
       expect(goto).toHaveBeenCalled();
       // Check the last call for the correct URL params
-      const lastCallIndex = (goto as ReturnType<typeof vi.fn>).mock.calls.length - 1;
-      expect((goto as ReturnType<typeof vi.fn>).mock.calls[lastCallIndex][0]).toContain(
-        `${URL_HASH_KEYS.SPEED}=1.5`,
-      );
+      const lastCallIndex =
+        (goto as ReturnType<typeof vi.fn>).mock.calls.length - 1;
+      expect(
+        (goto as ReturnType<typeof vi.fn>).mock.calls[lastCallIndex][0],
+      ).toContain(`${URL_HASH_KEYS.SPEED}=1.5`);
       // If we need to be more precise about call count, it would require deeper analysis of debounce interaction.
     });
 
@@ -227,9 +239,8 @@ describe("urlState utilities", () => {
 
       subscribeToStoresForUrlUpdate();
 
-      mockPlayerStoreInstance.update(s => ({ ...s, speed: 1.5 }));
+      mockPlayerStoreInstance.update((s) => ({ ...s, speed: 1.5 }));
       // vi.runAllTimers();
-
 
       vi.advanceTimersByTime(UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
       expect(goto).not.toHaveBeenCalled();
@@ -239,8 +250,12 @@ describe("urlState utilities", () => {
       const mockPlayerUnsub = vi.fn();
       const mockAnalysisUnsub = vi.fn();
       // Now spy on the methods of the actual store instances
-      vi.mocked(mockPlayerStoreInstance.subscribe).mockReturnValue(mockPlayerUnsub);
-      vi.mocked(mockAnalysisStoreInstance.subscribe).mockReturnValue(mockAnalysisUnsub);
+      vi.mocked(mockPlayerStoreInstance.subscribe).mockReturnValue(
+        mockPlayerUnsub,
+      );
+      vi.mocked(mockAnalysisStoreInstance.subscribe).mockReturnValue(
+        mockAnalysisUnsub,
+      );
 
       const unsubscribeAll = subscribeToStoresForUrlUpdate();
       unsubscribeAll();

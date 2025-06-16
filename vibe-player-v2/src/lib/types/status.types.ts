@@ -1,4 +1,4 @@
-export type NotificationType = 'info' | 'error' | 'success' | 'warning';
+export type NotificationType = "info" | "error" | "success" | "warning";
 
 export interface StatusState {
   message: string | null;

@@ -1,6 +1,14 @@
 // vibe-player-v2/src/lib/services/spectrogram.service.test.ts
-import { vi, describe, it, expect, beforeEach, afterEach, type Mocked } from "vitest";
-import SpectrogramWorker from '$lib/workers/spectrogram.worker?worker&inline';
+import {
+  vi,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  type Mocked,
+} from "vitest";
+import SpectrogramWorker from "$lib/workers/spectrogram.worker?worker&inline";
 import spectrogramService from "./spectrogram.service";
 import { analysisStore } from "$lib/stores/analysis.store";
 import { VISUALIZER_CONSTANTS } from "$lib/utils/constants"; // For init payload
@@ -35,12 +43,12 @@ describe("SpectrogramService", () => {
     vi.clearAllMocks();
 
     // Mock global fetch
-    vi.spyOn(global, 'fetch').mockImplementation((url) => {
-      if (String(url).includes('fft.js')) {
+    vi.spyOn(global, "fetch").mockImplementation((url) => {
+      if (String(url).includes("fft.js")) {
         return Promise.resolve({
           ok: true,
           status: 200,
-          text: () => Promise.resolve('// Mock FFT script content'),
+          text: () => Promise.resolve("// Mock FFT script content"),
         } as Response);
       }
       return Promise.reject(new Error(`Unhandled fetch in test: ${url}`));
@@ -69,7 +77,9 @@ describe("SpectrogramService", () => {
 
   describe("initialize", () => {
     it("should create Spectrogram worker, post INIT message, and update store", async () => {
-      const initializePromise = spectrogramService.initialize({ sampleRate: 16000 });
+      const initializePromise = spectrogramService.initialize({
+        sampleRate: 16000,
+      });
 
       // SpectrogramWorker constructor is called synchronously within initialize
       expect(SpectrogramWorker).toHaveBeenCalledTimes(1);
@@ -81,22 +91,31 @@ describe("SpectrogramService", () => {
 
       // Now that timers have run, postMessage (INIT) should have been called.
       expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.INIT })
+        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.INIT }),
       );
 
       // Ensure postMessage was called before trying to access its details
       if (mockSpecWorkerInstance.postMessage.mock.calls.length === 0) {
-        throw new Error("mockSpecWorkerInstance.postMessage was not called by initialize().");
+        throw new Error(
+          "mockSpecWorkerInstance.postMessage was not called by initialize().",
+        );
       }
-      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
       // Simulate worker response for INIT_SUCCESS *before* awaiting initializePromise
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+            payload: {},
+            messageId: initMessageId,
+          },
         } as MessageEvent);
       } else {
-        throw new Error("mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation.");
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation.",
+        );
       }
 
       // Now await the promise. It should resolve as the worker has responded.
@@ -110,21 +129,34 @@ describe("SpectrogramService", () => {
       let initializedUpdateCall = null;
       // Iterate backwards as the successful 'Initialized' state is likely one of the last updates.
       for (let i = updateCalls.length - 1; i >= 0; i--) {
-        const mockStatePreview = { spectrogramStatus: '', spectrogramInitialized: false, spectrogramError: 'previous error' };
+        const mockStatePreview = {
+          spectrogramStatus: "",
+          spectrogramInitialized: false,
+          spectrogramError: "previous error",
+        };
         // Execute the updater function to see the resulting state.
         const resultingState = updateCalls[i][0](mockStatePreview);
-        if (resultingState.spectrogramStatus === 'Initialized' && resultingState.spectrogramInitialized === true) {
+        if (
+          resultingState.spectrogramStatus === "Initialized" &&
+          resultingState.spectrogramInitialized === true
+        ) {
           initializedUpdateCall = updateCalls[i][0]; // Store the updater function itself
           break;
         }
       }
 
-      expect(initializedUpdateCall).not.toBeNull("Could not find store update setting status to 'Initialized'.");
+      expect(initializedUpdateCall).not.toBeNull(
+        "Could not find store update setting status to 'Initialized'.",
+      );
 
       if (initializedUpdateCall) {
-        const mockState = { spectrogramStatus: 'Initializing', spectrogramInitialized: false, spectrogramError: 'some error' };
+        const mockState = {
+          spectrogramStatus: "Initializing",
+          spectrogramInitialized: false,
+          spectrogramError: "some error",
+        };
         const newState = initializedUpdateCall(mockState); // Call the identified updater
-        expect(newState.spectrogramStatus).toBe('Initialized');
+        expect(newState.spectrogramStatus).toBe("Initialized");
         expect(newState.spectrogramInitialized).toBe(true);
         expect(newState.spectrogramError).toBeNull();
       }
@@ -137,17 +169,26 @@ describe("SpectrogramService", () => {
       await vi.runAllTimersAsync();
 
       if (mockSpecWorkerInstance.postMessage.mock.calls.length === 0) {
-        throw new Error("mockSpecWorkerInstance.postMessage was not called. Cannot simulate INIT_ERROR.");
+        throw new Error(
+          "mockSpecWorkerInstance.postMessage was not called. Cannot simulate INIT_ERROR.",
+        );
       }
-      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
       // Simulate worker response for INIT_ERROR *before* awaiting initPromise
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_ERROR, error: "Init failed in worker", messageId: initMessageId },
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_ERROR,
+            error: "Init failed in worker",
+            messageId: initMessageId,
+          },
         } as MessageEvent);
       } else {
-         throw new Error("mockSpecWorkerInstance.onmessage is not set up for INIT_ERROR simulation.");
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for INIT_ERROR simulation.",
+        );
       }
 
       try {
@@ -158,9 +199,15 @@ describe("SpectrogramService", () => {
 
       await Promise.resolve(); // Flush microtask queue
 
-      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
+      const lastUpdateCall = (
+        analysisStore.update as Mocked<any>
+      ).mock.calls.pop();
       expect(lastUpdateCall).toBeDefined();
-      const mockState = { spectrogramStatus: '', spectrogramInitialized: true, spectrogramError: null };
+      const mockState = {
+        spectrogramStatus: "",
+        spectrogramInitialized: true,
+        spectrogramError: null,
+      };
       const newState = lastUpdateCall[0](mockState);
       expect(newState.spectrogramError).toContain("Init failed in worker");
       expect(newState.spectrogramInitialized).toBe(false);
@@ -170,19 +217,27 @@ describe("SpectrogramService", () => {
       mockSpecWorkerInstance.postMessage.mockImplementationOnce(() => {
         // Simulate error being thrown by postMessage or worker globally failing
         if (mockSpecWorkerInstance.onerror) {
-            mockSpecWorkerInstance.onerror(new ErrorEvent("error", { message: "Critical worker failure" }));
+          mockSpecWorkerInstance.onerror(
+            new ErrorEvent("error", { message: "Critical worker failure" }),
+          );
         }
         throw new Error("Simulated postMessage failure");
       });
 
       try {
         await spectrogramService.initialize({ sampleRate: 16000 });
-      } catch(e) {
+      } catch (e) {
         // error expected
       }
 
-      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
-      const mockState = { spectrogramStatus: '', spectrogramInitialized: true, spectrogramError: null };
+      const lastUpdateCall = (
+        analysisStore.update as Mocked<any>
+      ).mock.calls.pop();
+      const mockState = {
+        spectrogramStatus: "",
+        spectrogramInitialized: true,
+        spectrogramError: null,
+      };
       const newState = lastUpdateCall[0](mockState); // This might be the one from onerror or the catch block in initialize
 
       // Check for either "Simulated postMessage failure" or "Critical worker failure"
@@ -198,17 +253,26 @@ describe("SpectrogramService", () => {
       await vi.runAllTimersAsync();
 
       if (mockSpecWorkerInstance.postMessage.mock.calls.length === 0) {
-        throw new Error("Spectrogram service initialization failed to call postMessage in beforeEach for 'process' tests. Cannot get initMessageId.");
+        throw new Error(
+          "Spectrogram service initialization failed to call postMessage in beforeEach for 'process' tests. Cannot get initMessageId.",
+        );
       }
-      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
       // Simulate INIT_SUCCESS *before* awaiting initPromise
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+            payload: {},
+            messageId: initMessageId,
+          },
         } as MessageEvent);
       } else {
-        throw new Error("mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation in 'process' beforeEach.");
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation in 'process' beforeEach.",
+        );
       }
 
       await initPromise; // Now await the promise
@@ -225,21 +289,33 @@ describe("SpectrogramService", () => {
 
       // Check that postMessage was called for PROCESS
       expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.PROCESS, payload: { audioData: mockAudioData } })
+        expect.objectContaining({
+          type: SPEC_WORKER_MSG_TYPE.PROCESS,
+          payload: { audioData: mockAudioData },
+        }),
       );
 
-      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(call => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS);
-      if (!processCall) throw new Error("PROCESS message not found in postMessage calls");
+      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(
+        (call) => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS,
+      );
+      if (!processCall)
+        throw new Error("PROCESS message not found in postMessage calls");
       const processMessageId = processCall[0].messageId;
 
       // Simulate worker response for PROCESS_RESULT *before* awaiting processPromise
       const mockResultPayload = { magnitudes: new Float32Array([1, 2, 3]) };
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT, payload: mockResultPayload, messageId: processMessageId },
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT,
+            payload: mockResultPayload,
+            messageId: processMessageId,
+          },
         } as MessageEvent);
       } else {
-        throw new Error("mockSpecWorkerInstance.onmessage is not set up for PROCESS_RESULT simulation.");
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for PROCESS_RESULT simulation.",
+        );
       }
 
       await processPromise; // Wait for the process method to complete
@@ -249,11 +325,15 @@ describe("SpectrogramService", () => {
       // Update sequence: 'Processing audio...', data update, 'Processing complete.'
       expect(updateCalls.length).toBeGreaterThanOrEqual(3); // Based on current service logic
 
-      const dataUpdateState = updateCalls[updateCalls.length - 2][0]({ spectrogramData: null });
-      expect(dataUpdateState.spectrogramData).toEqual(mockResultPayload.magnitudes);
+      const dataUpdateState = updateCalls[updateCalls.length - 2][0]({
+        spectrogramData: null,
+      });
+      expect(dataUpdateState.spectrogramData).toEqual(
+        mockResultPayload.magnitudes,
+      );
 
       const statusUpdateState = updateCalls[updateCalls.length - 1][0]({});
-      expect(statusUpdateState.spectrogramStatus).toBe('Processing complete.');
+      expect(statusUpdateState.spectrogramStatus).toBe("Processing complete.");
     });
 
     it("should update store on PROCESS_ERROR from worker", async () => {
@@ -262,17 +342,28 @@ describe("SpectrogramService", () => {
       // Allow async operations within process (like postMessage) to execute.
       await vi.runAllTimersAsync();
 
-      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(call => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS);
-      if (!processCall) throw new Error("PROCESS message not found in postMessage calls for error test.");
+      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(
+        (call) => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS,
+      );
+      if (!processCall)
+        throw new Error(
+          "PROCESS message not found in postMessage calls for error test.",
+        );
       const processMessageId = processCall[0].messageId;
 
       // Simulate worker response for PROCESS_ERROR *before* awaiting processPromise
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.PROCESS_ERROR, error: "Processing failed in worker", messageId: processMessageId },
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.PROCESS_ERROR,
+            error: "Processing failed in worker",
+            messageId: processMessageId,
+          },
         } as MessageEvent);
       } else {
-        throw new Error("mockSpecWorkerInstance.onmessage is not set up for PROCESS_ERROR simulation.");
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for PROCESS_ERROR simulation.",
+        );
       }
 
       try {
@@ -282,12 +373,16 @@ describe("SpectrogramService", () => {
       }
       await Promise.resolve(); // Flush microtasks
 
-      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
+      const lastUpdateCall = (
+        analysisStore.update as Mocked<any>
+      ).mock.calls.pop();
       expect(lastUpdateCall).toBeDefined();
-      const mockState = { spectrogramStatus: '', spectrogramError: null };
+      const mockState = { spectrogramStatus: "", spectrogramError: null };
       const newState = lastUpdateCall[0](mockState);
-      expect(newState.spectrogramStatus).toBe('Processing failed.');
-      expect(newState.spectrogramError).toContain("Processing failed in worker");
+      expect(newState.spectrogramStatus).toBe("Processing failed.");
+      expect(newState.spectrogramError).toContain(
+        "Processing failed in worker",
+      );
     });
   });
 
@@ -298,17 +393,26 @@ describe("SpectrogramService", () => {
       await vi.runAllTimersAsync();
 
       if (mockSpecWorkerInstance.postMessage.mock.calls.length === 0) {
-        throw new Error("Spectrogram service initialization failed to call postMessage in 'dispose' test. Cannot get initMessageId.");
+        throw new Error(
+          "Spectrogram service initialization failed to call postMessage in 'dispose' test. Cannot get initMessageId.",
+        );
       }
-      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
       // Simulate INIT_SUCCESS *before* awaiting initPromise
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
-          data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+            payload: {},
+            messageId: initMessageId,
+          },
         } as MessageEvent);
       } else {
-        throw new Error("mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation in 'dispose' test.");
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation in 'dispose' test.",
+        );
       }
 
       await initPromise; // Now await the promise
@@ -321,8 +425,11 @@ describe("SpectrogramService", () => {
       // Worker termination
       expect(mockSpecWorkerInstance.terminate).toHaveBeenCalledTimes(1);
       expect(analysisStore.update).toHaveBeenCalledTimes(1);
-      const storeUpdater = (analysisStore.update as Mocked<any>).mock.calls[0][0];
-      const prevState = { /* ... provide a representative previous state ... */ };
+      const storeUpdater = (analysisStore.update as Mocked<any>).mock
+        .calls[0][0];
+      const prevState = {
+        /* ... provide a representative previous state ... */
+      };
       const newState = storeUpdater(prevState);
       expect(newState.spectrogramStatus).toBe("Disposed");
       // ... other assertions for disposed state ...

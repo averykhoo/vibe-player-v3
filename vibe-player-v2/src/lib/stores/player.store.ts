@@ -1,8 +1,8 @@
-import { writable } from 'svelte/store';
-import type { PlayerState } from '$lib/types/player.types';
+import { writable } from "svelte/store";
+import type { PlayerState } from "$lib/types/player.types";
 
 const initialState: PlayerState = {
-  status: 'idle',
+  status: "idle",
   fileName: null,
   duration: 0,
   currentTime: 0,
