@@ -45,7 +45,6 @@ MAX_FILE_ESTIMATED_TOKENS = 99999  # Adjust based on experience
 # Output filename for the generated prompt
 OUTPUT_FILENAME = "system-prompt.txt"
 
-
 # --- File Extension Configuration ---
 # Define file extensions (lowercase, without the dot) to include for content.
 INCLUDED_EXTENSIONS = {
@@ -67,42 +66,27 @@ EXCLUDED_EXTENSIONS = {"sub", "srt"}  # Example
 # Map common extensions (lowercase, without dot) to language hints for Markdown fences.
 # If an extension is in INCLUDED_EXTENSIONS but not here, the hint will be the extension itself.
 EXTENSION_TO_LANGUAGE_HINT = {
-    "py": "python", "js": "javascript", "ts": "typescript", "tsx": "tsx",
-    "jsx": "jsx", "java": "java", "c": "c", "cpp": "cpp", "cs": "csharp",
-    "go": "go", "rs": "rust", "rb": "ruby", "php": "php", "html": "html",
-    "css": "css", "scss": "scss", "md": "markdown", "sh": "bash", "sql": "sql",
-    "yaml": "yaml", "yml": "yaml", "json": "json", "xml": "xml", "kt": "kotlin",
-    "swift": "swift", "pl": "perl", "lua": "lua", "r": "r", "scala": "scala",
-    "hs": "haskell", "clj": "clojure", "ex": "elixir", "exs": "elixir",
-    "dart": "dart", "tf": "terraform", "dockerfile": "dockerfile", "proto": "protobuf",
-    "ps1": "powershell", "bat": "batch", "cmd": "batch", "h": "c", "hpp": "cpp",
-    "hxx": "cpp", "cxx": "cpp", "m": "objectivec", "mm": "objectivec",
-    "mk": "makefile", "makefile": "makefile", "tex": "latex", "vb": "vbnet",
-    "v": "verilog", "sv": "systemverilog", "vhdl": "vhdl", "asm": "assembly", "S": "assembly",
-    "lisp": "lisp", "cl": "commonlisp", "pas": "pascal", "f": "fortran", "for": "fortran",
-    "f90": "fortran", "f95": "fortran", "groovy": "groovy", "ini": "ini", "toml": "toml",
-    "less": "less", "tcl": "tcl", "gql": "graphql", "graphql": "graphql", "cmake": "cmake",
-    "jsp": "jsp", "vbs": "vbscript", "txt": "", "text": "", "log": "",
+    "py":     "python", "js": "javascript", "ts": "typescript", "tsx": "tsx",
+    "jsx":    "jsx", "java": "java", "c": "c", "cpp": "cpp", "cs": "csharp",
+    "go":     "go", "rs": "rust", "rb": "ruby", "php": "php", "html": "html",
+    "css":    "css", "scss": "scss", "md": "markdown", "sh": "bash", "sql": "sql",
+    "yaml":   "yaml", "yml": "yaml", "json": "json", "xml": "xml", "kt": "kotlin",
+    "swift":  "swift", "pl": "perl", "lua": "lua", "r": "r", "scala": "scala",
+    "hs":     "haskell", "clj": "clojure", "ex": "elixir", "exs": "elixir",
+    "dart":   "dart", "tf": "terraform", "dockerfile": "dockerfile", "proto": "protobuf",
+    "ps1":    "powershell", "bat": "batch", "cmd": "batch", "h": "c", "hpp": "cpp",
+    "hxx":    "cpp", "cxx": "cpp", "m": "objectivec", "mm": "objectivec",
+    "mk":     "makefile", "makefile": "makefile", "tex": "latex", "vb": "vbnet",
+    "v":      "verilog", "sv": "systemverilog", "vhdl": "vhdl", "asm": "assembly", "S": "assembly",
+    "lisp":   "lisp", "cl": "commonlisp", "pas": "pascal", "f": "fortran", "for": "fortran",
+    "f90":    "fortran", "f95": "fortran", "groovy": "groovy", "ini": "ini", "toml": "toml",
+    "less":   "less", "tcl": "tcl", "gql": "graphql", "graphql": "graphql", "cmake": "cmake",
+    "jsp":    "jsp", "vbs": "vbscript", "txt": "", "text": "", "log": "",
     "svelte": "svelte",
 
 }
 
 # --- Prompt Template ---
-# Uses 4 backticks for the repository tree block.
-PROMPT_TEMPLATE = """
-System Prompt:
-{prompt_header}
-
-**Repository Structure:**
-````
-{repository_tree}
-````
-
-**File Contents:**
-
-{file_contents}
-"""
-
 # Define the introductory part of the system prompt.
 PROMPT_HEADER = """
 You will be provided with a snapshot of a repository, including its directory structure and the content of its key text files.
@@ -116,6 +100,20 @@ You will be provided with a snapshot of a repository, including its directory st
 
 Your goal is to develop a robust mental model of this repository based *only* on the provided snapshot. This understanding is crucial for you to accurately and effectively answer subsequent user questions about any aspect of the repository.
 """
+_BACKTICKS = '`' * 4  # avoid having more than 3 backticks in this file so it can render nicely in markdown
+PROMPT_TEMPLATE = f"""
+System Prompt:
+{PROMPT_HEADER}
+
+**Repository Structure:**
+{_BACKTICKS}
+{{repository_tree}}
+{_BACKTICKS}
+
+**File Contents:**
+
+{{file_contents}}
+"""
 
 
 # ==============================================================================
@@ -123,7 +121,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
 # ==============================================================================
 
 class FileData(NamedTuple):
-    """Holds information about files whose content is included in the prompt.""" # <<< MODIFIED
+    """Holds information about files whose content is included in the prompt."""  # <<< MODIFIED
     relative_path: Path
     absolute_path: Path
     estimated_tokens: int
@@ -524,8 +522,8 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
     repo_path = repo_path.resolve()
 
     print(f"Scanning repository: {repo_path}")
-    print(f"Using full-ignore files: {IGNORE_FILENAMES}") # <<< MODIFIED
-    print(f"Using content-only-ignore files: {CONTENT_IGNORE_FILENAMES}") # <<< NEW
+    print(f"Using full-ignore files: {IGNORE_FILENAMES}")  # <<< MODIFIED
+    print(f"Using content-only-ignore files: {CONTENT_IGNORE_FILENAMES}")  # <<< NEW
     print(f"Including extensions for CONTENT: {', '.join(sorted(list(INCLUDED_EXTENSIONS)))}")
     print(f"Excluding extensions for CONTENT: {', '.join(sorted(list(EXCLUDED_EXTENSIONS)))}")
     print(f"Max estimated 'tokens' per file for CONTENT: {MAX_FILE_ESTIMATED_TOKENS}")
@@ -543,7 +541,7 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
     all_scanned_files_relative_paths: List[Path] = []
     skipped_for_content_count = 0
     ignored_or_non_file_count = 0
-    skipped_for_content_ignore_count = 0 # <<< NEW
+    skipped_for_content_ignore_count = 0  # <<< NEW
 
     # --- File Discovery and Filtering ---
     print("Walking directory, filtering files for tree and content...")
@@ -628,12 +626,13 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
         ))
 
     # --- Post-Scanning Summary ---
-    print(f"Finished scanning.")
-    print(f" - Found {len(all_scanned_files_relative_paths)} files for the tree (after full ignore).") # <<< MODIFIED
-    print(f" - Included content of {len(included_files_data)} files after all filters.") # <<< MODIFIED
-    print(f" - Skipped {ignored_or_non_file_count} items due to full-ignore rules or not being files.") # <<< MODIFIED
-    print(f" - Skipped content of {skipped_for_content_ignore_count} files due to content-ignore rules.") # <<< NEW
-    print(f" - Skipped content of {skipped_for_content_count} files due to other filters (name, type, size).") # <<< MODIFIED
+    print("Finished scanning.")
+    print(f" - Found {len(all_scanned_files_relative_paths)} files for the tree (after full ignore).")  # <<< MODIFIED
+    print(f" - Included content of {len(included_files_data)} files after all filters.")  # <<< MODIFIED
+    print(f" - Skipped {ignored_or_non_file_count} items due to full-ignore rules or not being files.")  # <<< MODIFIED
+    print(f" - Skipped content of {skipped_for_content_ignore_count} files due to content-ignore rules.")  # <<< NEW
+    print(
+        f" - Skipped content of {skipped_for_content_count} files due to other filters (name, type, size).")  # <<< MODIFIED
 
     # --- Prompt Assembly ---
     # Sort included files (for content) by path for consistent prompt generation
@@ -655,7 +654,8 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
     for file_data in included_files_data:
         # Re-read content (could optimize by passing content in FileData if memory allows)
         content = read_file_content(file_data.absolute_path)
-        if content is None: continue  # Should already be checked, but safeguard
+        if content is None:
+            continue  # Should already be checked, but safeguard
 
         # Add this file's estimated content tokens to the total
         total_file_content_est_tokens += file_data.estimated_tokens
@@ -707,7 +707,6 @@ def generate_repo_prompt(repo_path: Path) -> Tuple[str, List[FileData], int]:
 
     # Assemble the final prompt string using the template and generated parts
     final_prompt = PROMPT_TEMPLATE.format(
-        prompt_header=PROMPT_HEADER,
         repository_tree=tree_string,
         file_contents=joined_file_contents
     )
