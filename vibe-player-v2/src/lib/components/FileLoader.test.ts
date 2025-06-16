@@ -1,6 +1,4 @@
-/**
- * @vitest-environment jsdom
- */
+// vibe-player-v2/src/lib/components/FileLoader.test.ts
 import { render, fireEvent, screen, act } from "@testing-library/svelte";
 import { describe, it, expect, vi, beforeEach, type Mocked } from "vitest";
 import FileLoader from "./FileLoader.svelte"; // Adjust path
