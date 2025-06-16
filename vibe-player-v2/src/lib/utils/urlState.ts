@@ -1,22 +1,22 @@
 // vibe-player-v2/src/lib/utils/urlState.ts
 
-import {BROWSER} from "esm-env";
+import { BROWSER } from "esm-env";
 
 /**
  * Updates the URL with the given parameters.
  * @param params The parameters to update the URL with.
  */
 export function updateUrlWithParams(params: Record<string, string>) {
-    if (!BROWSER) return;
-    const url = new URL(window.location.href);
-    for (const [key, value] of Object.entries(params)) {
-        if (value === undefined || value === "") {
-            url.searchParams.delete(key);
-        } else {
-            url.searchParams.set(key, value);
-        }
+  if (!BROWSER) return;
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") {
+      url.searchParams.delete(key);
+    } else {
+      url.searchParams.set(key, value);
     }
-    history.replaceState({}, "", url.toString());
+  }
+  history.replaceState({}, "", url.toString());
 }
 
 /**
@@ -25,16 +25,16 @@ export function updateUrlWithParams(params: Record<string, string>) {
  * @returns The URL with the given parameters.
  */
 export function createUrlWithParams(params: Record<string, string>): string {
-    if (!BROWSER) return ""; // Corrected to use BROWSER from esm-env
-    const url = new URL(window.location.href);
-    for (const [key, value] of Object.entries(params)) {
-        if (value === undefined || value === "") {
-            url.searchParams.delete(key);
-        } else {
-            url.searchParams.set(key, value); // Corrected typo here
-        }
+  if (!BROWSER) return ""; // Corrected to use BROWSER from esm-env
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") {
+      url.searchParams.delete(key);
+    } else {
+      url.searchParams.set(key, value); // Corrected typo here
     }
-    return url.toString();
+  }
+  return url.toString();
 }
 
 /**
@@ -43,7 +43,7 @@ export function createUrlWithParams(params: Record<string, string>): string {
  * @returns The value of the given parameter from the URL.
  */
 export function getParamFromUrl(param: string): string | undefined {
-    if (!BROWSER) return;
-    const url = new URL(window.location.href);
-    return url.searchParams.get(param) ?? undefined;
+  if (!BROWSER) return;
+  const url = new URL(window.location.href);
+  return url.searchParams.get(param) ?? undefined;
 }

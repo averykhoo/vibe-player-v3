@@ -44,7 +44,7 @@
     {/if}
     <!-- Status messages from playerStore can be displayed here -->
     {#if $playerStore?.status}
-        <p class="mt-2 text-sm text-gray-500">Status: {$playerStore.status}</p>
+        <p data-testid="file-status-display" class="mt-2 text-sm text-gray-500">Status: {$playerStore.status}</p>
     {/if}
     {#if $playerStore?.error}
         <p class="mt-2 text-sm text-error-500">Error: {$playerStore.error}</p>

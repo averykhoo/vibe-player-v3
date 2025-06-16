@@ -19,11 +19,7 @@
     // Add "webworker" to the library list. This provides the correct
     // global types for your worker files (like `self`, `importScripts`, etc.)
     // and ensures "Promise" is available.
-    "lib": [
-      "es2017",
-      "dom",
-      "webworker"
-    ]
+    "lib": ["es2017", "dom", "webworker"]
   },
   // --- ADD THIS "exclude" ARRAY ---
   "exclude": [

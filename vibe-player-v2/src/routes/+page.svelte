@@ -52,8 +52,6 @@
         const pStore = get(playerStore);
         const aStore = get(analysisStore);
 
-        if (!pStore.isPlayable) return; // Don't serialize if nothing is loaded
-
         const params: Record<string, string> = {
             [URL_HASH_KEYS.SPEED]: pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : "",
             [URL_HASH_KEYS.PITCH]: pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : "",

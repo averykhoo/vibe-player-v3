@@ -11,10 +11,10 @@
  * @param message The error message to throw if the condition is false.
  */
 export function assert(condition: unknown, message: string): asserts condition {
-    // Vite will replace `import.meta.env.DEV` with `true` or `false` at build time.
-    // The `if (false && ...)` block will be completely removed (tree-shaken)
-    // in production builds, resulting in zero performance overhead.
-    if (import.meta.env.DEV && !condition) {
-        throw new Error(`[Assertion Failed] ${message}`);
-    }
+  // Vite will replace `import.meta.env.DEV` with `true` or `false` at build time.
+  // The `if (false && ...)` block will be completely removed (tree-shaken)
+  // in production builds, resulting in zero performance overhead.
+  if (import.meta.env.DEV && !condition) {
+    throw new Error(`[Assertion Failed] ${message}`);
+  }
 }
