@@ -61,7 +61,7 @@ export class PlayerPage {
         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
     }, String(value));
     await this.page.waitForTimeout(150);
-  }
+  };
 
   async getSliderInputValue(sliderInputLocator) {
     return sliderInputLocator.inputValue();
