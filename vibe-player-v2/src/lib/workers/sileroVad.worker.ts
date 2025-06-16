@@ -7,7 +7,7 @@ import type {
   SileroVadProcessResultPayload,
 } from "../types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "../types/worker.types";
-import { assert } from "../utils";
+import { assert } from "../utils/assert";
 
 let vadSession: ort.InferenceSession | null = null;
 let sampleRate: number = 16000;

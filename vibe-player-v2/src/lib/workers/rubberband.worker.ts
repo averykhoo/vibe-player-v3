@@ -168,6 +168,7 @@ function handleProcess(
   const { inputBuffer } = payload;
   const channels = inputBuffer.length;
   if (channels === 0) return { outputBuffer: [] };
+
   const frameCount = inputBuffer[0].length;
   if (frameCount === 0) {
     return { outputBuffer: [] };

@@ -23,9 +23,4 @@ export default defineConfig({
   resolve: {
     conditions: ["browser", "svelte"],
   },
-  build: {
-    rollupOptions: {
-      external: ["__sveltekit/paths"],
-    },
-  },
 });

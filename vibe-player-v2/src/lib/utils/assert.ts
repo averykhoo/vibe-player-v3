@@ -1,9 +1,8 @@
 // vibe-player-v2/src/lib/utils/assert.ts
 
 /**
- * Asserts that a condition is true.
- * In development mode, this will throw an error if the condition is false.
- * This function and its checks are completely removed from production builds.
+ * Asserts that a condition is true, throwing an error in development if it's not.
+ * This function is stripped from production builds.
  *
  * This implementation uses `import.meta.env.DEV`, a Vite-provided variable,
  * making it safe to use in both the main app and in Web Workers.

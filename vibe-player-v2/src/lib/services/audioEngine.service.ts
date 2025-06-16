@@ -148,7 +148,6 @@ class AudioEngineService {
     audioFileBuffer: ArrayBuffer,
     fileName: string,
   ): Promise<void> {
-    // --- ADD THIS GUARD ---
     if (
       !audioFileBuffer ||
       !(audioFileBuffer instanceof ArrayBuffer) ||
@@ -159,7 +158,6 @@ class AudioEngineService {
       playerStore.update((s) => ({ ...s, error: errorMsg, isPlayable: false }));
       return;
     }
-    // --- END GUARD ---
     await this.stop(); // Stop and reset any current playback
     const ctx = this._getAudioContext();
 
@@ -319,7 +317,6 @@ class AudioEngineService {
     // --- START OF FIX ---
     // Add this guard to prevent sending zero-length chunks to the worker.
     const frameCount = chunkEnd - this.sourcePlaybackOffset;
-    // --- ADD THIS ASSERTION ---
     assert(
       frameCount > 0,
       "processAndPlayLoop attempted to create a zero-length audio chunk.",

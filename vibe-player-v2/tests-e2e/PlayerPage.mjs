@@ -47,14 +47,12 @@ export class PlayerPage {
   }
 
   async expectControlsToBeReadyForPlayback() {
-    // Wait for the time display to update from its initial "0:00 / 0:00" state.
-    // This is a reliable signal that the audio file has been decoded.
+    // *** REPLACE with robust wait ***
     await expect(
       this.timeDisplay,
       "Time display did not update with audio duration",
-    ).not.toHaveText("0:00 / 0:00", { timeout: 20000 }); // Generous timeout for decoding in CI
+    ).not.toHaveText("0:00 / 0:00", { timeout: 20000 });
 
-    // Now that the app is ready, assert that the controls are enabled.
     await expect(
       this.playButton,
       "Play button was not enabled after file load",
