@@ -68,8 +68,10 @@ test.describe("Vibe Player V2 E2E", () => {
     await expect(playerPage.timeDisplay).toBeVisible();
 
     // Stage 2: Wait for its content to change.
-    await expect(playerPage.timeDisplay, "Playback did not start and time did not advance")
-        .not.toHaveText(/^0:00 \//, { timeout: 10000 });
+    await expect(
+      playerPage.timeDisplay,
+      "Playback did not start and time did not advance",
+    ).not.toHaveText(/^0:00 \//, { timeout: 10000 });
     // --- END: IMPROVED TWO-STAGE ASSERTION ---
 
     // Note: The lines `const initialTime = ...` and `expect(initialTime).not.toMatch(...)`
@@ -134,12 +136,16 @@ test.describe("Vibe Player V2 E2E", () => {
 
     // --- START: IMPROVED TWO-STAGE ASSERTION ---
     // Stage 1: Wait for the DTMF display element to appear on the page.
-    await expect(playerPage.dtmfDisplay, "DTMF display element did not appear")
-        .toBeVisible({ timeout: 15000 });
+    await expect(
+      playerPage.dtmfDisplay,
+      "DTMF display element did not appear",
+    ).toBeVisible({ timeout: 15000 });
 
     // Stage 2: Now that it exists, check its text content.
-    await expect(playerPage.dtmfDisplay, "DTMF text content did not match expected sequence")
-        .toHaveText(expectedDtmfSequence);
+    await expect(
+      playerPage.dtmfDisplay,
+      "DTMF text content did not match expected sequence",
+    ).toHaveText(expectedDtmfSequence);
     // --- END: IMPROVED TWO-STAGE ASSERTION ---
   });
 

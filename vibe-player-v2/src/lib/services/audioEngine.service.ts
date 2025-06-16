@@ -421,9 +421,9 @@ class AudioEngineService {
     // which is valid if no audio was available to process.
     // Adapted from processedChannels: Float32Array[] to processedChunk: Float32Array
     if (!processedChunk || processedChunk.length === 0) {
-        // Log for debugging but do not treat as an error. Simply do nothing.
-        // console.log("ScheduleChunkPlayback: Received empty chunk, skipping playback scheduling.");
-        return;
+      // Log for debugging but do not treat as an error. Simply do nothing.
+      // console.log("ScheduleChunkPlayback: Received empty chunk, skipping playback scheduling.");
+      return;
     }
     // --- END OF FIX ---
 
@@ -495,15 +495,18 @@ class AudioEngineService {
     // without changing the function signature or worker behavior.
     // However, the prompt asks to add these lines.
     // Let's assume the check is against the `numberOfChannels` we are about to use.
-    if (this.originalBuffer!.numberOfChannels !== numberOfChannels) { // This condition will always be false.
-        console.error(`ScheduleChunkPlayback: Processed chunk channel count (${numberOfChannels}) does not match original buffer (${this.originalBuffer!.numberOfChannels}).`);
-        return;
+    if (this.originalBuffer!.numberOfChannels !== numberOfChannels) {
+      // This condition will always be false.
+      console.error(
+        `ScheduleChunkPlayback: Processed chunk channel count (${numberOfChannels}) does not match original buffer (${this.originalBuffer!.numberOfChannels}).`,
+      );
+      return;
     }
 
     const audioBuffer = this.audioContext.createBuffer(
-        numberOfChannels, // Adapted from snippet's processedChannels.length
-        frameCount,
-        sampleRate // this.originalBuffer!.sampleRate is now in sampleRate variable
+      numberOfChannels, // Adapted from snippet's processedChannels.length
+      frameCount,
+      sampleRate, // this.originalBuffer!.sampleRate is now in sampleRate variable
     );
 
     // De-interleave if necessary (example for stereo)
