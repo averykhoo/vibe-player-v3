@@ -29,6 +29,32 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
+// Mock AudioBuffer for jsdom environment
+if (typeof global.AudioBuffer === "undefined") {
+  global.AudioBuffer = class AudioBuffer {
+    // Add any properties or methods your tests might need
+    // For instanceof checks, a class definition is sufficient
+    public readonly duration: number = 0;
+    public readonly length: number = 0;
+    public readonly numberOfChannels: number = 0;
+    public readonly sampleRate: number = 0;
+    getChannelData(_channel: number): Float32Array {
+      return new Float32Array(0);
+    }
+    copyFromChannel(
+      _destination: Float32Array,
+      _channelNumber: number,
+      _bufferOffset?: number,
+    ): void {}
+    copyToChannel(
+      _source: Float32Array,
+      _channelNumber: number,
+      _bufferOffset?: number,
+    ): void {}
+  };
+  console.log("Mocked global.AudioBuffer for jsdom.");
+}
+
 console.log(
   "Test setup file loaded: @testing-library/svelte/vitest imported, jest-dom matchers extended, $app/environment mocked, and window.matchMedia mocked.",
 );

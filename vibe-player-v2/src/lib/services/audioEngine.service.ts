@@ -11,7 +11,7 @@ import type {
 import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { playerStore } from "$lib/stores/player.store";
 import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
-import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
+import { AUDIO_ENGINE_CONSTANTS, assert } from "$lib/utils";
 import { analysisStore } from "../stores/analysis.store";
 
 /**
@@ -148,6 +148,18 @@ class AudioEngineService {
     audioFileBuffer: ArrayBuffer,
     fileName: string,
   ): Promise<void> {
+    // --- ADD THIS GUARD ---
+    if (
+      !audioFileBuffer ||
+      !(audioFileBuffer instanceof ArrayBuffer) ||
+      audioFileBuffer.byteLength === 0
+    ) {
+      const errorMsg = "loadFile received an invalid or empty ArrayBuffer.";
+      console.error(`[AudioEngine] ${errorMsg}`);
+      playerStore.update((s) => ({ ...s, error: errorMsg, isPlayable: false }));
+      return;
+    }
+    // --- END GUARD ---
     await this.stop(); // Stop and reset any current playback
     const ctx = this._getAudioContext();
 
@@ -307,6 +319,11 @@ class AudioEngineService {
     // --- START OF FIX ---
     // Add this guard to prevent sending zero-length chunks to the worker.
     const frameCount = chunkEnd - this.sourcePlaybackOffset;
+    // --- ADD THIS ASSERTION ---
+    assert(
+      frameCount > 0,
+      "processAndPlayLoop attempted to create a zero-length audio chunk.",
+    );
     if (frameCount <= 0) {
       console.log("AudioEngine: Reached end of buffer, stopping playback.");
       this.stop(); // Gracefully stop.

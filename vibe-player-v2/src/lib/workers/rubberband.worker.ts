@@ -169,6 +169,9 @@ function handleProcess(
   const channels = inputBuffer.length;
   if (channels === 0) return { outputBuffer: [] };
   const frameCount = inputBuffer[0].length;
+  if (frameCount === 0) {
+    return { outputBuffer: [] };
+  }
 
   // 1. Allocate memory in the WASM heap for an array of pointers (one for each channel).
   const inputPtrs = wasmModule._malloc(channels * 4);

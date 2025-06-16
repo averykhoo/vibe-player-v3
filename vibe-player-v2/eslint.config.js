@@ -8,6 +8,13 @@ import eslintConfigPrettier from "eslint-config-prettier";
 import globals from "globals";
 
 export default [
+  {
+    ignores: [
+      ".svelte-kit/**", // Ignore SvelteKit's generated files
+      "build/**", // Standard build output directory
+      "dist/**", // Common distribution directory name
+    ],
+  },
   // eslint.configs.recommended, // Keep this commented out or remove rules like no-unused-vars from it
   ...sveltePlugin.configs["flat/recommended"],
   {

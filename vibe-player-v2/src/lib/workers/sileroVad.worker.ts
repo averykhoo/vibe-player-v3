@@ -7,6 +7,7 @@ import type {
   SileroVadProcessResultPayload,
 } from "../types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "../types/worker.types";
+import { assert } from "../utils";
 
 let vadSession: ort.InferenceSession | null = null;
 let sampleRate: number = 16000;
@@ -25,6 +26,24 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     switch (type) {
       case VAD_WORKER_MSG_TYPE.INIT:
         const initPayload = payload as SileroVadInitPayload;
+
+        // --- ADD THESE ASSERTIONS ---
+        assert(
+          initPayload && typeof initPayload === "object",
+          "INIT payload is missing or not an object.",
+        );
+        assert(initPayload.origin, "INIT payload is missing `origin`.");
+        assert(
+          initPayload.modelBuffer &&
+            initPayload.modelBuffer instanceof ArrayBuffer,
+          "INIT payload is missing a valid `modelBuffer`.",
+        );
+        assert(
+          typeof initPayload.sampleRate === "number",
+          "INIT payload is missing `sampleRate`.",
+        );
+        // --- END ASSERTIONS ---
+
         sampleRate = initPayload.sampleRate;
         frameSamples = initPayload.frameSamples;
         positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
@@ -79,6 +98,15 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           throw new Error("VAD worker not initialized or tensors not ready.");
         }
         const processPayload = payload as SileroVadProcessPayload;
+
+        // --- ADD THIS ASSERTION ---
+        assert(
+          processPayload.audioFrame &&
+            processPayload.audioFrame instanceof Float32Array,
+          "PROCESS payload is missing a valid `audioFrame`.",
+        );
+        // --- END ASSERTION ---
+
         const audioFrame = processPayload.audioFrame;
 
         if (audioFrame.length !== frameSamples) {

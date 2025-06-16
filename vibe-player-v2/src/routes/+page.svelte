@@ -26,9 +26,13 @@
 	function handleSeek(event: Event) {
 		const target = event.target as HTMLInputElement;
 		const time = parseFloat(target.value);
+		// --- ADD THIS GUARD ---
 		if (!isNaN(time)) {
 			audioEngineService.seek(time);
+		} else {
+			console.warn("handleSeek received a non-numeric value:", target.value);
 		}
+		// --- END GUARD ---
 	}
 
   onMount(() => {

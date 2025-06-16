@@ -50,12 +50,30 @@ const mockOfflineAudioContext = vi.fn(() => ({
 }));
 global.OfflineAudioContext = mockOfflineAudioContext as any;
 
-const mockAudioBuffer = {
-  sampleRate: 48000, // Original sample rate
-  duration: 1.0,
-  numberOfChannels: 1,
-  getChannelData: vi.fn(() => new Float32Array(48000)), // Matches original sample rate
-} as unknown as AudioBuffer;
+// Create a mock AudioBuffer that is an instance of the globally mocked AudioBuffer
+// and has a non-zero length.
+const mockAudioBuffer = new global.AudioBuffer();
+Object.defineProperty(mockAudioBuffer, "length", {
+  value: 48000,
+  writable: false,
+  configurable: true,
+});
+Object.defineProperty(mockAudioBuffer, "sampleRate", {
+  value: 48000,
+  writable: false,
+  configurable: true,
+});
+Object.defineProperty(mockAudioBuffer, "duration", {
+  value: 1.0,
+  writable: false,
+  configurable: true,
+});
+Object.defineProperty(mockAudioBuffer, "numberOfChannels", {
+  value: 1,
+  writable: false,
+  configurable: true,
+});
+(mockAudioBuffer as any).getChannelData = vi.fn(() => new Float32Array(48000));
 
 const resampledAudioBuffer = {
   sampleRate: 16000,

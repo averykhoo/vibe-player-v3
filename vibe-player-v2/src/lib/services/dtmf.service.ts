@@ -45,6 +45,7 @@ class DtmfService {
   }
 
   public async process(audioBuffer: AudioBuffer): Promise<void> {
+    // --- ADD THIS GUARD ---
     if (!this.worker) {
       dtmfStore.update((s) => ({
         ...s,
@@ -53,6 +54,19 @@ class DtmfService {
       }));
       return;
     }
+    if (
+      !audioBuffer ||
+      !(audioBuffer instanceof AudioBuffer) ||
+      audioBuffer.length === 0
+    ) {
+      dtmfStore.update((s) => ({
+        ...s,
+        status: "error",
+        error: "DTMF process called with invalid AudioBuffer.",
+      }));
+      return;
+    }
+    // --- END GUARD ---
     dtmfStore.update((s) => ({
       ...s,
       status: "processing",
