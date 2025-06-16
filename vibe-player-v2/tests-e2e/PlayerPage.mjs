@@ -1,4 +1,4 @@
-// tests-e2e/PlayerPage.mjs
+// vibe-player-v2/tests-e2e/PlayerPage.mjs
 import {expect} from "@playwright/test";
 
 export class PlayerPage {

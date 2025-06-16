@@ -1,4 +1,4 @@
-// tests-e2e/player.e2e.spec.js
+// vibe-player-v2/tests-e2e/player.e2e.spec.js
 import {expect, test} from "@playwright/test";
 import {PlayerPage} from "./PlayerPage.mjs";
 
@@ -155,15 +155,15 @@ test.describe("Vibe Player V2 E2E", () => {
             await playerPage.expectControlsToBeReadyForPlayback();
 
             await playerPage.setSliderValue(playerPage.speedSliderInput, "1.5");
-            // --- FIX: Wait for the debounced function to execute ---
-            await page.waitForURL("**/*speed=1.50", {timeout: 2000});
-            await expect(page).toHaveURL(/speed=1.50/); // Keep this assertion
+            // The `expect().toHaveURL()` function has a built-in retry mechanism
+            // that is perfect for waiting for debounced client-side URL changes.
+            // We give it a generous timeout to account for any debounce logic.
+            await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
 
             await playerPage.setSliderValue(playerPage.pitchSliderInput, "2");
-            // --- FIX: Wait for the next change ---
-            await page.waitForURL("**/*pitch=2.0", {timeout: 2000});
-            await expect(page).toHaveURL(/pitch=2.0/, {timeout: 2000}); // It's fine to re-assert
-            await expect(page).toHaveURL(/speed=1.50/); // Ensure previous param is still there
+            // Wait for the next change using the same reliable method.
+            await expect(page).toHaveURL(/pitch=2.0/, { timeout: 2000 });
+            await expect(page).toHaveURL(/speed=1.50/); // Also ensure the previous param is still there
         });
 
         test("should load settings from URL parameters on page load", async ({

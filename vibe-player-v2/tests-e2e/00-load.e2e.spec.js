@@ -1,4 +1,4 @@
-// tests-e2e/00-load.e2e.spec.js
+// vibe-player-v2/tests-e2e/00-load.e2e.spec.js
 import {expect, test} from "@playwright/test";
 import {PlayerPage} from "./PlayerPage.mjs";
 
