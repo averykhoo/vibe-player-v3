@@ -185,6 +185,11 @@ class AudioEngineService {
 		if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext) {
 			return;
 		}
+
+    // Periodically update the store with the current playback position.
+    // This drives the UI's seek bar and time display.
+    playerStore.update((s) => ({ ...s, currentTime: this.sourcePlaybackOffset }));
+
 		this._performSingleProcessAndPlayIteration(); // Perform one iteration
 		if (this.isPlaying) {
 			// If still playing after one iteration, schedule next
