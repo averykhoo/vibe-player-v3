@@ -1,175 +1,212 @@
 // vibe-player-v2/src/lib/services/audioEngine.service.test.ts
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { get } from "svelte/store";
-import { playerStore } from "$lib/stores/player.store";
-import audioEngineService from "./audioEngine.service";
-import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
-import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
-// writable is imported dynamically below
-// import { writable } from 'svelte/store';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { get, writable, type Writable } from 'svelte/store';
+import audioEngineService from './audioEngine.service';
+import { RB_WORKER_MSG_TYPE } from '$lib/types/worker.types';
+import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
 
 // --- Mocks ---
-
-// Mock playerStore with an actual writable store
-vi.mock("$lib/stores/player.store", async () => {
-  const { writable } = await import("svelte/store"); // Dynamically import writable
-  const initialMockPlayerStateInsideFactory = {
-    // Define state inside factory
-    speed: 1.0,
-    pitch: 0.0,
-    isPlayable: false,
-    error: null,
-    fileName: "",
-    status: "",
-    duration: 0,
-    audioBuffer: null,
-    waveformData: [],
-    currentTime: 0,
-    gain: 1.0,
-    sampleRate: 44100,
-  };
-  const mockPlayerStoreInstance = writable(initialMockPlayerStateInsideFactory);
-  return {
-    playerStore: mockPlayerStoreInstance,
-  };
-});
-
-vi.mock("$lib/workers/rubberband.worker?worker&inline");
-
 const mockWorkerInstance = {
-  postMessage: vi.fn(),
-  terminate: vi.fn(),
-  onmessage: null as ((event: MessageEvent) => void) | null,
+	postMessage: vi.fn(),
+	terminate: vi.fn(),
+	onmessage: null as ((event: MessageEvent) => void) | null,
+	onerror: null as ((event: ErrorEvent) => void) | null
 };
 
-vi.mocked(RubberbandWorker).mockImplementation(
-  () => mockWorkerInstance as unknown as Worker,
-);
+vi.mock('$lib/workers/rubberband.worker?worker&inline', () => ({
+	default: vi.fn().mockImplementation(() => mockWorkerInstance)
+}));
 
-// Store the mock function so we can target it directly in tests
+// Mock the Svelte store with a real writable instance for better control
+const initialPlayerState = {
+	speed: 1.0,
+	pitch: 0.0,
+	gain: 1.0,
+	isPlayable: false,
+	isPlaying: false,
+	error: null,
+	fileName: '',
+	status: '',
+	duration: 0,
+	currentTime: 0,
+	audioBuffer: null
+};
+const playerStore: Writable<typeof initialPlayerState> = writable({ ...initialPlayerState });
+vi.mock('$lib/stores/player.store', () => ({
+	playerStore: playerStore
+}));
+
+// Mock AudioContext and its methods
 const mockDecodeAudioData = vi.fn();
-
 global.AudioContext = vi.fn(() => ({
-  decodeAudioData: mockDecodeAudioData, // Use the stored mock function
-  createGain: vi.fn(() => ({
-    connect: vi.fn(),
-    gain: { setValueAtTime: vi.fn() },
-  })),
-  resume: vi.fn().mockResolvedValue(undefined),
-  close: vi.fn().mockResolvedValue(undefined),
-  state: "running",
-  currentTime: 0,
-  destination: {},
-  sampleRate: 48000,
+	decodeAudioData: mockDecodeAudioData,
+	createGain: vi.fn(() => ({
+		connect: vi.fn(),
+		gain: { setValueAtTime: vi.fn() }
+	})),
+	resume: vi.fn().mockResolvedValue(undefined),
+	close: vi.fn().mockResolvedValue(undefined),
+	state: 'running',
+	currentTime: 0,
+	destination: {},
+	sampleRate: 48000
 })) as any;
 
-vi.spyOn(global, "fetch").mockImplementation((url) => {
-  return Promise.resolve({
-    ok: true,
-    status: 200,
-    arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
-    text: () => Promise.resolve("// Mock loader script"),
-  } as Response);
-});
+// Mock fetch for worker dependencies
+vi.spyOn(global, 'fetch').mockImplementation(() =>
+	Promise.resolve({
+		ok: true,
+		status: 200,
+		arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+		text: () => Promise.resolve('// Mock loader script')
+	} as Response)
+);
 // --- End Mocks ---
 
-describe("AudioEngineService (Refactored)", () => {
-  beforeEach(() => {
-    vi.useFakeTimers(); // Use fake timers for RAF
-    vi.clearAllMocks();
-    // Reset the Svelte store to its initial state before each test
-    // playerStore.set is not available directly on the vi.mocked import,
-    // we need to import the actual instance if we want to .set() it here.
-    // For now, the factory mock re-initializes it.
-    // If tests need to modify then reset, we'd need direct access to mockPlayerStoreInstance.
-    // Resetting the service's internal state
-    audioEngineService.dispose();
-  });
+describe('AudioEngineService (Fully Refactored Tests)', () => {
+	const MOCK_RAF_ID = 12345;
+	let rafSpy: ReturnType<typeof vi.spyOn>;
+	let cafSpy: ReturnType<typeof vi.spyOn>;
+	let mockAudioBuffer: AudioBuffer;
 
-  afterEach(() => {
-    vi.useRealTimers(); // Restore real timers
-  });
+	// Helper to simulate the worker becoming ready after INIT
+	const makeWorkerReady = () => {
+		mockWorkerInstance.onmessage!({
+			data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS }
+		} as MessageEvent);
+	};
 
-  it("loadFile should initialize the worker with correct audio parameters", async () => {
-    const mockArrayBuffer = new ArrayBuffer(8);
-    const mockDecodedBuffer = {
-      duration: 1.0,
-      numberOfChannels: 1, // <-- Test with MONO
-      sampleRate: 44100,
-      getChannelData: vi.fn(() => new Float32Array(1)),
-    };
-    mockDecodeAudioData.mockResolvedValue(mockDecodedBuffer as any);
+	beforeEach(async () => {
+		// Reset mocks and state before each test
+		vi.clearAllMocks();
+		playerStore.set({ ...initialPlayerState });
+		audioEngineService.dispose(); // Ensure clean service state
 
-    // Act
-    await audioEngineService.loadFile(mockArrayBuffer, "test-mono.wav");
+		// Spy on animation frame methods
+		rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(MOCK_RAF_ID);
+		cafSpy = vi.spyOn(window, 'cancelAnimationFrame');
 
-    // Assert: Worker should have been created
-    expect(RubberbandWorker).toHaveBeenCalledTimes(1);
+		// Create a mock AudioBuffer for tests
+		mockAudioBuffer = {
+			duration: 10.0,
+			numberOfChannels: 1,
+			sampleRate: 44100,
+			getChannelData: vi.fn(() => new Float32Array(441000).fill(0.1)),
+			length: 441000
+		} as unknown as AudioBuffer;
+		mockDecodeAudioData.mockResolvedValue(mockAudioBuffer);
 
-    // Assert: INIT message was sent with the CORRECT parameters from the decoded buffer
-    expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: RB_WORKER_MSG_TYPE.INIT,
-        payload: expect.objectContaining({
-          channels: 1, // <-- Crucial check
-          sampleRate: 44100, // <-- Crucial check
-        }),
-      }),
-      expect.any(Array), // for the transferable wasmBinary
-    );
-  });
+		// Initialize the service, as most tests require it
+		await audioEngineService.loadFile(new ArrayBuffer(8), 'test.wav');
+		makeWorkerReady();
+	});
 
-  it("play should only work after the worker confirms initialization", async () => {
-    const mockArrayBuffer = new ArrayBuffer(8);
-    const mockDecodedBuffer = {
-      duration: 1.0,
-      numberOfChannels: 1,
-      sampleRate: 44100,
-      getChannelData: vi.fn(() => new Float32Array(44100).fill(0.1)),
-      length: 44100,
-    };
-    mockDecodeAudioData.mockResolvedValue(mockDecodedBuffer as any);
+	afterEach(() => {
+		rafSpy.mockRestore();
+		cafSpy.mockRestore();
+	});
 
-    // Act 1: Load the file, which sends the INIT message
-    await audioEngineService.loadFile(mockArrayBuffer, "test.wav");
+	describe('loadFile', () => {
+		it('should post an INIT message to the worker with correct audio parameters', () => {
+			expect(RubberbandWorker).toHaveBeenCalledTimes(1);
+			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: RB_WORKER_MSG_TYPE.INIT,
+					payload: expect.objectContaining({
+						channels: mockAudioBuffer.numberOfChannels,
+						sampleRate: mockAudioBuffer.sampleRate
+					})
+				}),
+				expect.any(Array)
+			);
+		});
 
-    // Assert 1: Playback is not yet possible because worker hasn't responded
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    await audioEngineService.play();
-    expect(console.warn).toHaveBeenCalledWith(
-      "AudioEngine: Play command ignored. Not ready or already playing.",
-    );
-    expect(mockWorkerInstance.postMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.PROCESS }),
-    );
-    vi.mocked(console.warn).mockRestore();
+		it('should update the player store to be playable after worker is initialized', () => {
+			// State is already ready from beforeEach
+			expect(get(playerStore).isPlayable).toBe(true);
+			expect(get(playerStore).status).toContain('Ready');
+		});
+	});
 
-    // Act 2: Simulate the worker responding that it's ready
-    mockWorkerInstance.onmessage!({
-      data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS },
-    } as MessageEvent);
+	describe('play', () => {
+		it('should start the animation loop by calling requestAnimationFrame', async () => {
+			await audioEngineService.play();
+			expect(rafSpy).toHaveBeenCalledTimes(1);
+		});
 
-    // Assert 2: The store should now be updated to be playable
-    // To check this, we need to get the actual instance of the mock store used by the service.
-    // This requires importing it if the mock factory is self-contained.
-    // For now, we rely on the fact that playerStore.update was called.
-    // A more robust check would be:
-    // import { playerStore as actualPlayerStore } from '$lib/stores/player.store'; // Get the mocked instance
-    // expect(get(actualPlayerStore).isPlayable).toBe(true);
-    // This currently might fail if the test setup doesn't re-export playerStore correctly for direct import.
-    // The mock setup above makes playerStore available.
-    expect(get(playerStore).isPlayable).toBe(true);
+		it('should not play if worker is not initialized', async () => {
+			audioEngineService.dispose(); // Reset service, worker is not initialized
+			await audioEngineService.play();
+			expect(rafSpy).not.toHaveBeenCalled();
+		});
+	});
 
-    // Act 3: Now, play should work
-    await audioEngineService.play();
+	describe('pause', () => {
+		it('should stop the animation loop by calling cancelAnimationFrame', async () => {
+			await audioEngineService.play();
+			expect(rafSpy).toHaveBeenCalledTimes(1);
 
-    // vi.advanceTimersByTime(100); // This should no longer be needed due to synchronous first iteration.
+			audioEngineService.pause();
+			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID);
+			expect(get(playerStore).isPlaying).toBe(false);
+		});
+	});
 
-    // Assert 3: A PROCESS message should have been sent
-    expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: RB_WORKER_MSG_TYPE.PROCESS }),
-      expect.any(Array),
-    );
-  });
+	describe('stop', () => {
+		it('should cancel the animation loop, reset worker, and reset time', async () => {
+			await audioEngineService.play(); // Start playing
+			playerStore.update((s) => ({ ...s, currentTime: 5.0 })); // Simulate time advance
+
+			audioEngineService.stop();
+
+			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID);
+			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+				type: RB_WORKER_MSG_TYPE.RESET
+			});
+			expect(get(playerStore).isPlaying).toBe(false);
+			expect(get(playerStore).currentTime).toBe(0);
+		});
+	});
+
+	describe('seek', () => {
+		it('should update time, reset worker, but NOT start playing if paused', async () => {
+			// Ensure it's paused
+			expect(get(playerStore).isPlaying).toBe(false);
+
+			await audioEngineService.seek(5.0);
+
+			// Should not have started an animation loop
+			expect(rafSpy).not.toHaveBeenCalled();
+			expect(cafSpy).not.toHaveBeenCalled(); // Nothing to cancel
+
+			// Should have sent reset and updated time
+			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+				type: RB_WORKER_MSG_TYPE.RESET
+			});
+			expect(get(playerStore).currentTime).toBe(5.0);
+			expect(get(playerStore).isPlaying).toBe(false); // Should remain paused
+		});
+
+		it('should cancel loop, update time, reset worker, AND restart playback if playing', async () => {
+			await audioEngineService.play(); // Start playback
+			expect(rafSpy).toHaveBeenCalledTimes(1);
+			vi.clearAllMocks(); // Clear spies for the next check
+
+			await audioEngineService.seek(3.0);
+
+			// Assertions for the interruption
+			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID); // Canceled the old loop
+			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+				type: RB_WORKER_MSG_TYPE.RESET
+			});
+			expect(get(playerStore).currentTime).toBe(3.0);
+
+			// Assertion for the restart
+			// Using setTimeout in the implementation, so we need to advance timers
+			await vi.runAllTimersAsync();
+			expect(rafSpy).toHaveBeenCalledTimes(1); // A *new* loop was started
+			expect(get(playerStore).isPlaying).toBe(true);
+		});
+	});
 });
