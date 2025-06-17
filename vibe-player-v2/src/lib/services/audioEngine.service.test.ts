@@ -207,27 +207,33 @@ describe('AudioEngineService (Corrected Tests)', () => {
 			expect(get(playerStoreInstance).isPlaying).toBe(false); // Should remain paused.
 		});
 
+		// Replace the failing test with this corrected version:
 		it('should cancel loop, update time, reset worker, AND restart playback if playing', async () => {
-			vi.useFakeTimers();
-			await audioEngineService.play(); // Start playback.
-			expect(rafSpy).toHaveBeenCalledTimes(1);
-			vi.clearAllMocks(); // Clear spies for the next check.
+			// This test no longer needs fake timers because the seek->play logic is now direct.
+			await audioEngineService.play();
+			expect(rafSpy).toHaveBeenCalledTimes(1); // Ensure playback started.
+			vi.clearAllMocks(); // Clear spies for the main assertion part.
 
+			// Act: Call seek and wait for it to complete.
 			await audioEngineService.seek(3.0);
 
-			// Assertions for the interruption.
-			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID); // Canceled the old loop.
+			// Assert:
+			// 1. The old animation frame was canceled.
+			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID);
+
+			// 2. The worker was told to reset its state for the new position.
 			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
 				type: RB_WORKER_MSG_TYPE.RESET
 			});
+
+			// 3. The store's time was updated correctly.
 			expect(get(playerStoreInstance).currentTime).toBe(3.0);
 
-			// Assertion for the restart.
-			// The `seek` implementation now uses a setTimeout.
-			await vi.runAllTimersAsync();
-			expect(rafSpy).toHaveBeenCalledTimes(1); // A *new* loop was started.
+			// 4. A *new* animation frame was requested to restart the playback loop.
+			expect(rafSpy).toHaveBeenCalledTimes(1);
+
+			// 5. The store reflects that playback is active.
 			expect(get(playerStoreInstance).isPlaying).toBe(true);
-			vi.useRealTimers();
 		});
 	});
 });
