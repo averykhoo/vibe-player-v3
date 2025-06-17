@@ -32,16 +32,38 @@
 
 	/**
 	 * Handles seeking the audio when the user interacts with the seek slider.
+	 * This version is more robust, handling the playing state explicitly.
 	 * @param {Event} event - The input event from the RangeSlider.
 	 */
 	function handleSeek(event: Event) {
 		const target = event.target as HTMLInputElement;
+		if (!target) return; // Guard against null target
+
 		const time = parseFloat(target.value);
-		// --- ADD THIS GUARD ---
-		if (!isNaN(time)) {
-			audioEngineService.seek(time);
-		} else {
+		if (isNaN(time)) {
 			console.warn('handleSeek received a non-numeric value:', target.value);
+			return;
+		}
+
+		// --- START OF FIX ---
+		// Prevent a race condition in the audio engine by managing the playing state here.
+		const wasPlaying = get(playerStore).isPlaying;
+
+		// 1. Always pause before seeking to ensure a stable state.
+		if (wasPlaying) {
+			audioEngineService.pause();
+		}
+
+		// 2. Perform the seek operation. This is now guaranteed to happen while paused.
+			audioEngineService.seek(time);
+
+		// 3. If the audio was playing before, resume it.
+		//    We wrap this in a brief timeout to allow Svelte's reactivity to settle
+		//    after the state changes from pause() and seek(), preventing race conditions.
+		if (wasPlaying) {
+			setTimeout(() => {
+				audioEngineService.play();
+			}, 10); // A small delay is sufficient.
 		}
 		// --- END GUARD ---
 	}

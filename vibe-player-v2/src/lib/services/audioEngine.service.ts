@@ -143,7 +143,10 @@ class AudioEngineService {
 	}
 
 	public async play(): Promise<void> {
-		// This check now correctly waits for worker confirmation.
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] PLAY called. Current state: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}`);
+		// --- END LOG ---
+
 		if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
 			console.warn('AudioEngine: Play command ignored. Not ready or already playing.');
 			return;
@@ -287,6 +290,10 @@ class AudioEngineService {
 	}
 
 	public async stop(): Promise<void> {
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] STOP called.`);
+		// --- END LOG ---
+
 		this.isStopping = true;
 		this.isPlaying = false;
 		if (this.worker) {
@@ -304,6 +311,10 @@ class AudioEngineService {
 	}
 
 	public pause(): void {
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] PAUSE called.`);
+		// --- END LOG ---
+
 		if (!this.isPlaying) return;
 		this.isPlaying = false;
 		playerStore.update((s) => ({
@@ -314,6 +325,10 @@ class AudioEngineService {
 	}
 
 	public async seek(time: number): Promise<void> {
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] SEEK called. Time: ${time}`);
+		// --- END LOG ---
+
 		if (!this.originalBuffer || time < 0 || time > this.originalBuffer.duration) {
 			console.warn('AudioEngine: Seek time is out of bounds.');
 			return;
@@ -441,7 +456,7 @@ class AudioEngineService {
 			return;
 		}
 
-		const numberOfChannels = this.originalBuffer.numberOfChannels;
+    const numberOfChannels = this.originalBuffer.numberOfChannels;
 
 		// --- ADD A CONSOLE.ERROR FOR THE ORIGINAL BUG SCENARIO ---
 		if (processedChannels.length !== this.originalBuffer!.numberOfChannels) {
@@ -483,7 +498,7 @@ class AudioEngineService {
 			actualStartTime + chunkDuration - AUDIO_ENGINE_CONSTANTS.SCHEDULE_AHEAD_TIME_S;
 
 		bufferSource.onended = () => {
-			// console.log("ScheduleChunkPlayback: BufferSource ended. Current offset:", this.sourcePlaybackOffset, "Total duration:", this.originalBuffer!.duration);
+			console.log("ScheduleChunkPlayback: BufferSource ended. Current offset:", this.sourcePlaybackOffset, "Total duration:", this.originalBuffer!.duration);
 			if (
 				this.sourcePlaybackOffset >= this.originalBuffer!.duration &&
 				this.isPlaying
@@ -495,7 +510,7 @@ class AudioEngineService {
 					isPlaying: false,
 					status: `Finished: ${s.fileName}`
 				}));
-				// console.log("ScheduleChunkPlayback: Playback officially finished after buffer ended.");
+				console.log("ScheduleChunkPlayback: Playback officially finished after buffer ended.");
 			}
 			bufferSource.disconnect(); // Clean up
 		};
