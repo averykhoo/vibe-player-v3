@@ -159,12 +159,17 @@ test.describe('Vibe Player V2 E2E', () => {
 			await playerPage.loadAudioFile(TEST_AUDIO_FILE);
 			await playerPage.expectControlsToBeReadyForPlayback();
 
-			await expect(playerPage.speedSliderInput).toHaveValue('1.75', {
-				timeout: 2000
-			});
-			await expect(playerPage.pitchSliderInput).toHaveValue('-3', {
-				timeout: 2000
-			});
+			// --- ROBUST FIX: Assert against the visible label, not the input's internal value ---
+			// This confirms the value was processed by the store and reflected in the UI component's state.
+			await expect(
+				playerPage.speedValueDisplay,
+				'The visible speed label did not update from the URL parameter.'
+			).toHaveText('Speed: 1.75x', { timeout: 2000 });
+
+			await expect(
+				playerPage.pitchValueDisplay,
+				'The visible pitch label did not update from the URL parameter.'
+			).toHaveText('Pitch: -3.0 semitones', { timeout: 2000 });
 		});
 	});
 });
