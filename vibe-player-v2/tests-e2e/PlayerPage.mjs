@@ -77,40 +77,57 @@ export class PlayerPage {
 	}
 
 	/**
-	 * [MODIFIED] Sets the value of a Skeleton UI RangeSlider by simulating a mouse drag.
+	 * [LOGGING ADDED] Sets the value of a Skeleton UI RangeSlider by simulating a mouse drag.
 	 * This is more robust than programmatically setting the value.
 	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
 	 * @param {string} valueStr - The target value as a string.
 	 */
 	async setSliderValue(sliderInputLocator, valueStr) {
 		const sliderHandle = await sliderInputLocator.elementHandle();
-		const boundingBox = await sliderHandle.boundingBox();
-
-		if (!boundingBox) {
-			throw new Error('Could not get bounding box for slider element.');
+		if (!sliderHandle) {
+			throw new Error('Could not get element handle for slider.');
 		}
 
-		// Get the min/max attributes from the element to calculate the position.
+		const testId = await sliderHandle.getAttribute('data-testid');
+		console.log(`[TEST LOG] === Preparing to set slider '${testId}' ===`);
+
+		const valueBefore = await sliderHandle.inputValue();
+		console.log(`[TEST LOG] Slider '${testId}' value BEFORE drag: ${valueBefore}`);
+
+		const boundingBox = await sliderHandle.boundingBox();
+		if (!boundingBox) {
+			throw new Error(`Could not get bounding box for slider '${testId}'.`);
+		}
+		console.log(`[TEST LOG] Slider '${testId}' bounding box:`, boundingBox);
+
 		const min = parseFloat((await sliderHandle.getAttribute('min')) || '0');
 		const max = parseFloat((await sliderHandle.getAttribute('max')) || '100');
 		const value = parseFloat(valueStr);
+		console.log(`[TEST LOG] Slider '${testId}' attributes: min=${min}, max=${max}, targetValue=${value}`);
 
-		// Calculate the horizontal percentage where the target value lies.
 		const percentage = (value - min) / (max - min);
-		// Calculate the target x-coordinate within the bounding box.
 		const targetX = boundingBox.x + boundingBox.width * percentage;
+		console.log(
+			`[TEST LOG] Calculated target: percentage=${percentage.toFixed(
+				3
+			)}, targetX=${targetX.toFixed(2)}`
+		);
 
-		// Simulate a click-and-drag action to the target position.
+		console.log(`[TEST LOG] Simulating mouse drag on '${testId}'...`);
 		await this.page.mouse.move(
-			boundingBox.x + boundingBox.width / 2, // Start from middle
+			boundingBox.x + boundingBox.width / 2,
 			boundingBox.y + boundingBox.height / 2
 		);
 		await this.page.mouse.down();
 		await this.page.mouse.move(targetX, boundingBox.y + boundingBox.height / 2);
 		await this.page.mouse.up();
+		console.log(`[TEST LOG] Mouse drag simulation for '${testId}' complete.`);
 
-		// Wait briefly to allow the UI and any debounced functions to react.
-		await this.page.waitForTimeout(150);
+		const valueAfter = await sliderInputLocator.inputValue();
+		console.log(`[TEST LOG] Slider '${testId}' value AFTER drag: ${valueAfter}`);
+		console.log(`[TEST LOG] === Finished setting slider '${testId}' ===`);
+
+		await this.page.waitForTimeout(150); // Wait for UI reaction
 	}
 
 	/**
