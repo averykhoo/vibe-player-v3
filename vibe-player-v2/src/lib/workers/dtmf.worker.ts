@@ -141,15 +141,6 @@ class DTMFParser {
       }
     });
 
-    // --- START: ADDED LOGGING FOR DEBUGGING ---
-    const blockDuration = this.blockSize / this.sampleRate;
-    console.log(
-      `[DTMF Raw @ ${timestamp.toFixed(3)}s, dur: ${blockDuration.toFixed(3)}s] - ` +
-        `Low: ${detectedLowFreq}Hz (Mag: ${maxLowMag.toExponential(2)}), ` +
-        `High: ${detectedHighFreq}Hz (Mag: ${maxHighMag.toExponential(2)})`,
-    );
-    // --- END: ADDED LOGGING ---
-
     // Apply absolute threshold check
     if (
       maxLowMag < DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD ||
