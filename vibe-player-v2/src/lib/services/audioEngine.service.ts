@@ -64,7 +64,7 @@ class AudioEngineService {
 	}
 
 	// ---------------------------------------------------------------------------
-	//  SUB-SECTION: Public API Methods
+	//  SUB-SECTION: Public API Methods (Defined as Arrow Functions)
 	// ---------------------------------------------------------------------------
 
 	/**
@@ -72,14 +72,14 @@ class AudioEngineService {
 	 * interaction (e.g., a click) to comply with browser autoplay policies.
 	 * @returns {Promise<void>}
 	 */
-	public async unlockAudio(): Promise<void> {
+	public unlockAudio = async (): Promise<void> => {
 		const ctx = this._getAudioContext();
 		if (ctx.state === 'suspended') {
 			console.log('[AudioEngineService] AudioContext is suspended, attempting to resume...');
 			await ctx.resume();
 			console.log(`[AudioEngineService] AudioContext state is now: ${ctx.state}`);
 		}
-	}
+	};
 
 	/**
 	 * Loads an audio file from an ArrayBuffer, decodes it, and initializes the
@@ -88,7 +88,7 @@ class AudioEngineService {
 	 * @param {string} fileName - The name of the file for logging and display.
 	 * @returns {Promise<void>}
 	 */
-	public async loadFile(audioFileBuffer: ArrayBuffer, fileName: string): Promise<void> {
+	public loadFile = async (audioFileBuffer: ArrayBuffer, fileName: string): Promise<void> => {
 		console.log(`[AudioEngineService] loadFile called for: ${fileName}`);
 		if (!audioFileBuffer || audioFileBuffer.byteLength === 0) {
 			const errorMsg = 'loadFile received an invalid or empty ArrayBuffer.';
@@ -97,7 +97,7 @@ class AudioEngineService {
 			return;
 		}
 
-		await this.stop(); // Fully stop and reset any previous playback.
+		await this.stop();
 
 		const ctx = this._getAudioContext();
 		playerStore.update((s) => ({
@@ -115,17 +115,15 @@ class AudioEngineService {
 				`[AudioEngineService] Audio decoded successfully. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`
 			);
 
-			// Initialize the worker for the new file's properties.
 			if (!this.worker) {
 				this.worker = new RubberbandWorker();
-				this.worker.onmessage = this.handleWorkerMessage.bind(this);
+				this.worker.onmessage = this.handleWorkerMessage;
 				this.worker.onerror = (err) => console.error('[AudioEngineService] Unhandled worker error:', err);
 			} else {
 				this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
 			}
 			this.isWorkerInitialized = false;
 
-			// Fetch dependencies required by the worker.
 			const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
 			const loaderResponse = await fetch(AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL);
 			if (!wasmResponse.ok || !loaderResponse.ok) {
@@ -160,7 +158,7 @@ class AudioEngineService {
 				audioBuffer: this.originalBuffer,
 				sampleRate: this.originalBuffer!.sampleRate
 			}));
-			analysisStore.set({}); // Reset analysis store for the new file.
+			analysisStore.set({});
 		} catch (e) {
 			const error = e as Error;
 			console.error(`[AudioEngineService] Error during loadFile: ${error.message}`);
@@ -172,17 +170,13 @@ class AudioEngineService {
 			}));
 			throw error;
 		}
-	}
+	};
 
 	/**
-	 * Starts or resumes playback. Initiates the processing loop.
-	 * @returns {Promise<void>}
+	 * Starts or resumes playback.
 	 */
-	public async play(): Promise<void> {
-		console.log(
-			`[AudioEngineService] PLAY called. State: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}`
-		);
-
+	public play = async (): Promise<void> => {
+		console.log(`[AudioEngineService] PLAY called. State: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}`);
 		if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
 			console.warn('AudioEngine: Play command ignored. Not ready or already playing.');
 			return;
@@ -194,9 +188,7 @@ class AudioEngineService {
 		}
 
 		const audioCtx = this._getAudioContext();
-		if (audioCtx.state === 'suspended') {
-			await audioCtx.resume();
-		}
+		if (audioCtx.state === 'suspended') await audioCtx.resume();
 
 		this.isPlaying = true;
 		playerStore.update((s) => ({ ...s, isPlaying: true, status: `Playing: ${s.fileName}` }));
@@ -204,18 +196,18 @@ class AudioEngineService {
 		if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtx.currentTime) {
 			this.nextChunkTime = audioCtx.currentTime;
 		}
-
+		
 		this._performSingleProcessAndPlayIteration();
 
 		if (this.isPlaying) {
-			this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop.bind(this));
+			this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop);
 		}
-	}
+	};
 
 	/**
-	 * Pauses playback and stops the processing loop.
+	 * Pauses playback.
 	 */
-	public pause(): void {
+	public pause = (): void => {
 		console.log(`[AudioEngineService] PAUSE called.`);
 		if (!this.isPlaying) return;
 		this.isPlaying = false;
@@ -226,13 +218,12 @@ class AudioEngineService {
 		}
 
 		playerStore.update((s) => ({ ...s, isPlaying: false, status: `Paused: ${s.fileName || ''}` }));
-	}
+	};
 
 	/**
-	 * Stops playback entirely, resets the position to the beginning, and clears worker state.
-	 * @returns {Promise<void>}
+	 * Stops playback and resets position.
 	 */
-	public async stop(): Promise<void> {
+	public stop = async (): Promise<void> => {
 		console.log(`[AudioEngineService] STOP called.`);
 		this.isStopping = true;
 		this.isPlaying = false;
@@ -242,9 +233,8 @@ class AudioEngineService {
 			this.animationFrameId = null;
 		}
 
-		if (this.worker) {
-			this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
-		}
+		if (this.worker) this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+		
 		this.sourcePlaybackOffset = 0;
 		this.nextChunkTime = 0;
 		playerStore.update((s) => ({
@@ -254,87 +244,72 @@ class AudioEngineService {
 			status: `Stopped: ${s.fileName || ''}`
 		}));
 		this.isStopping = false;
-	}
+	};
 
 	/**
 	 * Seeks to a specific time in the audio.
-	 * @param {number} time - The target time in seconds.
-	 * @returns {Promise<void>}
 	 */
-	public async seek(time: number): Promise<void> {
+	public seek = async (time: number): Promise<void> => {
 		console.log(`[AudioEngineService] SEEK called. Target time: ${time.toFixed(2)}s`);
-
 		if (!this.originalBuffer || time < 0 || time > this.originalBuffer.duration) {
 			console.warn(`AudioEngine: Seek time ${time} is out of bounds.`);
 			return;
 		}
 
 		const wasPlaying = this.isPlaying;
-
-		// Forcefully stop any current playback loop and update state.
 		this.pause();
 
-		// Reset the worker's internal state to clear its buffers.
-		if (this.worker) {
-			this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
-		}
+		if (this.worker) this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
 
-		// Authoritatively set the new playback position.
 		this.sourcePlaybackOffset = time;
 		this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
 		playerStore.update((s) => ({ ...s, currentTime: time }));
 
-		// If it was playing before the seek, restart it from the new position.
 		if (wasPlaying) {
-			// A brief timeout can prevent race conditions where play() is called before
-			// the worker has fully processed the RESET message.
 			setTimeout(() => {
 				this.play();
 			}, 50);
 		}
-	}
+	};
 
 	/**
-	 * Sets the playback speed.
-	 * @param {number} speed - The desired playback speed (e.g., 1.0 for normal).
+	 * Sets playback speed.
 	 */
-	public setSpeed(speed: number): void {
+	public setSpeed = (speed: number): void => {
 		console.log(`[AudioEngineService] setSpeed called with: ${speed}`);
 		if (this.worker && this.isWorkerInitialized) {
 			this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed } });
 		}
 		playerStore.update((s) => ({ ...s, speed }));
-	}
+	};
 
 	/**
-	 * Sets the playback pitch.
-	 * @param {number} pitch - The desired pitch shift in semitones.
+	 * Sets playback pitch.
 	 */
-	public setPitch(pitch: number): void {
+	public setPitch = (pitch: number): void => {
 		console.log(`[AudioEngineService] setPitch called with: ${pitch}`);
 		if (this.worker && this.isWorkerInitialized) {
 			this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch } });
 		}
 		playerStore.update((s) => ({ ...s, pitch }));
-	}
+	};
 
 	/**
-	 * Sets the master gain (volume) level.
-	 * @param {number} level - The desired gain level (e.g., 1.0 is normal).
+	 * Sets master gain.
 	 */
-	public setGain(level: number): void {
+	public setGain = (level: number): void => {
 		console.log(`[AudioEngineService] setGain called with: ${level}`);
 		if (this.gainNode && this.audioContext) {
-			const newGain = Math.max(0, Math.min(2, level)); // Clamp to UI range.
+			const newGain = Math.max(0, Math.min(2, level));
 			this.gainNode.gain.setValueAtTime(newGain, this.audioContext.currentTime);
 			playerStore.update((s) => ({ ...s, gain: newGain }));
 		}
-	}
+	};
 
 	/**
-	 * Cleans up all resources, including the worker and AudioContext.
+	 * Cleans up all resources.
 	 */
-	public dispose(): void {
+	public dispose = (): void => {
 		console.log('[AudioEngineService] Disposing all resources...');
 		this.isPlaying = false;
 		this.isStopping = true;
@@ -349,49 +324,48 @@ class AudioEngineService {
 		this.audioContext?.close();
 		this.audioContext = null;
 		console.log('[AudioEngineService] Dispose complete.');
-	}
-
+	};
+	
 	// ---------------------------------------------------------------------------
 	//  SUB-SECTION: Private Helper Methods
 	// ---------------------------------------------------------------------------
-
-	/**
-	 * The main recursive loop driven by `requestAnimationFrame`. It checks if more
-	 * audio data needs to be processed and schedules the next frame.
-	 * @private
-	 */
-	private _recursiveProcessAndPlayLoop(): void {
+	
+	private _getAudioContext(): AudioContext {
+		if (!this.audioContext || this.audioContext.state === 'closed') {
+			this.audioContext = new AudioContext();
+			this.gainNode = this.audioContext.createGain();
+			this.gainNode.connect(this.audioContext.destination);
+		}
+		return this.audioContext;
+	}
+	
+	private _recursiveProcessAndPlayLoop = (): void => {
 		if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext) {
-			this.animationFrameId = null; // Ensure ID is cleared when loop terminates.
+			this.animationFrameId = null;
 			return;
 		}
-
+	
 		playerStore.update((s) => ({ ...s, currentTime: this.sourcePlaybackOffset }));
 		this._performSingleProcessAndPlayIteration();
-
+	
 		if (this.isPlaying) {
-			this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop.bind(this));
+			this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop);
 		} else {
 			this.animationFrameId = null;
 		}
-	}
-
-	/**
-	 * Performs a single iteration of the processing logic: determines the next chunk
-	 * of audio to process and sends it to the worker.
-	 * @private
-	 */
-	private _performSingleProcessAndPlayIteration(): void {
+	};
+	
+	private _performSingleProcessAndPlayIteration = (): void => {
 		assert(this.isPlaying, 'Processing loop ran while not playing.');
 		assert(!this.isStopping, 'Processing loop ran while stopping.');
 		assert(this.originalBuffer, 'Processing loop ran without an audio buffer.');
 		assert(this.audioContext, 'Processing loop ran without an audio context.');
-
+	
 		if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext) return;
-
+	
 		const now = this.audioContext.currentTime;
 		const lookahead = AUDIO_ENGINE_CONSTANTS.PROCESS_LOOKAHEAD_TIME;
-
+	
 		if (this.nextChunkTime < now + lookahead) {
 			if (this.sourcePlaybackOffset < this.originalBuffer.duration) {
 				const chunkDuration = AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S;
@@ -399,21 +373,20 @@ class AudioEngineService {
 					chunkDuration,
 					this.originalBuffer.duration - this.sourcePlaybackOffset
 				);
-
+	
 				if (actualChunkDuration <= AUDIO_ENGINE_CONSTANTS.MIN_CHUNK_DURATION_S) {
-					// Logic to handle very small remaining chunks
 					actualChunkDuration = Math.min(
 						this.originalBuffer.duration - this.sourcePlaybackOffset,
 						AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S
 					);
 				}
-
+	
 				if (actualChunkDuration <= 0) {
 					this.pause();
 					playerStore.update((s) => ({ ...s, currentTime: this.originalBuffer!.duration }));
 					return;
 				}
-
+	
 				const startSample = Math.floor(this.sourcePlaybackOffset * this.originalBuffer.sampleRate);
 				const endSample = Math.floor(
 					Math.min(
@@ -421,115 +394,76 @@ class AudioEngineService {
 						this.originalBuffer.duration
 					) * this.originalBuffer.sampleRate
 				);
-
+	
 				if (startSample >= endSample) {
 					this.pause();
 					return;
 				}
-
+	
 				const channelData = this.originalBuffer.getChannelData(0);
 				const segment = channelData.slice(startSample, endSample);
 				const isFinalChunk = this.sourcePlaybackOffset + actualChunkDuration >= this.originalBuffer.duration;
-
-				console.log(
-					`[AudioEngineService] Processing chunk. Offset: ${this.sourcePlaybackOffset.toFixed(2)}s, Duration: ${actualChunkDuration.toFixed(3)}s, Final: ${isFinalChunk}`
-				);
-
-				const processPayload: RubberbandProcessPayload = {
-					inputBuffer: [segment],
-					isFinalChunk: isFinalChunk
-				};
-
-				this.worker!.postMessage(
-					{ type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
-					[segment.buffer]
-				);
-
+	
+				console.log(`[AudioEngineService] Processing chunk. Offset: ${this.sourcePlaybackOffset.toFixed(2)}s, Duration: ${actualChunkDuration.toFixed(3)}s, Final: ${isFinalChunk}`);
+	
+				const processPayload: RubberbandProcessPayload = { inputBuffer: [segment], isFinalChunk };
+				this.worker!.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload }, [segment.buffer]);
 				this.sourcePlaybackOffset += actualChunkDuration;
 			} else {
-				// Reached the end of the buffer
 				this.pause();
-				playerStore.update((s) => ({
-					...s,
-					currentTime: this.originalBuffer!.duration,
-					status: `Finished: ${s.fileName}`
-				}));
+				playerStore.update((s) => ({ ...s, currentTime: this.originalBuffer!.duration, status: `Finished: ${s.fileName}` }));
 			}
 		}
-	}
-
-	/**
-	 * Takes processed audio data from the worker, creates a buffer source,
-	 * and schedules it for playback in the AudioContext.
-	 * @private
-	 * @param {Float32Array[]} processedChannels - The processed audio data.
-	 * @param {number} startTime - The AudioContext time at which to start playback.
-	 */
-	private scheduleChunkPlayback(processedChannels: Float32Array[], startTime: number): void {
-		if (!processedChannels || processedChannels.length === 0 || processedChannels[0].length === 0) {
-			return; // Ignore empty chunks.
-		}
-
+	};
+	
+	private scheduleChunkPlayback = (processedChannels: Float32Array[], startTime: number): void => {
+		if (!processedChannels || processedChannels.length === 0 || processedChannels[0].length === 0) return;
+	
 		assert(this.audioContext, 'Attempted to schedule chunk without an audio context.');
 		assert(this.gainNode, 'Attempted to schedule chunk without a gain node.');
 		assert(this.originalBuffer, 'Attempted to schedule chunk without an original buffer.');
 		assert(!this.isStopping, 'Attempted to schedule chunk while stopping.');
-
+	
 		if (!this.audioContext || !this.gainNode || this.isStopping || !this.originalBuffer) return;
-
+	
 		const numberOfChannels = this.originalBuffer.numberOfChannels;
 		if (processedChannels.length !== numberOfChannels) {
-			console.error(
-				`ScheduleChunkPlayback: Mismatch in channel count. Expected ${numberOfChannels}, got ${processedChannels.length}.`
-			);
+			console.error(`ScheduleChunkPlayback: Mismatch in channel count. Expected ${numberOfChannels}, got ${processedChannels.length}.`);
 			return;
 		}
-
+	
 		const frameCount = processedChannels[0].length;
 		if (frameCount === 0) return;
-
-		const audioBuffer = this.audioContext.createBuffer(
-			numberOfChannels,
-			frameCount,
-			this.originalBuffer.sampleRate
-		);
+	
+		const audioBuffer = this.audioContext.createBuffer(numberOfChannels, frameCount, this.originalBuffer.sampleRate);
 		for (let i = 0; i < numberOfChannels; i++) {
 			audioBuffer.copyToChannel(processedChannels[i], i);
 		}
-
+	
 		const bufferSource = this.audioContext.createBufferSource();
 		bufferSource.buffer = audioBuffer;
 		bufferSource.connect(this.gainNode);
-
+	
 		const actualStartTime = Math.max(this.audioContext.currentTime, startTime);
-		console.log(
-			`[AudioEngineService] Scheduling chunk playback at ${actualStartTime.toFixed(2)}s. Duration: ${audioBuffer.duration.toFixed(3)}s.`
-		);
+		console.log(`[AudioEngineService] Scheduling chunk playback at ${actualStartTime.toFixed(2)}s. Duration: ${audioBuffer.duration.toFixed(3)}s.`);
 		bufferSource.start(actualStartTime);
-
+	
 		const chunkDuration = audioBuffer.duration;
 		this.nextChunkTime = actualStartTime + chunkDuration - AUDIO_ENGINE_CONSTANTS.SCHEDULE_AHEAD_TIME_S;
+	
+		bufferSource.onended = () => bufferSource.disconnect();
+	};
 
-		bufferSource.onended = () => {
-			bufferSource.disconnect();
-		};
-	}
-
-	/**
-	 * Handles all messages received from the Rubberband worker.
-	 * @private
-	 * @param {MessageEvent} event - The message event from the worker.
-	 */
-	private handleWorkerMessage(event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>): void {
+	private handleWorkerMessage = (event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>): void => {
 		const { type, payload } = event.data;
-
+	
 		switch (type) {
 			case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
 				this.isWorkerInitialized = true;
 				console.log('[AudioEngineService] Worker initialized successfully.');
 				playerStore.update((s) => ({ ...s, isPlayable: true, status: `Ready: ${s.fileName}` }));
 				break;
-
+	
 			case RB_WORKER_MSG_TYPE.ERROR:
 				const errorPayload = payload as WorkerErrorPayload;
 				console.error('[AudioEngineService] Worker Error:', errorPayload.message);
@@ -543,18 +477,18 @@ class AudioEngineService {
 				this.isWorkerInitialized = false;
 				if (this.isPlaying) this.pause();
 				break;
-
+	
 			case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
 				const { outputBuffer } = payload as RubberbandProcessResultPayload;
 				if (outputBuffer && this.isPlaying && !this.isStopping) {
 					this.scheduleChunkPlayback(outputBuffer, this.nextChunkTime);
 				}
 				break;
-
+	
 			default:
 				console.warn(`[AudioEngineService] Received unknown message type from worker: ${type}`);
 		}
-	}
+	};
 }
 
 export default AudioEngineService.getInstance();
