@@ -77,9 +77,10 @@ export class PlayerPage {
 	}
 
 	/**
-	 * [FIXED] Sets the value of a Skeleton UI RangeSlider using the idiomatic `.fill()` method.
-	 * This is more robust than simulating mouse drags as it programmatically sets the
-	 * value and correctly dispatches the 'input' and 'change' events.
+	 * [FIXED] Sets the value of a Skeleton UI RangeSlider programmatically.
+	 * Using .fill() fails on range inputs with float values. This method directly
+	 * sets the element's value and dispatches the necessary events to trigger
+	 * Svelte's reactivity and the component's event handlers.
 	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
 	 * @param {string} valueStr - The target value as a string.
 	 */
@@ -87,9 +88,14 @@ export class PlayerPage {
 		const testId = await sliderInputLocator.getAttribute('data-testid');
 		console.log(`[TEST LOG] Setting slider '${testId}' to value: ${valueStr}`);
 
-		// The .fill() method is the correct and robust way to set the value for
-		// <input type="range"> and trigger the necessary 'input' events.
-		await sliderInputLocator.fill(valueStr);
+		// Use page.evaluate to directly set the value and dispatch events.
+		await sliderInputLocator.evaluate((element, value) => {
+			element.value = value;
+			// Dispatch 'input' to trigger the on:input binding in Svelte.
+			element.dispatchEvent(new Event('input', { bubbles: true }));
+			// Dispatch 'change' as a good practice for sliders.
+			element.dispatchEvent(new Event('change', { bubbles: true }));
+		}, valueStr);
 
 		// A small delay for debounced functions in the Svelte store to fire.
 		await this.page.waitForTimeout(350);
