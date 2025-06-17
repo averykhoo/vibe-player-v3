@@ -1,5 +1,5 @@
 // vibe-player-v2/src/lib/services/dtmf.service.ts
-import { browser } from "$app/environment"; // <-- ADD THIS IMPORT
+import { browser } from "$app/environment";
 import DtmfWorker from "$lib/workers/dtmf.worker?worker&inline";
 import { dtmfStore } from "$lib/stores/dtmf.store";
 
@@ -89,6 +89,9 @@ class DtmfService {
     try {
       const resampled = await offlineCtx.startRendering();
       const pcmData = resampled.getChannelData(0);
+      console.log(
+        `[DtmfService] Resampled audio to ${pcmData.length} samples. Sending to worker.`,
+      );
       this.worker?.postMessage({ type: "process", payload: { pcmData } });
     } catch (e) {
       const error = e as Error;

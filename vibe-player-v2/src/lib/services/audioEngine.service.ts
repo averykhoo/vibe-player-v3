@@ -56,6 +56,7 @@ class AudioEngineService {
     audioFileBuffer: ArrayBuffer,
     fileName: string,
   ): Promise<void> {
+    console.log(`[AudioEngineService] loadFile called for: ${fileName}`);
     if (
       !audioFileBuffer ||
       !(audioFileBuffer instanceof ArrayBuffer) ||
@@ -78,7 +79,9 @@ class AudioEngineService {
     }));
 
     try {
+      console.log(`[AudioEngineService] Decoding audio data...`);
       this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
+      console.log(`[AudioEngineService] Audio decoded successfully.`);
 
       // --- START: NEW WORKER INITIALIZATION LOGIC ---
       // If worker doesn't exist, create it.
@@ -115,6 +118,7 @@ class AudioEngineService {
         { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [wasmBinary],
       );
+      console.log(`[AudioEngineService] Posting INIT message to worker.`);
       // --- END: NEW WORKER INITIALIZATION LOGIC ---
 
       // The rest of this method (waveform generation, store updates) remains the same...
@@ -127,6 +131,9 @@ class AudioEngineService {
         audioBuffer: this.originalBuffer,
         waveformData: waveformDisplayData,
       }));
+      console.log(
+        `[AudioEngineService] playerStore updated with status: 'Initializing processor...'`,
+      );
       analysisStore.set({});
     } catch (e) {
       const error = e as Error;
@@ -583,6 +590,9 @@ class AudioEngineService {
         isPlayable: true,
         status: `Ready: ${s.fileName}`,
       }));
+      console.log(
+        "[AudioEngineService] Worker is initialized. Updating store status to 'Ready'.",
+      );
     } else if (type === RB_WORKER_MSG_TYPE.ERROR) {
       const errorPayload = payload as WorkerErrorPayload;
       console.error("AudioEngine Worker Error:", errorPayload.message);
