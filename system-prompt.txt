@@ -235,17 +235,25 @@ jobs:
         working-directory: ./vibe-player-v2
         run: npm run build
 
-      - name: Cache Playwright browsers
-        id: cache-playwright-browsers
-        uses: actions/cache@v4
+      - name: Restore Playwright cache
+        id: cache-playwright-restore # <-- Important ID
+        uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/ms-playwright
+          path: /home/runner/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2/package-lock.json') }}
-          save-always: true # Force save even if the job fails
 
       - name: Install Playwright and OS dependencies
+        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
         working-directory: ./vibe-player-v2
         run: npx playwright install --with-deps
+
+      - name: Save Playwright cache
+        if: always() && steps.cache-playwright-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          # Use the exact key from the restore step to ensure consistency.
+          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key }}
+          path: /home/runner/.cache/ms-playwright
 
       - name: Run Playwright E2E tests
         working-directory: ./vibe-player-v2
@@ -12235,7 +12243,10 @@ class AudioEngineService {
 	}
 
 	public async play(): Promise<void> {
-		// This check now correctly waits for worker confirmation.
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] PLAY called. Current state: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}`);
+		// --- END LOG ---
+
 		if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
 			console.warn('AudioEngine: Play command ignored. Not ready or already playing.');
 			return;
@@ -12379,6 +12390,10 @@ class AudioEngineService {
 	}
 
 	public async stop(): Promise<void> {
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] STOP called.`);
+		// --- END LOG ---
+
 		this.isStopping = true;
 		this.isPlaying = false;
 		if (this.worker) {
@@ -12396,6 +12411,10 @@ class AudioEngineService {
 	}
 
 	public pause(): void {
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] PAUSE called.`);
+		// --- END LOG ---
+
 		if (!this.isPlaying) return;
 		this.isPlaying = false;
 		playerStore.update((s) => ({
@@ -12406,6 +12425,10 @@ class AudioEngineService {
 	}
 
 	public async seek(time: number): Promise<void> {
+		// --- ADDED LOG ---
+		console.log(`[AudioEngineService] SEEK called. Time: ${time}`);
+		// --- END LOG ---
+
 		if (!this.originalBuffer || time < 0 || time > this.originalBuffer.duration) {
 			console.warn('AudioEngine: Seek time is out of bounds.');
 			return;
@@ -12533,7 +12556,7 @@ class AudioEngineService {
 			return;
 		}
 
-		const numberOfChannels = this.originalBuffer.numberOfChannels;
+    const numberOfChannels = this.originalBuffer.numberOfChannels;
 
 		// --- ADD A CONSOLE.ERROR FOR THE ORIGINAL BUG SCENARIO ---
 		if (processedChannels.length !== this.originalBuffer!.numberOfChannels) {
@@ -12575,7 +12598,7 @@ class AudioEngineService {
 			actualStartTime + chunkDuration - AUDIO_ENGINE_CONSTANTS.SCHEDULE_AHEAD_TIME_S;
 
 		bufferSource.onended = () => {
-			// console.log("ScheduleChunkPlayback: BufferSource ended. Current offset:", this.sourcePlaybackOffset, "Total duration:", this.originalBuffer!.duration);
+			console.log("ScheduleChunkPlayback: BufferSource ended. Current offset:", this.sourcePlaybackOffset, "Total duration:", this.originalBuffer!.duration);
 			if (
 				this.sourcePlaybackOffset >= this.originalBuffer!.duration &&
 				this.isPlaying
@@ -12587,7 +12610,7 @@ class AudioEngineService {
 					isPlaying: false,
 					status: `Finished: ${s.fileName}`
 				}));
-				// console.log("ScheduleChunkPlayback: Playback officially finished after buffer ended.");
+				console.log("ScheduleChunkPlayback: Playback officially finished after buffer ended.");
 			}
 			bufferSource.disconnect(); // Clean up
 		};
@@ -15772,16 +15795,38 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
 	/**
 	 * Handles seeking the audio when the user interacts with the seek slider.
+	 * This version is more robust, handling the playing state explicitly.
 	 * @param {Event} event - The input event from the RangeSlider.
 	 */
 	function handleSeek(event: Event) {
 		const target = event.target as HTMLInputElement;
+		if (!target) return; // Guard against null target
+
 		const time = parseFloat(target.value);
-		// --- ADD THIS GUARD ---
-		if (!isNaN(time)) {
-			audioEngineService.seek(time);
-		} else {
+		if (isNaN(time)) {
 			console.warn('handleSeek received a non-numeric value:', target.value);
+			return;
+		}
+
+		// --- START OF FIX ---
+		// Prevent a race condition in the audio engine by managing the playing state here.
+		const wasPlaying = get(playerStore).isPlaying;
+
+		// 1. Always pause before seeking to ensure a stable state.
+		if (wasPlaying) {
+			audioEngineService.pause();
+		}
+
+		// 2. Perform the seek operation. This is now guaranteed to happen while paused.
+			audioEngineService.seek(time);
+
+		// 3. If the audio was playing before, resume it.
+		//    We wrap this in a brief timeout to allow Svelte's reactivity to settle
+		//    after the state changes from pause() and seek(), preventing race conditions.
+		if (wasPlaying) {
+			setTimeout(() => {
+				audioEngineService.play();
+			}, 10); // A small delay is sufficient.
 		}
 		// --- END GUARD ---
 	}
@@ -17350,9 +17395,10 @@ export class PlayerPage {
 	}
 
 	/**
-	 * [FIXED] Sets the value of a Skeleton UI RangeSlider using the idiomatic `.fill()` method.
-	 * This is more robust than simulating mouse drags as it programmatically sets the
-	 * value and correctly dispatches the 'input' and 'change' events.
+	 * [FIXED] Sets the value of a Skeleton UI RangeSlider programmatically.
+	 * Using .fill() fails on range inputs with float values. This method directly
+	 * sets the element's value and dispatches the necessary events to trigger
+	 * Svelte's reactivity and the component's event handlers.
 	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
 	 * @param {string} valueStr - The target value as a string.
 	 */
@@ -17360,9 +17406,14 @@ export class PlayerPage {
 		const testId = await sliderInputLocator.getAttribute('data-testid');
 		console.log(`[TEST LOG] Setting slider '${testId}' to value: ${valueStr}`);
 
-		// The .fill() method is the correct and robust way to set the value for
-		// <input type="range"> and trigger the necessary 'input' events.
-		await sliderInputLocator.fill(valueStr);
+		// Use page.evaluate to directly set the value and dispatch events.
+		await sliderInputLocator.evaluate((element, value) => {
+			element.value = value;
+			// Dispatch 'input' to trigger the on:input binding in Svelte.
+			element.dispatchEvent(new Event('input', { bubbles: true }));
+			// Dispatch 'change' as a good practice for sliders.
+			element.dispatchEvent(new Event('change', { bubbles: true }));
+		}, valueStr);
 
 		// A small delay for debounced functions in the Svelte store to fire.
 		await this.page.waitForTimeout(350);
