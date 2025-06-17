@@ -44,8 +44,9 @@ jobs:
         id: cache-playwright-browsers
         uses: actions/cache@v4
         with:
-          path: /home/runner/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2/package-lock.json') }}
+          save-always: true # Force save even if the job fails
 
       - name: Install Playwright and OS dependencies
         working-directory: ./vibe-player-v2
