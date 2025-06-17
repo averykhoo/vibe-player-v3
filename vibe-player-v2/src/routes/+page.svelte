@@ -49,6 +49,8 @@
 
     // --- URL State Serialization Logic ---
     const serializeStateToUrl = () => {
+        console.log("[URL Serialization] Debounced update triggered."); // New log
+
         const pStore = get(playerStore);
         const aStore = get(analysisStore);
 
@@ -59,6 +61,8 @@
             [URL_HASH_KEYS.VAD_POSITIVE]: aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD ? aStore.vadPositiveThreshold.toFixed(2) : "",
             [URL_HASH_KEYS.VAD_NEGATIVE]: aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD ? aStore.vadNegativeThreshold.toFixed(2) : ""
         };
+
+        console.log("[URL Serialization] Generated params:", params); // New log
         updateUrlWithParams(params);
     };
 

@@ -3,7 +3,7 @@
 import { BROWSER } from "esm-env";
 
 /**
- * Updates the URL with the given parameters.
+ * Updates the browser's URL with the given parameters without reloading the page.
  * @param params The parameters to update the URL with.
  */
 export function updateUrlWithParams(params: Record<string, string>) {
@@ -16,7 +16,9 @@ export function updateUrlWithParams(params: Record<string, string>) {
       url.searchParams.set(key, value);
     }
   }
-  history.replaceState({}, "", url.toString());
+  const newUrl = url.toString();
+  console.log(`[URL Serialization] Updating URL to: ${newUrl}`);
+  history.replaceState({}, "", newUrl);
 }
 
 /**
