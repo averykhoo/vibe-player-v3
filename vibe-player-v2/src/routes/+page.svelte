@@ -161,6 +161,7 @@
 			name="seek"
 			bind:value={$playerStore.currentTime}
 			max={$playerStore.duration || 1}
+    		step="any"
 			on:input={handleSeek}
 			disabled={!$playerStore.isPlayable}
 			data-testid="seek-slider-input"
