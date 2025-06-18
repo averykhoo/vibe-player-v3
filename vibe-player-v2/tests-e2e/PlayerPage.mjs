@@ -77,39 +77,40 @@ export class PlayerPage {
 	}
 
 	/**
-	 * [FIXED] Sets the value of a Skeleton UI RangeSlider by simulating a direct click.
-	 * This correctly fires mousedown, input, and mouseup events.
+	 * [FIXED & LOGGING ADDED] Sets the value of a range slider by programmatically dispatching events.
+	 * This directly triggers the on:mousedown, on:input, and on:mouseup handlers in Svelte.
 	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
 	 * @param {string} valueStr - The target value as a string.
 	 */
 	async setSliderValue(sliderInputLocator, valueStr) {
 		const testId = await sliderInputLocator.getAttribute('data-testid');
-		console.log(`[TEST LOG] Simulating click on slider '${testId}' to set value: ${valueStr}`);
+		// Initial log from the test runner's context
+		console.log(`[TEST RUNNER] Setting slider '${testId}' to value: ${valueStr}`);
 
-		const targetValue = parseFloat(valueStr);
+		// Use page.evaluate to run code in the browser context, dispatching events on the element.
+		await sliderInputLocator.evaluate(
+			(element, { value, id }) => {
+				// These logs will appear in the browser console, captured by Playwright
+				
+				// 1. Dispatch 'mousedown'
+				console.log(`[BROWSER-SIDE LOG] Firing 'mousedown' on slider '${id}'`);
+				element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 
-		// Get the slider's bounding box to calculate click coordinates
-		const boundingBox = await sliderInputLocator.boundingBox();
-		if (!boundingBox) {
-			throw new Error(`Could not get bounding box for slider ${testId}`);
-		}
+				// 2. Set the value
+				element.value = value;
 
-		// Get the slider's min and max attributes
-		const { min, max } = await sliderInputLocator.evaluate((el) => ({
-			min: parseFloat(el.getAttribute('min') || '0'),
-			max: parseFloat(el.getAttribute('max') || '100')
-		}));
+				// 3. Dispatch 'input'
+				console.log(`[BROWSER-SIDE LOG] Firing 'input' on slider '${id}' with value=${value}`);
+				element.dispatchEvent(new Event('input', { bubbles: true }));
 
-		// Calculate the position to click on the slider track
-		const ratio = (targetValue - min) / (max - min);
-		const clickX = boundingBox.x + boundingBox.width * ratio;
-		const clickY = boundingBox.y + boundingBox.height / 2;
+				// 4. Dispatch 'mouseup'
+				console.log(`[BROWSER-SIDE LOG] Firing 'mouseup' on slider '${id}'`);
+				element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			},
+			{ value: valueStr, id: testId } // Pass both value and id into the browser context
+		);
 
-		// Perform the click. This single action simulates a user's mousedown/mouseup
-		// and will trigger the Svelte component's internal event handlers.
-		await this.page.mouse.click(clickX, clickY);
-
-		// A small delay for debounced functions in the Svelte store to fire.
+		// A small delay for debounced functions or other async updates in Svelte to fire.
 		await this.page.waitForTimeout(350);
 	}
 
