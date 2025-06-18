@@ -85,46 +85,50 @@ test.describe("Vibe Player V2 E2E", () => {
     expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
   });
 
-  test("should seek audio using the seek bar", async ({ page }) => {
+  test("should seek audio using the seek bar with pause-seek-resume behavior", async ({ page }) => {
     await playerPage.loadAudioFile(TEST_AUDIO_FILE);
     await playerPage.expectControlsToBeReadyForPlayback();
+
+    // 1. Start playback
     await playerPage.playButton.click();
+    await expect(playerPage.playButton).toHaveText('Pause');
 
-    await page.waitForFunction(
-      () =>
-        document.querySelector('[data-testid="time-display"]')?.textContent !==
-        "0:00 / 0:00",
-      null,
-      { timeout: 5000 },
-    );
+    // Wait for playback to start and time to advance a bit
+    await expect(playerPage.timeDisplay, "Playback did not start").not.toHaveText(/^0:00 \//, { timeout: 5000 });
 
-    const initialTimeText = await playerPage.timeDisplay.textContent();
-    const durationSeconds = parseTimeToSeconds(initialTimeText.split(" / ")[1]);
+    const timeBeforeSeek = await playerPage.getCurrentTime();
+    expect(timeBeforeSeek).toBeGreaterThan(0);
+
+    // 2. Initiate Seek to roughly the middle of the track
+    const durationText = (await playerPage.timeDisplay.textContent())?.split(" / ")[1];
+    const durationSeconds = parseTimeToSeconds(durationText);
     expect(durationSeconds).toBeGreaterThan(0);
 
-    const currentMax =
-      parseFloat(await playerPage.seekSliderInput.getAttribute("max")) ||
-      durationSeconds;
-    await playerPage.setSliderValue(
-      playerPage.seekSliderInput,
-      String(currentMax / 2),
-    );
+    const targetSeekTimeSeconds = durationSeconds / 2;
+    // PlayerPage.setSliderValue takes string, and it internally handles min/max attributes.
+    // We pass the desired absolute time value string.
+    await playerPage.setSliderValue(playerPage.seekSliderInput, String(targetSeekTimeSeconds));
 
-    await page.waitForTimeout(500);
+    // 3. Assert Playback Resumed and Seek Completion
+    // The setSliderValue includes a waitForTimeout(350) which should be enough for UI to reflect the post-seek state.
+    // Play button should indicate "Pause" meaning playback resumed.
+    await expect(playerPage.playButton, "Playback did not resume after seek").toHaveText('Pause');
 
-    const timeAfterSeekText = await playerPage.timeDisplay.textContent();
-    const currentTimeAfterSeek = parseTimeToSeconds(
-      timeAfterSeekText.split(" / ")[0],
-    );
-    const durationAfterSeek = parseTimeToSeconds(
-      timeAfterSeekText.split(" / ")[1],
-    );
+    // Check current time after seek.
+    const timeAfterSeek = await playerPage.getCurrentTime();
+    // Allow a tolerance (e.g., +/- 1 second) due to timing of updates and playback loop.
+    expect(timeAfterSeek).toBeCloseTo(targetSeekTimeSeconds, 0); // Using Playwright's default tolerance or specify with second arg
 
-    expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(
-      durationAfterSeek * 0.4,
-    );
-    expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
-    expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
+    // 4. Assert Playback is ongoing and time is advancing
+    await page.waitForTimeout(1000); // Wait for playback to continue for a second
+
+    const timeAfterResumeAndPlay = await playerPage.getCurrentTime();
+    // Check if time has advanced beyond the point of seek, considering potential small initial delay/buffering
+    expect(timeAfterResumeAndPlay, "Time did not advance after resuming playback").toBeGreaterThan(timeAfterSeek - 0.1); // allow for slight timing variance
+    expect(timeAfterResumeAndPlay).toBeGreaterThanOrEqual(targetSeekTimeSeconds);
+
+
+    await expect(playerPage.playButton, "Playback stopped after resuming and playing").toHaveText('Pause'); // Still playing
   });
 
   test("should detect and display DTMF tones", async ({ page }) => {

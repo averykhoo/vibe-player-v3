@@ -95,9 +95,11 @@ export class PlayerPage {
     }));
 
     const ratio = (targetValue - min) / (max - min);
-    // Ensure ratio is within [0, 1] to prevent clicking outside the slider track for out-of-bound values
-    const clampedRatio = Math.max(0, Math.min(1, ratio));
-    const clickX = boundingBox.x + boundingBox.width * clampedRatio;
+    let clickX = boundingBox.x + boundingBox.width * ratio;
+
+    // Ensure clickX is within the bounding box width
+    clickX = Math.max(boundingBox.x, Math.min(clickX, boundingBox.x + boundingBox.width));
+
     const clickY = boundingBox.y + boundingBox.height / 2;
 
     await this.page.mouse.click(clickX, clickY);
@@ -111,5 +113,32 @@ export class PlayerPage {
    */
   async getSliderInputValue(sliderInputLocator) {
     return sliderInputLocator.inputValue();
+  }
+
+  /**
+   * Gets the current playback time from the time display element.
+   * Assumes the time display format is "currentTimeFormatted / durationFormatted".
+   * @returns {Promise<number>} The current time in seconds.
+   */
+  async getCurrentTime() {
+    const timeDisplayText = await this.timeDisplay.textContent();
+    if (!timeDisplayText) throw new Error("Time display text content is empty or null.");
+
+    const timeParts = timeDisplayText.split(" / ");
+    if (timeParts.length < 1) throw new Error(`Unexpected time display format: ${timeDisplayText}`);
+
+    const currentTimeStr = timeParts[0].trim(); // "M:SS" or "H:MM:SS"
+    const segments = currentTimeStr.split(':').map(Number);
+    let currentTimeInSeconds = 0;
+    if (segments.length === 3) { // H:MM:SS
+        currentTimeInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
+    } else if (segments.length === 2) { // M:SS
+        currentTimeInSeconds = segments[0] * 60 + segments[1];
+    } else if (segments.length === 1) { // SS (less likely for current time but robust)
+        currentTimeInSeconds = segments[0];
+    } else {
+        throw new Error(`Unexpected current time segment format: ${currentTimeStr}`);
+    }
+    return currentTimeInSeconds;
   }
 }
