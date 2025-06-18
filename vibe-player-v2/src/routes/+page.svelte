@@ -44,6 +44,7 @@
 			console.warn('handleSeek received a non-numeric value:', target.value);
 			return;
 		}
+		console.log(`[+page.svelte] handleSeek called. Target time: ${time.toFixed(2)}s`);
 		// DELEGATE directly to the audioEngineService. It is designed to handle
 		// the pause/resume logic internally, making this much more robust.
 		audioEngineService.seek(time);
