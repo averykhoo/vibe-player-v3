@@ -77,42 +77,36 @@ export class PlayerPage {
 	}
 
 	/**
-	 * [FIXED & LOGGING ADDED] Sets the value of a range slider by programmatically dispatching events.
-	 * This directly triggers the on:mousedown, on:input, and on:mouseup handlers in Svelte.
-	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
+	 * [RE-RE-FIXED] The most robust method. Programmatically sets the value on the native input
+	 * element and then dispatches the events that the Svelte component handlers are listening for.
+	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
 	 * @param {string} valueStr - The target value as a string.
 	 */
 	async setSliderValue(sliderInputLocator, valueStr) {
 		const testId = await sliderInputLocator.getAttribute('data-testid');
-		// Initial log from the test runner's context
-		console.log(`[TEST RUNNER] Setting slider '${testId}' to value: ${valueStr}`);
+		console.log(`[TEST RUNNER] Forcing events on slider '${testId}' to value: ${valueStr}`);
 
 		// Use page.evaluate to run code in the browser context, dispatching events on the element.
-		await sliderInputLocator.evaluate(
-			(element, { value, id }) => {
-				// These logs will appear in the browser console, captured by Playwright
-				
-				// 1. Dispatch 'mousedown'
-				console.log(`[BROWSER-SIDE LOG] Firing 'mousedown' on slider '${id}'`);
-				element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+		await sliderInputLocator.evaluate((element, value) => {
+			const inputElement = element as HTMLInputElement;
 
-				// 2. Set the value
-				element.value = value;
+			// Log from the browser to confirm we're targeting the right element.
+			console.log(`[BROWSER-SIDE LOG] Firing 'mousedown' on input with id: '${inputElement.id}'`);
+			inputElement.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 
-				// 3. Dispatch 'input'
-				console.log(`[BROWSER-SIDE LOG] Firing 'input' on slider '${id}' with value=${value}`);
-				element.dispatchEvent(new Event('input', { bubbles: true }));
+			console.log(`[BROWSER-SIDE LOG] Setting value to ${value} and firing 'input'`);
+			inputElement.value = value;
+			inputElement.dispatchEvent(new Event('input', { bubbles: true }));
 
-				// 4. Dispatch 'mouseup'
-				console.log(`[BROWSER-SIDE LOG] Firing 'mouseup' on slider '${id}'`);
-				element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-			},
-			{ value: valueStr, id: testId } // Pass both value and id into the browser context
-		);
+			console.log(`[BROWSER-SIDE LOG] Firing 'mouseup'`);
+			inputElement.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+			
+		}, valueStr);
 
 		// A small delay for debounced functions or other async updates in Svelte to fire.
 		await this.page.waitForTimeout(350);
 	}
+
 
 	/**
 	 * Gets the current value of a slider input.
