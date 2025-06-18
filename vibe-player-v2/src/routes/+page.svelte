@@ -23,7 +23,7 @@
     import analysisService from '$lib/services/analysis.service';
     import dtmfService from '$lib/services/dtmf.service';
     import spectrogramService from '$lib/services/spectrogram.service';
-	import { VAD_CONSTANTS, URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants';
+	import { URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants'; // VAD_CONSTANTS removed
     import {playerStore} from '$lib/stores/player.store';
     import {analysisStore} from '$lib/stores/analysis.store';
     import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
@@ -73,35 +73,11 @@
     }
 
     onMount(() => {
-        // Initialize all services eagerly when the application component mounts.
-        // This is the most robust approach to ensure everything is ready.
-        console.log('Initializing all services onMount...');
-
-        // Initialize the analysis service, which prepares the SileroVAD worker.
-        analysisService.initialize();
-
-        // Initialize the DTMF service and its worker.
-        dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
+        console.log('[+page.svelte] onMount: Initializing AudioOrchestrator.');
 
         // Initialize AudioOrchestrator and its URL handling capabilities
-        const audioOrchestrator = AudioOrchestrator.getInstance();
-        audioOrchestrator.setupUrlSerialization(); // Sets up reactions to store changes for URL params
-        audioOrchestrator.loadUrlOrDefault(); // Attempts to load from URL or default
-
-        // The existing subscription to playerStore for DTMF and Spectrogram initialization can remain.
-        // AudioOrchestrator will populate playerStore, and these services react to that.
-        const unsubPlayerStoreForServices = playerStore.subscribe((state) => {
-            if (state.audioBuffer && state.analysisCompleted) { // Ensure analysis is done if DTMF relies on it
-                console.log('New audio buffer analyzed, triggering DTMF analysis service...');
-                dtmfService.process(state.audioBuffer);
-            }
-
-            // Initialize spectrogram service if conditions are met.
-            if (state.sampleRate && state.analysisCompleted && !get(analysisStore).spectrogramInitialized) {
-                console.log(`Initializing spectrogram service with sample rate: ${state.samplerate}, analysis completed.`);
-                spectrogramService.initialize({sampleRate: state.sampleRate});
-            }
-        });
+        const audioOrchestrator = AudioOrchestrator.getInstance(); // Ensure this is imported
+        audioOrchestrator.setupUrlSerialization();
 
         // Original keydown handler can remain if needed for global shortcuts
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -120,10 +96,9 @@
 
             // Dispose all services when the component is destroyed.
             audioEngineService.dispose();
-            analysisService.dispose();
-            dtmfService.dispose();
-            spectrogramService.dispose();
-            unsubPlayerStoreForServices(); // Renamed for clarity
+            analysisService.dispose(); // Keep for now
+            dtmfService.dispose(); // Keep for now
+            spectrogramService.dispose(); // Keep for now
         };
     });
 </script>

@@ -46,11 +46,13 @@ export const VAD_CONSTANTS: VadConstants = {
 export interface UiConstants {
   DEBOUNCE_HASH_UPDATE_MS: number;
   SYNC_DEBOUNCE_WAIT_MS: number;
+  URL_TIME_PRECISION: number; // Added
 }
 
 export const UI_CONSTANTS: UiConstants = {
   DEBOUNCE_HASH_UPDATE_MS: 500,
   SYNC_DEBOUNCE_WAIT_MS: 300,
+  URL_TIME_PRECISION: 2, // Added
 };
 
 export interface VisualizerConstants {
@@ -90,6 +92,7 @@ export const VISUALIZER_CONSTANTS: VisualizerConstants = {
 };
 
 export interface UrlHashKeys {
+  // Existing - keep them for now
   SPEED: string;
   PITCH: string;
   GAIN: string;
@@ -97,16 +100,39 @@ export interface UrlHashKeys {
   VAD_NEGATIVE: string;
   AUDIO_URL: string;
   TIME: string;
+
+  // New keys for the orchestrator
+  PLAYBACK_SPEED: string;
+  PITCH_SHIFT: string;
+  GAIN_LEVEL: string;
+  LOOP_ACTIVE: string;
+  LOOP_START: string;
+  LOOP_END: string;
+  CURRENT_TIME: string; // This will effectively override the old TIME for the new service
+  DTMF_ENABLED: string;
+  SPECTROGRAM_ENABLED: string;
 }
 
 export const URL_HASH_KEYS: UrlHashKeys = {
+  // Existing
   SPEED: "speed",
   PITCH: "pitch",
   GAIN: "gain",
   VAD_POSITIVE: "vadPositive",
   VAD_NEGATIVE: "vadNegative",
   AUDIO_URL: "url",
-  TIME: "time",
+  TIME: "time", // old key for time
+
+  // New keys for the orchestrator
+  PLAYBACK_SPEED: 's', // as per prompt example
+  PITCH_SHIFT: 'p',    // as per prompt example
+  GAIN_LEVEL: 'g',     // as per prompt example
+  LOOP_ACTIVE: 'la',   // as per prompt example
+  LOOP_START: 'ls',    // as per prompt example
+  LOOP_END: 'le',      // as per prompt example
+  CURRENT_TIME: 't',   // as per prompt example (overwrites old "time" for new service logic)
+  DTMF_ENABLED: 'de',  // as per prompt example
+  SPECTROGRAM_ENABLED: 'se', // as per prompt example
 };
 
 export interface DtmfConstants {

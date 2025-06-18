@@ -9,6 +9,8 @@ export interface AnalysisState {
   vadStateResetted?: boolean;
   vadError?: string | null;
   vadInitialized?: boolean; // To track VAD worker initialization status
+  vadPositiveThreshold?: number; // Added for VAD positive threshold
+  vadNegativeThreshold?: number; // Added for VAD negative threshold
 
   // Spectrogram related properties
   spectrogramStatus?: string; // e.g., "Spectrogram worker initializing..."

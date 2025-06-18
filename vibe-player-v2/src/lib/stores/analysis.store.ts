@@ -9,6 +9,8 @@ const initialState: AnalysisState = {
   vadStateResetted: undefined,
   vadError: null,
   vadInitialized: false,
+  vadPositiveThreshold: 0.5, // Default value
+  vadNegativeThreshold: 0.35, // Default value
 
   spectrogramStatus: undefined,
   spectrogramError: null,

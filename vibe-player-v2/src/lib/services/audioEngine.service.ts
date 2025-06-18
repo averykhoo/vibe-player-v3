@@ -123,39 +123,55 @@ class AudioEngineService {
       console.log(
         `[AudioEngineService] Audio decoded successfully for ${audioFile.name}. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`,
       );
-      // Clear any previous analysis data tied to the old buffer
-      analysisStore.set({});
+      // Initialize worker internally
+      await this._initializeWorkerIfNecessary(this.originalBuffer);
+
+      console.log(
+        `[AudioEngineService] Audio decoded and worker initialized successfully for ${audioFile.name}. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`,
+      );
       return this.originalBuffer;
     } catch (e) {
       const error = e as Error;
       console.error(
-        `[AudioEngineService] Error during audio decoding: ${error.message}`,
+        `[AudioEngineService] Error during audio decoding or worker init: ${error.message}`,
       );
       this.originalBuffer = null; // Ensure buffer is cleared on error
-      throw new Error(`Error decoding audio: ${error.message}`);
+      this.isWorkerInitialized = false; // Ensure worker state is reset
+      // Re-throw the error so Orchestrator can catch it
+      throw new Error(`Error decoding audio or initializing worker: ${error.message}`);
     }
   };
 
   /**
-   * Initializes the Rubberband Web Worker with the provided AudioBuffer's properties.
-   * This should be called after `loadFile` successfully decodes an audio file.
+   * Initializes the Rubberband Web Worker if necessary.
+   * This method is called internally after a file is loaded.
    * @param {AudioBuffer} audioBuffer - The AudioBuffer to initialize the worker with.
    * @returns {Promise<void>} A promise that resolves when the worker signals initialization success, or rejects on error.
    */
-  public initializeWorker = async (audioBuffer: AudioBuffer): Promise<void> => {
+  private _initializeWorkerIfNecessary = async (audioBuffer: AudioBuffer): Promise<void> => {
     return new Promise((resolve, reject) => {
-      console.log(`[AudioEngineService] Initializing worker...`);
+      console.log(`[AudioEngineService] Initializing worker if necessary...`);
       if (!audioBuffer) {
-        const errorMsg = "initializeWorker called with no AudioBuffer.";
-        console.error(`[AudioEngine] ${errorMsg}`);
+        const errorMsg = "_initializeWorkerIfNecessary called with no AudioBuffer.";
+        console.error(`[AudioEngineService] ${errorMsg}`);
         reject(new Error(errorMsg));
         return;
       }
 
+      // If worker is already initialized for the current buffer's specs (e.g. sampleRate, channels),
+      // we might not need to re-initialize fully, but a RESET is often safest.
+      // For now, we'll re-initialize or reset.
+      if (this.isWorkerInitialized && this.worker) {
+         console.log("[AudioEngineService] Worker already exists. Sending RESET and REINIT with new settings if necessary.");
+         // Potentially check if sampleRate or channels changed, otherwise a simple RESET might be enough.
+         // For simplicity here, we'll proceed with the full re-init logic path,
+         // which includes a RESET if the worker object already exists.
+      }
+
+
       if (!this.worker) {
         this.worker = new RubberbandWorker();
         this.worker.onmessage = (event) => {
-          // Modify handleWorkerMessage to use the promise's resolve/reject
           this.handleWorkerMessage(event, { resolve, reject });
         };
         this.worker.onerror = (err) => {
@@ -165,9 +181,10 @@ class AudioEngineService {
           reject(new Error("Worker error: " + (err.message || "Unknown worker error")));
         };
       } else {
+        // If worker exists, send RESET to clear its state before re-initializing
         this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
       }
-      this.isWorkerInitialized = false; // Set to false until INIT_SUCCESS is received
+      this.isWorkerInitialized = false; // Set to false until INIT_SUCCESS is received for the current init cycle
 
       Promise.all([
         fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL),
@@ -187,7 +204,7 @@ class AudioEngineService {
             sampleRate: audioBuffer.sampleRate,
             channels: audioBuffer.numberOfChannels,
             initialSpeed: get(playerStore).speed,
-            initialPitch: get(playerStore).pitch,
+            initialPitch: get(playerStore).pitchShift, // Corrected to pitchShift from playerStore
           };
 
           console.log(
@@ -212,7 +229,7 @@ class AudioEngineService {
 
   /**
    * Starts or resumes playback.
-   * Requires `loadFile` and `initializeWorker` to have been successfully called.
+   * Requires `loadFile` (which now includes worker initialization) to have been successfully called.
    */
   public play = async (): Promise<void> => {
     console.log(
@@ -220,7 +237,7 @@ class AudioEngineService {
     );
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
       console.warn(
-        "AudioEngine: Play command ignored. Not ready or already playing.",
+        "[AudioEngineService] Play command ignored. Not ready (originalBuffer or worker not initialized) or already playing.",
       );
       return;
     }
@@ -356,7 +373,7 @@ class AudioEngineService {
         payload: { pitch },
       });
     }
-    playerStore.update((s) => ({ ...s, pitch }));
+    playerStore.update((s) => ({ ...s, pitchShift: pitch })); // Corrected to pitchShift
   };
 
   /**

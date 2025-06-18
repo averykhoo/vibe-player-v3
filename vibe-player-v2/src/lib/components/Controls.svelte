@@ -13,16 +13,7 @@
 	import { analysisStore } from '$lib/stores/analysis.store';
 	import { get } from 'svelte/store'; // get is used by handlePlayPause
 
-	// Local state for VAD controls - these are not part of the current refactoring task.
-	let vadPositive = $analysisStore?.vadPositiveThreshold || 0.5;
-	let vadNegative = $analysisStore?.vadNegativeThreshold || 0.35;
-
-	// Subscriptions to keep local state in sync with the global store
-	// Only VAD-related subscriptions remain, as speed/pitch/gain are now directly bound to playerStore.
-	analysisStore.subscribe((val) => {
-		if (val.vadPositiveThreshold !== undefined) vadPositive = val.vadPositiveThreshold;
-		if (val.vadNegativeThreshold !== undefined) vadNegative = val.vadNegativeThreshold;
-	});
+	// VAD local state and subscriptions are removed to use direct store bindings.
 
 	/**
 	 * Toggles the playback state by calling the audioEngine service.
@@ -56,8 +47,8 @@
 	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updatePitch() {
-		console.log(`[Controls] User set pitch to: ${$playerStore.pitch.toFixed(1)}`);
-		audioEngine.setPitch($playerStore.pitch);
+		console.log(`[Controls] User set pitch to: ${$playerStore.pitchShift.toFixed(1)}`);
+		audioEngine.setPitch($playerStore.pitchShift);
 	}
 
 	/**
@@ -70,17 +61,18 @@
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update VAD thresholds in the store.
+	 * Called on slider input to update VAD thresholds in the store.
+	 * Values from $analysisStore are already updated by bind:value by the time this is called by on:input.
 	 */
 	function updateVadThresholds() {
-		// LOG: See what the VAD values are when this function is called.
 		console.log(
-			`[Controls.svelte] updateVadThresholds() called. Positive: ${vadPositive}, Negative: ${vadNegative}`
+			`[Controls.svelte] updateVadThresholds() called. Positive: ${$analysisStore.vadPositiveThreshold?.toFixed(2)}, Negative: ${$analysisStore.vadNegativeThreshold?.toFixed(2)}`
 		);
+		// This call ensures any reactive effects dependent on these store values are triggered.
 		analysisStore.update((s) => ({
 			...s,
-			vadPositiveThreshold: vadPositive,
-			vadNegativeThreshold: vadNegative
+			vadPositiveThreshold: $analysisStore.vadPositiveThreshold,
+			vadNegativeThreshold: $analysisStore.vadNegativeThreshold
 		}));
 	}
 </script>
@@ -122,12 +114,12 @@
 	</div>
 	<div>
 		<label for="pitchSlider" class="label" data-testid="pitch-value"
-			>Pitch: {$playerStore.pitch.toFixed(1)} semitones</label
+			>Pitch: {$playerStore.pitchShift.toFixed(1)} semitones</label
 		>
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
-			bind:value={$playerStore.pitch}
+			bind:value={$playerStore.pitchShift}
 			min={-12}
 			max={12}
 			step={0.1}
@@ -150,12 +142,12 @@
 	</div>
 	<div>
 		<label for="vadPositiveSlider" class="label" data-testid="vad-positive-value"
-			>VAD Positive Threshold: {vadPositive.toFixed(2)}</label
+			>VAD Positive Threshold: {$analysisStore.vadPositiveThreshold?.toFixed(2) || 'N/A'}</label
 		>
 		<RangeSlider
 			data-testid="vad-positive-slider-input"
 			name="vadPositiveSlider"
-			bind:value={vadPositive}
+			bind:value={$analysisStore.vadPositiveThreshold}
 			min={0.05}
 			max={0.95}
 			step={0.01}
@@ -164,12 +156,12 @@
 	</div>
 	<div>
 		<label for="vadNegativeSlider" class="label" data-testid="vad-negative-value"
-			>VAD Negative Threshold: {vadNegative.toFixed(2)}</label
+			>VAD Negative Threshold: {$analysisStore.vadNegativeThreshold?.toFixed(2) || 'N/A'}</label
 		>
 		<RangeSlider
 			data-testid="vad-negative-slider-input"
 			name="vadNegativeSlider"
-			bind:value={vadNegative}
+			bind:value={$analysisStore.vadNegativeThreshold}
 			min={0.05}
 			max={0.95}
 			step={0.01}
