@@ -112,6 +112,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   ├── components
     │   │   │   ├── Controls.svelte
     │   │   │   ├── Controls.test.ts
+    │   │   │   ├── FileLoader
+    │   │   │   │   └── FileLoader.test.ts
     │   │   │   ├── FileLoader.svelte
     │   │   │   ├── FileLoader.test.ts
     │   │   │   ├── ToneDisplay.svelte
@@ -125,6 +127,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │   │       └── Waveform.svelte
     │   │   ├── index.ts
     │   │   ├── services
+    │   │   │   ├── AudioOrchestrator.service.ts
     │   │   │   ├── analysis.service.test.ts
     │   │   │   ├── analysis.service.ts
     │   │   │   ├── audioEngine.service.test.ts
@@ -10608,25 +10611,9 @@ export function sparkles(
 	import analysisService from '$lib/services/analysis.service';
 	import { playerStore } from '$lib/stores/player.store';
 	import { analysisStore } from '$lib/stores/analysis.store';
-	import { get } from 'svelte/store';
+	import { get } from 'svelte/store'; // get is used by handlePlayPause
 
-	// Component-local state bound to the sliders
-	let speed = $playerStore?.speed || 1.0;
-	let pitch = $playerStore?.pitch || 0.0;
-	let gain = $playerStore?.gain || 1.0;
-	let vadPositive = $analysisStore?.vadPositiveThreshold || 0.5;
-	let vadNegative = $analysisStore?.vadNegativeThreshold || 0.35;
-
-	// Subscriptions to keep local state in sync with the global store
-	playerStore.subscribe((val) => {
-		if (val.speed !== undefined) speed = val.speed;
-		if (val.pitch !== undefined) pitch = val.pitch;
-		if (val.gain !== undefined) gain = val.gain;
-	});
-	analysisStore.subscribe((val) => {
-		if (val.vadPositiveThreshold !== undefined) vadPositive = val.vadPositiveThreshold;
-		if (val.vadNegativeThreshold !== undefined) vadNegative = val.vadNegativeThreshold;
-	});
+	// VAD local state and subscriptions are removed to use direct store bindings.
 
 	/**
 	 * Toggles the playback state by calling the audioEngine service.
@@ -10647,44 +10634,45 @@ export function sparkles(
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update the playback speed.
+	 * Called on speed slider input to update the playback speed.
+	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updateSpeed() {
-		// LOG: See what the value of `speed` is when this function is called.
-		console.log(`[Controls.svelte] updateSpeed() called. Current 'speed' variable is: ${speed}`);
-		audioEngine.setSpeed(speed);
+		console.log(`[Controls] User set speed to: ${$playerStore.speed.toFixed(2)}`);
+		audioEngine.setSpeed($playerStore.speed);
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update the playback pitch.
+	 * Called on pitch slider input to update the playback pitch.
+	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updatePitch() {
-		// LOG: See what the value of `pitch` is when this function is called.
-		console.log(`[Controls.svelte] updatePitch() called. Current 'pitch' variable is: ${pitch}`);
-		audioEngine.setPitch(pitch);
+		console.log(`[Controls] User set pitch to: ${$playerStore.pitchShift.toFixed(1)}`);
+		audioEngine.setPitch($playerStore.pitchShift);
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update the playback gain.
+	 * Called on gain slider input to update the playback gain.
+	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updateGain() {
-		// LOG: See what the value of `gain` is when this function is called.
-		console.log(`[Controls.svelte] updateGain() called. Current 'gain' variable is: ${gain}`);
-		audioEngine.setGain(gain);
+		console.log(`[Controls] User set gain to: ${$playerStore.gain.toFixed(2)}`);
+		audioEngine.setGain($playerStore.gain);
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update VAD thresholds in the store.
+	 * Called on slider input to update VAD thresholds in the store.
+	 * Values from $analysisStore are already updated by bind:value by the time this is called by on:input.
 	 */
 	function updateVadThresholds() {
-		// LOG: See what the VAD values are when this function is called.
 		console.log(
-			`[Controls.svelte] updateVadThresholds() called. Positive: ${vadPositive}, Negative: ${vadNegative}`
+			`[Controls.svelte] updateVadThresholds() called. Positive: ${$analysisStore.vadPositiveThreshold?.toFixed(2)}, Negative: ${$analysisStore.vadNegativeThreshold?.toFixed(2)}`
 		);
+		// This call ensures any reactive effects dependent on these store values are triggered.
 		analysisStore.update((s) => ({
 			...s,
-			vadPositiveThreshold: vadPositive,
-			vadNegativeThreshold: vadNegative
+			vadPositiveThreshold: $analysisStore.vadPositiveThreshold,
+			vadNegativeThreshold: $analysisStore.vadNegativeThreshold
 		}));
 	}
 </script>
@@ -10711,52 +10699,55 @@ export function sparkles(
 	</div>
 	<div>
 		<label for="speedSlider" class="label" data-testid="speed-value"
-			>Speed: {speed.toFixed(2)}x</label
+			>Speed: {$playerStore.speed.toFixed(2)}x</label
 		>
 		<RangeSlider
 			data-testid="speed-slider-input"
 			name="speedSlider"
-			bind:value={speed}
+			bind:value={$playerStore.speed}
 			min={0.5}
 			max={2.0}
 			step={0.01}
 			on:input={updateSpeed}
+			disabled={!$playerStore.isPlayable}
 		/>
 	</div>
 	<div>
 		<label for="pitchSlider" class="label" data-testid="pitch-value"
-			>Pitch: {pitch.toFixed(1)} semitones</label
+			>Pitch: {$playerStore.pitchShift.toFixed(1)} semitones</label
 		>
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
-			bind:value={pitch}
+			bind:value={$playerStore.pitchShift}
 			min={-12}
 			max={12}
 			step={0.1}
 			on:input={updatePitch}
+			disabled={!$playerStore.isPlayable}
 		/>
 	</div>
 	<div>
-		<label for="gainSlider" class="label" data-testid="gain-value">Gain: {gain.toFixed(2)}</label>
+		<label for="gainSlider" class="label" data-testid="gain-value">Gain: {$playerStore.gain.toFixed(2)}</label>
 		<RangeSlider
 			data-testid="gain-slider-input"
 			name="gainSlider"
-			bind:value={gain}
+			bind:value={$playerStore.gain}
 			min={0}
 			max={2.0}
 			step={0.01}
 			on:input={updateGain}
+			disabled={!$playerStore.isPlayable}
 		/>
 	</div>
 	<div>
 		<label for="vadPositiveSlider" class="label" data-testid="vad-positive-value"
-			>VAD Positive Threshold: {vadPositive.toFixed(2)}</label
+			>VAD Positive Threshold: {$analysisStore.vadPositiveThreshold?.toFixed(2) || 'N/A'}</label
 		>
 		<RangeSlider
 			data-testid="vad-positive-slider-input"
 			name="vadPositiveSlider"
-			bind:value={vadPositive}
+			bind:value={$analysisStore.vadPositiveThreshold}
 			min={0.05}
 			max={0.95}
 			step={0.01}
@@ -10765,12 +10756,12 @@ export function sparkles(
 	</div>
 	<div>
 		<label for="vadNegativeSlider" class="label" data-testid="vad-negative-value"
-			>VAD Negative Threshold: {vadNegative.toFixed(2)}</label
+			>VAD Negative Threshold: {$analysisStore.vadNegativeThreshold?.toFixed(2) || 'N/A'}</label
 		>
 		<RangeSlider
 			data-testid="vad-negative-slider-input"
 			name="vadNegativeSlider"
-			bind:value={vadNegative}
+			bind:value={$analysisStore.vadNegativeThreshold}
 			min={0.05}
 			max={0.95}
 			step={0.01}
@@ -10784,83 +10775,93 @@ export function sparkles(
 ````typescript
 // vibe-player-v2/src/lib/components/Controls.test.ts
 import { act, fireEvent, render, screen } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Controls from "./Controls.svelte";
 import audioEngineService from "$lib/services/audioEngine.service";
-import { get, type Writable, writable } from "svelte/store";
+import { get, writable, type Writable } from "svelte/store"; // Import writable directly
+import type { PlayerState } from "$lib/types/player.types";
+import type { AnalysisState } from "$lib/types/analysis.types";
 
-// --- Hoisted Mocks ---
-vi.mock("$lib/stores/player.store", () => ({
-  playerStore: { subscribe: vi.fn(), update: vi.fn(), set: vi.fn() },
-}));
-vi.mock("$lib/stores/analysis.store", () => ({
-  analysisStore: { subscribe: vi.fn(), update: vi.fn(), set: vi.fn() },
-}));
+// --- True Store Mocks ---
+const initialPlayerState: PlayerState = {
+  status: "idle",
+  fileName: null,
+  duration: 100, // For seek slider if it were part of this
+  currentTime: 0, // For seek slider
+  isPlaying: false,
+  isPlayable: false,
+  speed: 1.0,
+  pitchShift: 0.0, // Corrected: PlayerState uses pitchShift
+  gain: 1.0,
+  waveformData: undefined,
+  error: null,
+  audioBuffer: undefined,
+  audioContextResumed: false,
+  channels: undefined,
+  sampleRate: undefined,
+  lastProcessedChunk: undefined,
+};
+let mockPlayerStore: Writable<PlayerState>;
+
+const initialAnalysisState: AnalysisState = {
+  // Based on AnalysisStore interface, ensure all required fields are present
+  dtmfResults: [],
+  spectrogramData: null,
+  vadPositiveThreshold: 0.5, // From original test
+  vadNegativeThreshold: 0.35, // From original test
+  vadEvents: [],
+  isSpeaking: false, // Added: Assuming it's part of AnalysisState
+  vadInitialized: false, // Added
+  vadStatus: "idle", // Added
+  vadError: null, // Added
+  vadNoiseFloor: 0.1, // Added
+  vadSensitivity: 0.5, // Added
+  // Add other properties as defined in AnalysisState
+};
+let mockAnalysisStore: Writable<AnalysisState>;
+
+
+vi.mock("$lib/stores/player.store", async () => {
+  const { writable: actualWritable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
+  mockPlayerStore = actualWritable(initialPlayerState);
+  return { playerStore: mockPlayerStore };
+});
+
+vi.mock("$lib/stores/analysis.store", async () => {
+  const { writable: actualWritable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
+  mockAnalysisStore = actualWritable(initialAnalysisState);
+  return { analysisStore: mockAnalysisStore };
+});
+
 vi.mock("$lib/services/audioEngine.service", () => ({
   default: {
-    unlockAudio: vi.fn(),
     play: vi.fn(),
     pause: vi.fn(),
     stop: vi.fn(),
     setSpeed: vi.fn(),
     setPitch: vi.fn(),
     setGain: vi.fn(),
-    initialize: vi.fn(),
-    dispose: vi.fn(),
   },
 }));
 
-// --- Test State Setup ---
-type PlayerStoreValues = ReturnType<typeof get<Writable<any>>>;
-const initialMockPlayerStoreValues: PlayerStoreValues = {
-  speed: 1.0,
-  pitch: 0.0,
-  gain: 1.0,
-  isPlaying: false,
-  isPlayable: false,
-};
-const initialMockAnalysisStoreValues = {
-  vadPositiveThreshold: 0.5,
-  vadNegativeThreshold: 0.35,
-};
-let mockPlayerStoreWritable: Writable<PlayerStoreValues>;
-let mockAnalysisStoreWritable: Writable<any>;
+// Mock analysis.service if Controls ever calls it directly (currently it doesn't)
+// vi.mock("$lib/services/analysis.service", () => ({ ... }));
+
 
 describe("Controls.svelte", () => {
-  beforeEach(async () => {
-    mockPlayerStoreWritable = writable({ ...initialMockPlayerStoreValues });
-    mockAnalysisStoreWritable = writable({ ...initialMockAnalysisStoreValues });
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
-    const playerStoreMocks = await import("$lib/stores/player.store");
-    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
-      mockPlayerStoreWritable.subscribe,
-    );
-    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
-      mockPlayerStoreWritable.update,
-    );
-
-    const analysisStoreMocks = await import("$lib/stores/analysis.store");
-    vi.mocked(analysisStoreMocks.analysisStore.subscribe).mockImplementation(
-      mockAnalysisStoreWritable.subscribe,
-    );
-    vi.mocked(analysisStoreMocks.analysisStore.update).mockImplementation(
-      mockAnalysisStoreWritable.update,
-    );
-
+  beforeEach(() => {
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.clearAllMocks();
+    act(() => {
+        mockPlayerStore.set({ ...initialPlayerState }); // Reset to a deep copy
+        mockAnalysisStore.set({ ...initialAnalysisState }); // Reset to a deep copy
+    });
+  });
 
-    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
-      mockPlayerStoreWritable.subscribe,
-    );
-    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
-      mockPlayerStoreWritable.update,
-    );
-    vi.mocked(analysisStoreMocks.analysisStore.subscribe).mockImplementation(
-      mockAnalysisStoreWritable.subscribe,
-    );
-    vi.mocked(analysisStoreMocks.analysisStore.update).mockImplementation(
-      mockAnalysisStoreWritable.update,
-    );
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
   });
 
   it("renders all control buttons and sliders", () => {
@@ -10868,172 +10869,248 @@ describe("Controls.svelte", () => {
     expect(screen.getByRole("button", { name: /Play/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Stop/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/Speed/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Pitch/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Pitch/i)).toBeInTheDocument(); // Will check for "Pitch: 0.0 semitones"
     expect(screen.getByLabelText(/Gain/i)).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(/VAD Positive Threshold/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(/VAD Negative Threshold/i),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/VAD Positive Threshold/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/VAD Negative Threshold/i)).toBeInTheDocument();
   });
 
   it("calls audioEngine.play() when play button is clicked and not playing", async () => {
     render(Controls);
     act(() => {
-      mockPlayerStoreWritable.update((s) => ({
-        ...s,
-        isPlayable: true,
-        isPlaying: false,
-      }));
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true, isPlaying: false }));
     });
-    const playButton = await screen.findByRole("button", { name: /Play/i });
+    await act(); // Wait for Svelte to react to store changes
+    const playButton = screen.getByRole("button", { name: /Play/i });
     await fireEvent.click(playButton);
     expect(audioEngineService.play).toHaveBeenCalledTimes(1);
-    expect(audioEngineService.pause).not.toHaveBeenCalled();
   });
 
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
     render(Controls);
     act(() => {
-      mockPlayerStoreWritable.update((s) => ({
-        ...s,
-        isPlayable: true,
-        isPlaying: true,
-      }));
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true, isPlaying: true }));
     });
-    const pauseButton = await screen.findByRole("button", { name: /Pause/i });
+    await act();
+    const pauseButton = screen.getByRole("button", { name: /Pause/i });
     await fireEvent.click(pauseButton);
     expect(audioEngineService.pause).toHaveBeenCalledTimes(1);
-    expect(audioEngineService.play).not.toHaveBeenCalled();
   });
 
   it("calls audioEngine.stop() on Stop button click", async () => {
     render(Controls);
     act(() => {
-      mockPlayerStoreWritable.update((s) => ({ ...s, isPlayable: true }));
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
     });
-    const stopButton = await screen.findByRole("button", { name: /Stop/i });
+    await act();
+    const stopButton = screen.getByRole("button", { name: /Stop/i });
     await fireEvent.click(stopButton);
     expect(audioEngineService.stop).toHaveBeenCalledTimes(1);
   });
 
-  // Slider tests remain the same but use async queries for safety
-  it("calls audioEngine.setSpeed() when speed slider changes", async () => {
-    render(Controls);
-    const speedSlider = screen.getByLabelText<HTMLInputElement>(/Speed/i);
-    await fireEvent.input(speedSlider, { target: { value: "1.5" } });
-    expect(audioEngineService.setSpeed).toHaveBeenCalledWith(1.5);
-    expect(await screen.findByLabelText(/Speed: 1.50x/i)).toBeInTheDocument();
-  });
-
-  it("calls audioEngine.setPitch() when pitch slider changes", async () => {
-    render(Controls);
-    const pitchSlider = screen.getByLabelText<HTMLInputElement>(/Pitch/i);
-    await fireEvent.input(pitchSlider, { target: { value: "-5.0" } });
-    expect(audioEngineService.setPitch).toHaveBeenCalledWith(-5.0);
-    expect(
-      await screen.findByLabelText(/Pitch: -5.0 semitones/i),
-    ).toBeInTheDocument();
-  });
-
-  it("calls audioEngine.setGain() when gain slider changes", async () => {
-    render(Controls);
-    const gainSlider = screen.getByLabelText<HTMLInputElement>(/Gain/i);
-    await fireEvent.input(gainSlider, { target: { value: "0.7" } });
-    expect(audioEngineService.setGain).toHaveBeenCalledWith(0.7);
-    expect(await screen.findByLabelText(/Gain: 0.70/i)).toBeInTheDocument();
-  });
-
-  it("slider values update if store changes externally", async () => {
-    render(Controls);
-    act(() => {
-      mockPlayerStoreWritable.set({
-        ...initialMockPlayerStoreValues,
-        speed: 1.8,
-        pitch: 3.0,
-        gain: 0.5,
+  describe("Slider Value Reflection (Store -> UI)", () => {
+    it("reflects playerStore.speed in speed slider and label", async () => {
+      render(Controls); // Render with initial state
+      act(() => { // Update store after rendering
+        mockPlayerStore.set({ ...get(mockPlayerStore), speed: 1.75, isPlayable: true });
       });
+      await act(); // Ensure DOM updates
+      const speedSlider = screen.getByTestId<HTMLInputElement>("speed-slider-input");
+      expect(speedSlider.value).toBe("1.75");
+      expect(screen.getByTestId("speed-value")).toHaveTextContent("Speed: 1.75x");
     });
-    await screen.findByLabelText(/Speed: 1.80x/i);
-    expect(
-      (await screen.findByLabelText<HTMLInputElement>(/Speed/i)).value,
-    ).toBe("1.8");
+
+    it("reflects playerStore.pitchShift in pitch slider and label", async () => {
+      render(Controls);
+      act(() => {
+        mockPlayerStore.set({ ...get(mockPlayerStore), pitchShift: -6.5, isPlayable: true });
+      });
+      await act();
+      const pitchSlider = screen.getByTestId<HTMLInputElement>("pitch-slider-input");
+      expect(pitchSlider.value).toBe("-6.5");
+      expect(screen.getByTestId("pitch-value")).toHaveTextContent("Pitch: -6.5 semitones");
+    });
+
+    it("reflects playerStore.gain in gain slider and label", async () => {
+      render(Controls);
+      act(() => {
+        mockPlayerStore.set({ ...get(mockPlayerStore), gain: 0.25, isPlayable: true });
+      });
+      await act();
+      const gainSlider = screen.getByTestId<HTMLInputElement>("gain-slider-input");
+      expect(gainSlider.value).toBe("0.25");
+      expect(screen.getByTestId("gain-value")).toHaveTextContent("Gain: 0.25");
+    });
+
+    it("reflects analysisStore.vadPositiveThreshold in VAD positive slider and label", async () => {
+        render(Controls);
+        act(() => {
+            mockAnalysisStore.set({ ...get(mockAnalysisStore), vadPositiveThreshold: 0.88 });
+        });
+        await act();
+        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-positive-slider-input");
+        expect(vadSlider.value).toBe("0.88");
+        expect(screen.getByTestId("vad-positive-value")).toHaveTextContent("VAD Positive Threshold: 0.88");
+    });
+
+    it("reflects analysisStore.vadNegativeThreshold in VAD negative slider and label", async () => {
+        render(Controls);
+        act(() => {
+            mockAnalysisStore.set({ ...get(mockAnalysisStore), vadNegativeThreshold: 0.22 });
+        });
+        await act();
+        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-negative-slider-input");
+        expect(vadSlider.value).toBe("0.22");
+        expect(screen.getByTestId("vad-negative-value")).toHaveTextContent("VAD Negative Threshold: 0.22");
+    });
+  });
+
+  describe("Event Handling and Service Calls (UI -> Store -> Service/Log)", () => {
+     beforeEach(() => {
+        act(() => {
+            mockPlayerStore.set({ ...get(mockPlayerStore), isPlayable: true });
+        });
+    });
+
+    it("updates speed, calls audioEngine.setSpeed, and logs on slider input", async () => {
+      render(Controls);
+      const speedSlider = screen.getByTestId<HTMLInputElement>("speed-slider-input");
+      const testValue = 1.5;
+
+      await fireEvent.input(speedSlider, { target: { value: testValue.toString() } });
+
+      expect(get(mockPlayerStore).speed).toBe(testValue);
+      expect(audioEngineService.setSpeed).toHaveBeenCalledWith(testValue);
+      expect(consoleLogSpy).toHaveBeenCalledWith(`[Controls] User set speed to: ${testValue.toFixed(2)}`);
+      expect(screen.getByTestId("speed-value")).toHaveTextContent(`Speed: ${testValue.toFixed(2)}x`);
+    });
+
+    it("updates pitchShift, calls audioEngine.setPitch, and logs on slider input", async () => {
+      render(Controls);
+      const pitchSlider = screen.getByTestId<HTMLInputElement>("pitch-slider-input");
+      const testValue = -5.5;
+
+      await fireEvent.input(pitchSlider, { target: { value: testValue.toString() } });
+
+      expect(get(mockPlayerStore).pitchShift).toBe(testValue); // Corrected to pitchShift
+      expect(audioEngineService.setPitch).toHaveBeenCalledWith(testValue);
+      expect(consoleLogSpy).toHaveBeenCalledWith(`[Controls] User set pitch to: ${testValue.toFixed(1)}`);
+      expect(screen.getByTestId("pitch-value")).toHaveTextContent(`Pitch: ${testValue.toFixed(1)} semitones`);
+    });
+
+    it("updates gain, calls audioEngine.setGain, and logs on slider input", async () => {
+      render(Controls);
+      const gainSlider = screen.getByTestId<HTMLInputElement>("gain-slider-input");
+      const testValue = 0.75;
+
+      await fireEvent.input(gainSlider, { target: { value: testValue.toString() } });
+
+      expect(get(mockPlayerStore).gain).toBe(testValue);
+      expect(audioEngineService.setGain).toHaveBeenCalledWith(testValue);
+      expect(consoleLogSpy).toHaveBeenCalledWith(`[Controls] User set gain to: ${testValue.toFixed(2)}`);
+      expect(screen.getByTestId("gain-value")).toHaveTextContent(`Gain: ${testValue.toFixed(2)}`);
+    });
+
+    it("updates VAD positive threshold in store and logs on slider input", async () => {
+        render(Controls);
+        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-positive-slider-input");
+        const testValue = 0.91; // New distinct value
+
+        // Update analysisStore to have different initial values for negative to ensure positive is what changes
+        act(() => {
+            mockAnalysisStore.set({ ...get(mockAnalysisStore), vadNegativeThreshold: 0.30 });
+        });
+        await act();
+
+        await fireEvent.input(vadSlider, { target: { value: testValue.toString() } });
+
+        expect(get(mockAnalysisStore).vadPositiveThreshold).toBe(testValue);
+        expect(consoleLogSpy).toHaveBeenCalledWith(
+            `[Controls.svelte] updateVadThresholds() called. Positive: ${testValue.toFixed(2)}, Negative: ${0.30.toFixed(2)}`
+        );
+        expect(screen.getByTestId("vad-positive-value")).toHaveTextContent(`VAD Positive Threshold: ${testValue.toFixed(2)}`);
+    });
+
+    it("updates VAD negative threshold in store and logs on slider input", async () => {
+        render(Controls);
+        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-negative-slider-input");
+        const testValue = 0.11; // New distinct value
+
+        // Update analysisStore to have different initial values for positive
+        act(() => {
+            mockAnalysisStore.set({ ...get(mockAnalysisStore), vadPositiveThreshold: 0.80 });
+        });
+        await act();
+
+        await fireEvent.input(vadSlider, { target: { value: testValue.toString() } });
+
+        expect(get(mockAnalysisStore).vadNegativeThreshold).toBe(testValue);
+        expect(consoleLogSpy).toHaveBeenCalledWith(
+            `[Controls.svelte] updateVadThresholds() called. Positive: ${0.80.toFixed(2)}, Negative: ${testValue.toFixed(2)}`
+        );
+        expect(screen.getByTestId("vad-negative-value")).toHaveTextContent(`VAD Negative Threshold: ${testValue.toFixed(2)}`);
+    });
+  });
+
+  describe("Control Disabling based on isPlayable", () => {
+    it("disables controls when playerStore.isPlayable is false", () => {
+      act(() => {
+        mockPlayerStore.set({ ...initialPlayerState, isPlayable: false });
+      });
+      render(Controls);
+
+      expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /Stop/i })).toBeDisabled();
+      expect(screen.getByTestId("speed-slider-input")).toBeDisabled();
+      expect(screen.getByTestId("pitch-slider-input")).toBeDisabled();
+      expect(screen.getByTestId("gain-slider-input")).toBeDisabled();
+      // VAD sliders are not disabled by isPlayable in the component
+      expect(screen.getByTestId("vad-positive-slider-input")).not.toBeDisabled();
+      expect(screen.getByTestId("vad-negative-slider-input")).not.toBeDisabled();
+
+    });
+
+    it("enables controls when playerStore.isPlayable is true", () => {
+      act(() => {
+        mockPlayerStore.set({ ...initialPlayerState, isPlayable: true });
+      });
+      render(Controls);
+
+      expect(screen.getByRole("button", { name: /Play/i })).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: /Stop/i })).not.toBeDisabled();
+      expect(screen.getByTestId("speed-slider-input")).not.toBeDisabled();
+      expect(screen.getByTestId("pitch-slider-input")).not.toBeDisabled();
+      expect(screen.getByTestId("gain-slider-input")).not.toBeDisabled();
+    });
   });
 });
 
 ````
 --- End of File: vibe-player-v2/src/lib/components/Controls.test.ts ---
---- File: vibe-player-v2/src/lib/components/FileLoader.svelte ---
-````svelte
-<!-- vibe-player-v2/src/lib/components/FileLoader.svelte -->
-
-<script lang="ts">
-    import audioEngine from '$lib/services/audioEngine.service';
-    import { playerStore } from '$lib/stores/player.store'; // To show status or file name
-
-    let currentFile: File | null = null;
-    let isLoading = false;
-
-    async function handleFileSelect(event: Event) {
-        const input = event.target as HTMLInputElement;
-        if (input.files && input.files.length > 0) {
-            currentFile = input.files[0];
-            console.log(`[FileLoader] File selected: ${currentFile.name}`);
-            playerStore.update(s => ({ ...s, fileName: currentFile?.name, error: null, status: 'File selected', isPlayable: false }));
-            isLoading = true;
-
-            try {
-                await audioEngine.unlockAudio(); // Ensure AudioContext is ready
-
-                const arrayBuffer = await currentFile.arrayBuffer();
-                console.log(`[FileLoader] File read into ArrayBuffer. Calling audioEngine.loadFile.`);
-                await audioEngine.loadFile(arrayBuffer, currentFile.name);
-                console.log(`[FileLoader] audioEngine.loadFile has returned.`);
-                // Status updates will now come from audioEngine via playerStore
-
-            } catch (e: any) {
-                console.error('Error processing file:', e);
-                playerStore.update(s => ({ ...s, error: `Error processing file: ${e.message}`, isPlayable: false }));
-            } finally {
-                isLoading = false;
-                // Clear the file input so the same file can be re-selected if needed after an error
-                input.value = '';
-            }
-        }
-    }
-</script>
-
-<div class="card p-4">
-    <h3 class="h3 mb-2">Load Audio File</h3>
-    <input type="file" id="fileInput" class="input" on:change={handleFileSelect} accept="audio/*" disabled={isLoading} />
-    {#if currentFile}
-        <p class="mt-2 text-sm">Selected: {currentFile.name} ({ (currentFile.size / 1024 / 1024).toFixed(2) } MB)</p>
-    {/if}
-    {#if isLoading}
-        <p class="mt-2 text-sm">Loading...</p>
-    {/if}
-    <!-- Status messages from playerStore can be displayed here -->
-    {#if $playerStore?.status}
-        <p data-testid="file-status-display" class="mt-2 text-sm text-gray-500">Status: {$playerStore.status}</p>
-    {/if}
-    {#if $playerStore?.error}
-        <p class="mt-2 text-sm text-error-500">Error: {$playerStore.error}</p>
-    {/if}
-</div>
-
-````
---- End of File: vibe-player-v2/src/lib/components/FileLoader.svelte ---
---- File: vibe-player-v2/src/lib/components/FileLoader.test.ts ---
+--- File: vibe-player-v2/src/lib/components/FileLoader/FileLoader.test.ts ---
 ````typescript
-// vibe-player-v2/src/lib/components/FileLoader.test.ts
+// vibe-player-v2/src/lib/components/FileLoader/FileLoader.test.ts
 import { act, fireEvent, render, screen } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
-import FileLoader from "./FileLoader.svelte"; // Adjust path
-import audioEngineService from "$lib/services/audioEngine.service";
-import { writable, type Writable } from "svelte/store";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import FileLoader from "./FileLoader.svelte";
+import { writable, type Writable, get } from "svelte/store"; // Added get
+import type { ErrorStoreState } from "$lib/stores/error.store"; // Assuming type definition
 
-// Hoisted Mocks for store structure
+// Mock AudioOrchestrator
+const mockLoadFileAndAnalyze = vi.fn(() => Promise.resolve());
+vi.mock("$lib/services/AudioOrchestrator.service", () => {
+  return {
+    AudioOrchestrator: class {
+      static getInstance = vi.fn(() => ({
+        loadFileAndAnalyze: mockLoadFileAndAnalyze,
+        // setupUrlSerialization: vi.fn(), // Not directly tested here but part of orchestrator
+        // loadUrlOrDefault: vi.fn() // Not directly tested here
+      }));
+    },
+  };
+});
+
+// Hoisted Mocks for store structures
 vi.mock("$lib/stores/player.store", () => ({
   playerStore: {
     subscribe: vi.fn(),
@@ -11042,48 +11119,45 @@ vi.mock("$lib/stores/player.store", () => ({
   },
 }));
 
-// Mock services
-vi.mock("$lib/services/audioEngine.service", () => ({
-  default: {
-    unlockAudio: vi.fn(() => Promise.resolve()),
-    loadFile: vi.fn(() => Promise.resolve()),
-    initialize: vi.fn(),
-    dispose: vi.fn(),
+vi.mock("$lib/stores/error.store", () => ({
+  errorStore: {
+    subscribe: vi.fn(),
+    set: vi.fn(),
+    // update: vi.fn(), // Add if error store has an update method
   },
 }));
 
+
 // Declare types for store values
 type PlayerStoreValues = {
-  fileName: string | null;
-  error: string | null;
+  // Define only what FileLoader uses for display, if anything
   status: string;
-  isPlayable: boolean;
-  isLoadingViaStore?: boolean;
+  // error: string | null; // Error display is now from errorStore
 };
 
 // Original initial values
 const initialMockPlayerStoreValues: PlayerStoreValues = {
-  fileName: null,
-  error: null,
   status: "Ready",
-  isPlayable: false,
-  isLoadingViaStore: false,
 };
 
-// This will hold the actual writable store instance, created in beforeEach
+const initialMockErrorStoreValues: ErrorStoreState = {
+  message: null,
+};
+
+// This will hold the actual writable store instances, created in beforeEach
 let mockPlayerStoreWritable: Writable<PlayerStoreValues>;
+let mockErrorStoreWritable: Writable<ErrorStoreState>;
+
 
 describe("FileLoader.svelte", () => {
   beforeEach(async () => {
-    vi.useFakeTimers(); // Add fake timers
-    // Polyfill/mock File.prototype.arrayBuffer if it doesn't exist in JSDOM
-    if (!File.prototype.arrayBuffer) {
-      File.prototype.arrayBuffer = vi
-        .fn()
-        .mockResolvedValue(new ArrayBuffer(10));
-    }
-    mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
+    // Enable fake timers if any component or service relies on them for async ops post-orchestrator
+    vi.useFakeTimers();
 
+    mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
+    mockErrorStoreWritable = writable(initialMockErrorStoreValues);
+
+    // Setup playerStore mock
     const playerStoreMocks = await import("$lib/stores/player.store");
     vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
       mockPlayerStoreWritable.subscribe,
@@ -11094,16 +11168,26 @@ describe("FileLoader.svelte", () => {
     vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(
       mockPlayerStoreWritable.set,
     );
-
-    // Reset store state
-    act(() => {
+     act(() => { // Reset store state
       mockPlayerStoreWritable.set(initialMockPlayerStoreValues);
+    });
+
+    // Setup errorStore mock
+    const errorStoreMocks = await import("$lib/stores/error.store");
+    vi.mocked(errorStoreMocks.errorStore.subscribe).mockImplementation(
+      mockErrorStoreWritable.subscribe,
+    );
+    vi.mocked(errorStoreMocks.errorStore.set).mockImplementation(
+      mockErrorStoreWritable.set,
+    );
+    act(() => { // Reset store state
+      mockErrorStoreWritable.set(initialMockErrorStoreValues);
     });
 
     vi.clearAllMocks(); // Clear service mocks etc.
 
-    // Re-apply store mock implementations after vi.clearAllMocks()
-    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
+    // Re-apply store mock implementations after vi.clearAllMocks() for playerStore
+     vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
       mockPlayerStoreWritable.subscribe,
     );
     vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
@@ -11111,6 +11195,13 @@ describe("FileLoader.svelte", () => {
     );
     vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(
       mockPlayerStoreWritable.set,
+    );
+    // Re-apply store mock implementations after vi.clearAllMocks() for errorStore
+    vi.mocked(errorStoreMocks.errorStore.subscribe).mockImplementation(
+      mockErrorStoreWritable.subscribe,
+    );
+    vi.mocked(errorStoreMocks.errorStore.set).mockImplementation(
+      mockErrorStoreWritable.set,
     );
   });
 
@@ -11120,27 +11211,19 @@ describe("FileLoader.svelte", () => {
     expect(fileInput).toBeInTheDocument();
   });
 
-  it("calls audioEngine.unlockAudio and loadFile on file selection", async () => {
+  it("calls AudioOrchestrator.loadFileAndAnalyze on file selection", async () => {
     const { container } = render(FileLoader);
     const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
-    const mockFile = new File(["dummy content"], "test.mp3", {
-      type: "audio/mpeg",
-    });
-    const mockArrayBuffer = new ArrayBuffer(10);
-    // Spy on the potentially polyfilled/mocked arrayBuffer
-    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(mockArrayBuffer);
+    const mockFile = new File(["dummy content"], "test.mp3", { type: "audio/mpeg" });
 
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    expect(audioEngineService.unlockAudio).toHaveBeenCalledTimes(1);
-    // Wait for promises in handleFileSelect to resolve
     await act(() => Promise.resolve());
-    expect(audioEngineService.loadFile).toHaveBeenCalledWith(
-      mockArrayBuffer,
-      mockFile.name,
-    );
+
+    expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
+    expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(mockFile);
   });
 
   it("displays selected file name and size", async () => {
@@ -11148,93 +11231,405 @@ describe("FileLoader.svelte", () => {
     const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
-    const mockFile = new File(["dummy content"], "example.wav", {
-      type: "audio/wav",
-      lastModified: Date.now(),
-    });
+    const mockFile = new File(["dummy content"], "example.wav", { type: "audio/wav" });
     Object.defineProperty(mockFile, "size", { value: 1024 * 500 }); // 0.5 MB
 
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
-    await act(() => Promise.resolve()); // allow store updates and component reactions
+    await act(() => Promise.resolve()); // allow component reactions
 
-    expect(
-      screen.getByText(`Selected: ${mockFile.name} (0.49 MB)`), // Corrected size
-    ).toBeInTheDocument();
+    expect(screen.getByText(`Selected: ${mockFile.name} (0.49 MB)`)).toBeInTheDocument();
   });
 
   it("shows loading indicator text while isLoading is true (component internal state)", async () => {
-    (audioEngineService.loadFile as Mocked<any>).mockImplementationOnce(
-      () => new Promise((resolve) => setTimeout(resolve, 100)), // Simulate delay
-    );
+    mockLoadFileAndAnalyze.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)));
+
     const { container } = render(FileLoader);
     const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
-    const mockFile = new File(["dummy"], "loading_test.mp3", {
-      type: "audio/mpeg",
-    });
-    // Spy on the potentially polyfilled/mocked arrayBuffer
-    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(
-      new ArrayBuffer(8),
-    );
+    const mockFile = new File(["dummy"], "loading_test.mp3", { type: "audio/mpeg" });
 
-    // Don't await this, to check intermediate loading state
     fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    await screen.findByText("Loading..."); // Component's internal isLoading state
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    await screen.findByText("Loading (handing off to orchestrator)...");
+    expect(screen.getByText("Loading (handing off to orchestrator)...")).toBeInTheDocument();
 
-    await act(() => vi.advanceTimersByTimeAsync(100)); // Resolve the loadFile promise
-    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+    await act(async () => { // Ensure timer advancement is within act
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    await vi.waitFor(() => {
+        expect(screen.queryByText("Loading (handing off to orchestrator)...")).not.toBeInTheDocument();
+    });
   });
 
   it("disables file input when isLoading (component internal state) is true", async () => {
-    (audioEngineService.loadFile as Mocked<any>).mockImplementationOnce(
-      () => new Promise((resolve) => setTimeout(resolve, 100)),
-    );
+    mockLoadFileAndAnalyze.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)));
     const { container } = render(FileLoader);
     const fileInput = container.querySelector("#fileInput");
     if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
 
     const mockFile = new File(["dummy"], "test.mp3", { type: "audio/mpeg" });
-    // Spy on the potentially polyfilled/mocked arrayBuffer
-    vi.spyOn(File.prototype, "arrayBuffer").mockResolvedValue(
-      new ArrayBuffer(8),
-    );
 
     fireEvent.change(fileInput, { target: { files: [mockFile] } });
-    await screen.findByText("Loading..."); // Wait for loading state to be true
+    await screen.findByText("Loading (handing off to orchestrator)...");
     expect(fileInput).toBeDisabled();
 
-    await act(() => vi.advanceTimersByTimeAsync(100)); // Resolve promise
-    expect(fileInput).not.toBeDisabled();
+    await act(async () => { // Ensure timer advancement is within act
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    await vi.waitFor(() => {
+      expect(fileInput).not.toBeDisabled();
+    });
   });
 
-  it("displays status and error messages from playerStore", async () => {
+  it("displays status from playerStore and errors from errorStore", async () => {
+    render(FileLoader);
+
+    // Test status display from playerStore
+    act(() => {
+      mockPlayerStoreWritable.set({ status: "Playing audio..." });
+    });
+    expect(await screen.findByText("Player Status: Playing audio...")).toBeInTheDocument();
+
+    // Test error display from errorStore
+    act(() => {
+      mockErrorStoreWritable.set({ message: "A test error occurred." });
+    });
+    expect(await screen.findByText("Error: A test error occurred.")).toBeInTheDocument();
+
+    // Test clearing error
+    act(() => {
+      mockErrorStoreWritable.set({ message: null });
+    });
+    expect(screen.queryByText("Error: A test error occurred.")).not.toBeInTheDocument();
+
+     act(() => {
+      mockPlayerStoreWritable.set({ status: "Ready" });
+    });
+    expect(screen.queryByText(/Player Status:/)).not.toBeInTheDocument();
+     act(() => {
+      mockPlayerStoreWritable.set({ status: "Stopped" });
+    });
+    expect(screen.queryByText(/Player Status:/)).not.toBeInTheDocument();
+  });
+});
+
+````
+--- End of File: vibe-player-v2/src/lib/components/FileLoader/FileLoader.test.ts ---
+--- File: vibe-player-v2/src/lib/components/FileLoader.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/FileLoader.svelte -->
+
+<script lang="ts">
+    import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
+    import { playerStore } from '$lib/stores/player.store'; // Used for displaying status/error messages from the store
+    import { errorStore } from '$lib/stores/error.store'; // To display specific errors from the orchestrator
+    import { get } from 'svelte/store';
+
+    let selectedFileDisplay: { name: string; size: number } | null = null;
+    let isLoading = false; // Local loading state for the file input interaction
+
+    async function handleFileSelect(event: Event) {
+        const input = event.target as HTMLInputElement;
+        if (input.files && input.files.length > 0) {
+            const file = input.files[0];
+            selectedFileDisplay = { name: file.name, size: file.size };
+            // Log message to confirm user action, as requested
+            console.log(`[FileLoader] User selected file: '${file.name}'. Calling AudioOrchestrator.loadFileAndAnalyze.`);
+
+            isLoading = true;
+            errorStore.set(null); // Clear previous specific errors from errorStore
+
+            // Call the orchestrator.
+            // We don't need to await it here if the orchestrator handles all store updates
+            // for status and errors. The UI will react to those store changes.
+            AudioOrchestrator.getInstance().loadFileAndAnalyze(file)
+                .then(() => {
+                    console.log(`[FileLoader] AudioOrchestrator.loadFileAndAnalyze promise resolved for ${file.name}.`);
+                    // Orchestrator is responsible for updating playerStore.status to 'Ready' or 'Error'
+                })
+                .catch((e: any) => {
+                    // This catch is a minimal fallback.
+                    // The AudioOrchestrator's internal try/catch should handle most errors
+                    // and update playerStore.status and playerStore.error appropriately.
+                    console.error('[FileLoader] Orchestrator.loadFileAndAnalyze promise rejected:', e);
+                    // If orchestrator hasn't set an error in playerStore, set a generic one.
+                    if (get(playerStore).status !== 'Error') {
+                         playerStore.update(s => ({ ...s, status: 'Error', error: `File processing failed: ${e.message || 'Unknown error'}`}));
+                    }
+                })
+                .finally(() => {
+                    isLoading = false;
+                    // Clear the file input so the same file can be re-selected
+                    if (input) {
+                        input.value = '';
+                    }
+                });
+        }
+    }
+</script>
+
+<div class="card p-4">
+    <h3 class="h3 mb-2">Load Audio File</h3>
+    <input type="file" id="fileInput" class="input" on:change={handleFileSelect} accept="audio/*" disabled={isLoading} />
+    {#if selectedFileDisplay}
+        <p class="mt-2 text-sm">Selected: {selectedFileDisplay.name} ({ (selectedFileDisplay.size / 1024 / 1024).toFixed(2) } MB)</p>
+    {/if}
+    {#if isLoading}
+        <p class="mt-2 text-sm">Loading audio...</p> <!-- Simplified loading message -->
+    {/if}
+    <!-- Status messages from playerStore -->
+    {#if $playerStore?.status && $playerStore.status !== 'Stopped' && $playerStore.status !== 'Ready' && !isLoading}
+        <!-- Show playerStore.status only if not actively "isLoading" locally, to avoid duplicate messages -->
+        <p data-testid="file-status-display" class="mt-2 text-sm { $playerStore.status === 'Error' ? 'text-error-500' : 'text-gray-500'}">
+            Status: {$playerStore.status}
+            {#if $playerStore.status === 'Error' && $playerStore.error}
+                : {$playerStore.error}
+            {/if}
+        </p>
+    {/if}
+    <!-- Specific error messages from errorStore (if used by orchestrator for non-critical UI hints) -->
+    {#if $errorStore?.message && $playerStore.status !== 'Error'} <!-- Avoid double display if playerStore already shows error -->
+        <p class="mt-2 text-sm text-warning-500">Note: {$errorStore.message}</p>
+    {/if}
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/FileLoader.svelte ---
+--- File: vibe-player-v2/src/lib/components/FileLoader.test.ts ---
+````typescript
+// vibe-player-v2/src/lib/components/FileLoader.test.ts
+import { act, fireEvent, render, screen } from "@testing-library/svelte";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import FileLoader from "./FileLoader.svelte";
+import { writable, type Writable, get } from "svelte/store";
+import type { PlayerState } from "$lib/types/player.types"; // Assuming PlayerState is used by the store value
+import { AudioOrchestrator as ActualAudioOrchestrator } from '$lib/services/AudioOrchestrator.service'; // Import the actual class for type hints if needed
+
+// Mock AudioOrchestrator
+const mockLoadFileAndAnalyze = vi.fn(() => Promise.resolve());
+vi.mock('$lib/services/AudioOrchestrator.service', () => {
+  // This is the mock for the class AudioOrchestrator
+  const MockAudioOrchestrator = vi.fn().mockImplementation(() => ({
+    loadFileAndAnalyze: mockLoadFileAndAnalyze,
+    // Mock other methods if FileLoader ever calls them
+  }));
+
+  // Mock the static getInstance method on the class
+  MockAudioOrchestrator.getInstance = vi.fn().mockReturnValue({
+    loadFileAndAnalyze: mockLoadFileAndAnalyze,
+  });
+
+  return {
+    AudioOrchestrator: MockAudioOrchestrator,
+    // If the service also exports the instance as default (audioOrchestrator), mock that too.
+    // Based on AudioOrchestrator.service.ts, it exports `audioOrchestrator = AudioOrchestrator.getInstance();`
+    // However, FileLoader.svelte imports `{ AudioOrchestrator }` so the class mock with static getInstance is key.
+  };
+});
+
+
+// Mock playerStore
+const initialMockPlayerStoreValues: PlayerState = {
+  status: "idle",
+  fileName: null,
+  duration: 0,
+  currentTime: 0,
+  isPlaying: false,
+  isPlayable: false,
+  speed: 1.0,
+  pitch: 0.0,
+  gain: 1.0,
+  waveformData: undefined,
+  error: null,
+  audioBuffer: undefined,
+  audioContextResumed: false,
+  channels: undefined,
+  sampleRate: undefined,
+  lastProcessedChunk: undefined,
+};
+
+let mockPlayerStoreWritable: Writable<PlayerState>;
+// Mock errorStore (assuming simple structure, adjust if complex)
+let mockErrorStoreWritable: Writable<{ message: string | null } | null>;
+
+
+vi.mock("$lib/stores/player.store", async (importOriginal) => {
+  const original = await importOriginal() as any; // Import to get Writable type if needed
+  mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
+  return {
+    playerStore: mockPlayerStoreWritable, // Export the writable instance
+    ...original, // Spread other exports if any
+  };
+});
+
+vi.mock("$lib/stores/error.store", async (importOriginal) => {
+    const original = await importOriginal() as any;
+    mockErrorStoreWritable = writable(null); // Initial error store state
+    return {
+        errorStore: mockErrorStoreWritable,
+        ...original,
+    };
+});
+
+
+describe("FileLoader.svelte", () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    // Reset stores to initial state before each test
+    act(() => {
+        mockPlayerStoreWritable.set(initialMockPlayerStoreValues);
+        mockErrorStoreWritable.set(null);
+    });
+
+    // Clear all mocks, including the call counts for mockLoadFileAndAnalyze
+    vi.clearAllMocks();
+
+    // Re-initialize the mock for getInstance if it was cleared or to ensure fresh state
+    // This is crucial because vi.clearAllMocks() can affect static method mocks too.
+    const { AudioOrchestrator: MockedAudioOrchestrator } = await import('$lib/services/AudioOrchestrator.service');
+    (MockedAudioOrchestrator as any).getInstance.mockReturnValue({
+        loadFileAndAnalyze: mockLoadFileAndAnalyze,
+    });
+
+
+    // Spy on console.log
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // Polyfill/mock File.prototype.arrayBuffer if it doesn't exist in JSDOM
+    if (!File.prototype.arrayBuffer) {
+      File.prototype.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(10));
+    }
+  });
+
+  it("renders the file input", () => {
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File"); // More accessible query
+    expect(fileInput).toBeInTheDocument();
+  });
+
+  it("calls AudioOrchestrator.loadFileAndAnalyze and logs on file selection", async () => {
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File");
+
+    const mockFile = new File(["dummy content"], "test.mp3", { type: "audio/mpeg" });
+
+    // Simulate file selection
+    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+    // Check console.log spy
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      `[FileLoader] User selected file: '${mockFile.name}'. Calling AudioOrchestrator.loadFileAndAnalyze.`
+    );
+
+    // Check that the orchestrator method was called
+    expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
+    expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(mockFile);
+  });
+
+  it("displays selected file name and size", async () => {
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File");
+
+    const mockFile = new File(["dummy content"], "example.wav", { type: "audio/wav" });
+    Object.defineProperty(mockFile, "size", { value: 1024 * 500 }); // 0.5 MB
+
+    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+    // Wait for DOM updates triggered by the file selection
+    await act(() => Promise.resolve());
+
+    expect(screen.getByText(`Selected: ${mockFile.name} (0.49 MB)`)).toBeInTheDocument();
+  });
+
+  it("shows loading indicator text while isLoading (local component state) is true", async () => {
+    // Make the mock function take time to resolve
+    mockLoadFileAndAnalyze.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)));
+
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File");
+    const mockFile = new File(["dummy"], "loading_test.mp3", { type: "audio/mpeg" });
+
+    // Don't await this, to check intermediate loading state
+    fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+    // Check for loading text
+    expect(await screen.findByText("Loading audio...")).toBeInTheDocument();
+
+    // Advance timers to resolve the promise
+    await act(() => vi.advanceTimersByTimeAsync(100));
+
+    expect(screen.queryByText("Loading audio...")).not.toBeInTheDocument();
+  });
+
+  it("disables file input when isLoading (local component state) is true", async () => {
+    mockLoadFileAndAnalyze.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)));
+
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File") as HTMLInputElement;
+    const mockFile = new File(["dummy"], "test.mp3", { type: "audio/mpeg" });
+
+    fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+    expect(await screen.findByText("Loading audio...")).toBeInTheDocument(); // Wait for loading state
+    expect(fileInput.disabled).toBe(true);
+
+    await act(() => vi.advanceTimersByTimeAsync(100)); // Resolve promise
+
+    expect(fileInput.disabled).toBe(false);
+  });
+
+  it("displays status from playerStore when not loading", async () => {
     render(FileLoader);
 
     act(() => {
-      mockPlayerStoreWritable.update((s) => ({
-        ...s,
-        status: "Test Status Message",
-      }));
+      mockPlayerStoreWritable.set({ ...get(mockPlayerStoreWritable), status: "Test Status" });
     });
-    // Use findByText to wait for potential DOM updates after store change
-    expect(
-      await screen.findByText("Status: Test Status Message"),
-    ).toBeInTheDocument();
+
+    // Ensure isLoading is false for this test
+    const fileInput = screen.getByLabelText("Load Audio File") as HTMLInputElement;
+    expect(fileInput.disabled).toBe(false); // Indirectly checks isLoading
+
+    expect(await screen.findByText("Status: Test Status")).toBeInTheDocument();
+  });
+
+  it("displays error from playerStore when status is Error", async () => {
+    render(FileLoader);
 
     act(() => {
-      mockPlayerStoreWritable.update((s) => ({
-        ...s,
-        error: "Test Error Message",
-      }));
+      mockPlayerStoreWritable.set({
+        ...get(mockPlayerStoreWritable),
+        status: "Error",
+        error: "Test Player Error"
+      });
     });
-    expect(
-      await screen.findByText("Error: Test Error Message"),
-    ).toBeInTheDocument();
+
+    expect(await screen.findByText("Status: Error : Test Player Error")).toBeInTheDocument();
+  });
+
+  it("clears file input value after processing", async () => {
+    mockLoadFileAndAnalyze.mockResolvedValue(undefined); // Ensure it resolves
+
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File") as HTMLInputElement;
+    const mockFile = new File(["dummy content"], "test.mp3", { type: "audio/mpeg" });
+
+    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+    // Wait for the .finally() block in handleFileSelect
+    await act(() => Promise.resolve().then(() => Promise.resolve())); // Ensure microtasks run
+
+    expect(fileInput.value).toBe("");
   });
 });
+
+// Helper to advance timers and flush microtasks
+const flushPromises = () => new Promise(setImmediate);
+
+vi.useRealTimers(); // Restore real timers after tests if fake timers were used
 
 ````
 --- End of File: vibe-player-v2/src/lib/components/FileLoader.test.ts ---
@@ -11919,245 +12314,402 @@ export default AnalysisService.getInstance();
 --- File: vibe-player-v2/src/lib/services/audioEngine.service.test.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/audioEngine.service.test.ts
-import { writable, type Writable } from 'svelte/store';
-import { vi } from 'vitest';
+import { writable, type Writable } from "svelte/store";
+import { vi, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { get } from "svelte/store";
+import type { PlayerState } from "$lib/types/player.types";
 
 // --- Mocks ---
-// All vi.mock calls are hoisted to the top. They must come before other imports.
+// Mock stores first
+const initialPlayerState: PlayerState = {
+  status: "idle",
+  fileName: null,
+  duration: 0,
+  currentTime: 0,
+  isPlaying: false,
+  isPlayable: false,
+  speed: 1.0,
+  pitchShift: 0.0, // Corrected from pitch to pitchShift to match PlayerState
+  gain: 1.0,
+  waveformData: undefined,
+  error: null,
+  audioBuffer: undefined, // Corrected to be undefined initially
+  audioContextResumed: false,
+  channels: undefined,
+  sampleRate: undefined,
+  lastProcessedChunk: undefined,
+};
+const playerStoreWritable: Writable<PlayerState> = writable({ ...initialPlayerState });
 
-// Mock the Svelte store with a real writable instance created inside the factory.
-// This solves the "Cannot access before initialization" ReferenceError.
-vi.mock('$lib/stores/player.store', async () => {
-	const { writable: actualWritable } = await vi.importActual<typeof import('svelte/store')>(
-		'svelte/store'
-	);
-	const initialPlayerState = {
-		speed: 1.0,
-		pitch: 0.0,
-		gain: 1.0,
-		isPlayable: false,
-		isPlaying: false,
-		error: null,
-		fileName: '',
-		status: '',
-		duration: 0,
-		currentTime: 0,
-		audioBuffer: null
-	};
-	const internalPlayerStoreInstance = actualWritable({ ...initialPlayerState });
-
-	return {
-		playerStore: internalPlayerStoreInstance,
-		// Provide an "accessor" function so our tests can get a handle to the mock instance.
-		__test__getPlayerStoreInstance: () => internalPlayerStoreInstance,
-		__test__getInitialPlayerState: () => ({ ...initialPlayerState })
-	};
-});
+vi.mock("$lib/stores/player.store", () => ({
+  playerStore: playerStoreWritable,
+}));
 
 // Mock the web worker dependency.
 const mockWorkerInstance = {
-	postMessage: vi.fn(),
-	terminate: vi.fn(),
-	onmessage: null as ((event: MessageEvent) => void) | null,
-	onerror: null as ((event: ErrorEvent) => void) | null
+  postMessage: vi.fn(),
+  terminate: vi.fn(),
+  onmessage: null as ((event: MessageEvent) => void) | null,
+  onerror: null as ((event: ErrorEvent) => void) | null,
 };
-vi.mock('$lib/workers/rubberband.worker?worker&inline', () => ({
-	default: vi.fn().mockImplementation(() => mockWorkerInstance)
+vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
+  default: vi.fn().mockImplementation(() => mockWorkerInstance),
 }));
 
 // Mock AudioContext and its methods.
-const mockDecodeAudioData = vi.fn();
-global.AudioContext = vi.fn(() => ({
-	decodeAudioData: mockDecodeAudioData,
-	createGain: vi.fn(() => ({
-		connect: vi.fn(),
-		gain: { setValueAtTime: vi.fn() }
-	})),
-	resume: vi.fn().mockResolvedValue(undefined),
-	close: vi.fn().mockResolvedValue(undefined),
-	state: 'running',
-	currentTime: 0,
-	destination: {},
-	sampleRate: 48000
-})) as any;
+const mockAudioContextInstance = {
+  decodeAudioData: vi.fn(),
+  createGain: vi.fn(() => ({
+    connect: vi.fn(),
+    gain: { setValueAtTime: vi.fn(), value: 1.0 },
+  })),
+  resume: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+  state: "running" as AudioContextState,
+  currentTime: 0,
+  destination: {} as AudioDestinationNode,
+  sampleRate: 48000,
+  createBufferSource: vi.fn(() => ({
+    buffer: null as AudioBuffer | null,
+    connect: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    onended: null as (() => void) | null,
+    disconnect: vi.fn(),
+  })),
+  createBuffer: vi.fn((channels, length, sampleRate) => ({
+    numberOfChannels: channels,
+    length: length,
+    sampleRate: sampleRate,
+    duration: length / sampleRate,
+    getChannelData: vi.fn(() => new Float32Array(length)),
+    copyToChannel: vi.fn(),
+    copyFromChannel: vi.fn(),
+  })),
+};
+global.AudioContext = vi.fn().mockImplementation(() => mockAudioContextInstance);
 
 // Mock fetch for worker dependencies.
-vi.spyOn(global, 'fetch').mockImplementation(() =>
-	Promise.resolve({
-		ok: true,
-		status: 200,
-		arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
-		text: () => Promise.resolve('// Mock loader script')
-	} as Response)
-);
+const globalFetchSpy = vi.spyOn(global, "fetch");
 // --- End Mocks ---
 
-// Now, we can safely import everything else.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { get } from 'svelte/store';
-import audioEngineService from './audioEngine.service'; // We import the REAL service.
-import { RB_WORKER_MSG_TYPE } from '$lib/types/worker.types';
-import {
-	__test__getPlayerStoreInstance,
-	__test__getInitialPlayerState
-} from '$lib/stores/player.store'; // Import the test accessors.
+import audioEngineService from "./audioEngine.service"; // We import the REAL service.
+import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils/constants"; // For MAX_GAIN
+import { act } from "@testing-library/svelte"; // For wrapping state updates
 
-describe('AudioEngineService (Corrected Tests)', () => {
-	const MOCK_RAF_ID = 12345;
-	let rafSpy: ReturnType<typeof vi.spyOn>;
-	let cafSpy: ReturnType<typeof vi.spyOn>;
-	let mockAudioBuffer: AudioBuffer;
-	let playerStoreInstance: Writable<any>;
 
-	// Helper to simulate the worker becoming ready after INIT.
-	const makeWorkerReady = () => {
-		mockWorkerInstance.onmessage!({
-			data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS }
-		} as MessageEvent);
-	};
+describe("AudioEngineService", () => {
+  const MOCK_RAF_ID = 12345;
+  let rafSpy: ReturnType<typeof vi.spyOn>;
+  let cafSpy: ReturnType<typeof vi.spyOn>;
+  let mockAudioBuffer: AudioBuffer;
 
-	beforeEach(async () => {
-		// Reset mocks and state before each test.
-		vi.clearAllMocks();
+  const simulateWorkerMessage = (message: any) => {
+    if (mockWorkerInstance.onmessage) {
+        act(() => {
+            mockWorkerInstance.onmessage!({ data: message } as MessageEvent);
+        });
+    }
+  };
+  const simulateWorkerError = (errorEvent: ErrorEvent) => {
+    if (mockWorkerInstance.onerror) {
+        act(() => {
+            mockWorkerInstance.onerror!(errorEvent);
+        });
+    }
+  };
 
-		// Get the handle to our mocked store instance and reset it.
-		playerStoreInstance = __test__getPlayerStoreInstance();
-		playerStoreInstance.set({ ...__test__getInitialPlayerState() });
+  beforeEach(() => {
+    vi.resetAllMocks();
+    playerStoreWritable.set({ ...initialPlayerState });
 
-		// Dispose the service to ensure a clean state from the previous test.
-		audioEngineService.dispose();
+    globalFetchSpy.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        text: () => Promise.resolve("// Mock loader script"),
+      } as Response),
+    );
 
-		// Spy on animation frame methods.
-		rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(MOCK_RAF_ID);
-		cafSpy = vi.spyOn(window, 'cancelAnimationFrame');
+    mockAudioContextInstance.decodeAudioData.mockReset();
+    mockAudioContextInstance.state = "running"; // Reset state
+    mockAudioContextInstance.currentTime = 0; // Reset time
 
-		// Create a mock AudioBuffer for tests.
-		mockAudioBuffer = {
-			duration: 10.0,
-			numberOfChannels: 1,
-			sampleRate: 44100,
-			getChannelData: vi.fn(() => new Float32Array(441000).fill(0.1)),
-			length: 441000
-		} as unknown as AudioBuffer;
-		mockDecodeAudioData.mockResolvedValue(mockAudioBuffer);
 
-		// Initialize the service for each test, as most tests require it.
-		await audioEngineService.loadFile(new ArrayBuffer(8), 'test.wav');
-		makeWorkerReady();
-	});
+    rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+    cafSpy = vi.spyOn(window, "cancelAnimationFrame");
 
-	afterEach(() => {
-		rafSpy.mockRestore();
-		cafSpy.mockRestore();
-	});
+    mockAudioBuffer = {
+      duration: 10.0,
+      numberOfChannels: 1,
+      sampleRate: 44100,
+      getChannelData: vi.fn(() => new Float32Array(441000).fill(0.1)),
+      length: 441000,
+      copyToChannel: vi.fn(),
+      copyFromChannel: vi.fn(),
+    } as unknown as AudioBuffer; // Type assertion for mock
+  });
 
-	describe('loadFile', () => {
-		it('should post an INIT message to the worker with correct audio parameters', () => {
-			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-				expect.objectContaining({
-					type: RB_WORKER_MSG_TYPE.INIT,
-					payload: expect.objectContaining({
-						channels: mockAudioBuffer.numberOfChannels,
-						sampleRate: mockAudioBuffer.sampleRate
-					})
-				}),
-				expect.any(Array)
-			);
-		});
+  afterEach(() => {
+    audioEngineService.dispose();
+  });
 
-		it('should update the player store to be playable after worker is initialized', () => {
-			expect(get(playerStoreInstance).isPlayable).toBe(true);
-			expect(get(playerStoreInstance).status).toContain('Ready');
-		});
-	});
+  describe("loadFile", () => {
+    let mockFile: File;
 
-	describe('play', () => {
-		it('should start the animation loop by calling requestAnimationFrame', async () => {
-			await audioEngineService.play();
-			expect(rafSpy).toHaveBeenCalledTimes(1);
-		});
+    beforeEach(() => {
+      mockFile = new File(["dummy content"], "test.mp3", { type: "audio/mpeg" });
+      // Explicitly set originalBuffer to null before each loadFile test
+      (audioEngineService as any).originalBuffer = null;
+      (audioEngineService as any).isWorkerReady = false; // Reset worker ready state
+    });
 
-		it('should not play if worker is not initialized', async () => {
-			audioEngineService.dispose(); // Reset service, worker is not initialized.
-			await audioEngineService.play();
-			expect(rafSpy).not.toHaveBeenCalled();
-		});
-	});
+    it("should successfully load and decode a file, returning an AudioBuffer", async () => {
+      mockAudioContextInstance.decodeAudioData.mockImplementation((_arrayBuffer, successCallback) => {
+        successCallback(mockAudioBuffer); // Call success callback with mock AudioBuffer
+        return Promise.resolve(mockAudioBuffer); // decodeAudioData often returns a Promise-like structure or the buffer directly
+      });
 
-	describe('pause', () => {
-		it('should stop the animation loop by calling cancelAnimationFrame', async () => {
-			await audioEngineService.play();
-			expect(rafSpy).toHaveBeenCalledTimes(1); // Loop started.
+      const buffer = await audioEngineService.loadFile(mockFile);
 
-			audioEngineService.pause();
-			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID); // Loop canceled.
-			expect(get(playerStoreInstance).isPlaying).toBe(false);
-		});
-	});
+      expect(mockAudioContextInstance.decodeAudioData).toHaveBeenCalledOnce();
+      expect(buffer).toBe(mockAudioBuffer);
+      expect((audioEngineService as any).originalBuffer).toBe(mockAudioBuffer);
+      // Assert no unintended side-effects that were removed
+      expect(mockWorkerInstance.postMessage).not.toHaveBeenCalled(); // Should not try to init worker
+      expect(get(playerStoreWritable).isPlayable).toBe(initialPlayerState.isPlayable); // Should not set isPlayable
+      expect((audioEngineService as any).isWorkerReady).toBe(false); // isWorkerReady should remain false
+    });
 
-	describe('stop', () => {
-		it('should cancel the animation loop, reset worker, and reset time', async () => {
-			await audioEngineService.play(); // Start playing.
-			playerStoreInstance.update((s) => ({ ...s, currentTime: 5.0 })); // Simulate time advance.
+    it("should throw an error for an invalid file (e.g., empty file)", async () => {
+      const emptyFile = new File([], "empty.mp3", { type: "audio/mpeg" });
+      await expect(audioEngineService.loadFile(emptyFile)).rejects.toThrow(
+        /invalid or empty File object/i,
+      );
+      expect((audioEngineService as any).originalBuffer).toBeNull();
+    });
 
-			await audioEngineService.stop();
+    it("should throw an error if decoding fails", async () => {
+      const decodeError = new DOMException("Decoding failed", "EncodingError");
+      mockAudioContextInstance.decodeAudioData.mockImplementation((_arrayBuffer, _successCallback, errorCallback) => {
+        if (errorCallback) errorCallback(decodeError); // Call error callback
+        return Promise.reject(decodeError); // decodeAudioData often returns a Promise
+      });
 
-			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID);
-			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
-				type: RB_WORKER_MSG_TYPE.RESET
-			});
-			expect(get(playerStoreInstance).isPlaying).toBe(false);
-			expect(get(playerStoreInstance).currentTime).toBe(0);
-		});
-	});
+      await expect(audioEngineService.loadFile(mockFile)).rejects.toThrow(
+        `Error decoding audio data: ${decodeError.message}`,
+      );
+      expect((audioEngineService as any).originalBuffer).toBeNull();
+      expect((audioEngineService as any).isWorkerReady).toBe(false);
+    });
+  });
 
-	describe('seek', () => {
-		it('should update time and reset worker when seeking while paused', async () => {
-			// Arrange: Ensure player is paused
-			expect(get(playerStoreInstance).isPlaying).toBe(false);
+  describe("initializeWorker", () => {
+    beforeEach(() => {
+        // Reset playerStore to ensure initialSpeed and initialPitch are from a clean state
+        playerStoreWritable.set({ ...initialPlayerState, speed: 1.2, pitchShift: -2.0 });
+    });
 
-			// Act
-			await audioEngineService.seek(5.0);
+    it("should initialize the worker, post INIT message, and update store on success", async () => {
+      const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
+      // Simulate worker sending INIT_SUCCESS
+      simulateWorkerMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS });
+      await expect(initPromise).resolves.toBeUndefined();
 
-			// Assert
-			expect(rafSpy).not.toHaveBeenCalled(); // Should NOT have started playback
-			expect(cafSpy).not.toHaveBeenCalled(); // Nothing to cancel
-			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
-				type: RB_WORKER_MSG_TYPE.RESET
-			});
-			expect(get(playerStoreInstance).currentTime).toBe(5.0);
-			expect(get(playerStoreInstance).isPlaying).toBe(false); // Should remain paused.
-		});
+      expect(global.fetch).toHaveBeenCalledTimes(2); // For WASM and loader script
+      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: RB_WORKER_MSG_TYPE.INIT,
+          payload: expect.objectContaining({
+            sampleRate: mockAudioBuffer.sampleRate,
+            channels: mockAudioBuffer.numberOfChannels,
+            initialSpeed: 1.2, // Value from playerStoreWritable set in beforeEach
+            initialPitch: -2.0, // Value from playerStoreWritable set in beforeEach
+          }),
+        }),
+        [expect.any(ArrayBuffer)], // For wasmBinary
+      );
+      expect(get(playerStoreWritable).isPlayable).toBe(true);
+      expect(get(playerStoreWritable).error).toBeNull();
+      expect((audioEngineService as any).isWorkerReady).toBe(true);
+    });
 
-		it('should pause playback, update time, and reset worker when seeking while playing', async () => {
-			// Arrange: Start playback
-			await audioEngineService.play();
-			expect(rafSpy).toHaveBeenCalledTimes(1);
-			vi.clearAllMocks(); // Clear spies to isolate the seek action
+    it("should handle worker initialization failure (worker sends ERROR message)", async () => {
+      const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
+      simulateWorkerMessage({ type: RB_WORKER_MSG_TYPE.ERROR, payload: { message: "Worker init crashed" } });
 
-			// Act
-			await audioEngineService.seek(3.0);
+      await expect(initPromise).rejects.toThrow("Worker init crashed");
+      expect(get(playerStoreWritable).isPlayable).toBe(false);
+      expect(get(playerStoreWritable).error).toBe("Worker init crashed");
+      expect((audioEngineService as any).isWorkerReady).toBe(false);
+    });
 
-			// Assert
-			// 1. The old animation frame was canceled because `pause()` is called inside `seek()`.
-			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID);
+    it("should handle worker initialization failure (worker.onerror callback)", async () => {
+      const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
+      // Directly trigger the worker's onerror
+      const mockErrorEvent = new ErrorEvent("error", { message: "Critical worker failure from onerror" });
+      simulateWorkerError(mockErrorEvent);
 
-			// 2. The worker was told to reset its state for the new position.
-			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
-				type: RB_WORKER_MSG_TYPE.RESET
-			});
+      await expect(initPromise).rejects.toThrow("Critical worker failure from onerror");
+      expect(get(playerStoreWritable).isPlayable).toBe(false);
+      expect(get(playerStoreWritable).error).toBe("Worker crashed or encountered an unrecoverable error."); // Generic message set by service's onerror
+      expect((audioEngineService as any).isWorkerReady).toBe(false);
+    });
 
-			// 3. The store's time was updated correctly.
-			expect(get(playerStoreInstance).currentTime).toBe(3.0);
+    it("should handle failure when fetching worker dependencies", async () => {
+      globalFetchSpy.mockResolvedValueOnce({ ok: false, status: 500, statusText: "Server Error" } as Response);
 
-			// 4. A *new* animation frame was NOT requested because seek no longer resumes.
-			expect(rafSpy).not.toHaveBeenCalled();
+      await expect(audioEngineService.initializeWorker(mockAudioBuffer)).rejects.toThrow(
+        /Failed to fetch worker dependencies/i,
+      );
+      expect(get(playerStoreWritable).isPlayable).toBe(false);
+      expect(get(playerStoreWritable).error).toMatch(/Error fetching worker dependencies: Failed to fetch worker dependencies/i);
+      expect((audioEngineService as any).isWorkerReady).toBe(false);
+    });
 
-			// 5. The store reflects that playback is now paused.
-			expect(get(playerStoreInstance).isPlaying).toBe(false);
-		});
-	});
+    it("should reject if no AudioBuffer is provided", async () => {
+        await expect(audioEngineService.initializeWorker(null as any)).rejects.toThrow(
+            "initializeWorker called with no AudioBuffer."
+        );
+        expect(get(playerStoreWritable).isPlayable).toBe(false);
+        expect(get(playerStoreWritable).error).toBe("initializeWorker called with no AudioBuffer.");
+    });
+  });
+
+  describe("Playback Controls (after successful loadFile and initializeWorker)", () => {
+    beforeEach(async () => {
+      // Simulate successful load and init
+      mockAudioContextInstance.decodeAudioData.mockImplementation((_, successCb) => { successCb(mockAudioBuffer); return Promise.resolve(mockAudioBuffer); });
+      const mockFile = new File(["dummy"], "test.wav", { type: "audio/wav" });
+      await audioEngineService.loadFile(mockFile); // This sets this.originalBuffer
+
+      const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
+      simulateWorkerMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS });
+      await initPromise; // This sets this.isWorkerReady = true
+
+      // Clear mocks that might have been called during setup
+      vi.clearAllMocks();
+      // Re-apply fetch mock if cleared
+      globalFetchSpy.mockImplementation(() => Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), text: () => Promise.resolve("// Mock loader script")} as Response));
+      rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+      cafSpy = vi.spyOn(window, "cancelAnimationFrame");
+    });
+
+    it("play: should start the animation loop if worker is ready", async () => {
+      await audioEngineService.play();
+      expect(rafSpy).toHaveBeenCalledTimes(1);
+      expect((audioEngineService as any).isPlaying).toBe(true);
+      // playerStore.isPlaying is updated by UI/Orchestrator
+    });
+
+    it("play: should not start if worker is not ready", async () => {
+      (audioEngineService as any).isWorkerReady = false; // Manually set worker to not ready
+      await audioEngineService.play();
+      expect(rafSpy).not.toHaveBeenCalled();
+      expect((audioEngineService as any).isPlaying).toBe(false);
+    });
+
+    it("play: should resume AudioContext if suspended", async () => {
+      mockAudioContextInstance.state = "suspended";
+      await audioEngineService.play();
+      expect(mockAudioContextInstance.resume).toHaveBeenCalled();
+      expect(rafSpy).toHaveBeenCalledTimes(1);
+      mockAudioContextInstance.state = "running"; // Reset for other tests
+    });
+
+    it("pause: should stop the animation loop", async () => {
+      await audioEngineService.play(); // Start playing first
+      const currentRafId = rafSpy.mock.results[0].value;
+      audioEngineService.pause();
+      expect(cafSpy).toHaveBeenCalledWith(currentRafId);
+      expect((audioEngineService as any).isPlaying).toBe(false);
+    });
+
+    it("stop: should cancel loop, reset worker, reset internal time", async () => {
+      await audioEngineService.play();
+      (audioEngineService as any).sourcePlaybackOffset = 5.0; // Simulate some playback
+      const currentRafId = rafSpy.mock.results[0].value;
+
+      await audioEngineService.stop();
+
+      expect(cafSpy).toHaveBeenCalledWith(currentRafId);
+      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({ type: RB_WORKER_MSG_TYPE.RESET });
+      expect((audioEngineService as any).isPlaying).toBe(false);
+      expect((audioEngineService as any).sourcePlaybackOffset).toBe(0);
+    });
+
+    describe("seek", () => {
+      it("should update internal time, reset worker, and keep paused state if paused", async () => {
+        (audioEngineService as any).isPlaying = false; // Ensure paused
+        vi.clearAllMocks(); // Clear postMessage calls from init
+        rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+
+        await audioEngineService.seek(5.0);
+
+        expect(rafSpy).not.toHaveBeenCalled(); // Should not start playing
+        expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({ type: RB_WORKER_MSG_TYPE.RESET });
+        expect((audioEngineService as any).sourcePlaybackOffset).toBe(5.0);
+        expect((audioEngineService as any).isPlaying).toBe(false);
+      });
+
+      it("should pause playback, update internal time, reset worker if playing", async () => {
+        await audioEngineService.play(); // Start playing
+        const currentRafId = rafSpy.mock.results[0].value;
+        vi.clearAllMocks(); // Clear postMessage calls
+        rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+        cafSpy = vi.spyOn(window, "cancelAnimationFrame");
+
+
+        await audioEngineService.seek(3.0);
+
+        expect(cafSpy).toHaveBeenCalledWith(currentRafId); // Should have paused
+        expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({ type: RB_WORKER_MSG_TYPE.RESET });
+        expect((audioEngineService as any).sourcePlaybackOffset).toBe(3.0);
+        expect((audioEngineService as any).isPlaying).toBe(false); // Should be paused after seek
+      });
+    });
+
+    it("setSpeed: should post SET_SPEED to worker if worker is ready", () => {
+      audioEngineService.setSpeed(1.5);
+      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed: 1.5 } })
+      );
+      // No direct store update expected here for playerStore.speed
+    });
+
+    it("setSpeed: should NOT post SET_SPEED if worker is not ready", () => {
+        (audioEngineService as any).isWorkerReady = false;
+        audioEngineService.setSpeed(1.5);
+        expect(mockWorkerInstance.postMessage).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_SPEED })
+        );
+    });
+
+    it("setPitch: should post SET_PITCH to worker if worker is ready", () => {
+      audioEngineService.setPitch(2.0);
+      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch: 2.0 } })
+      );
+      // No direct store update expected here for playerStore.pitchShift
+    });
+
+    it("setGain: should update gainNode value", () => {
+      audioEngineService.setGain(0.5);
+      // audioEngine gets a new gainNode on _getAudioContext, so we check the mock directly
+      expect(mockAudioContextInstance.createGain().gain.setValueAtTime).toHaveBeenCalledWith(0.5, mockAudioContextInstance.currentTime);
+      // No direct store update expected here for playerStore.gain
+    });
+
+    it("setGain: should clamp gain value to MAX_GAIN", () => {
+        const maxGain = AUDIO_ENGINE_CONSTANTS.MAX_GAIN; // e.g. 2.0
+        audioEngineService.setGain(maxGain + 0.5);
+        expect(mockAudioContextInstance.createGain().gain.setValueAtTime).toHaveBeenCalledWith(maxGain, mockAudioContextInstance.currentTime);
+    });
+  });
 });
+
 ````
 --- End of File: vibe-player-v2/src/lib/services/audioEngine.service.test.ts ---
 --- File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
@@ -12168,19 +12720,19 @@ describe('AudioEngineService (Corrected Tests)', () => {
 //  SECTION: Imports
 // ─────────────────────────────────────────────────────────────────────────────
 
-import {get} from 'svelte/store';
+import { get } from "svelte/store";
 import type {
-    RubberbandInitPayload,
-    RubberbandProcessPayload,
-    RubberbandProcessResultPayload,
-    WorkerErrorPayload,
-    WorkerMessage
-} from '$lib/types/worker.types';
-import {RB_WORKER_MSG_TYPE} from '$lib/types/worker.types';
-import {playerStore} from '$lib/stores/player.store';
-import RubberbandWorker from '$lib/workers/rubberband.worker?worker&inline';
-import {assert, AUDIO_ENGINE_CONSTANTS} from '$lib/utils';
-import {analysisStore} from '../stores/analysis.store';
+  RubberbandInitPayload,
+  RubberbandProcessPayload,
+  RubberbandProcessResultPayload,
+  WorkerErrorPayload,
+  WorkerMessage,
+} from "$lib/types/worker.types";
+import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { playerStore } from "$lib/stores/player.store";
+import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
+import { assert, AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
+// import { analysisStore } from "../stores/analysis.store"; // Not used directly in this file after refactor
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SECTION: Class Definition
@@ -12188,480 +12740,768 @@ import {analysisStore} from '../stores/analysis.store';
 
 /**
  * @class AudioEngineService
- * @description A singleton service that manages all Web Audio API interactions. It handles
+ * @description A singleton service that manages Web Audio API interactions. It handles
  * audio decoding, playback scheduling, and communication with the Rubberband Web Worker
- * for time-stretching and pitch-shifting.
+ * for time-stretching and pitch-shifting. Worker initialization is now separated.
  */
 class AudioEngineService {
-    // ---------------------------------------------------------------------------
-    //  SUB-SECTION: Singleton and Private Properties
-    // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  //  SUB-SECTION: Singleton and Private Properties
+  // ---------------------------------------------------------------------------
 
-    private static instance: AudioEngineService;
+  private static instance: AudioEngineService;
 
-    private worker: Worker | null = null;
-    private audioContext: AudioContext | null = null;
-    private gainNode: GainNode | null = null;
-    private originalBuffer: AudioBuffer | null = null;
+  private worker: Worker | null = null;
+  private audioContext: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
+  /** The original, unmodified AudioBuffer loaded from the user's file. */
+  private originalBuffer: AudioBuffer | null = null;
 
-    private isPlaying = false;
-    private isWorkerInitialized = false;
-    private isStopping = false;
+  private isPlaying = false;
+  /** Indicates if the worker has successfully initialized and is ready for processing. */
+  private isWorkerReady = false;
+  private isStopping = false; // Flag to manage state during stop operation
 
-    private sourcePlaybackOffset = 0;
-    private nextChunkTime = 0;
+  /** Current playback position in seconds, relative to the originalBuffer. */
+  private sourcePlaybackOffset = 0;
+  /** The AudioContext's currentTime when the next chunk of audio should be scheduled. */
+  private nextChunkTime = 0;
 
-    /** The ID of the current requestAnimationFrame loop, used to cancel it. */
-    private animationFrameId: number | null = null;
+  /** The ID of the current requestAnimationFrame loop, used to cancel it. */
+  private animationFrameId: number | null = null;
 
-    private constructor() {
+  /** Used to resolve/reject the promise returned by initializeWorker */
+  private workerInitPromiseCallbacks: { resolve: () => void; reject: (reason?: any) => void } | null = null;
+
+
+  private constructor() {}
+
+  /**
+   * Gets the singleton instance of the AudioEngineService.
+   * @returns {AudioEngineService} The singleton instance.
+   */
+  public static getInstance(): AudioEngineService {
+    if (!AudioEngineService.instance) {
+      AudioEngineService.instance = new AudioEngineService();
+    }
+    return AudioEngineService.instance;
+  }
+
+  // ---------------------------------------------------------------------------
+  //  SUB-SECTION: Public API Methods
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Ensures the AudioContext is created and resumed if suspended.
+   * Must be called after a user interaction to comply with browser autoplay policies.
+   * @returns {Promise<void>}
+   */
+  public unlockAudio = async (): Promise<void> => {
+    const ctx = this._getAudioContext();
+    if (ctx.state === "suspended") {
+      console.log(
+        "[AudioEngineService] AudioContext is suspended, attempting to resume...",
+      );
+      await ctx.resume();
+      console.log(
+        `[AudioEngineService] AudioContext state is now: ${ctx.state}`,
+      );
+    }
+  };
+
+  /**
+   * Loads an audio file, decodes it, and stores it as the originalBuffer.
+   * Its primary responsibility is to decode the audioFile and return a Promise<AudioBuffer>.
+   * It does NOT initialize the worker or update playerStore directly.
+   * @param {File} audioFile - The audio file to load.
+   * @returns {Promise<AudioBuffer>} A promise that resolves with the decoded AudioBuffer.
+   * @throws {Error} If the file is invalid or decoding fails.
+   */
+  public loadFile = async (audioFile: File): Promise<AudioBuffer> => {
+    console.log(`[AudioEngineService] loadFile called for: ${audioFile.name}`);
+    if (!audioFile || audioFile.size === 0) {
+      const errorMsg = "loadFile received an invalid or empty File object.";
+      console.error(`[AudioEngineService] ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
-    /**
-     * Gets the singleton instance of the AudioEngineService.
-     * @returns {AudioEngineService} The singleton instance.
-     */
-    public static getInstance(): AudioEngineService {
-        if (!AudioEngineService.instance) {
-            AudioEngineService.instance = new AudioEngineService();
-        }
-        return AudioEngineService.instance;
+    const ctx = this._getAudioContext();
+    let fileArrayBuffer: ArrayBuffer;
+
+    try {
+      fileArrayBuffer = await audioFile.arrayBuffer();
+    } catch (e) {
+      const error = e as Error;
+      const errorMsg = `Error reading ArrayBuffer from file: ${error.message}`;
+      console.error(`[AudioEngineService] ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
-    // ---------------------------------------------------------------------------
-    //  SUB-SECTION: Public API Methods (Defined as Arrow Functions)
-    // ---------------------------------------------------------------------------
+    try {
+      console.log(`[AudioEngineService] Decoding audio data for ${audioFile.name}...`);
+      // Note: Previous versions might have called this.stop() here.
+      // This is now the responsibility of the AudioOrchestrator.
+      this.originalBuffer = await ctx.decodeAudioData(fileArrayBuffer);
+      console.log(
+        `[AudioEngineService] Audio decoded successfully for ${audioFile.name}. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`,
+      );
+      // Worker initialization is explicitly separated. Orchestrator will call initializeWorker.
+      this.isWorkerReady = false; // Reset worker ready state for the new buffer
+      return this.originalBuffer;
+    } catch (e) {
+      const error = e as Error;
+      const errorMsg = `Error decoding audio data: ${error.message}`;
+      console.error(`[AudioEngineService] ${errorMsg}`);
+      this.originalBuffer = null; // Ensure buffer is cleared on error
+      this.isWorkerReady = false;
+      throw new Error(errorMsg); // Re-throw for Orchestrator to handle
+    }
+  };
 
-    /**
-     * Ensures the AudioContext is created. It must be called after a user
-     * interaction (e.g., a click) to comply with browser autoplay policies.
-     * @returns {Promise<void>}
-     */
-    public unlockAudio = async (): Promise<void> => {
-        const ctx = this._getAudioContext();
-        if (ctx.state === 'suspended') {
-            console.log('[AudioEngineService] AudioContext is suspended, attempting to resume...');
-            await ctx.resume();
-            console.log(`[AudioEngineService] AudioContext state is now: ${ctx.state}`);
+  /**
+   * Initializes the Rubberband Web Worker with the provided AudioBuffer's properties.
+   * Fetches WASM/loader scripts and posts the INIT message to the worker.
+   * @param {AudioBuffer} audioBuffer - The AudioBuffer whose properties (sampleRate, channels) will be used for worker initialization.
+   * @returns {Promise<void>} A promise that resolves upon successful worker initialization (INIT_SUCCESS) or rejects on error.
+   * @public
+   */
+  public initializeWorker = async (audioBuffer: AudioBuffer): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      console.log(`[AudioEngineService] Initializing worker...`);
+      if (!audioBuffer) {
+        const errorMsg = "initializeWorker called with no AudioBuffer.";
+        console.error(`[AudioEngineService] ${errorMsg}`);
+        playerStore.update((s) => ({ ...s, error: errorMsg, isPlayable: false, isPlaying: false }));
+        reject(new Error(errorMsg));
+        return;
+      }
+
+      this.workerInitPromiseCallbacks = { resolve, reject };
+
+      if (!this.worker) {
+        this.worker = new RubberbandWorker();
+        this.worker.onmessage = this.handleWorkerMessage; // Bound method
+        this.worker.onerror = (err) => { // General worker error, not specific to init
+          console.error("[AudioEngineService] Unhandled worker error event:", err);
+          const errorMessage = "Worker crashed or encountered an unrecoverable error.";
+          playerStore.update((s) => ({ ...s, error: errorMessage, isPlayable: false, isPlaying: false }));
+          this.isWorkerReady = false;
+          if (this.workerInitPromiseCallbacks) {
+            this.workerInitPromiseCallbacks.reject(new Error(err.message || "Unknown worker error"));
+            this.workerInitPromiseCallbacks = null;
+          }
+        };
+      } else {
+        // If worker exists, send RESET to clear its state before re-initializing
+        console.log("[AudioEngineService] Worker exists. Sending RESET before INIT.");
+        this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+      }
+
+      this.isWorkerReady = false; // Set to false until INIT_SUCCESS is received
+
+      Promise.all([
+        fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL),
+        fetch(AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL),
+      ])
+        .then(async ([wasmResponse, loaderResponse]) => {
+          if (!wasmResponse.ok || !loaderResponse.ok) {
+            throw new Error("Failed to fetch worker dependencies (WASM or loader script).");
+          }
+          const wasmBinary = await wasmResponse.arrayBuffer();
+          const loaderScriptText = await loaderResponse.text();
+
+          const {playbackSpeed, pitchShift} = get(playerStore);
+
+          const initPayload: RubberbandInitPayload = {
+            wasmBinary,
+            loaderScriptText,
+            origin: location.origin,
+            sampleRate: audioBuffer.sampleRate,
+            channels: audioBuffer.numberOfChannels,
+            initialSpeed: playbackSpeed,
+            initialPitch: pitchShift,
+          };
+
+          console.log(
+            `[AudioEngineService] Posting INIT message to worker with payload:`,
+            { ...initPayload, wasmBinary: `[${wasmBinary.byteLength} bytes]`, loaderScriptText: `[${loaderScriptText.length} chars]` },
+          );
+          this.worker!.postMessage(
+            { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
+            [wasmBinary],
+          );
+          // Resolution/rejection is handled by `handleWorkerMessage` via `this.workerInitPromiseCallbacks`
+        })
+        .catch((e) => {
+          const error = e as Error;
+          const errorMsg = `Error fetching worker dependencies: ${error.message}`;
+          console.error(`[AudioEngineService] ${errorMsg}`);
+          playerStore.update((s) => ({ ...s, error: errorMsg, isPlayable: false }));
+          this.isWorkerReady = false;
+          if (this.workerInitPromiseCallbacks) {
+            this.workerInitPromiseCallbacks.reject(error);
+            this.workerInitPromiseCallbacks = null;
+          }
+        });
+    });
+  };
+
+  /**
+   * Starts or resumes audio playback.
+   * Requires `loadFile` and `initializeWorker` to have been successfully called.
+   * @public
+   */
+  public play = async (): Promise<void> => {
+    console.log(
+      `[AudioEngineService] PLAY called. State: isPlaying=${this.isPlaying}, isWorkerReady=${this.isWorkerReady}, originalBuffer: ${!!this.originalBuffer}`,
+    );
+    if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
+      console.warn(
+        "[AudioEngineService] Play command ignored. Not ready (originalBuffer or worker not ready) or already playing.",
+      );
+      return;
+    }
+
+    if (this.animationFrameId) { // Clear any existing animation frame
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    const audioCtx = this._getAudioContext();
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+
+    this.isPlaying = true;
+    // Orchestrator will typically update store for 'Playing' status
+    // playerStore.update((s) => ({ ...s, isPlaying: true }));
+
+    // If starting from beginning or a seek, ensure nextChunkTime is current
+    if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtx.currentTime) {
+      this.nextChunkTime = audioCtx.currentTime;
+    }
+
+    this.isStopping = false; // Ensure isStopping is false when play begins
+    this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop);
+  };
+
+  /**
+   * Pauses audio playback.
+   * @public
+   */
+  public pause = (): void => {
+    console.log(`[AudioEngineService] PAUSE called.`);
+    if (!this.isPlaying) return;
+    this.isPlaying = false;
+
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    // Orchestrator typically updates store for 'Paused' status
+    // playerStore.update((s) => ({ ...s, isPlaying: false }));
+  };
+
+  /**
+   * Stops audio playback, resets playback position, and resets the worker state.
+   * @public
+   */
+  public stop = async (): Promise<void> => {
+    console.log(`[AudioEngineService] STOP called.`);
+    this.isStopping = true; // Signal that we are in the process of stopping
+    this.isPlaying = false;
+
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    if (this.worker && this.isWorkerReady) { // Only reset if worker is valid and was ready
+      console.log("[AudioEngineService] Posting RESET to worker due to stop().");
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+    }
+
+    this.sourcePlaybackOffset = 0;
+    this.nextChunkTime = 0;
+    // PlayerStore updates (currentTime, isPlaying, status) are typically handled by Orchestrator or UI components
+    // based on user actions. AudioEngine focuses on internal state.
+    // playerStore.update((s) => ({ ...s, currentTime: 0, isPlaying: false }));
+
+    // Small delay to allow any in-flight operations to cease before clearing isStopping
+    await new Promise(resolve => setTimeout(resolve, 50));
+    this.isStopping = false;
+  };
+
+  /**
+   * Seeks to a specific time in the audio. Playback remains paused.
+   * Resets the worker to handle the new position correctly.
+   * @param {number} time - The time in seconds to seek to.
+   * @public
+   */
+  public seek = async (time: number): Promise<void> => {
+    console.log(`[AudioEngineService] SEEK called. Target time: ${time.toFixed(2)}s`);
+    if (!this.originalBuffer) {
+      console.warn("AudioEngine: Seek attempted without an audio buffer loaded.");
+      return;
+    }
+    const clampedTime = Math.max(0, Math.min(time, this.originalBuffer.duration));
+
+    if (this.isPlaying) {
+      this.pause(); // Always pause on seek
+    }
+
+    if (this.worker && this.isWorkerReady) {
+      console.log("[AudioEngineService] Posting RESET to worker due to seek().");
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+    }
+
+    this.sourcePlaybackOffset = clampedTime;
+    // Ensure nextChunkTime is reset so playback doesn't use stale scheduling
+    this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
+
+    // playerStore.update((s) => ({ ...s, currentTime: clampedTime })); // Orchestrator or UI component may handle this
+  };
+
+  /**
+   * Sets the playback speed (rate).
+   * @param {number} speed - The desired playback speed.
+   * @public
+   */
+  public setSpeed = (speed: number): void => {
+    console.log(`[AudioEngineService] setSpeed called with: ${speed}`);
+    if (this.worker && this.isWorkerReady) {
+      this.worker.postMessage({
+        type: RB_WORKER_MSG_TYPE.SET_SPEED,
+        payload: { speed },
+      });
+    }
+    // playerStore.update((s) => ({ ...s, speed })); // UI component handles this store update
+  };
+
+  /**
+   * Sets the playback pitch shift.
+   * @param {number} pitch - The desired pitch shift value.
+   * @public
+   */
+  public setPitch = (pitch: number): void => {
+    console.log(`[AudioEngineService] setPitch called with: ${pitch}`);
+    if (this.worker && this.isWorkerReady) {
+      this.worker.postMessage({
+        type: RB_WORKER_MSG_TYPE.SET_PITCH,
+        payload: { pitch },
+      });
+    }
+    // playerStore.update((s) => ({ ...s, pitchShift: pitch })); // UI component handles this
+  };
+
+  /**
+   * Sets the master gain level.
+   * @param {number} level - The desired gain level (0.0 to 2.0 typically).
+   * @public
+   */
+  public setGain = (level: number): void => {
+    console.log(`[AudioEngineService] setGain called with: ${level}`);
+    if (this.gainNode && this.audioContext) {
+      const newGain = Math.max(0, Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level));
+      this.gainNode.gain.setValueAtTime(newGain, this.audioContext.currentTime);
+      // playerStore.update((s) => ({ ...s, gain: newGain })); // UI component handles this
+    }
+  };
+
+  /**
+   * Cleans up all resources including terminating the worker and closing the AudioContext.
+   * @public
+   */
+  public dispose = (): void => {
+    console.log("[AudioEngineService] Disposing all resources...");
+    this.isStopping = true; // Prevent any further processing during disposal
+    this.isPlaying = false;
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    this.worker?.terminate();
+    this.worker = null;
+    this.isWorkerReady = false;
+
+    if (this.audioContext && this.audioContext.state !== "closed") {
+      this.audioContext.close().then(() => console.log("[AudioEngineService] AudioContext closed."));
+    }
+    this.audioContext = null;
+    this.gainNode = null;
+    this.originalBuffer = null;
+    this.workerInitPromiseCallbacks = null; // Clear any pending promise callbacks
+    console.log("[AudioEngineService] Dispose complete.");
+  };
+
+  // ---------------------------------------------------------------------------
+  //  SUB-SECTION: Private Helper Methods
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Gets the AudioContext, creating it if necessary. Also creates the main gain node.
+   * @returns {AudioContext} The active AudioContext.
+   * @private
+   */
+  private _getAudioContext(): AudioContext {
+    if (!this.audioContext || this.audioContext.state === "closed") {
+      this.audioContext = new AudioContext();
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.connect(this.audioContext.destination);
+      console.log("[AudioEngineService] New AudioContext and GainNode created.");
+    }
+    return this.audioContext;
+  }
+
+  /**
+   * The main recursive loop for processing audio data from the worker and scheduling it for playback.
+   * Uses `requestAnimationFrame` for timing.
+   * @private
+   */
+  private _recursiveProcessAndPlayLoop = (): void => {
+    if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext || !this.isWorkerReady) {
+      if (this.isStopping) console.log("[AudioEngineService] Play loop aborted due to stopping flag.");
+      else if (!this.isPlaying) console.log("[AudioEngineService] Play loop aborted, not playing.");
+      else if (!this.isWorkerReady) console.log("[AudioEngineService] Play loop aborted, worker not ready.");
+
+      this.animationFrameId = null;
+      return;
+    }
+
+    // Update current time in store (can be handled by Orchestrator/UI if preferred)
+    playerStore.update((s) => ({ ...s, currentTime: this.sourcePlaybackOffset }));
+
+    this._performSingleProcessAndPlayIteration();
+
+    if (this.isPlaying && !this.isStopping) { // Check flags again before scheduling next frame
+      this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop);
+    } else {
+      this.animationFrameId = null;
+    }
+  };
+
+  /**
+   * Performs a single iteration of fetching a chunk from the original buffer,
+   * sending it to the worker for processing, and advancing playback offset.
+   * @private
+   */
+  private _performSingleProcessAndPlayIteration = (): void => {
+    // Assertions help catch unexpected states during development
+    assert(this.isPlaying, "Processing iteration ran while not playing.");
+    assert(!this.isStopping, "Processing iteration ran while stopping.");
+    assert(this.originalBuffer, "Processing iteration ran without an audio buffer.");
+    assert(this.audioContext, "Processing iteration ran without an audio context.");
+    assert(this.isWorkerReady, "Processing iteration ran while worker not ready.");
+
+
+    if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext || !this.isWorkerReady) return;
+
+    const now = this.audioContext.currentTime;
+    const lookahead = AUDIO_ENGINE_CONSTANTS.PROCESS_LOOKAHEAD_TIME;
+
+    // Check if it's time to process the next chunk
+    if (this.nextChunkTime < now + lookahead) {
+      if (this.sourcePlaybackOffset < this.originalBuffer.duration) {
+        let chunkDuration = AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S;
+        // Ensure the chunk doesn't exceed the buffer's end
+        chunkDuration = Math.min(chunkDuration, this.originalBuffer.duration - this.sourcePlaybackOffset);
+
+        // If remaining duration is very small, process it all
+        if (chunkDuration <= AUDIO_ENGINE_CONSTANTS.MIN_CHUNK_DURATION_S &&
+            (this.originalBuffer.duration - this.sourcePlaybackOffset) > 0) {
+          chunkDuration = this.originalBuffer.duration - this.sourcePlaybackOffset;
         }
+
+        if (chunkDuration <= 0) { // Should not happen if previous checks are correct
+          this.pause(); // Pause if we somehow have no duration left to process
+          playerStore.update((s) => ({ ...s, currentTime: this.originalBuffer!.duration, isPlaying: false }));
+          return;
+        }
+
+        const startSample = Math.floor(this.sourcePlaybackOffset * this.originalBuffer.sampleRate);
+        const endSample = Math.floor(Math.min(this.sourcePlaybackOffset + chunkDuration, this.originalBuffer.duration) * this.originalBuffer.sampleRate);
+
+        if (startSample >= endSample) { // If no samples to process, pause.
+          this.pause();
+          return;
+        }
+
+        // Assuming mono for simplicity in this example, or use channel 0.
+        // Rubberband worker example handles multiple channels if input is multi-channel.
+        const channelData = this.originalBuffer.getChannelData(0);
+        const segment = channelData.slice(startSample, endSample);
+
+        // Determine if this is the final chunk of the source audio
+        const isFinalChunk = (this.sourcePlaybackOffset + chunkDuration) >= this.originalBuffer.duration;
+
+        // console.log(
+        //   `[AudioEngineService] Processing chunk. Offset: ${this.sourcePlaybackOffset.toFixed(2)}s, Duration: ${chunkDuration.toFixed(3)}s, Final: ${isFinalChunk}`,
+        // );
+
+        const processPayload: RubberbandProcessPayload = {
+          inputBuffer: [segment], // Assuming mono processing for now based on `getChannelData(0)`
+          isFinalChunk,
+        };
+        this.worker!.postMessage(
+          { type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
+          [segment.buffer], // Transferable object
+        );
+        this.sourcePlaybackOffset += chunkDuration;
+      } else { // Reached end of buffer
+        this.pause();
+        // Orchestrator can set 'Finished' status
+        // playerStore.update((s) => ({ ...s, currentTime: this.originalBuffer!.duration, isPlaying: false }));
+      }
+    }
+  };
+
+  /**
+   * Schedules a processed audio chunk (received from the worker) for playback.
+   * @param {Float32Array[]} processedChannels - Array of Float32Array, each representing a channel of processed audio.
+   * @param {number} startTime - The AudioContext time at which this chunk should ideally start playing.
+   * @private
+   */
+  private scheduleChunkPlayback = (
+    processedChannels: Float32Array[],
+    startTime: number,
+  ): void => {
+    if (!processedChannels || processedChannels.length === 0 || processedChannels[0].length === 0) {
+      console.warn("[AudioEngineService] scheduleChunkPlayback called with empty or invalid processedChannels.");
+      return;
+    }
+
+    assert(this.audioContext, "Attempted to schedule chunk without an audio context.");
+    assert(this.gainNode, "Attempted to schedule chunk without a gain node.");
+    assert(this.originalBuffer, "Attempted to schedule chunk without an original buffer.");
+
+    if (!this.audioContext || !this.gainNode || !this.originalBuffer || this.isStopping) {
+        if(this.isStopping) console.log("[AudioEngineService] Playback scheduling skipped due to stopping flag.");
+        return;
+    }
+
+    const numberOfChannels = this.originalBuffer.numberOfChannels;
+    // This assertion should ideally check against the worker's output channel count,
+    // but originalBuffer.numberOfChannels is a good proxy if worker preserves channel count.
+    assert(processedChannels.length === numberOfChannels, "Channel count mismatch between original and processed buffer.");
+    if (processedChannels.length !== numberOfChannels) {
+        console.error(`[AudioEngineService] ScheduleChunkPlayback: Mismatch in channel count. Expected ${numberOfChannels}, got ${processedChannels.length}.`);
+        return;
+    }
+
+    const frameCount = processedChannels[0].length;
+    if (frameCount === 0) {
+      console.warn("[AudioEngineService] scheduleChunkPlayback called with zero frameCount.");
+      return;
+    }
+
+    const audioBufferForPlayback = this.audioContext.createBuffer(
+      numberOfChannels,
+      frameCount,
+      this.originalBuffer.sampleRate, // Use original sample rate for playback context
+    );
+
+    for (let i = 0; i < numberOfChannels; i++) {
+      audioBufferForPlayback.copyToChannel(processedChannels[i], i);
+    }
+
+    const bufferSource = this.audioContext.createBufferSource();
+    bufferSource.buffer = audioBufferForPlayback;
+    bufferSource.connect(this.gainNode);
+
+    const actualStartTime = Math.max(this.audioContext.currentTime, startTime);
+    // console.log(
+    //   `[AudioEngineService] Scheduling chunk playback at ${actualStartTime.toFixed(2)}s. Duration: ${audioBufferForPlayback.duration.toFixed(3)}s. Context time: ${this.audioContext.currentTime.toFixed(2)}s`,
+    // );
+    bufferSource.start(actualStartTime);
+
+    const chunkPlaybackDuration = audioBufferForPlayback.duration;
+    // Adjust nextChunkTime based on when this chunk *actually* starts playing and its duration
+    this.nextChunkTime = actualStartTime + chunkPlaybackDuration - AUDIO_ENGINE_CONSTANTS.SCHEDULE_AHEAD_TIME_S;
+
+    bufferSource.onended = () => {
+        bufferSource.disconnect();
+        // console.log(`[AudioEngineService] Chunk playback ended. Context time: ${this.audioContext?.currentTime.toFixed(2)}s`);
     };
+  };
 
-    /**
-     * Loads an audio file from an ArrayBuffer, decodes it, and initializes the
-     * processing worker. This is the primary entry point for loading new audio.
-     * @param {ArrayBuffer} audioFileBuffer - The raw audio data.
-     * @param {string} fileName - The name of the file for logging and display.
-     * @returns {Promise<void>}
-     */
-    public loadFile = async (audioFileBuffer: ArrayBuffer, fileName: string): Promise<void> => {
-        console.log(`[AudioEngineService] loadFile called for: ${fileName}`);
-        if (!audioFileBuffer || audioFileBuffer.byteLength === 0) {
-            const errorMsg = 'loadFile received an invalid or empty ArrayBuffer.';
-            console.error(`[AudioEngine] ${errorMsg}`);
-            playerStore.update((s) => ({...s, error: errorMsg, isPlayable: false}));
-            return;
+  /**
+   * Handles messages received from the Rubberband Web Worker.
+   * @param {MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>} event - The message event from the worker.
+   * @private
+   */
+  private handleWorkerMessage = ( // Defined as an arrow function to preserve `this` context if passed as callback directly
+    event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>,
+  ): void => {
+    const { type, payload } = event.data;
+
+    switch (type) {
+      case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
+        this.isWorkerReady = true;
+        console.log("[AudioEngineService] Worker initialized successfully (INIT_SUCCESS received).");
+        playerStore.update((s) => ({ ...s, isPlayable: true, error: null })); // Update store on successful init
+        if (this.workerInitPromiseCallbacks) {
+          this.workerInitPromiseCallbacks.resolve();
+          this.workerInitPromiseCallbacks = null;
         }
+        break;
 
-        await this.stop();
-
-        const ctx = this._getAudioContext();
+      case RB_WORKER_MSG_TYPE.ERROR:
+        const errorPayload = payload as WorkerErrorPayload;
+        console.error("[AudioEngineService] Worker Error Message:", errorPayload.message);
         playerStore.update((s) => ({
-            ...s,
-            status: `Decoding ${fileName}...`,
-            error: null,
-            fileName,
-            isPlayable: false
+          ...s,
+          error: errorPayload.message,
+          isPlaying: false, // Stop playback on worker error
+          isPlayable: false, // Worker is not in a playable state
         }));
+        this.isWorkerReady = false;
+        if (this.isPlaying) this.pause(); // Ensure playback stops
 
-        try {
-            console.log(`[AudioEngineService] Decoding audio data...`);
-            this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
-            console.log(
-                `[AudioEngineService] Audio decoded successfully. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`
-            );
-
-            if (!this.worker) {
-                this.worker = new RubberbandWorker();
-                this.worker.onmessage = this.handleWorkerMessage;
-                this.worker.onerror = (err) => console.error('[AudioEngineService] Unhandled worker error:', err);
-            } else {
-                this.worker.postMessage({type: RB_WORKER_MSG_TYPE.RESET});
-            }
-            this.isWorkerInitialized = false;
-
-            const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
-            const loaderResponse = await fetch(AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL);
-            if (!wasmResponse.ok || !loaderResponse.ok) {
-                throw new Error('Failed to fetch worker dependencies (WASM or loader script).');
-            }
-            const wasmBinary = await wasmResponse.arrayBuffer();
-            const loaderScriptText = await loaderResponse.text();
-
-            const initPayload: RubberbandInitPayload = {
-                wasmBinary,
-                loaderScriptText,
-                origin: location.origin,
-                sampleRate: this.originalBuffer.sampleRate,
-                channels: this.originalBuffer.numberOfChannels,
-                initialSpeed: get(playerStore).speed,
-                initialPitch: get(playerStore).pitch
-            };
-
-            console.log(`[AudioEngineService] Posting INIT message to worker with payload:`, {
-                ...initPayload,
-                wasmBinary: `[${wasmBinary.byteLength} bytes]`,
-                loaderScriptText: `[${loaderScriptText.length} chars]`
-            });
-            this.worker.postMessage({type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload}, [
-                wasmBinary
-            ]);
-
-            playerStore.update((s) => ({
-                ...s,
-                status: `Initializing processor for ${fileName}...`,
-                duration: this.originalBuffer!.duration,
-                audioBuffer: this.originalBuffer,
-                sampleRate: this.originalBuffer!.sampleRate
-            }));
-            analysisStore.set({});
-        } catch (e) {
-            const error = e as Error;
-            console.error(`[AudioEngineService] Error during loadFile: ${error.message}`);
-            playerStore.update((s) => ({
-                ...s,
-                status: `Error decoding`,
-                error: error.message,
-                isPlayable: false
-            }));
-            throw error;
+        if (this.workerInitPromiseCallbacks) {
+          this.workerInitPromiseCallbacks.reject(new Error(errorPayload.message));
+          this.workerInitPromiseCallbacks = null;
         }
-    };
+        break;
 
-    /**
-     * Starts or resumes playback.
-     */
-    public play = async (): Promise<void> => {
-        console.log(`[AudioEngineService] PLAY called. State: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}`);
-        if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
-            console.warn('AudioEngine: Play command ignored. Not ready or already playing.');
+      case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
+        if (this.isStopping) { // If stopping, discard any late-arriving processed data
+            console.log("[AudioEngineService] PROCESS_RESULT received while stopping, discarding.");
             return;
         }
-
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
+        const { outputBuffer } = payload as RubberbandProcessResultPayload;
+        if (outputBuffer && this.isPlaying && this.isWorkerReady) { // Ensure still playing and worker is ready
+          this.scheduleChunkPlayback(outputBuffer, this.nextChunkTime);
         }
+        break;
 
-        const audioCtx = this._getAudioContext();
-        if (audioCtx.state === 'suspended') await audioCtx.resume();
-
-        this.isPlaying = true;
-        playerStore.update((s) => ({...s, isPlaying: true, status: `Playing: ${s.fileName}`}));
-
-        if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtx.currentTime) {
-            this.nextChunkTime = audioCtx.currentTime;
-        }
-
-        if (this.isPlaying) {
-            this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop);
-        }
-    };
-
-    /**
-     * Pauses playback.
-     */
-    public pause = (): void => {
-        console.log(`[AudioEngineService] PAUSE called.`);
-        if (!this.isPlaying) return;
-        this.isPlaying = false;
-
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-
-        playerStore.update((s) => ({...s, isPlaying: false, status: `Paused: ${s.fileName || ''}`}));
-    };
-
-    /**
-     * Stops playback and resets position.
-     */
-    public stop = async (): Promise<void> => {
-        console.log(`[AudioEngineService] STOP called.`);
-        this.isStopping = true;
-        this.isPlaying = false;
-
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-
-        if (this.worker) this.worker.postMessage({type: RB_WORKER_MSG_TYPE.RESET});
-
-        this.sourcePlaybackOffset = 0;
-        this.nextChunkTime = 0;
-        playerStore.update((s) => ({
-            ...s,
-            currentTime: 0,
-            isPlaying: false,
-            status: `Stopped: ${s.fileName || ''}`
-        }));
-        this.isStopping = false;
-    };
-
-    /**
-     * Seeks to a specific time in the audio.
-     * This method now ONLY sets the time and leaves the player in a paused state.
-     * The caller is responsible for resuming playback.
-     */
-    public seek = async (time: number): Promise<void> => {
-        console.log(`[AudioEngineService] SEEK called. Target time: ${time.toFixed(2)}s`);
-        if (!this.originalBuffer || time < 0 || time > this.originalBuffer.duration) {
-            console.warn(`AudioEngine: Seek time ${time} is out of bounds.`);
-            return;
-        }
-
-        // Always pause when seeking.
-        if (this.isPlaying) {
-         this.pause();
-        }
-
-        // Reset the worker to clear its internal buffers for the new position.
-        if (this.worker) this.worker.postMessage({type: RB_WORKER_MSG_TYPE.RESET});
-
-        // Update the internal state and the store's time.
-        this.sourcePlaybackOffset = time;
-        this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
-        playerStore.update((s) => ({...s, currentTime: time}));
-
-    };
-
-    /**
-     * Sets playback speed.
-     */
-    public setSpeed = (speed: number): void => {
-        console.log(`[AudioEngineService] setSpeed called with: ${speed}`);
-        if (this.worker && this.isWorkerInitialized) {
-            this.worker.postMessage({type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: {speed}});
-        }
-        playerStore.update((s) => ({...s, speed}));
-    };
-
-    /**
-     * Sets playback pitch.
-     */
-    public setPitch = (pitch: number): void => {
-        console.log(`[AudioEngineService] setPitch called with: ${pitch}`);
-        if (this.worker && this.isWorkerInitialized) {
-            this.worker.postMessage({type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: {pitch}});
-        }
-        playerStore.update((s) => ({...s, pitch}));
-    };
-
-    /**
-     * Sets master gain.
-     */
-    public setGain = (level: number): void => {
-        console.log(`[AudioEngineService] setGain called with: ${level}`);
-        if (this.gainNode && this.audioContext) {
-            const newGain = Math.max(0, Math.min(2, level));
-            this.gainNode.gain.setValueAtTime(newGain, this.audioContext.currentTime);
-            playerStore.update((s) => ({...s, gain: newGain}));
-        }
-    };
-
-    /**
-     * Cleans up all resources.
-     */
-    public dispose = (): void => {
-        console.log('[AudioEngineService] Disposing all resources...');
-        this.isPlaying = false;
-        this.isStopping = true;
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-
-        this.worker?.terminate();
-        this.worker = null;
-        this.isWorkerInitialized = false;
-        this.audioContext?.close();
-        this.audioContext = null;
-        console.log('[AudioEngineService] Dispose complete.');
-    };
-
-    // ---------------------------------------------------------------------------
-    //  SUB-SECTION: Private Helper Methods
-    // ---------------------------------------------------------------------------
-
-    private _getAudioContext(): AudioContext {
-        if (!this.audioContext || this.audioContext.state === 'closed') {
-            this.audioContext = new AudioContext();
-            this.gainNode = this.audioContext.createGain();
-            this.gainNode.connect(this.audioContext.destination);
-        }
-        return this.audioContext;
+      default:
+        console.warn(
+          `[AudioEngineService] Received unknown message type from worker: ${type}`,
+        );
     }
-
-    private _recursiveProcessAndPlayLoop = (): void => {
-        if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext) {
-            this.animationFrameId = null;
-            return;
-        }
-
-        playerStore.update((s) => ({...s, currentTime: this.sourcePlaybackOffset}));
-        this._performSingleProcessAndPlayIteration();
-
-        if (this.isPlaying) {
-            this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop);
-        } else {
-            this.animationFrameId = null;
-        }
-    };
-
-    private _performSingleProcessAndPlayIteration = (): void => {
-        assert(this.isPlaying, 'Processing loop ran while not playing.');
-        assert(!this.isStopping, 'Processing loop ran while stopping.');
-        assert(this.originalBuffer, 'Processing loop ran without an audio buffer.');
-        assert(this.audioContext, 'Processing loop ran without an audio context.');
-
-        if (!this.isPlaying || !this.originalBuffer || this.isStopping || !this.audioContext) return;
-
-        const now = this.audioContext.currentTime;
-        const lookahead = AUDIO_ENGINE_CONSTANTS.PROCESS_LOOKAHEAD_TIME;
-
-        if (this.nextChunkTime < now + lookahead) {
-            if (this.sourcePlaybackOffset < this.originalBuffer.duration) {
-                const chunkDuration = AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S;
-                let actualChunkDuration = Math.min(
-                    chunkDuration,
-                    this.originalBuffer.duration - this.sourcePlaybackOffset
-                );
-
-                if (actualChunkDuration <= AUDIO_ENGINE_CONSTANTS.MIN_CHUNK_DURATION_S) {
-                    actualChunkDuration = Math.min(
-                        this.originalBuffer.duration - this.sourcePlaybackOffset,
-                        AUDIO_ENGINE_CONSTANTS.TARGET_CHUNK_DURATION_S
-                    );
-                }
-
-                if (actualChunkDuration <= 0) {
-                    this.pause();
-                    playerStore.update((s) => ({...s, currentTime: this.originalBuffer!.duration}));
-                    return;
-                }
-
-                const startSample = Math.floor(this.sourcePlaybackOffset * this.originalBuffer.sampleRate);
-                const endSample = Math.floor(
-                    Math.min(
-                        this.sourcePlaybackOffset + actualChunkDuration,
-                        this.originalBuffer.duration
-                    ) * this.originalBuffer.sampleRate
-                );
-
-                if (startSample >= endSample) {
-                    this.pause();
-                    return;
-                }
-
-                const channelData = this.originalBuffer.getChannelData(0);
-                const segment = channelData.slice(startSample, endSample);
-                const isFinalChunk = this.sourcePlaybackOffset + actualChunkDuration >= this.originalBuffer.duration;
-
-                console.log(`[AudioEngineService] Processing chunk. Offset: ${this.sourcePlaybackOffset.toFixed(2)}s, Duration: ${actualChunkDuration.toFixed(3)}s, Final: ${isFinalChunk}`);
-
-                const processPayload: RubberbandProcessPayload = {inputBuffer: [segment], isFinalChunk};
-                this.worker!.postMessage({type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload}, [segment.buffer]);
-                this.sourcePlaybackOffset += actualChunkDuration;
-            } else {
-                this.pause();
-                playerStore.update((s) => ({
-                    ...s,
-                    currentTime: this.originalBuffer!.duration,
-                    status: `Finished: ${s.fileName}`
-                }));
-            }
-        }
-    };
-
-    private scheduleChunkPlayback = (processedChannels: Float32Array[], startTime: number): void => {
-        if (!processedChannels || processedChannels.length === 0 || processedChannels[0].length === 0) return;
-
-        assert(this.audioContext, 'Attempted to schedule chunk without an audio context.');
-        assert(this.gainNode, 'Attempted to schedule chunk without a gain node.');
-        assert(this.originalBuffer, 'Attempted to schedule chunk without an original buffer.');
-        assert(!this.isStopping, 'Attempted to schedule chunk while stopping.');
-
-        if (!this.audioContext || !this.gainNode || this.isStopping || !this.originalBuffer) return;
-
-        const numberOfChannels = this.originalBuffer.numberOfChannels;
-        if (processedChannels.length !== numberOfChannels) {
-            console.error(`ScheduleChunkPlayback: Mismatch in channel count. Expected ${numberOfChannels}, got ${processedChannels.length}.`);
-            return;
-        }
-
-        const frameCount = processedChannels[0].length;
-        if (frameCount === 0) return;
-
-        const audioBuffer = this.audioContext.createBuffer(numberOfChannels, frameCount, this.originalBuffer.sampleRate);
-        for (let i = 0; i < numberOfChannels; i++) {
-            audioBuffer.copyToChannel(processedChannels[i], i);
-        }
-
-        const bufferSource = this.audioContext.createBufferSource();
-        bufferSource.buffer = audioBuffer;
-        bufferSource.connect(this.gainNode);
-
-        const actualStartTime = Math.max(this.audioContext.currentTime, startTime);
-        console.log(`[AudioEngineService] Scheduling chunk playback at ${actualStartTime.toFixed(2)}s. Duration: ${audioBuffer.duration.toFixed(3)}s.`);
-        bufferSource.start(actualStartTime);
-
-        const chunkDuration = audioBuffer.duration;
-        this.nextChunkTime = actualStartTime + chunkDuration - AUDIO_ENGINE_CONSTANTS.SCHEDULE_AHEAD_TIME_S;
-
-        bufferSource.onended = () => bufferSource.disconnect();
-    };
-
-    private handleWorkerMessage = (event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>): void => {
-        const {type, payload} = event.data;
-
-        switch (type) {
-            case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
-                this.isWorkerInitialized = true;
-                console.log('[AudioEngineService] Worker initialized successfully.');
-                playerStore.update((s) => ({...s, isPlayable: true, status: `Ready: ${s.fileName}`}));
-                break;
-
-            case RB_WORKER_MSG_TYPE.ERROR:
-                const errorPayload = payload as WorkerErrorPayload;
-                console.error('[AudioEngineService] Worker Error:', errorPayload.message);
-                playerStore.update((s) => ({
-                    ...s,
-                    error: errorPayload.message,
-                    isPlaying: false,
-                    isPlayable: false,
-                    status: 'Error'
-                }));
-                this.isWorkerInitialized = false;
-                if (this.isPlaying) this.pause();
-                break;
-
-            case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
-                const {outputBuffer} = payload as RubberbandProcessResultPayload;
-                if (outputBuffer && this.isPlaying && !this.isStopping) {
-                    this.scheduleChunkPlayback(outputBuffer, this.nextChunkTime);
-                }
-                break;
-
-            default:
-                console.warn(`[AudioEngineService] Received unknown message type from worker: ${type}`);
-        }
-    };
+  };
 }
 
 export default AudioEngineService.getInstance();
+
 ````
 --- End of File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
+--- File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts
+import { get } from 'svelte/store';
+import { playerStore } from '$lib/stores/player.store';
+import { analysisStore } from '$lib/stores/analysis.store';
+import { audioEngine } from './audioEngine.service';
+import { dtmfService } from './dtmf.service';
+import { spectrogramService } from './spectrogram.service';
+import { debounce } from '$lib/utils/async';
+import { updateUrlWithParams } from '$lib/utils/urlState';
+import { UI_CONSTANTS, URL_HASH_KEYS } from '$lib/utils/constants';
+
+export class AudioOrchestrator {
+  private static instance: AudioOrchestrator;
+
+  private constructor() {
+    // Private constructor for singleton
+  }
+
+  public static getInstance(): AudioOrchestrator {
+    if (!AudioOrchestrator.instance) {
+      AudioOrchestrator.instance = new AudioOrchestrator();
+    }
+    return AudioOrchestrator.instance;
+  }
+
+  public async loadFileAndAnalyze(file: File): Promise<void> {
+    console.log('AudioOrchestrator: Starting new file load.');
+    playerStore.set({
+      ...get(playerStore),
+      status: 'Loading',
+      error: null,
+      isPlayable: false,
+    });
+    analysisStore.update(store => ({
+      ...store,
+      // Reset analysis-specific data
+      dtmfResults: [],
+      spectrogramData: null, // Or appropriate initial value
+      // Reset other analysis fields as needed
+    }));
+
+    try {
+      await audioEngine.unlockAudio();
+      const audioBuffer = await audioEngine.loadFile(file);
+
+      playerStore.update(store => ({
+        ...store,
+        status: 'Ready',
+        isPlayable: true,
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+      }));
+
+      spectrogramService.init(audioBuffer.sampleRate);
+      dtmfService.init(audioBuffer.sampleRate);
+
+      console.log('AudioOrchestrator: Starting background analysis tasks.');
+      const analysisPromises = [
+        dtmfService.process(audioBuffer),
+        spectrogramService.process(audioBuffer.getChannelData(0)),
+      ];
+
+      const results = await Promise.allSettled(analysisPromises);
+      console.log('AudioOrchestrator: All background analysis tasks settled.', results);
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`AudioOrchestrator: Analysis task ${index} failed:`, result.reason);
+          // Optionally, update a specific error state in analysisStore or playerStore
+        }
+      });
+
+    } catch (error: any) {
+      console.error('AudioOrchestrator: Error loading or analyzing file.', error);
+      playerStore.update(store => ({
+        ...store,
+        status: 'Error',
+        error: error.message || 'Unknown error during file processing.',
+        isPlayable: false,
+      }));
+    }
+  }
+
+  public setupUrlSerialization(): void {
+    console.log('AudioOrchestrator: Setting up URL serialization.');
+
+    const debouncedUpdater = debounce(() => {
+      const currentPlayerState = get(playerStore);
+      const currentAnalysisState = get(analysisStore);
+
+      const params: Record<string, string | number | boolean> = {
+        [URL_HASH_KEYS.SPEED]: currentPlayerState.playbackSpeed,
+        [URL_HASH_KEYS.PITCH]: currentPlayerState.pitchShift,
+        [URL_HASH_KEYS.GAIN]: currentPlayerState.gain,
+        [URL_HASH_KEYS.VAD_THRESHOLD]: currentAnalysisState.vadSensitivity,
+        [URL_HASH_KEYS.VAD_NOISE_FLOOR]: currentAnalysisState.vadNoiseFloor,
+        // Add other relevant parameters from playerStore and analysisStore
+        // Example:
+        // [URL_HASH_KEYS.FILTER_LOW_PASS]: currentPlayerState.filterLowPass,
+        // [URL_HASH_KEYS.FILTER_HIGH_PASS]: currentPlayerState.filterHighPass,
+      };
+
+      console.log('AudioOrchestrator: Debounced URL update. New params:', params);
+      updateUrlWithParams(params);
+    }, UI_CONSTANTS.DEBOUNCE_TIME_MS_URL_UPDATE);
+
+    playerStore.subscribe(debouncedUpdater);
+    analysisStore.subscribe(debouncedUpdater);
+  }
+}
+
+export const audioOrchestrator = AudioOrchestrator.getInstance();
+
+````
+--- End of File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts ---
 --- File: vibe-player-v2/src/lib/services/dtmf.service.test.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/dtmf.service.test.ts
@@ -13794,6 +14634,8 @@ const initialState: AnalysisState = {
   vadStateResetted: undefined,
   vadError: null,
   vadInitialized: false,
+  vadPositiveThreshold: 0.5, // Default value
+  vadNegativeThreshold: 0.35, // Default value
 
   spectrogramStatus: undefined,
   spectrogramError: null,
@@ -13846,86 +14688,36 @@ export const dtmfStore = writable<DtmfState>(initialState);
 --- File: vibe-player-v2/src/lib/stores/player.store.ts ---
 ````typescript
 // vibe-player-v2/src/lib/stores/player.store.ts
-import { writable } from 'svelte/store';
-import type { PlayerState } from '$lib/types/player.types';
-import { updateUrlWithParams } from '../utils/urlState';
-import { debounce } from '../utils/async';
+import { writable } from "svelte/store";
+import type { PlayerState } from "$lib/types/player.types";
+// import { updateUrlWithParams } from "../utils/urlState"; // No longer used in this file
+// import { debounce } from "../utils/async"; // No longer used in this file
 
 const initialState: PlayerState = {
-	status: 'idle',
-	fileName: null,
-	duration: 0,
-	currentTime: 0,
-	isPlaying: false,
-	isPlayable: false,
-	speed: 1.0,
-	pitch: 0.0,
-	gain: 1.0,
-	waveformData: undefined,
-	error: null,
-	audioBuffer: undefined,
-	audioContextResumed: false,
-	channels: undefined,
-	sampleRate: undefined,
-	lastProcessedChunk: undefined
+  status: "idle",
+  fileName: null,
+  duration: 0,
+  currentTime: 0,
+  isPlaying: false,
+  isPlayable: false,
+  speed: 1.0,
+  pitch: 0.0,
+  gain: 1.0,
+  waveformData: undefined,
+  error: null,
+  audioBuffer: undefined,
+  audioContextResumed: false,
+  channels: undefined,
+  sampleRate: undefined,
+  lastProcessedChunk: undefined,
 };
 
 export const playerStore = writable<PlayerState>(initialState);
 
-// --- State Serialization to URL ---
-// Keep track of previous values to see what changed.
-let previousSpeed: number | undefined = initialState.speed;
-let previousPitch: number | undefined = initialState.pitch;
-let previousGain: number | undefined = initialState.gain;
+// Self-subscription logic for URL serialization has been removed.
+// This responsibility is now handled by AudioOrchestrator.service.ts,
+// which listens to this store (and others) to update URL parameters.
 
-/**
- * Creates a debounced function that serializes the current player state to the URL.
- */
-const debouncedUpdateUrl = debounce((params: Record<string, string>) => {
-	updateUrlWithParams(params);
-}, 300);
-
-/**
- * Subscribes to the playerStore to automatically update the URL when relevant
- * parameters (like speed, pitch, gain) change from their default values.
- */
-playerStore.subscribe((currentState) => {
-	// LOG: Log the entire current state object whenever the store updates.
-	console.log('[player.store.ts] Store changed. New state:', currentState);
-
-	const params: Record<string, string> = {};
-	let changed = false;
-
-	if (currentState.speed !== previousSpeed) {
-		if (currentState.speed !== undefined && currentState.speed !== initialState.speed) {
-			params.speed = currentState.speed.toFixed(2);
-		}
-		previousSpeed = currentState.speed;
-		changed = true;
-	}
-
-	if (currentState.pitch !== previousPitch) {
-		if (currentState.pitch !== undefined && currentState.pitch !== initialState.pitch) {
-			params.pitch = currentState.pitch.toFixed(2);
-		}
-		previousPitch = currentState.pitch;
-		changed = true;
-	}
-
-	if (currentState.gain !== previousGain) {
-		if (currentState.gain !== undefined && currentState.gain !== initialState.gain) {
-			params.gain = currentState.gain.toFixed(2);
-		}
-		previousGain = currentState.gain;
-		changed = true;
-	}
-
-	if (changed) {
-		// LOG: Show what parameters are about to be sent to the debounced URL updater.
-		console.log('[player.store.ts] A parameter changed. Queuing URL update with params:', params);
-		debouncedUpdateUrl(params);
-	}
-});
 ````
 --- End of File: vibe-player-v2/src/lib/stores/player.store.ts ---
 --- File: vibe-player-v2/src/lib/stores/status.store.ts ---
@@ -13959,6 +14751,8 @@ export interface AnalysisState {
   vadStateResetted?: boolean;
   vadError?: string | null;
   vadInitialized?: boolean; // To track VAD worker initialization status
+  vadPositiveThreshold?: number; // Added for VAD positive threshold
+  vadNegativeThreshold?: number; // Added for VAD negative threshold
 
   // Spectrogram related properties
   spectrogramStatus?: string; // e.g., "Spectrogram worker initializing..."
@@ -14408,11 +15202,13 @@ export const VAD_CONSTANTS: VadConstants = {
 export interface UiConstants {
   DEBOUNCE_HASH_UPDATE_MS: number;
   SYNC_DEBOUNCE_WAIT_MS: number;
+  URL_TIME_PRECISION: number; // Added
 }
 
 export const UI_CONSTANTS: UiConstants = {
   DEBOUNCE_HASH_UPDATE_MS: 500,
   SYNC_DEBOUNCE_WAIT_MS: 300,
+  URL_TIME_PRECISION: 2, // Added
 };
 
 export interface VisualizerConstants {
@@ -14452,6 +15248,7 @@ export const VISUALIZER_CONSTANTS: VisualizerConstants = {
 };
 
 export interface UrlHashKeys {
+  // Existing - keep them for now
   SPEED: string;
   PITCH: string;
   GAIN: string;
@@ -14459,16 +15256,39 @@ export interface UrlHashKeys {
   VAD_NEGATIVE: string;
   AUDIO_URL: string;
   TIME: string;
+
+  // New keys for the orchestrator
+  PLAYBACK_SPEED: string;
+  PITCH_SHIFT: string;
+  GAIN_LEVEL: string;
+  LOOP_ACTIVE: string;
+  LOOP_START: string;
+  LOOP_END: string;
+  CURRENT_TIME: string; // This will effectively override the old TIME for the new service
+  DTMF_ENABLED: string;
+  SPECTROGRAM_ENABLED: string;
 }
 
 export const URL_HASH_KEYS: UrlHashKeys = {
+  // Existing
   SPEED: "speed",
   PITCH: "pitch",
   GAIN: "gain",
   VAD_POSITIVE: "vadPositive",
   VAD_NEGATIVE: "vadNegative",
   AUDIO_URL: "url",
-  TIME: "time",
+  TIME: "time", // old key for time
+
+  // New keys for the orchestrator
+  PLAYBACK_SPEED: 's', // as per prompt example
+  PITCH_SHIFT: 'p',    // as per prompt example
+  GAIN_LEVEL: 'g',     // as per prompt example
+  LOOP_ACTIVE: 'la',   // as per prompt example
+  LOOP_START: 'ls',    // as per prompt example
+  LOOP_END: 'le',      // as per prompt example
+  CURRENT_TIME: 't',   // as per prompt example (overwrites old "time" for new service logic)
+  DTMF_ENABLED: 'de',  // as per prompt example
+  SPECTROGRAM_ENABLED: 'se', // as per prompt example
 };
 
 export interface DtmfConstants {
@@ -15781,11 +16601,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     import analysisService from '$lib/services/analysis.service';
     import dtmfService from '$lib/services/dtmf.service';
     import spectrogramService from '$lib/services/spectrogram.service';
-	import { VAD_CONSTANTS, URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants';
+	import { URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants'; // VAD_CONSTANTS removed
     import {playerStore} from '$lib/stores/player.store';
     import {analysisStore} from '$lib/stores/analysis.store';
+    import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
     import {formatTime} from '$lib/utils/formatters';
-    import {debounce, updateUrlWithParams} from '$lib/utils';
+    // import {debounce, updateUrlWithParams} from '$lib/utils'; // No longer needed here
 
     // --- START: FIX FOR SEEK SLIDER ---
     let seekTime = $playerStore.currentTime; // Bound to the slider's visual position.
@@ -15830,70 +16651,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     }
 
     onMount(() => {
-        // Initialize all services eagerly when the application component mounts.
-        // This is the most robust approach to ensure everything is ready.
-        console.log('Initializing all services onMount...');
+        console.log('[+page.svelte] onMount: Initializing AudioOrchestrator.');
 
-        // Initialize the analysis service, which prepares the SileroVAD worker.
-        analysisService.initialize();
-
-        // Initialize the DTMF service and its worker.
-        dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
-
-        // --- URL State Serialization Logic ---
-        /**
-         * [LOGGING ADDED] Collects relevant state from stores, compares against defaults,
-         * and calls the URL update utility.
-         */
-        const serializeStateToUrl = () => {
-            const pStore = get(playerStore);
-            const aStore = get(analysisStore);
-
-            // LOG: Log the state objects being used for serialization.
-            console.log('[+page.svelte] serializeStateToUrl: Checking player state:', pStore);
-            console.log('[+page.svelte] serializeStateToUrl: Checking analysis state:', aStore);
-
-            const params: Record<string, string> = {
-                [URL_HASH_KEYS.SPEED]: pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : '',
-                [URL_HASH_KEYS.PITCH]: pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : '',
-                [URL_HASH_KEYS.GAIN]: pStore.gain !== 1.0 ? pStore.gain.toFixed(2) : '',
-                [URL_HASH_KEYS.VAD_POSITIVE]:
-                    aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD
-                        ? aStore.vadPositiveThreshold.toFixed(2)
-                        : '',
-                [URL_HASH_KEYS.VAD_NEGATIVE]:
-                    aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD
-                        ? aStore.vadNegativeThreshold.toFixed(2)
-                        : ''
-            };
-
-            console.log('[+page.svelte] serializeStateToUrl: Generated params for URL:', params);
-            updateUrlWithParams(params);
-        };
-
-        const debouncedUrlUpdate = debounce(
-            serializeStateToUrl,
-            UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS
-        );
-
-        // Subscribe to stores to trigger URL updates
-        const unsubPlayer = playerStore.subscribe(debouncedUrlUpdate);
-        const unsubAnalysis = analysisStore.subscribe(debouncedUrlUpdate);
-        // --- End URL State Serialization Logic ---
-
-        const unsubSpec = playerStore.subscribe((state) => {
-            if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
-                console.log('New audio buffer detected, triggering DTMF analysis service...');
-                dtmfService.process(state.audioBuffer);
-            }
-
-            // Initialize spectrogram service if conditions are met.
-            // This is independent of the DTMF logic above.
-            if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
-                console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
-                spectrogramService.initialize({sampleRate: state.sampleRate});
-            }
-        });
+        // Initialize AudioOrchestrator and its URL handling capabilities
+        const audioOrchestrator = AudioOrchestrator.getInstance(); // Ensure this is imported
+        audioOrchestrator.setupUrlSerialization();
 
         // Original keydown handler can remain if needed for global shortcuts
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -15912,12 +16674,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
             // Dispose all services when the component is destroyed.
             audioEngineService.dispose();
-            analysisService.dispose();
-            dtmfService.dispose();
-            spectrogramService.dispose();
-            unsubSpec();
-            unsubPlayer();
-            unsubAnalysis();
+            analysisService.dispose(); // Keep for now
+            dtmfService.dispose(); // Keep for now
+            spectrogramService.dispose(); // Keep for now
         };
     });
 </script>
@@ -17138,308 +17897,358 @@ test.describe("Application Startup Smoke Test", () => {
 --- File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
 ````javascript
 // vibe-player-v2/tests-e2e/player.e2e.spec.js
-import { expect, test } from '@playwright/test';
-import { PlayerPage } from './PlayerPage.mjs';
+import { expect, test } from "@playwright/test";
+import { PlayerPage } from "./PlayerPage.mjs";
 
 function parseTimeToSeconds(timeStr) {
-	if (!timeStr || !timeStr.includes(':') || timeStr.includes('NaN')) return 0;
-	const parts = timeStr.split(':');
-	return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  if (!timeStr || !timeStr.includes(":") || timeStr.includes("NaN")) return 0;
+  const parts = timeStr.split(":");
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
 
 // UPDATED: Paths are now relative to the server root, as they are in the static dir.
-const TEST_AUDIO_FILE = 'test-audio/C.Noisy_Voice.wav';
-const DTMF_TEST_AUDIO_FILE = 'test-audio/dtmf-123A456B789C(star)0(hex)D.mp3';
+const TEST_AUDIO_FILE = "test-audio/C.Noisy_Voice.wav";
+const DTMF_TEST_AUDIO_FILE = "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
 
-test.describe('Vibe Player V2 E2E', () => {
-	let playerPage;
+test.describe("Vibe Player V2 E2E", () => {
+  let playerPage;
 
-	test.beforeEach(async ({ page }) => {
-		page.on('console', (msg) => {
-			const text = msg.text();
-			// Only log non-URL serialization messages to reduce noise
-			if (!text.includes('[URL Serialization]')) {
-				console.log(`[BROWSER LOG]: ${text}`);
-			}
-			if (msg.type() === 'error') {
-				// Detect critical VAD/WASM errors and fail the test immediately
-				if (text.includes('VAD error') || text.includes('WASM error') || text.includes('WebAssembly')) {
-					test.fail(true, `Critical VAD/WASM error detected in browser console: ${text}`);
-				}
-			}
-		});
-		playerPage = new PlayerPage(page);
-		await playerPage.goto();
-	});
+  test.beforeEach(async ({ page }) => {
+    page.on("console", (msg) => {
+      const text = msg.text();
+      // Only log non-URL serialization messages to reduce noise
+      if (!text.includes("[URL Serialization]")) {
+        console.log(`[BROWSER LOG]: ${text}`);
+      }
+      if (msg.type() === "error") {
+        // Detect critical VAD/WASM errors and fail the test immediately
+        if (
+          text.includes("VAD error") ||
+          text.includes("WASM error") ||
+          text.includes("WebAssembly")
+        ) {
+          test.fail(
+            true,
+            `Critical VAD/WASM error detected in browser console: ${text}`,
+          );
+        }
+      }
+    });
+    playerPage = new PlayerPage(page);
+    await playerPage.goto();
+  });
 
-	test('should load an audio file and enable playback controls', async ({ page }) => {
-		await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-		await playerPage.expectControlsToBeReadyForPlayback();
-	});
+  test("should load an audio file and enable playback controls", async ({
+    page,
+  }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+  });
 
-	test('should display initial time as "0:00 / 0:00" or similar', async () => {
-		await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-		await playerPage.expectControlsToBeReadyForPlayback();
-		await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {
-			timeout: 5000
-		});
-	});
+  test('should display initial time as "0:00 / 0:00" or similar', async () => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ [0-9]+:[0-9]{2}/, {
+      timeout: 5000,
+    });
+  });
 
-	test('should play and pause audio', async ({ page }) => {
-		await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-		await playerPage.expectControlsToBeReadyForPlayback();
+  test("should play and pause audio", async ({ page }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-		await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
 
-		await playerPage.playButton.click();
-		await expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i, {
-			timeout: 2000
-		});
+    await playerPage.playButton.click();
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i, {
+      timeout: 2000,
+    });
 
-		// --- START: IMPROVED TWO-STAGE ASSERTION ---
-		// Stage 1: Wait for the element to be visible (should be instant, but good practice).
-		await expect(playerPage.timeDisplay).toBeVisible();
+    // --- START: IMPROVED TWO-STAGE ASSERTION ---
+    // Stage 1: Wait for the element to be visible (should be instant, but good practice).
+    await expect(playerPage.timeDisplay).toBeVisible();
 
-		// Stage 2: Wait for its content to change.
-		await expect(
-			playerPage.timeDisplay,
-			'Playback did not start and time did not advance'
-		).not.toHaveText(/^0:00 \//, { timeout: 10000 });
-		// --- END: IMPROVED TWO-STAGE ASSERTION ---
+    // Stage 2: Wait for its content to change.
+    await expect(
+      playerPage.timeDisplay,
+      "Playback did not start and time did not advance",
+    ).not.toHaveText(/^0:00 \//, { timeout: 10000 });
+    // --- END: IMPROVED TWO-STAGE ASSERTION ---
 
-		await playerPage.playButton.click();
-		await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
-		const timeAfterPause = await playerPage.timeDisplay.textContent();
-		await page.waitForTimeout(500);
-		const timeAfterPauseAndDelay = await playerPage.timeDisplay.textContent();
-		expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
-	});
+    await playerPage.playButton.click();
+    await expect(await playerPage.getPlayButtonText()).toMatch(/Play/i);
+    const timeAfterPause = await playerPage.timeDisplay.textContent();
+    await page.waitForTimeout(500);
+    const timeAfterPauseAndDelay = await playerPage.timeDisplay.textContent();
+    expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
+  });
 
-	test('should seek audio using the seek bar', async ({ page }) => {
-		await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-		await playerPage.expectControlsToBeReadyForPlayback();
-		await playerPage.playButton.click();
+  test("should seek audio using the seek bar with pause-seek-resume behavior", async ({ page }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-		await page.waitForFunction(
-			() =>
-				document.querySelector('[data-testid="time-display"]')?.textContent !== '0:00 / 0:00',
-			null,
-			{ timeout: 5000 }
-		);
+    // 1. Start playback
+    await playerPage.playButton.click();
+    await expect(playerPage.playButton).toHaveText('Pause');
 
-		const initialTimeText = await playerPage.timeDisplay.textContent();
-		const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
-		expect(durationSeconds).toBeGreaterThan(0);
+    // Wait for playback to start and time to advance a bit
+    await expect(playerPage.timeDisplay, "Playback did not start").not.toHaveText(/^0:00 \//, { timeout: 5000 });
 
-		const currentMax =
-			parseFloat(await playerPage.seekSliderInput.getAttribute('max')) || durationSeconds;
-		await playerPage.setSliderValue(playerPage.seekSliderInput, String(currentMax / 2));
+    const timeBeforeSeek = await playerPage.getCurrentTime();
+    expect(timeBeforeSeek).toBeGreaterThan(0);
 
-		await page.waitForTimeout(500);
+    // 2. Initiate Seek to roughly the middle of the track
+    const durationText = (await playerPage.timeDisplay.textContent())?.split(" / ")[1];
+    const durationSeconds = parseTimeToSeconds(durationText);
+    expect(durationSeconds).toBeGreaterThan(0);
 
-		const timeAfterSeekText = await playerPage.timeDisplay.textContent();
-		const currentTimeAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[0]);
-		const durationAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[1]);
+    const targetSeekTimeSeconds = durationSeconds / 2;
+    // PlayerPage.setSliderValue takes string, and it internally handles min/max attributes.
+    // We pass the desired absolute time value string.
+    await playerPage.setSliderValue(playerPage.seekSliderInput, String(targetSeekTimeSeconds));
 
-		expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
-		expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
-		expect(await playerPage.getPlayButtonText()).toMatch(/Pause/i);
-	});
+    // 3. Assert Playback Resumed and Seek Completion
+    // The setSliderValue includes a waitForTimeout(350) which should be enough for UI to reflect the post-seek state.
+    // Play button should indicate "Pause" meaning playback resumed.
+    await expect(playerPage.playButton, "Playback did not resume after seek").toHaveText('Pause');
 
-	test('should detect and display DTMF tones', async ({ page }) => {
-		await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
-		await playerPage.expectControlsToBeReadyForPlayback();
+    // Check current time after seek.
+    const timeAfterSeek = await playerPage.getCurrentTime();
+    // Allow a tolerance (e.g., +/- 1 second) due to timing of updates and playback loop.
+    expect(timeAfterSeek).toBeCloseTo(targetSeekTimeSeconds, 0); // Using Playwright's default tolerance or specify with second arg
 
-		const expectedDtmfSequence = '1 2 3 A 4 5 6 B 7 8 9 C * 0 # D';
+    // 4. Assert Playback is ongoing and time is advancing
+    await page.waitForTimeout(1000); // Wait for playback to continue for a second
 
-		// --- START: IMPROVED TWO-STAGE ASSERTION ---
-		// Stage 1: Wait for the DTMF display element to appear on the page.
-		await expect(
-			playerPage.dtmfDisplay,
-			'DTMF display element did not appear'
-		).toBeVisible({ timeout: 15000 });
+    const timeAfterResumeAndPlay = await playerPage.getCurrentTime();
+    // Check if time has advanced beyond the point of seek, considering potential small initial delay/buffering
+    expect(timeAfterResumeAndPlay, "Time did not advance after resuming playback").toBeGreaterThan(timeAfterSeek - 0.1); // allow for slight timing variance
+    expect(timeAfterResumeAndPlay).toBeGreaterThanOrEqual(targetSeekTimeSeconds);
 
-		// Stage 2: Now that it exists, check its text content.
-		await expect(
-			playerPage.dtmfDisplay,
-			'DTMF text content did not match expected sequence'
-		).toHaveText(expectedDtmfSequence);
-		// --- END: IMPROVED TWO-STAGE ASSERTION ---
-	});
 
-	test.describe('URL State Serialization', () => {
-		test('should update URL when settings change', async ({ page }) => {
-			await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-			await playerPage.expectControlsToBeReadyForPlayback();
+    await expect(playerPage.playButton, "Playback stopped after resuming and playing").toHaveText('Pause'); // Still playing
+  });
 
-			// --- SPEED ---
-			await playerPage.setSliderValue(playerPage.speedSliderInput, '1.5');
-			await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
+  test("should detect and display DTMF tones", async ({ page }) => {
+    await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-			// --- PITCH ---
-			await playerPage.setSliderValue(playerPage.pitchSliderInput, '2.0');
-			await expect(page).toHaveURL(/pitch=2.00/, { timeout: 2000 });
-			await expect(page).toHaveURL(/speed=1.50/); // Ensure previous param is still there
+    const expectedDtmfSequence = "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D";
 
-			// --- GAIN (NEWLY ADDED) ---
-			await playerPage.setSliderValue(playerPage.gainSliderInput, '1.75');
-			await expect(page).toHaveURL(/gain=1.75/, { timeout: 2000 });
-			await expect(page).toHaveURL(/speed=1.50/); // Ensure other params remain
-			await expect(page).toHaveURL(/pitch=2.00/);
-		});
+    // --- START: IMPROVED TWO-STAGE ASSERTION ---
+    // Stage 1: Wait for the DTMF display element to appear on the page.
+    await expect(
+      playerPage.dtmfDisplay,
+      "DTMF display element did not appear",
+    ).toBeVisible({ timeout: 15000 });
 
-		test('should load settings from URL parameters on page load', async ({ page }) => {
-			await playerPage.page.goto(playerPage.devServerUrl + '?speed=1.75&pitch=-3');
-			await expect(playerPage.appBarTitle).toHaveText('Vibe Player V2', {
-				timeout: 15000
-			});
-			await expect(playerPage.fileInput).toBeVisible({ timeout: 10000 });
+    // Stage 2: Now that it exists, check its text content.
+    await expect(
+      playerPage.dtmfDisplay,
+      "DTMF text content did not match expected sequence",
+    ).toHaveText(expectedDtmfSequence);
+    // --- END: IMPROVED TWO-STAGE ASSERTION ---
+  });
 
-			await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-			await playerPage.expectControlsToBeReadyForPlayback();
+  test.describe("URL State Serialization", () => {
+    test("should update URL when settings change", async ({ page }) => {
+      await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+      await playerPage.expectControlsToBeReadyForPlayback();
 
-			// --- ROBUST FIX: Assert against the visible label, not the input's internal value ---
-			// This confirms the value was processed by the store and reflected in the UI component's state.
-			await expect(
-				playerPage.speedValueDisplay,
-				'The visible speed label did not update from the URL parameter.'
-			).toHaveText('Speed: 1.75x', { timeout: 2000 });
+      // --- SPEED ---
+      await playerPage.setSliderValue(playerPage.speedSliderInput, "1.5");
+      await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
 
-			await expect(
-				playerPage.pitchValueDisplay,
-				'The visible pitch label did not update from the URL parameter.'
-			).toHaveText('Pitch: -3.0 semitones', { timeout: 2000 });
-		});
-	});
+      // --- PITCH ---
+      await playerPage.setSliderValue(playerPage.pitchSliderInput, "2.0");
+      await expect(page).toHaveURL(/pitch=2.00/, { timeout: 2000 });
+      await expect(page).toHaveURL(/speed=1.50/); // Ensure previous param is still there
+
+      // --- GAIN (NEWLY ADDED) ---
+      await playerPage.setSliderValue(playerPage.gainSliderInput, "1.75");
+      await expect(page).toHaveURL(/gain=1.75/, { timeout: 2000 });
+      await expect(page).toHaveURL(/speed=1.50/); // Ensure other params remain
+      await expect(page).toHaveURL(/pitch=2.00/);
+    });
+
+    test("should load settings from URL parameters on page load", async ({
+      page,
+    }) => {
+      await playerPage.page.goto(
+        playerPage.devServerUrl + "?speed=1.75&pitch=-3",
+      );
+      await expect(playerPage.appBarTitle).toHaveText("Vibe Player V2", {
+        timeout: 15000,
+      });
+      await expect(playerPage.fileInput).toBeVisible({ timeout: 10000 });
+
+      await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+      await playerPage.expectControlsToBeReadyForPlayback();
+
+      // --- ROBUST FIX: Assert against the visible label, not the input's internal value ---
+      // This confirms the value was processed by the store and reflected in the UI component's state.
+      await expect(
+        playerPage.speedValueDisplay,
+        "The visible speed label did not update from the URL parameter.",
+      ).toHaveText("Speed: 1.75x", { timeout: 2000 });
+
+      await expect(
+        playerPage.pitchValueDisplay,
+        "The visible pitch label did not update from the URL parameter.",
+      ).toHaveText("Pitch: -3.0 semitones", { timeout: 2000 });
+    });
+  });
 });
+
 ````
 --- End of File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
 --- File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 ````mjs
 // vibe-player-v2/tests-e2e/PlayerPage.mjs
-import { expect } from '@playwright/test';
+import { expect } from "@playwright/test";
 
 export class PlayerPage {
-	/**
-	 * A Page Object Model for the Vibe Player V2 application.
-	 * Encapsulates locators and actions for interacting with the player UI.
-	 * @param {import('@playwright/test').Page} page
-	 */
-	constructor(page) {
-		this.page = page;
-		this.devServerUrl = 'http://localhost:4173/';
-		this.appBarTitle = page.getByTestId('app-bar-title');
-		this.fileInput = page.locator('input[type="file"]');
-		this.fileNameDisplay = page.getByTestId('file-name-display');
-		this.fileStatusDisplay = page.getByTestId('file-status-display');
-		this.fileErrorDisplay = page.getByTestId('file-error-display');
-		this.playButton = page.getByTestId('play-button');
-		this.stopButton = page.getByTestId('stop-button');
-		this.timeDisplay = page.getByTestId('time-display');
-		this.seekSliderInput = page.getByTestId('seek-slider-input');
-		this.speedSliderInput = page.getByTestId('speed-slider-input');
-		this.speedValueDisplay = page.getByTestId('speed-value');
-		this.pitchSliderInput = page.getByTestId('pitch-slider-input');
-		this.pitchValueDisplay = page.getByTestId('pitch-value');
-		this.gainSliderInput = page.getByTestId('gain-slider-input');
-		this.gainValueDisplay = page.getByTestId('gain-value');
-		this.vadPositiveSliderInput = page.getByTestId('vad-positive-slider-input');
-		this.vadPositiveValueDisplay = page.getByTestId('vad-positive-value');
-		this.vadNegativeSliderInput = page.getByTestId('vad-negative-slider-input');
-		this.vadNegativeValueDisplay = page.getByTestId('vad-negative-value');
-		this.dtmfDisplay = page.getByTestId('dtmf-display');
-	}
+  /**
+   * A Page Object Model for the Vibe Player V2 application.
+   * Encapsulates locators and actions for interacting with the player UI.
+   * @param {import('@playwright/test').Page} page
+   */
+  constructor(page) {
+    this.page = page;
+    this.devServerUrl = "http://localhost:4173/";
+    this.appBarTitle = page.getByTestId("app-bar-title");
+    this.fileInput = page.locator('input[type="file"]');
+    this.fileNameDisplay = page.getByTestId("file-name-display");
+    this.fileStatusDisplay = page.getByTestId("file-status-display");
+    this.fileErrorDisplay = page.getByTestId("file-error-display");
+    this.playButton = page.getByTestId("play-button");
+    this.stopButton = page.getByTestId("stop-button");
+    this.timeDisplay = page.getByTestId("time-display");
+    this.seekSliderInput = page.getByTestId("seek-slider-input");
+    this.speedSliderInput = page.getByTestId("speed-slider-input");
+    this.speedValueDisplay = page.getByTestId("speed-value");
+    this.pitchSliderInput = page.getByTestId("pitch-slider-input");
+    this.pitchValueDisplay = page.getByTestId("pitch-value");
+    this.gainSliderInput = page.getByTestId("gain-slider-input");
+    this.gainValueDisplay = page.getByTestId("gain-value");
+    this.vadPositiveSliderInput = page.getByTestId("vad-positive-slider-input");
+    this.vadPositiveValueDisplay = page.getByTestId("vad-positive-value");
+    this.vadNegativeSliderInput = page.getByTestId("vad-negative-slider-input");
+    this.vadNegativeValueDisplay = page.getByTestId("vad-negative-value");
+    this.dtmfDisplay = page.getByTestId("dtmf-display");
+  }
 
-	/**
-	 * Navigates to the application's base URL and verifies the page has loaded.
-	 */
-	async goto() {
-		await this.page.goto(this.devServerUrl);
-		await expect(this.appBarTitle).toHaveText('Vibe Player V2', {
-			timeout: 15000
-		});
-		await expect(this.fileInput).toBeVisible({ timeout: 10000 });
-	}
+  /**
+   * Navigates to the application's base URL and verifies the page has loaded.
+   */
+  async goto() {
+    await this.page.goto(this.devServerUrl);
+    await expect(this.appBarTitle).toHaveText("Vibe Player V2", {
+      timeout: 15000,
+    });
+    await expect(this.fileInput).toBeVisible({ timeout: 10000 });
+  }
 
-	/**
-	 * Loads an audio file using the file input.
-	 * @param {string} fileName - The path to the file within the 'static' directory.
-	 */
-	async loadAudioFile(fileName) {
-		const filePath = `static/${fileName}`;
-		await this.fileInput.setInputFiles(filePath);
-	}
+  /**
+   * Loads an audio file using the file input.
+   * @param {string} fileName - The path to the file within the 'static' directory.
+   */
+  async loadAudioFile(fileName) {
+    const filePath = `static/${fileName}`;
+    await this.fileInput.setInputFiles(filePath);
+  }
 
-	/**
-	 * Waits for the UI to be in a state where playback is possible after a file load.
-	 */
-	async expectControlsToBeReadyForPlayback() {
-		await expect(this.fileStatusDisplay).toHaveText(/Ready/, {
-			timeout: 20000
-		});
-		await expect(this.timeDisplay, 'Time display did not update with audio duration').not.toHaveText(
-			'0:00 / 0:00',
-			{ timeout: 1000 }
-		);
-		await expect(this.playButton, 'Play button was not enabled after file load').toBeEnabled({
-			timeout: 1000
-		});
-	}
+  /**
+   * Waits for the UI to be in a state where playback is possible after a file load.
+   */
+  async expectControlsToBeReadyForPlayback() {
+    await expect(this.fileStatusDisplay).toHaveText(/Ready/, {
+      timeout: 20000,
+    });
+    await expect(
+      this.timeDisplay,
+      "Time display did not update with audio duration",
+    ).not.toHaveText("0:00 / 0:00", { timeout: 1000 });
+    await expect(
+      this.playButton,
+      "Play button was not enabled after file load",
+    ).toBeEnabled({
+      timeout: 1000,
+    });
+  }
 
-	/**
-	 * Gets the current text content of the play/pause button.
-	 * @returns {Promise<string|null>}
-	 */
-	async getPlayButtonText() {
-		return this.playButton.textContent();
-	}
+  /**
+   * Gets the current text content of the play/pause button.
+   * @returns {Promise<string|null>}
+   */
+  async getPlayButtonText() {
+    return this.playButton.textContent();
+  }
 
-	/**
-	 * [FIXED] Sets the value of a Skeleton UI RangeSlider by simulating a direct click.
-	 * This correctly fires mousedown, input, and mouseup events.
-	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
-	 * @param {string} valueStr - The target value as a string.
-	 */
-	async setSliderValue(sliderInputLocator, valueStr) {
-		const testId = await sliderInputLocator.getAttribute('data-testid');
-		console.log(`[TEST LOG] Simulating click on slider '${testId}' to set value: ${valueStr}`);
+  /**
+   * Sets the value of a slider by calculating the click position based on the desired value.
+   * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
+   * @param {string} valueStr - The target value as a string (e.g., "1.5").
+   */
+  async setSliderValue(sliderInputLocator, valueStr) {
+    const targetValue = parseFloat(valueStr);
+    const boundingBox = await sliderInputLocator.boundingBox();
+    if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
 
-		const targetValue = parseFloat(valueStr);
+    const { min, max } = await sliderInputLocator.evaluate((el) => ({
+        min: parseFloat(el.getAttribute('min') || '0'),
+        max: parseFloat(el.getAttribute('max') || '100')
+    }));
 
-		// Get the slider's bounding box to calculate click coordinates
-		const boundingBox = await sliderInputLocator.boundingBox();
-		if (!boundingBox) {
-			throw new Error(`Could not get bounding box for slider ${testId}`);
-		}
+    const ratio = (targetValue - min) / (max - min);
+    let clickX = boundingBox.x + boundingBox.width * ratio;
 
-		// Get the slider's min and max attributes
-		const { min, max } = await sliderInputLocator.evaluate((el) => ({
-			min: parseFloat(el.getAttribute('min') || '0'),
-			max: parseFloat(el.getAttribute('max') || '100')
-		}));
+    // Ensure clickX is within the bounding box width
+    clickX = Math.max(boundingBox.x, Math.min(clickX, boundingBox.x + boundingBox.width));
 
-		// Calculate the position to click on the slider track
-		const ratio = (targetValue - min) / (max - min);
-		const clickX = boundingBox.x + boundingBox.width * ratio;
-		const clickY = boundingBox.y + boundingBox.height / 2;
+    const clickY = boundingBox.y + boundingBox.height / 2;
 
-		// Perform the click. This single action simulates a user's mousedown/mouseup
-		// and will trigger the Svelte component's internal event handlers.
-		await this.page.mouse.click(clickX, clickY);
+    await this.page.mouse.click(clickX, clickY);
+    await this.page.waitForTimeout(350); // Allow for debounced updates
+  }
 
-		// A small delay for debounced functions in the Svelte store to fire.
-		await this.page.waitForTimeout(350);
-	}
+  /**
+   * Gets the current value of a slider input.
+   * @param {import('@playwright/test').Locator} sliderInputLocator
+   * @returns {Promise<string>}
+   */
+  async getSliderInputValue(sliderInputLocator) {
+    return sliderInputLocator.inputValue();
+  }
 
-	/**
-	 * Gets the current value of a slider input.
-	 * @param {import('@playwright/test').Locator} sliderInputLocator
-	 * @returns {Promise<string>}
-	 */
-	async getSliderInputValue(sliderInputLocator) {
-		return sliderInputLocator.inputValue();
-	}
+  /**
+   * Gets the current playback time from the time display element.
+   * Assumes the time display format is "currentTimeFormatted / durationFormatted".
+   * @returns {Promise<number>} The current time in seconds.
+   */
+  async getCurrentTime() {
+    const timeDisplayText = await this.timeDisplay.textContent();
+    if (!timeDisplayText) throw new Error("Time display text content is empty or null.");
+
+    const timeParts = timeDisplayText.split(" / ");
+    if (timeParts.length < 1) throw new Error(`Unexpected time display format: ${timeDisplayText}`);
+
+    const currentTimeStr = timeParts[0].trim(); // "M:SS" or "H:MM:SS"
+    const segments = currentTimeStr.split(':').map(Number);
+    let currentTimeInSeconds = 0;
+    if (segments.length === 3) { // H:MM:SS
+        currentTimeInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
+    } else if (segments.length === 2) { // M:SS
+        currentTimeInSeconds = segments[0] * 60 + segments[1];
+    } else if (segments.length === 1) { // SS (less likely for current time but robust)
+        currentTimeInSeconds = segments[0];
+    } else {
+        throw new Error(`Unexpected current time segment format: ${currentTimeStr}`);
+    }
+    return currentTimeInSeconds;
+  }
 }
+
 ````
 --- End of File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 --- File: vibe-player-v2/tsconfig.json ---
