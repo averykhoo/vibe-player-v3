@@ -2,6 +2,7 @@
 import { get } from 'svelte/store';
 import { playerStore } from '$lib/stores/player.store';
 import { statusStore } from '$lib/stores/status.store';
+import type { StatusState } from '$lib/types/status.types'; // Added this import
 import { analysisStore } from '$lib/stores/analysis.store';
 import { audioEngine } from './audioEngine.service';
 import { dtmfService } from './dtmf.service';
@@ -25,26 +26,32 @@ export class AudioOrchestrator {
   }
 
   public async loadFileAndAnalyze(file: File): Promise<void> {
-    console.log('AudioOrchestrator: Starting new file load.');
-    statusStore.set({ message: `Loading ${file.name}...`, type: 'info', isLoading: true });
-    playerStore.update(s => ({ ...s, error: null, isPlayable: false, fileName: file.name }));
+    console.log(`[Orchestrator] === Starting New File Load: ${file.name} ===`);
+    statusStore.set({ message: `Loading ${file.name}...`, type: 'info', isLoading: true, details: null, progress: null });
+    // Ensure other relevant stores are reset if that's current behavior (e.g., analysisStore, waveformStore)
+    playerStore.update(s => ({ ...s, error: null, status: 'Loading', isPlayable: false, fileName: file.name, duration: 0, currentTime: 0 })); // Added fileName and reset duration/currentTime
     analysisStore.update(store => ({
       ...store,
-      // Reset analysis-specific data
       dtmfResults: [],
-      spectrogramData: null, // Or appropriate initial value
-      // Reset other analysis fields as needed
+      spectrogramData: null,
     }));
 
     try {
       await audioEngine.unlockAudio();
       const audioBuffer = await audioEngine.loadFile(file);
+      // audioEngine.decodeAudioData() is usually part of loadFile or handled by the browser's AudioContext directly
 
-      playerStore.update(store => ({
-        ...store,
+      const duration = audioBuffer.duration;
+      const sampleRate = audioBuffer.sampleRate;
+      const channels = audioBuffer.numberOfChannels; // Assuming this property exists
+
+      playerStore.update(s => ({
+        ...s,
+        duration,
+        sampleRate,
+        channels, // Added channels
         isPlayable: true,
-        duration: audioBuffer.duration,
-        sampleRate: audioBuffer.sampleRate,
+        status: 'Ready', // Updated status here
       }));
       statusStore.set({ message: 'Ready', type: 'success', isLoading: false });
 
@@ -68,34 +75,39 @@ export class AudioOrchestrator {
       });
 
     } catch (error: unknown) {
-      console.error('AudioOrchestrator: Error loading or analyzing file.', error);
       const message = error instanceof Error ? error.message : String(error);
+      console.error(`[Orchestrator] !!! CRITICAL ERROR during file load:`, error);
       statusStore.set({ message: 'File processing failed.', type: 'error', isLoading: false, details: message });
-      playerStore.update(s => ({ ...s, status: 'Error', error: message, isPlayable: false }));
+      // Update playerStore to reflect the error state specifically for the player
+      playerStore.update(s => ({ ...s, status: 'Error', error: message, isPlayable: false, duration: 0, currentTime: 0 }));
     }
   }
 
+  /**
+   * Sets up debounced URL serialization based on player and analysis store changes.
+   * @public
+   */
   public setupUrlSerialization(): void {
-    console.log('AudioOrchestrator: Setting up URL serialization.');
+    console.log('[Orchestrator] Setting up URL serialization.');
 
     const debouncedUpdater = debounce(() => {
       const pStore = get(playerStore);
-      const aStore = get(analysisStore); // Added as per issue, usage commented out
+      // const aStore = get(analysisStore); // Keep this commented out if analysisStore part is not for this step yet
 
       const params: Record<string, string> = {
         [URL_HASH_KEYS.SPEED]: pStore.speed.toFixed(2),
-        [URL_HASH_KEYS.PITCH]: pStore.pitch.toFixed(1),
+        [URL_HASH_KEYS.PITCH]: pStore.pitch.toFixed(1), // Assuming pitch is semitones
         [URL_HASH_KEYS.GAIN]: pStore.gain.toFixed(2),
-        // [URL_HASH_KEYS.VAD_THRESHOLD]: aStore.vadSensitivity.toFixed(2), // Ensure aStore.vadSensitivity is the correct property if uncommented
-        // [URL_HASH_KEYS.VAD_NOISE_FLOOR]: aStore.vadNoiseFloor.toFixed(2), // Ensure aStore.vadNoiseFloor is the correct property if uncommented
+        // [URL_HASH_KEYS.VAD_THRESHOLD]: aStore.vadPositiveThreshold.toFixed(2), // Keep commented
+        // ... any other relevant params from playerStore that should be serialized
       };
 
       console.log(`[Orchestrator/URL] Debounced update triggered. New params:`, params);
-      updateUrlWithParams(params);
+      updateUrlWithParams(params); // Make sure updateUrlWithParams is correctly imported/defined
     }, UI_CONSTANTS.DEBOUNCE_TIME_MS_URL_UPDATE);
 
     playerStore.subscribe(debouncedUpdater);
-    analysisStore.subscribe(debouncedUpdater);
+    // analysisStore.subscribe(debouncedUpdater); // Only subscribe if aStore is used in params
   }
 }
 

@@ -499,12 +499,23 @@ describe("AudioEngineService", () => {
     });
 
     describe('updateSeek', () => {
-      it('should update playerStore currentTime if playable', () => {
+      it('should update playerStore currentTime if playable and assert the updater function', () => {
         const seekTime = 5.5;
-        // const storeUpdateSpy = vi.spyOn(playerStoreWritable, 'update'); // Spying on store directly can be tricky
+        const storeUpdateSpy = vi.spyOn(playerStoreWritable, 'update');
         audioEngineService.updateSeek(seekTime);
-        // expect(storeUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
+
+        expect(storeUpdateSpy).toHaveBeenCalledTimes(1);
+        expect(storeUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
+
+        // Check the effect of the updater function passed to store.update
+        const updaterFunction = storeUpdateSpy.mock.calls[0][0];
+        const previousState: PlayerState = { ...initialPlayerState, currentTime: 0 }; // Example previous state
+        const newState = updaterFunction(previousState);
+        expect(newState.currentTime).toBe(seekTime);
+
+        // Also check the direct outcome on the store (which happens due to the spy calling the original)
         expect(get(playerStoreWritable).currentTime).toBe(seekTime);
+        storeUpdateSpy.mockRestore(); // Restore original update method
       });
 
       it('should not update playerStore if not playable (worker not ready)', () => {

@@ -418,24 +418,40 @@ class AudioEngineService {
     console.log("[AudioEngineService] Dispose complete.");
   };
 
+  /**
+   * Initiates the seek operation.
+   * Remembers if playback was active and pauses playback.
+   */
   public startSeek = (): void => {
+    // Condition uses internal readiness check, equivalent to isPlayable from engine's perspective
     if (!this.originalBuffer || !this.isWorkerReady) return;
-    this.wasPlayingBeforeSeek = this.isPlaying;
+    this.wasPlayingBeforeSeek = this.isPlaying; // isPlaying is a property
     if (this.isPlaying) {
-        this.pause();
+        this.pause(); // pause() is a method
     }
   };
 
+  /**
+   * Updates the current time in the player store during a seek operation.
+   * This provides immediate UI feedback.
+   * @param {number} time - The current seek time.
+   */
   public updateSeek = (time: number): void => {
     if (!this.originalBuffer || !this.isWorkerReady) return;
+    // Update the store directly for immediate UI feedback.
     playerStore.update(s => ({ ...s, currentTime: time }));
   };
 
+  /**
+   * Finalizes the seek operation.
+   * Seeks to the specified time and resumes playback if it was active before seeking.
+   * @param {number} time - The final seek time.
+   */
   public endSeek = (time: number): void => {
     if (!this.originalBuffer || !this.isWorkerReady) return;
-    this.seek(time); // Use the internal seek method
+    this.seek(time); // Use the internal seek method of AudioEngineService
     if (this.wasPlayingBeforeSeek) {
-        this.play();
+        this.play(); // play() is a method
     }
     this.wasPlayingBeforeSeek = false;
   };
