@@ -30,48 +30,6 @@
     import {formatTime} from '$lib/utils/formatters';
     // import {debounce, updateUrlWithParams} from '$lib/utils'; // No longer needed here
 
-    // --- START: FIX FOR SEEK SLIDER ---
-    let seekTime = $playerStore.currentTime; // Bound to the slider's visual position.
-    let isSeeking = false; // Flag to indicate if the user is actively dragging the slider.
-    let wasPlayingBeforeSeek = false; // Remembers the playback state before the seek started.
-
-    // Update the slider's position reactively from the store, but only when not seeking.
-    playerStore.subscribe((value) => {
-        if (!isSeeking) {
-            seekTime = value.currentTime;
-        }
-    });
-
-    // When the user presses down on the slider.
-    function handleSeekStart() {
-        isSeeking = true;
-        wasPlayingBeforeSeek = get(playerStore).isPlaying;
-        console.log(`[+page.svelte] handleSeekStart called.`);
-        if (wasPlayingBeforeSeek) {
-            audioEngineService.pause();
-        }
-    }
-
-    // While the user is dragging the slider.
-    function handleSeekInput() {
-        // Only update the store's currentTime for the visual display.
-        // Do not call the audio engine here.
-        console.log(`[+page.svelte] handleSeekInput called. Target seekTime: ${seekTime.toFixed(2)}s`);
-        playerStore.update((s) => ({...s, currentTime: seekTime}));
-    }
-
-    // When the user releases the slider.
-    function handleSeekEnd() {
-        isSeeking = false;
-        // Perform the final, single seek operation.
-        audioEngineService.seek(seekTime);
-        console.log(`[+page.svelte] handleSeekEnd called. Target seekTime: ${seekTime.toFixed(2)}s`);
-        // Resume playback if it was active before.
-        if (wasPlayingBeforeSeek) {
-            audioEngineService.play();
-        }
-    }
-
     onMount(() => {
         console.log('[+page.svelte] onMount: Initializing AudioOrchestrator.');
 
@@ -121,14 +79,14 @@
         </div>
         <RangeSlider
                 name="seek"
-                bind:value={seekTime}
+                bind:value={$playerStore.currentTime}
                 max={$playerStore.duration || 1}
                 step="any"
-                on:input={handleSeekInput}
-                on:mousedown={handleSeekStart}
-                on:mouseup={handleSeekEnd}
-                on:touchstart={handleSeekStart}
-                on:touchend={handleSeekEnd}
+                on:input={(e) => audioEngineService.updateSeek(e.currentTarget.valueAsNumber)}
+                on:mousedown={audioEngineService.startSeek}
+                on:mouseup={(e) => audioEngineService.endSeek(e.currentTarget.valueAsNumber)}
+                on:touchstart={audioEngineService.startSeek}
+                on:touchend={(e) => audioEngineService.endSeek(e.currentTarget.valueAsNumber)}
                 disabled={!$playerStore.isPlayable}
                 data-testid="seek-slider-input"
         />

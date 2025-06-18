@@ -57,6 +57,7 @@ class AudioEngineService {
   /** Used to resolve/reject the promise returned by initializeWorker */
   private workerInitPromiseCallbacks: { resolve: () => void; reject: (reason?: any) => void } | null = null;
 
+  private wasPlayingBeforeSeek = false;
 
   private constructor() {}
 
@@ -415,6 +416,28 @@ class AudioEngineService {
     this.originalBuffer = null;
     this.workerInitPromiseCallbacks = null; // Clear any pending promise callbacks
     console.log("[AudioEngineService] Dispose complete.");
+  };
+
+  public startSeek = (): void => {
+    if (!this.originalBuffer || !this.isWorkerReady) return;
+    this.wasPlayingBeforeSeek = this.isPlaying;
+    if (this.isPlaying) {
+        this.pause();
+    }
+  };
+
+  public updateSeek = (time: number): void => {
+    if (!this.originalBuffer || !this.isWorkerReady) return;
+    playerStore.update(s => ({ ...s, currentTime: time }));
+  };
+
+  public endSeek = (time: number): void => {
+    if (!this.originalBuffer || !this.isWorkerReady) return;
+    this.seek(time); // Use the internal seek method
+    if (this.wasPlayingBeforeSeek) {
+        this.play();
+    }
+    this.wasPlayingBeforeSeek = false;
   };
 
   // ---------------------------------------------------------------------------
