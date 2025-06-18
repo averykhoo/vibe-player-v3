@@ -26,8 +26,9 @@
 	import { VAD_CONSTANTS, URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants';
     import {playerStore} from '$lib/stores/player.store';
     import {analysisStore} from '$lib/stores/analysis.store';
+    import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
     import {formatTime} from '$lib/utils/formatters';
-    import {debounce, updateUrlWithParams} from '$lib/utils';
+    // import {debounce, updateUrlWithParams} from '$lib/utils'; // No longer needed here
 
     // --- START: FIX FOR SEEK SLIDER ---
     let seekTime = $playerStore.currentTime; // Bound to the slider's visual position.
@@ -82,57 +83,22 @@
         // Initialize the DTMF service and its worker.
         dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
 
-        // --- URL State Serialization Logic ---
-        /**
-         * [LOGGING ADDED] Collects relevant state from stores, compares against defaults,
-         * and calls the URL update utility.
-         */
-        const serializeStateToUrl = () => {
-            const pStore = get(playerStore);
-            const aStore = get(analysisStore);
+        // Initialize AudioOrchestrator and its URL handling capabilities
+        const audioOrchestrator = AudioOrchestrator.getInstance();
+        audioOrchestrator.setupUrlSerialization(); // Sets up reactions to store changes for URL params
+        audioOrchestrator.loadUrlOrDefault(); // Attempts to load from URL or default
 
-            // LOG: Log the state objects being used for serialization.
-            console.log('[+page.svelte] serializeStateToUrl: Checking player state:', pStore);
-            console.log('[+page.svelte] serializeStateToUrl: Checking analysis state:', aStore);
-
-            const params: Record<string, string> = {
-                [URL_HASH_KEYS.SPEED]: pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : '',
-                [URL_HASH_KEYS.PITCH]: pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : '',
-                [URL_HASH_KEYS.GAIN]: pStore.gain !== 1.0 ? pStore.gain.toFixed(2) : '',
-                [URL_HASH_KEYS.VAD_POSITIVE]:
-                    aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD
-                        ? aStore.vadPositiveThreshold.toFixed(2)
-                        : '',
-                [URL_HASH_KEYS.VAD_NEGATIVE]:
-                    aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD
-                        ? aStore.vadNegativeThreshold.toFixed(2)
-                        : ''
-            };
-
-            console.log('[+page.svelte] serializeStateToUrl: Generated params for URL:', params);
-            updateUrlWithParams(params);
-        };
-
-        const debouncedUrlUpdate = debounce(
-            serializeStateToUrl,
-            UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS
-        );
-
-        // Subscribe to stores to trigger URL updates
-        const unsubPlayer = playerStore.subscribe(debouncedUrlUpdate);
-        const unsubAnalysis = analysisStore.subscribe(debouncedUrlUpdate);
-        // --- End URL State Serialization Logic ---
-
-        const unsubSpec = playerStore.subscribe((state) => {
-            if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
-                console.log('New audio buffer detected, triggering DTMF analysis service...');
+        // The existing subscription to playerStore for DTMF and Spectrogram initialization can remain.
+        // AudioOrchestrator will populate playerStore, and these services react to that.
+        const unsubPlayerStoreForServices = playerStore.subscribe((state) => {
+            if (state.audioBuffer && state.analysisCompleted) { // Ensure analysis is done if DTMF relies on it
+                console.log('New audio buffer analyzed, triggering DTMF analysis service...');
                 dtmfService.process(state.audioBuffer);
             }
 
             // Initialize spectrogram service if conditions are met.
-            // This is independent of the DTMF logic above.
-            if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
-                console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
+            if (state.sampleRate && state.analysisCompleted && !get(analysisStore).spectrogramInitialized) {
+                console.log(`Initializing spectrogram service with sample rate: ${state.samplerate}, analysis completed.`);
                 spectrogramService.initialize({sampleRate: state.sampleRate});
             }
         });
@@ -157,9 +123,7 @@
             analysisService.dispose();
             dtmfService.dispose();
             spectrogramService.dispose();
-            unsubSpec();
-            unsubPlayer();
-            unsubAnalysis();
+            unsubPlayerStoreForServices(); // Renamed for clarity
         };
     });
 </script>

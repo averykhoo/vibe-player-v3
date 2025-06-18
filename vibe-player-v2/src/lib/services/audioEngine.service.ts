@@ -86,116 +86,137 @@ class AudioEngineService {
   };
 
   /**
-   * Loads an audio file from an ArrayBuffer, decodes it, and initializes the
-   * processing worker. This is the primary entry point for loading new audio.
-   * @param {ArrayBuffer} audioFileBuffer - The raw audio data.
-   * @param {string} fileName - The name of the file for logging and display.
-   * @returns {Promise<void>}
+   * Loads an audio file from a File object and decodes it.
+   * Its only responsibility is to decode the file and return a Promise<AudioBuffer>.
+   * It does not interact with stores or perform worker initialization.
+   * @param {File} audioFile - The audio file to load.
+   * @returns {Promise<AudioBuffer>} A promise that resolves with the decoded AudioBuffer.
+   * @throws {Error} If the file is invalid or decoding fails.
    */
-  public loadFile = async (
-    audioFileBuffer: ArrayBuffer,
-    fileName: string,
-  ): Promise<void> => {
-    console.log(`[AudioEngineService] loadFile called for: ${fileName}`);
-    if (!audioFileBuffer || audioFileBuffer.byteLength === 0) {
-      const errorMsg = "loadFile received an invalid or empty ArrayBuffer.";
+  public loadFile = async (audioFile: File): Promise<AudioBuffer> => {
+    console.log(`[AudioEngineService] loadFile called for: ${audioFile.name}`);
+    if (!audioFile || audioFile.size === 0) {
+      const errorMsg = "loadFile received an invalid or empty File object.";
       console.error(`[AudioEngine] ${errorMsg}`);
-      playerStore.update((s) => ({ ...s, error: errorMsg, isPlayable: false }));
-      return;
+      throw new Error(errorMsg);
     }
 
-    await this.stop();
-
     const ctx = this._getAudioContext();
-    playerStore.update((s) => ({
-      ...s,
-      status: `Decoding ${fileName}...`,
-      error: null,
-      fileName,
-      isPlayable: false,
-    }));
+    let audioFileBuffer: ArrayBuffer;
 
     try {
-      console.log(`[AudioEngineService] Decoding audio data...`);
-      this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
-      console.log(
-        `[AudioEngineService] Audio decoded successfully. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`,
-      );
-
-      if (!this.worker) {
-        this.worker = new RubberbandWorker();
-        this.worker.onmessage = this.handleWorkerMessage;
-        this.worker.onerror = (err) =>
-          console.error("[AudioEngineService] Unhandled worker error:", err);
-      } else {
-        this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
-      }
-      this.isWorkerInitialized = false;
-
-      const wasmResponse = await fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL);
-      const loaderResponse = await fetch(
-        AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL,
-      );
-      if (!wasmResponse.ok || !loaderResponse.ok) {
-        throw new Error(
-          "Failed to fetch worker dependencies (WASM or loader script).",
-        );
-      }
-      const wasmBinary = await wasmResponse.arrayBuffer();
-      const loaderScriptText = await loaderResponse.text();
-
-      const initPayload: RubberbandInitPayload = {
-        wasmBinary,
-        loaderScriptText,
-        origin: location.origin,
-        sampleRate: this.originalBuffer.sampleRate,
-        channels: this.originalBuffer.numberOfChannels,
-        initialSpeed: get(playerStore).speed,
-        initialPitch: get(playerStore).pitch,
-      };
-
-      console.log(
-        `[AudioEngineService] Posting INIT message to worker with payload:`,
-        {
-          ...initPayload,
-          wasmBinary: `[${wasmBinary.byteLength} bytes]`,
-          loaderScriptText: `[${loaderScriptText.length} chars]`,
-        },
-      );
-      this.worker.postMessage(
-        { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
-        [wasmBinary],
-      );
-
-      playerStore.update((s) => ({
-        ...s,
-        status: `Initializing processor for ${fileName}...`,
-        duration: this.originalBuffer!.duration,
-        audioBuffer: this.originalBuffer,
-        sampleRate: this.originalBuffer!.sampleRate,
-      }));
-      analysisStore.set({});
+      audioFileBuffer = await audioFile.arrayBuffer();
     } catch (e) {
       const error = e as Error;
       console.error(
-        `[AudioEngineService] Error during loadFile: ${error.message}`,
+        `[AudioEngineService] Error reading ArrayBuffer from file: ${error.message}`,
       );
-      playerStore.update((s) => ({
-        ...s,
-        status: `Error decoding`,
-        error: error.message,
-        isPlayable: false,
-      }));
-      throw error;
+      throw new Error(`Failed to read file: ${error.message}`);
+    }
+
+    try {
+      console.log(`[AudioEngineService] Decoding audio data for ${audioFile.name}...`);
+      // Stop any existing playback before decoding new buffer.
+      // This is a minimal side-effect, could be moved out if strictness is paramount.
+      await this.stop();
+      this.originalBuffer = await ctx.decodeAudioData(audioFileBuffer);
+      console.log(
+        `[AudioEngineService] Audio decoded successfully for ${audioFile.name}. Duration: ${this.originalBuffer.duration.toFixed(2)}s, Channels: ${this.originalBuffer.numberOfChannels}, Sample Rate: ${this.originalBuffer.sampleRate}Hz`,
+      );
+      // Clear any previous analysis data tied to the old buffer
+      analysisStore.set({});
+      return this.originalBuffer;
+    } catch (e) {
+      const error = e as Error;
+      console.error(
+        `[AudioEngineService] Error during audio decoding: ${error.message}`,
+      );
+      this.originalBuffer = null; // Ensure buffer is cleared on error
+      throw new Error(`Error decoding audio: ${error.message}`);
     }
   };
 
   /**
+   * Initializes the Rubberband Web Worker with the provided AudioBuffer's properties.
+   * This should be called after `loadFile` successfully decodes an audio file.
+   * @param {AudioBuffer} audioBuffer - The AudioBuffer to initialize the worker with.
+   * @returns {Promise<void>} A promise that resolves when the worker signals initialization success, or rejects on error.
+   */
+  public initializeWorker = async (audioBuffer: AudioBuffer): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      console.log(`[AudioEngineService] Initializing worker...`);
+      if (!audioBuffer) {
+        const errorMsg = "initializeWorker called with no AudioBuffer.";
+        console.error(`[AudioEngine] ${errorMsg}`);
+        reject(new Error(errorMsg));
+        return;
+      }
+
+      if (!this.worker) {
+        this.worker = new RubberbandWorker();
+        this.worker.onmessage = (event) => {
+          // Modify handleWorkerMessage to use the promise's resolve/reject
+          this.handleWorkerMessage(event, { resolve, reject });
+        };
+        this.worker.onerror = (err) => {
+          console.error("[AudioEngineService] Unhandled worker error:", err);
+          this.isWorkerInitialized = false;
+          playerStore.update((s) => ({ ...s, error: "Worker failed to initialize or crashed.", isPlayable: false, isPlaying: false }));
+          reject(new Error("Worker error: " + (err.message || "Unknown worker error")));
+        };
+      } else {
+        this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
+      }
+      this.isWorkerInitialized = false; // Set to false until INIT_SUCCESS is received
+
+      Promise.all([
+        fetch(AUDIO_ENGINE_CONSTANTS.WASM_BINARY_URL),
+        fetch(AUDIO_ENGINE_CONSTANTS.LOADER_SCRIPT_URL),
+      ])
+        .then(async ([wasmResponse, loaderResponse]) => {
+          if (!wasmResponse.ok || !loaderResponse.ok) {
+            throw new Error("Failed to fetch worker dependencies (WASM or loader script).");
+          }
+          const wasmBinary = await wasmResponse.arrayBuffer();
+          const loaderScriptText = await loaderResponse.text();
+
+          const initPayload: RubberbandInitPayload = {
+            wasmBinary,
+            loaderScriptText,
+            origin: location.origin,
+            sampleRate: audioBuffer.sampleRate,
+            channels: audioBuffer.numberOfChannels,
+            initialSpeed: get(playerStore).speed,
+            initialPitch: get(playerStore).pitch,
+          };
+
+          console.log(
+            `[AudioEngineService] Posting INIT message to worker with payload:`,
+            { ...initPayload, wasmBinary: `[${wasmBinary.byteLength} bytes]`, loaderScriptText: `[${loaderScriptText.length} chars]` },
+          );
+          this.worker!.postMessage(
+            { type: RB_WORKER_MSG_TYPE.INIT, payload: initPayload },
+            [wasmBinary],
+          );
+          // The actual resolution/rejection will happen in handleWorkerMessage
+        })
+        .catch((e) => {
+          const error = e as Error;
+          console.error(`[AudioEngineService] Error fetching worker dependencies: ${error.message}`);
+          playerStore.update((s) => ({ ...s, error: `Worker init failed: ${error.message}`, isPlayable: false }));
+          this.isWorkerInitialized = false;
+          reject(error);
+        });
+    });
+  };
+
+  /**
    * Starts or resumes playback.
+   * Requires `loadFile` and `initializeWorker` to have been successfully called.
    */
   public play = async (): Promise<void> => {
     console.log(
-      `[AudioEngineService] PLAY called. State: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}`,
+      `[AudioEngineService] PLAY called. State: isPlaying=${this.isPlaying}, isWorkerInitialized=${this.isWorkerInitialized}, originalBuffer: ${!!this.originalBuffer}`,
     );
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerInitialized) {
       console.warn(
@@ -567,9 +588,8 @@ class AudioEngineService {
   };
 
   private handleWorkerMessage = (
-    event: MessageEvent<
-      WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>
-    >,
+    event: MessageEvent<WorkerMessage<RubberbandProcessResultPayload | WorkerErrorPayload>>,
+    promiseCallbacks?: { resolve: () => void; reject: (reason?: any) => void },
   ): void => {
     const { type, payload } = event.data;
 
@@ -577,28 +597,24 @@ class AudioEngineService {
       case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
         this.isWorkerInitialized = true;
         console.log("[AudioEngineService] Worker initialized successfully.");
-        playerStore.update((s) => ({
-          ...s,
-          isPlayable: true,
-          status: `Ready: ${s.fileName}`,
-        }));
+        // No direct store update here for status, consumer should handle UI based on promise resolution.
+        // However, isPlayable is an important internal state for the engine related to worker.
+        playerStore.update((s) => ({ ...s, isPlayable: true, error: null }));
+        promiseCallbacks?.resolve();
         break;
 
       case RB_WORKER_MSG_TYPE.ERROR:
         const errorPayload = payload as WorkerErrorPayload;
-        console.error(
-          "[AudioEngineService] Worker Error:",
-          errorPayload.message,
-        );
+        console.error("[AudioEngineService] Worker Error:", errorPayload.message);
         playerStore.update((s) => ({
           ...s,
           error: errorPayload.message,
           isPlaying: false,
           isPlayable: false,
-          status: "Error",
         }));
         this.isWorkerInitialized = false;
-        if (this.isPlaying) this.pause();
+        if (this.isPlaying) this.pause(); // Stop playback if an error occurs
+        promiseCallbacks?.reject(new Error(errorPayload.message));
         break;
 
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:

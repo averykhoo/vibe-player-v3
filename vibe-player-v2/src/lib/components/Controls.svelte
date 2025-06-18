@@ -11,21 +11,14 @@
 	import analysisService from '$lib/services/analysis.service';
 	import { playerStore } from '$lib/stores/player.store';
 	import { analysisStore } from '$lib/stores/analysis.store';
-	import { get } from 'svelte/store';
+	import { get } from 'svelte/store'; // get is used by handlePlayPause
 
-	// Component-local state bound to the sliders
-	let speed = $playerStore?.speed || 1.0;
-	let pitch = $playerStore?.pitch || 0.0;
-	let gain = $playerStore?.gain || 1.0;
+	// Local state for VAD controls - these are not part of the current refactoring task.
 	let vadPositive = $analysisStore?.vadPositiveThreshold || 0.5;
 	let vadNegative = $analysisStore?.vadNegativeThreshold || 0.35;
 
 	// Subscriptions to keep local state in sync with the global store
-	playerStore.subscribe((val) => {
-		if (val.speed !== undefined) speed = val.speed;
-		if (val.pitch !== undefined) pitch = val.pitch;
-		if (val.gain !== undefined) gain = val.gain;
-	});
+	// Only VAD-related subscriptions remain, as speed/pitch/gain are now directly bound to playerStore.
 	analysisStore.subscribe((val) => {
 		if (val.vadPositiveThreshold !== undefined) vadPositive = val.vadPositiveThreshold;
 		if (val.vadNegativeThreshold !== undefined) vadNegative = val.vadNegativeThreshold;
@@ -50,30 +43,30 @@
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update the playback speed.
+	 * Called on speed slider input to update the playback speed.
+	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updateSpeed() {
-		// LOG: See what the value of `speed` is when this function is called.
-		console.log(`[Controls.svelte] updateSpeed() called. Current 'speed' variable is: ${speed}`);
-		audioEngine.setSpeed(speed);
+		console.log(`[Controls] User set speed to: ${$playerStore.speed.toFixed(2)}`);
+		audioEngine.setSpeed($playerStore.speed);
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update the playback pitch.
+	 * Called on pitch slider input to update the playback pitch.
+	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updatePitch() {
-		// LOG: See what the value of `pitch` is when this function is called.
-		console.log(`[Controls.svelte] updatePitch() called. Current 'pitch' variable is: ${pitch}`);
-		audioEngine.setPitch(pitch);
+		console.log(`[Controls] User set pitch to: ${$playerStore.pitch.toFixed(1)}`);
+		audioEngine.setPitch($playerStore.pitch);
 	}
 
 	/**
-	 * [LOGGING ADDED] Called on slider input to update the playback gain.
+	 * Called on gain slider input to update the playback gain.
+	 * Value is taken directly from the store which is bound to the slider.
 	 */
 	function updateGain() {
-		// LOG: See what the value of `gain` is when this function is called.
-		console.log(`[Controls.svelte] updateGain() called. Current 'gain' variable is: ${gain}`);
-		audioEngine.setGain(gain);
+		console.log(`[Controls] User set gain to: ${$playerStore.gain.toFixed(2)}`);
+		audioEngine.setGain($playerStore.gain);
 	}
 
 	/**
@@ -114,42 +107,45 @@
 	</div>
 	<div>
 		<label for="speedSlider" class="label" data-testid="speed-value"
-			>Speed: {speed.toFixed(2)}x</label
+			>Speed: {$playerStore.speed.toFixed(2)}x</label
 		>
 		<RangeSlider
 			data-testid="speed-slider-input"
 			name="speedSlider"
-			bind:value={speed}
+			bind:value={$playerStore.speed}
 			min={0.5}
 			max={2.0}
 			step={0.01}
 			on:input={updateSpeed}
+			disabled={!$playerStore.isPlayable}
 		/>
 	</div>
 	<div>
 		<label for="pitchSlider" class="label" data-testid="pitch-value"
-			>Pitch: {pitch.toFixed(1)} semitones</label
+			>Pitch: {$playerStore.pitch.toFixed(1)} semitones</label
 		>
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
-			bind:value={pitch}
+			bind:value={$playerStore.pitch}
 			min={-12}
 			max={12}
 			step={0.1}
 			on:input={updatePitch}
+			disabled={!$playerStore.isPlayable}
 		/>
 	</div>
 	<div>
-		<label for="gainSlider" class="label" data-testid="gain-value">Gain: {gain.toFixed(2)}</label>
+		<label for="gainSlider" class="label" data-testid="gain-value">Gain: {$playerStore.gain.toFixed(2)}</label>
 		<RangeSlider
 			data-testid="gain-slider-input"
 			name="gainSlider"
-			bind:value={gain}
+			bind:value={$playerStore.gain}
 			min={0}
 			max={2.0}
 			step={0.01}
 			on:input={updateGain}
+			disabled={!$playerStore.isPlayable}
 		/>
 	</div>
 	<div>

@@ -80,41 +80,28 @@ export class PlayerPage {
   }
 
   /**
-   * [RE-RE-FIXED] The most robust method. Programmatically sets the value on the native input
-   * element and then dispatches the events that the Svelte component handlers are listening for.
+   * Sets the value of a slider by calculating the click position based on the desired value.
    * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
-   * @param {string} valueStr - The target value as a string.
+   * @param {string} valueStr - The target value as a string (e.g., "1.5").
    */
   async setSliderValue(sliderInputLocator, valueStr) {
-    const testId = await sliderInputLocator.getAttribute("data-testid");
-    console.log(
-      `[TEST RUNNER] Forcing events on slider '${testId}' to value: ${valueStr}`,
-    );
+    const targetValue = parseFloat(valueStr);
+    const boundingBox = await sliderInputLocator.boundingBox();
+    if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
 
-    // Use page.evaluate to run code in the browser context, dispatching events on the element.
-    await sliderInputLocator.evaluate((element, value) => {
-      const inputElement = element;
+    const { min, max } = await sliderInputLocator.evaluate((el) => ({
+        min: parseFloat(el.getAttribute('min') || '0'),
+        max: parseFloat(el.getAttribute('max') || '100')
+    }));
 
-      // Log from the browser to confirm we're targeting the right element.
-      console.log(
-        `[BROWSER-SIDE LOG] Firing 'mousedown' on input with id: '${inputElement.id}'`,
-      );
-      inputElement.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true }),
-      );
+    const ratio = (targetValue - min) / (max - min);
+    // Ensure ratio is within [0, 1] to prevent clicking outside the slider track for out-of-bound values
+    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    const clickX = boundingBox.x + boundingBox.width * clampedRatio;
+    const clickY = boundingBox.y + boundingBox.height / 2;
 
-      console.log(
-        `[BROWSER-SIDE LOG] Setting value to ${value} and firing 'input'`,
-      );
-      inputElement.value = value;
-      inputElement.dispatchEvent(new Event("input", { bubbles: true }));
-
-      console.log(`[BROWSER-SIDE LOG] Firing 'mouseup'`);
-      inputElement.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-    }, valueStr);
-
-    // A small delay for debounced functions or other async updates in Svelte to fire.
-    await this.page.waitForTimeout(350);
+    await this.page.mouse.click(clickX, clickY);
+    await this.page.waitForTimeout(350); // Allow for debounced updates
   }
 
   /**
