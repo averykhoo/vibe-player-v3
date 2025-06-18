@@ -77,25 +77,37 @@ export class PlayerPage {
 	}
 
 	/**
-	 * [FIXED] Sets the value of a Skeleton UI RangeSlider programmatically.
-	 * Using .fill() fails on range inputs with float values. This method directly
-	 * sets the element's value and dispatches the necessary events to trigger
-	 * Svelte's reactivity and the component's event handlers.
+	 * [FIXED] Sets the value of a Skeleton UI RangeSlider by simulating a direct click.
+	 * This correctly fires mousedown, input, and mouseup events.
 	 * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider input element.
 	 * @param {string} valueStr - The target value as a string.
 	 */
 	async setSliderValue(sliderInputLocator, valueStr) {
 		const testId = await sliderInputLocator.getAttribute('data-testid');
-		console.log(`[TEST LOG] Setting slider '${testId}' to value: ${valueStr}`);
+		console.log(`[TEST LOG] Simulating click on slider '${testId}' to set value: ${valueStr}`);
 
-		// Use page.evaluate to directly set the value and dispatch events.
-		await sliderInputLocator.evaluate((element, value) => {
-			element.value = value;
-			// Dispatch 'input' to trigger the on:input binding in Svelte.
-			element.dispatchEvent(new Event('input', { bubbles: true }));
-			// Dispatch 'change' as a good practice for sliders.
-			element.dispatchEvent(new Event('change', { bubbles: true }));
-		}, valueStr);
+		const targetValue = parseFloat(valueStr);
+
+		// Get the slider's bounding box to calculate click coordinates
+		const boundingBox = await sliderInputLocator.boundingBox();
+		if (!boundingBox) {
+			throw new Error(`Could not get bounding box for slider ${testId}`);
+		}
+
+		// Get the slider's min and max attributes
+		const { min, max } = await sliderInputLocator.evaluate((el) => ({
+			min: parseFloat(el.getAttribute('min') || '0'),
+			max: parseFloat(el.getAttribute('max') || '100')
+		}));
+
+		// Calculate the position to click on the slider track
+		const ratio = (targetValue - min) / (max - min);
+		const clickX = boundingBox.x + boundingBox.width * ratio;
+		const clickY = boundingBox.y + boundingBox.height / 2;
+
+		// Perform the click. This single action simulates a user's mousedown/mouseup
+		// and will trigger the Svelte component's internal event handlers.
+		await this.page.mouse.click(clickX, clickY);
 
 		// A small delay for debounced functions in the Svelte store to fire.
 		await this.page.waitForTimeout(350);
