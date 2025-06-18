@@ -192,14 +192,16 @@ describe('AudioEngineService (Corrected Tests)', () => {
 	});
 
 	describe('seek', () => {
-		it('should update time and reset worker, but NOT start playing if paused', async () => {
-			expect(get(playerStoreInstance).isPlaying).toBe(false); // Verify initial state is paused.
+		it('should update time and reset worker when seeking while paused', async () => {
+			// Arrange: Ensure player is paused
+			expect(get(playerStoreInstance).isPlaying).toBe(false);
 
+			// Act
 			await audioEngineService.seek(5.0);
 
-			expect(rafSpy).not.toHaveBeenCalled(); // Should not have started an animation loop.
-			expect(cafSpy).not.toHaveBeenCalled(); // Nothing to cancel.
-
+			// Assert
+			expect(rafSpy).not.toHaveBeenCalled(); // Should NOT have started playback
+			expect(cafSpy).not.toHaveBeenCalled(); // Nothing to cancel
 			expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
 				type: RB_WORKER_MSG_TYPE.RESET
 			});
@@ -207,18 +209,17 @@ describe('AudioEngineService (Corrected Tests)', () => {
 			expect(get(playerStoreInstance).isPlaying).toBe(false); // Should remain paused.
 		});
 
-		// Replace the failing test with this corrected version:
-		it('should cancel loop, update time, reset worker, AND restart playback if playing', async () => {
-			// This test no longer needs fake timers because the seek->play logic is now direct.
+		it('should pause playback, update time, and reset worker when seeking while playing', async () => {
+			// Arrange: Start playback
 			await audioEngineService.play();
-			expect(rafSpy).toHaveBeenCalledTimes(1); // Ensure playback started.
-			vi.clearAllMocks(); // Clear spies for the main assertion part.
+			expect(rafSpy).toHaveBeenCalledTimes(1);
+			vi.clearAllMocks(); // Clear spies to isolate the seek action
 
-			// Act: Call seek and wait for it to complete.
+			// Act
 			await audioEngineService.seek(3.0);
 
-			// Assert:
-			// 1. The old animation frame was canceled.
+			// Assert
+			// 1. The old animation frame was canceled because `pause()` is called inside `seek()`.
 			expect(cafSpy).toHaveBeenCalledWith(MOCK_RAF_ID);
 
 			// 2. The worker was told to reset its state for the new position.
@@ -229,11 +230,11 @@ describe('AudioEngineService (Corrected Tests)', () => {
 			// 3. The store's time was updated correctly.
 			expect(get(playerStoreInstance).currentTime).toBe(3.0);
 
-			// 4. A *new* animation frame was requested to restart the playback loop.
-			expect(rafSpy).toHaveBeenCalledTimes(1);
+			// 4. A *new* animation frame was NOT requested because seek no longer resumes.
+			expect(rafSpy).not.toHaveBeenCalled();
 
-			// 5. The store reflects that playback is active.
-			expect(get(playerStoreInstance).isPlaying).toBe(true);
+			// 5. The store reflects that playback is now paused.
+			expect(get(playerStoreInstance).isPlaying).toBe(false);
 		});
 	});
 });

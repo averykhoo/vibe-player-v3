@@ -247,6 +247,8 @@ class AudioEngineService {
 
     /**
      * Seeks to a specific time in the audio.
+     * This method now ONLY sets the time and leaves the player in a paused state.
+     * The caller is responsible for resuming playback.
      */
     public seek = async (time: number): Promise<void> => {
         console.log(`[AudioEngineService] SEEK called. Target time: ${time.toFixed(2)}s`);
@@ -255,18 +257,19 @@ class AudioEngineService {
             return;
         }
 
-        const wasPlaying = this.isPlaying;
-        this.pause();
+        // Always pause when seeking.
+        if (this.isPlaying) {
+         this.pause();
+        }
 
+        // Reset the worker to clear its internal buffers for the new position.
         if (this.worker) this.worker.postMessage({type: RB_WORKER_MSG_TYPE.RESET});
 
+        // Update the internal state and the store's time.
         this.sourcePlaybackOffset = time;
         this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
         playerStore.update((s) => ({...s, currentTime: time}));
 
-        if (wasPlaying) {
-            await this.play();
-        }
     };
 
     /**

@@ -1,199 +1,222 @@
 <!-- vibe-player-v2/src/routes/+page.svelte -->
 <script lang="ts">
-	/**
-	 * @file Main page component for Vibe Player V2.
-	 * @description This component serves as the main entry point for the application. It orchestrates
-	 * the initialization and disposal of various services (audio engine, analysis services) and
-	 * manages the primary UI layout. It also contains the logic for serializing application
-	 * state (like playback speed and VAD thresholds) to the URL for sharing.
-	 */
+    /**
+     * @file Main page component for Vibe Player V2.
+     * @description This component serves as the main entry point for the application. It orchestrates
+     * the initialization and disposal of various services (audio engine, analysis services) and
+     * manages the primary UI layout. It also contains the logic for serializing application
+     * state (like playback speed and VAD thresholds) to the URL for sharing.
+     */
 	import { onMount, onDestroy } from 'svelte';
-	import { get } from 'svelte/store';
-	import { Toaster } from 'svelte-sonner';
-	import { RangeSlider } from '@skeletonlabs/skeleton'; // <-- ADD THIS IMPORT
+    import {get} from 'svelte/store';
+    import {Toaster} from 'svelte-sonner';
+    import {RangeSlider} from '@skeletonlabs/skeleton'; // <-- ADD THIS IMPORT
+    // Components
+    import Controls from '$lib/components/Controls.svelte';
+    import FileLoader from '$lib/components/FileLoader.svelte';
+    import ToneDisplay from '$lib/components/ToneDisplay.svelte';
+    import Waveform from '$lib/components/visualizers/Waveform.svelte';
+    import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
 
-	// Components
-	import Controls from '$lib/components/Controls.svelte';
-	import FileLoader from '$lib/components/FileLoader.svelte';
-	import ToneDisplay from '$lib/components/ToneDisplay.svelte';
-	import Waveform from '$lib/components/visualizers/Waveform.svelte';
-	import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
-
-	// Services and Stores
-	import audioEngineService from '$lib/services/audioEngine.service';
-	import analysisService from '$lib/services/analysis.service';
-	import dtmfService from '$lib/services/dtmf.service';
-	import spectrogramService from '$lib/services/spectrogram.service';
+    // Services and Stores
+    import audioEngineService from '$lib/services/audioEngine.service';
+    import analysisService from '$lib/services/analysis.service';
+    import dtmfService from '$lib/services/dtmf.service';
+    import spectrogramService from '$lib/services/spectrogram.service';
 	import { VAD_CONSTANTS, URL_HASH_KEYS, UI_CONSTANTS } from '$lib/utils/constants';
-	import { playerStore } from '$lib/stores/player.store';
-	import { analysisStore } from '$lib/stores/analysis.store';
-	import { formatTime } from '$lib/utils/formatters';
-	import { debounce, updateUrlWithParams } from '$lib/utils';
+    import {playerStore} from '$lib/stores/player.store';
+    import {analysisStore} from '$lib/stores/analysis.store';
+    import {formatTime} from '$lib/utils/formatters';
+    import {debounce, updateUrlWithParams} from '$lib/utils';
 
-	/**
-	 * Handles seeking the audio when the user interacts with the seek slider.
-	 * This version is more robust, handling the playing state explicitly.
-	 * @param {Event} event - The input event from the RangeSlider.
-	 */
-	function handleSeek(event: Event) {
-		const target = event.target as HTMLInputElement;
-		if (!target) return; // Guard against null target
+    // --- START: FIX FOR SEEK SLIDER ---
+    let seekTime = $playerStore.currentTime; // Bound to the slider's visual position.
+    let isSeeking = false; // Flag to indicate if the user is actively dragging the slider.
+    let wasPlayingBeforeSeek = false; // Remembers the playback state before the seek started.
 
-		const time = parseFloat(target.value);
-		if (isNaN(time)) {
-			console.warn('handleSeek received a non-numeric value:', target.value);
-			return;
-		}
-		console.log(`[+page.svelte] handleSeek called. Target time: ${time.toFixed(2)}s`);
-		// DELEGATE directly to the audioEngineService. It is designed to handle
-		// the pause/resume logic internally, making this much more robust.
-		audioEngineService.seek(time);
-	}
+    // Update the slider's position reactively from the store, but only when not seeking.
+    playerStore.subscribe((value) => {
+        if (!isSeeking) {
+            seekTime = value.currentTime;
+        }
+    });
 
-	onMount(() => {
-		// Initialize all services eagerly when the application component mounts.
-		// This is the most robust approach to ensure everything is ready.
-		console.log('Initializing all services onMount...');
+    // When the user presses down on the slider.
+    function handleSeekStart() {
+        isSeeking = true;
+        wasPlayingBeforeSeek = get(playerStore).isPlaying;
+        console.log(`[+page.svelte] handleSeekStart called.`);
+        if (wasPlayingBeforeSeek) {
+            audioEngineService.pause();
+        }
+    }
 
-		// Initialize the analysis service, which prepares the SileroVAD worker.
-		analysisService.initialize();
+    // While the user is dragging the slider.
+    function handleSeekInput() {
+        // Only update the store's currentTime for the visual display.
+        // Do not call the audio engine here.
+        console.log(`[+page.svelte] handleSeekInput called. Target seekTime: ${seekTime.toFixed(2)}s`);
+        playerStore.update((s) => ({...s, currentTime: seekTime}));
+    }
 
-		// Initialize the DTMF service and its worker.
-		dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
+    // When the user releases the slider.
+    function handleSeekEnd() {
+        isSeeking = false;
+        // Perform the final, single seek operation.
+        audioEngineService.seek(seekTime);
+        console.log(`[+page.svelte] handleSeekEnd called. Target seekTime: ${seekTime.toFixed(2)}s`);
+        // Resume playback if it was active before.
+        if (wasPlayingBeforeSeek) {
+            audioEngineService.play();
+        }
+    }
 
-		// --- URL State Serialization Logic ---
-		/**
-		 * [LOGGING ADDED] Collects relevant state from stores, compares against defaults,
-		 * and calls the URL update utility.
-		 */
-		const serializeStateToUrl = () => {
-			const pStore = get(playerStore);
-			const aStore = get(analysisStore);
+    onMount(() => {
+        // Initialize all services eagerly when the application component mounts.
+        // This is the most robust approach to ensure everything is ready.
+        console.log('Initializing all services onMount...');
 
-			// LOG: Log the state objects being used for serialization.
-			console.log('[+page.svelte] serializeStateToUrl: Checking player state:', pStore);
-			console.log('[+page.svelte] serializeStateToUrl: Checking analysis state:', aStore);
+        // Initialize the analysis service, which prepares the SileroVAD worker.
+        analysisService.initialize();
 
-			const params: Record<string, string> = {
-				[URL_HASH_KEYS.SPEED]:
-					pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : '',
-				[URL_HASH_KEYS.PITCH]:
-					pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : '',
-				[URL_HASH_KEYS.GAIN]: pStore.gain !== 1.0 ? pStore.gain.toFixed(2) : '',
-				[URL_HASH_KEYS.VAD_POSITIVE]:
-					aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD
-						? aStore.vadPositiveThreshold.toFixed(2)
-						: '',
-				[URL_HASH_KEYS.VAD_NEGATIVE]:
-					aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD
-						? aStore.vadNegativeThreshold.toFixed(2)
-						: ''
-			};
+        // Initialize the DTMF service and its worker.
+        dtmfService.initialize(VAD_CONSTANTS.SAMPLE_RATE);
 
-			console.log('[+page.svelte] serializeStateToUrl: Generated params for URL:', params);
-			updateUrlWithParams(params);
-		};
+        // --- URL State Serialization Logic ---
+        /**
+         * [LOGGING ADDED] Collects relevant state from stores, compares against defaults,
+         * and calls the URL update utility.
+         */
+        const serializeStateToUrl = () => {
+            const pStore = get(playerStore);
+            const aStore = get(analysisStore);
 
-		const debouncedUrlUpdate = debounce(
-			serializeStateToUrl,
-			UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS
-		);
+            // LOG: Log the state objects being used for serialization.
+            console.log('[+page.svelte] serializeStateToUrl: Checking player state:', pStore);
+            console.log('[+page.svelte] serializeStateToUrl: Checking analysis state:', aStore);
 
-		// Subscribe to stores to trigger URL updates
-		const unsubPlayer = playerStore.subscribe(debouncedUrlUpdate);
-		const unsubAnalysis = analysisStore.subscribe(debouncedUrlUpdate);
-		// --- End URL State Serialization Logic ---
+            const params: Record<string, string> = {
+                [URL_HASH_KEYS.SPEED]: pStore.speed !== 1.0 ? pStore.speed.toFixed(2) : '',
+                [URL_HASH_KEYS.PITCH]: pStore.pitch !== 0.0 ? pStore.pitch.toFixed(1) : '',
+                [URL_HASH_KEYS.GAIN]: pStore.gain !== 1.0 ? pStore.gain.toFixed(2) : '',
+                [URL_HASH_KEYS.VAD_POSITIVE]:
+                    aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD
+                        ? aStore.vadPositiveThreshold.toFixed(2)
+                        : '',
+                [URL_HASH_KEYS.VAD_NEGATIVE]:
+                    aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD
+                        ? aStore.vadNegativeThreshold.toFixed(2)
+                        : ''
+            };
 
-		const unsubSpec = playerStore.subscribe((state) => {
-			if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
-				console.log('New audio buffer detected, triggering DTMF analysis service...');
-				dtmfService.process(state.audioBuffer);
-			}
+            console.log('[+page.svelte] serializeStateToUrl: Generated params for URL:', params);
+            updateUrlWithParams(params);
+        };
 
-			// Initialize spectrogram service if conditions are met.
-			// This is independent of the DTMF logic above.
-			if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
-				console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
-				spectrogramService.initialize({ sampleRate: state.sampleRate });
-			}
-		});
+        const debouncedUrlUpdate = debounce(
+            serializeStateToUrl,
+            UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS
+        );
 
-		// Original keydown handler can remain if needed for global shortcuts
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.code === 'Space') {
-				event.preventDefault();
-				// Play/pause logic here if not handled within Controls component
-			}
-		};
+        // Subscribe to stores to trigger URL updates
+        const unsubPlayer = playerStore.subscribe(debouncedUrlUpdate);
+        const unsubAnalysis = analysisStore.subscribe(debouncedUrlUpdate);
+        // --- End URL State Serialization Logic ---
 
-		window.addEventListener('keydown', handleKeyDown);
+        const unsubSpec = playerStore.subscribe((state) => {
+            if (state.audioBuffer && state.status && state.status.startsWith('Initializing processor')) {
+                console.log('New audio buffer detected, triggering DTMF analysis service...');
+                dtmfService.process(state.audioBuffer);
+            }
 
-		// Cleanup function
-		return () => {
-			console.log('Disposing all services onDestroy...');
-			window.removeEventListener('keydown', handleKeyDown);
+            // Initialize spectrogram service if conditions are met.
+            // This is independent of the DTMF logic above.
+            if (state.sampleRate && !get(analysisStore).spectrogramInitialized) {
+                console.log(`Initializing spectrogram service with sample rate: ${state.sampleRate}`);
+                spectrogramService.initialize({sampleRate: state.sampleRate});
+            }
+        });
 
-			// Dispose all services when the component is destroyed.
-			audioEngineService.dispose();
-			analysisService.dispose();
-			dtmfService.dispose();
-			spectrogramService.dispose();
-			unsubSpec();
-			unsubPlayer();
-			unsubAnalysis();
-		};
-	});
+        // Original keydown handler can remain if needed for global shortcuts
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                // Play/pause logic here if not handled within Controls component
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+
+        // Cleanup function
+        return () => {
+            console.log('Disposing all services onDestroy...');
+            window.removeEventListener('keydown', handleKeyDown);
+
+            // Dispose all services when the component is destroyed.
+            audioEngineService.dispose();
+            analysisService.dispose();
+            dtmfService.dispose();
+            spectrogramService.dispose();
+            unsubSpec();
+            unsubPlayer();
+            unsubAnalysis();
+        };
+    });
 </script>
 
-<Toaster />
+<Toaster/>
 
 <div class="container mx-auto p-4 max-w-4xl">
-	<header class="mb-6 text-center">
-		<h1 class="text-4xl font-bold text-primary" data-testid="app-bar-title">Vibe Player V2</h1>
-		<p class="text-muted-foreground">Experimental Audio Analysis & Playback</p>
-	</header>
+    <header class="mb-6 text-center">
+        <h1 class="text-4xl font-bold text-primary" data-testid="app-bar-title">Vibe Player V2</h1>
+        <p class="text-muted-foreground">Experimental Audio Analysis & Playback</p>
+    </header>
 
-	<section id="file-loader" class="mb-8 p-6 bg-card rounded-lg shadow">
-		<FileLoader />
-	</section>
+    <section id="file-loader" class="mb-8 p-6 bg-card rounded-lg shadow">
+        <FileLoader/>
+    </section>
 
-	<section class="mb-8 p-6 bg-card rounded-lg shadow">
-		<div class="text-center font-mono text-lg" data-testid="time-display">
-			{formatTime($playerStore.currentTime)} / {formatTime($playerStore.duration)}
-		</div>
-		<RangeSlider
-			name="seek"
-			value={$playerStore.currentTime}
-			max={$playerStore.duration || 1}
-			step="any"
-			on:input={handleSeek}
-			disabled={!$playerStore.isPlayable}
-			data-testid="seek-slider-input"
-		/>
-	</section>
+    <section class="mb-8 p-6 bg-card rounded-lg shadow">
+        <div class="text-center font-mono text-lg" data-testid="time-display">
+            {formatTime($playerStore.currentTime)} / {formatTime($playerStore.duration)}
+        </div>
+        <RangeSlider
+                name="seek"
+                bind:value={seekTime}
+                max={$playerStore.duration || 1}
+                step="any"
+                on:input={handleSeekInput}
+                on:mousedown={handleSeekStart}
+                on:mouseup={handleSeekEnd}
+                on:touchstart={handleSeekStart}
+                on:touchend={handleSeekEnd}
+                disabled={!$playerStore.isPlayable}
+                data-testid="seek-slider-input"
+        />
+    </section>
 
-	<section id="controls" class="mb-8 p-6 bg-card rounded-lg shadow">
-		<Controls />
-	</section>
+    <section id="controls" class="mb-8 p-6 bg-card rounded-lg shadow">
+        <Controls/>
+    </section>
 
-	<div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-		<section id="waveform" class="p-6 bg-card rounded-lg shadow">
-			<h2 class="text-2xl font-semibold mb-4 text-center text-primary">Waveform</h2>
-			<Waveform />
-		</section>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <section id="waveform" class="p-6 bg-card rounded-lg shadow">
+            <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Waveform</h2>
+            <Waveform/>
+        </section>
 
-		<section id="tone-display" class="p-6 bg-card rounded-lg shadow">
-			<h2 class="text-2xl font-semibold mb-4 text-center text-primary">Tone Activity</h2>
-			<ToneDisplay />
-		</section>
-	</div>
+        <section id="tone-display" class="p-6 bg-card rounded-lg shadow">
+            <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Tone Activity</h2>
+            <ToneDisplay/>
+        </section>
+    </div>
 
-	<section id="spectrogram" class="p-6 bg-card rounded-lg shadow">
-		<h2 class="text-2xl font-semibold mb-4 text-center text-primary">Spectrogram</h2>
-		<Spectrogram />
-	</section>
+    <section id="spectrogram" class="p-6 bg-card rounded-lg shadow">
+        <h2 class="text-2xl font-semibold mb-4 text-center text-primary">Spectrogram</h2>
+        <Spectrogram/>
+    </section>
 
-	<footer class="mt-12 text-center text-sm text-muted-foreground">
-		<p>Vibe Player V2 written mostly by Gemini and Jules</p>
-	</footer>
+    <footer class="mt-12 text-center text-sm text-muted-foreground">
+        <p>Vibe Player V2 written mostly by Gemini and Jules</p>
+    </footer>
 </div>
