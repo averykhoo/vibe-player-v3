@@ -59,6 +59,11 @@ export class AudioOrchestrator {
       const sampleRate = audioBuffer.sampleRate;
       const channels = audioBuffer.numberOfChannels; // Assuming this property exists
 
+      // --- ADD THIS BLOCK to initialize the playback engine's worker ---
+      console.log("[Orchestrator] Initializing Audio Engine Worker...");
+      await audioEngine.initializeWorker(audioBuffer);
+      console.log("[Orchestrator] Audio Engine Worker initialized.");
+      // --- END OF ADDED BLOCK ---
       playerStore.update((s) => ({
         ...s,
         duration,

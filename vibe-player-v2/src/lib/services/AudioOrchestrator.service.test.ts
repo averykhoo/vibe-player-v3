@@ -45,6 +45,7 @@ vi.mock("./audioEngine.service", () => ({
   default: {
     unlockAudio: vi.fn().mockResolvedValue(undefined),
     loadFile: vi.fn(),
+    initializeWorker: vi.fn().mockResolvedValue(undefined), // <-- ADD THIS LINE
     getDuration: vi.fn(() => 120),
     getSampleRate: vi.fn(() => 44100),
     getNumberOfChannels: vi.fn(() => 1),
@@ -209,6 +210,11 @@ describe("AudioOrchestrator.service.ts", () => {
         isLoading: false,
       });
 
+      // --- ADD THIS NEW ASSERTION to verify worker initialization is called ---
+      expect(audioEngine.initializeWorker).toHaveBeenCalledWith(
+        mockAudioBuffer,
+      );
+      // --- END NEW ASSERTION ---
       // Verify analysis services were initialized and called
       expect(audioEngine.unlockAudio).toHaveBeenCalled();
       expect(audioEngine.loadFile).toHaveBeenCalledWith(mockFile);
