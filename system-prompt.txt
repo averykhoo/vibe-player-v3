@@ -859,53 +859,6 @@ engine-strict=true
 
 ````
 --- End of File: vibe-player-v2/.prettierrc ---
---- File: vibe-player-v2/README.md ---
-````markdown
-<!-- vibe-player-v2/README.md -->
-
-# sv
-
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
-
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
-
-```bash
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a
-development server:
-
-```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```bash
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target
-> environment.
-
-````
---- End of File: vibe-player-v2/README.md ---
 --- File: vibe-player-v2/eslint.config.js ---
 ````javascript
 // vibe-player-v2/eslint.config.js
@@ -1037,6 +990,53 @@ export default {
 
 ````
 --- End of File: vibe-player-v2/postcss.config.js ---
+--- File: vibe-player-v2/README.md ---
+````markdown
+<!-- vibe-player-v2/README.md -->
+
+# sv
+
+Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+
+## Creating a project
+
+If you're seeing this, you've probably already done this step. Congrats!
+
+```bash
+# create a new project in the current directory
+npx sv create
+
+# create a new project in my-app
+npx sv create my-app
+```
+
+## Developing
+
+Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a
+development server:
+
+```bash
+npm run dev
+
+# or start the server and open the app in a new browser tab
+npm run dev -- --open
+```
+
+## Building
+
+To create a production version of your app:
+
+```bash
+npm run build
+```
+
+You can preview the production build with `npm run preview`.
+
+> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target
+> environment.
+
+````
+--- End of File: vibe-player-v2/README.md ---
 --- File: vibe-player-v2/src/app.css ---
 ````css
 /* vibe-player-v2/src/app.css */
@@ -1210,6 +1210,88 @@ export function sparkles(
 
 ````
 --- End of File: vibe-player-v2/src/lib/actions/sparkles.action.ts ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/Button.svelte -->
+<script>
+  // Mock Button
+  export let color = 'primary'; // Example prop
+  // Add any other props your component might expect to avoid runtime warnings/errors
+</script>
+
+<button class="mock-button btn variant-filled-{color}" on:click>
+  <slot />
+</button>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/Generic.svelte -->
+<script lang="ts">
+  // Generic mock for any Skeleton component
+  // It can accept any props via $$props
+</script>
+
+<div data-testid="generic-skeleton-mock" {...$$props}>
+  <!-- Generic mock content -->
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte -->
+<script lang="ts">
+  // Minimal mock for ProgressBar.svelte
+  export let value: number | undefined = undefined;
+  export let max: number = 100;
+  // Add any other props that might be minimally required if type checking is strict
+</script>
+
+<div data-testid="mock-progress-bar" role="progressbar" aria-valuenow={value} aria-valuemax={max}>
+  <!-- Mock content -->
+</div>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
+--- File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
+````svelte
+<!-- vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte -->
+<script lang="ts">
+  // Mock RangeSlider
+  export let value: number = 0;
+  export let name: string = ''; // This will be used as the ID for the label's 'for' attribute
+  export let min: number = 0;
+  export let max: number = 100;
+  export let step: number = 1;
+  export let disabled: boolean = false; // Explicitly declare the disabled prop
+
+  // Use the 'name' prop also as 'id' to match <label for="...">
+  const id = name;
+
+  // Capture any other props passed to the component, like data-testid
+  // We need to filter out the props we've explicitly declared to avoid conflicts if they are also in $$props
+  const { value: _v, name: _n, min: _min, max: _max, step: _s, disabled: _d, id: _id, ...restProps } = $$props;
+</script>
+
+<input
+  type="range"
+  class="mock-range-slider"
+  {id}
+  {name}
+  bind:value
+  {min}
+  {max}
+  {step}
+  {disabled}
+  on:input
+  on:change
+  {...restProps}
+/>
+
+````
+--- End of File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
 --- File: vibe-player-v2/src/lib/components/Controls.svelte ---
 ````svelte
 <!-- vibe-player-v2/src/lib/components/Controls.svelte -->
@@ -1406,9 +1488,22 @@ vi.mock("$lib/stores/player.store", async () => {
     await vi.importActual<typeof import("svelte/store")>("svelte/store");
 
   const initialPlayerStateForMock: PlayerState = {
-    status: "idle", fileName: null, duration: 100, currentTime: 0, isPlaying: false, isPlayable: false,
-    speed: 1.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined, error: null, audioBuffer: undefined,
-    audioContextResumed: false, channels: undefined, sampleRate: undefined, lastProcessedChunk: undefined,
+    status: "idle",
+    fileName: null,
+    duration: 100,
+    currentTime: 0,
+    isPlaying: false,
+    isPlayable: false,
+    speed: 1.0,
+    pitchShift: 0.0,
+    gain: 1.0,
+    waveformData: undefined,
+    error: null,
+    audioBuffer: undefined,
+    audioContextResumed: false,
+    channels: undefined,
+    sampleRate: undefined,
+    lastProcessedChunk: undefined,
   };
   const storeInstance = actualWritable(initialPlayerStateForMock);
 
@@ -1465,7 +1560,8 @@ describe("Controls.svelte", () => {
   // const initialPlayerState: PlayerState = { ... }; // Removed
   // const initialAnalysisState: AnalysisState = { ... }; // Removed
 
-  beforeEach(async () => { // Made beforeEach async
+  beforeEach(async () => {
+    // Made beforeEach async
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.clearAllMocks();
 
@@ -1477,8 +1573,8 @@ describe("Controls.svelte", () => {
 
     // Reset store states before each test
     act(() => {
-        actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
-        actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
+      actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
+      actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
     });
   });
 
@@ -1509,7 +1605,8 @@ describe("Controls.svelte", () => {
   it("calls audioEngine.play() when play button is clicked and not playing", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.update((s) => ({ // Use actualMockPlayerStore
+      actualMockPlayerStore.update((s) => ({
+        // Use actualMockPlayerStore
         ...s,
         isPlayable: true,
         isPlaying: false,
@@ -1524,7 +1621,8 @@ describe("Controls.svelte", () => {
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.update((s) => ({ // Use actualMockPlayerStore
+      actualMockPlayerStore.update((s) => ({
+        // Use actualMockPlayerStore
         ...s,
         isPlayable: true,
         isPlaying: true,
@@ -1551,7 +1649,8 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.speed in speed slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+        actualMockPlayerStore.set({
+          // Use actualMockPlayerStore
           ...get(actualMockPlayerStore), // Use actualMockPlayerStore
           speed: 1.75,
           isPlayable: true,
@@ -1569,7 +1668,8 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.pitchShift in pitch slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+        actualMockPlayerStore.set({
+          // Use actualMockPlayerStore
           ...get(actualMockPlayerStore), // Use actualMockPlayerStore
           pitchShift: -6.5,
           isPlayable: true,
@@ -1587,7 +1687,8 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.gain in gain slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+        actualMockPlayerStore.set({
+          // Use actualMockPlayerStore
           ...get(actualMockPlayerStore), // Use actualMockPlayerStore
           gain: 0.25,
           isPlayable: true,
@@ -1603,7 +1704,8 @@ describe("Controls.svelte", () => {
     it("reflects analysisStore.vadPositiveThreshold in VAD positive slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockAnalysisStore.set({ // Use actualMockAnalysisStore
+        actualMockAnalysisStore.set({
+          // Use actualMockAnalysisStore
           ...get(actualMockAnalysisStore), // Use actualMockAnalysisStore
           vadPositiveThreshold: 0.88,
         });
@@ -1621,7 +1723,8 @@ describe("Controls.svelte", () => {
     it("reflects analysisStore.vadNegativeThreshold in VAD negative slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockAnalysisStore.set({ // Use actualMockAnalysisStore
+        actualMockAnalysisStore.set({
+          // Use actualMockAnalysisStore
           ...get(actualMockAnalysisStore), // Use actualMockAnalysisStore
           vadNegativeThreshold: 0.22,
         });
@@ -1638,9 +1741,14 @@ describe("Controls.svelte", () => {
   });
 
   describe("Event Handling and Service Calls (UI -> Store -> Service/Log)", () => {
-    beforeEach(() => { // This beforeEach is nested, should be fine.
+    beforeEach(() => {
+      // This beforeEach is nested, should be fine.
       act(() => {
-        if (actualMockPlayerStore && typeof actualMockPlayerStore.update === "function") { // Use actualMockPlayerStore
+        if (
+          actualMockPlayerStore &&
+          typeof actualMockPlayerStore.update === "function"
+        ) {
+          // Use actualMockPlayerStore
           actualMockPlayerStore.update((s) => ({ ...s, isPlayable: true })); // Use actualMockPlayerStore
         }
       });
@@ -1707,7 +1815,10 @@ describe("Controls.svelte", () => {
       );
       const testValue = 0.91;
       act(() => {
-        actualMockAnalysisStore.update((s) => ({ ...s, vadNegativeThreshold: 0.3 })); // Use actualMockAnalysisStore
+        actualMockAnalysisStore.update((s) => ({
+          ...s,
+          vadNegativeThreshold: 0.3,
+        })); // Use actualMockAnalysisStore
       });
       await act();
       await fireEvent.input(vadSlider, {
@@ -1729,7 +1840,10 @@ describe("Controls.svelte", () => {
       );
       const testValue = 0.11;
       act(() => {
-        actualMockAnalysisStore.update((s) => ({ ...s, vadPositiveThreshold: 0.8 })); // Use actualMockAnalysisStore
+        actualMockAnalysisStore.update((s) => ({
+          ...s,
+          vadPositiveThreshold: 0.8,
+        })); // Use actualMockAnalysisStore
       });
       await act();
       await fireEvent.input(vadSlider, {
@@ -1749,9 +1863,14 @@ describe("Controls.svelte", () => {
     it("disables controls when playerStore.isPlayable is false", () => {
       act(() => {
         // Need to get the initial state from the module for consistency
-        const playerStoreModule = vi.importActual<any>("$lib/stores/player.store");
+        const playerStoreModule = vi.importActual<any>(
+          "$lib/stores/player.store",
+        );
         if (actualMockPlayerStore)
-          actualMockPlayerStore.set({ ...playerStoreModule.__initialState, isPlayable: false });
+          actualMockPlayerStore.set({
+            ...playerStoreModule.__initialState,
+            isPlayable: false,
+          });
       });
       render(Controls);
       expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
@@ -1769,9 +1888,14 @@ describe("Controls.svelte", () => {
 
     it("enables controls when playerStore.isPlayable is true", () => {
       act(() => {
-        const playerStoreModule = vi.importActual<any>("$lib/stores/player.store");
+        const playerStoreModule = vi.importActual<any>(
+          "$lib/stores/player.store",
+        );
         if (actualMockPlayerStore)
-          actualMockPlayerStore.set({ ...playerStoreModule.__initialState, isPlayable: true });
+          actualMockPlayerStore.set({
+            ...playerStoreModule.__initialState,
+            isPlayable: true,
+          });
       });
       render(Controls);
       expect(screen.getByRole("button", { name: /Play/i })).not.toBeDisabled();
@@ -2174,88 +2298,6 @@ describe("FileLoader.svelte", () => {
 
 ````
 --- End of File: vibe-player-v2/src/lib/components/ToneDisplay.svelte ---
---- File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
-````svelte
-<!-- vibe-player-v2/src/lib/components/__mocks__/Button.svelte -->
-<script>
-  // Mock Button
-  export let color = 'primary'; // Example prop
-  // Add any other props your component might expect to avoid runtime warnings/errors
-</script>
-
-<button class="mock-button btn variant-filled-{color}" on:click>
-  <slot />
-</button>
-
-````
---- End of File: vibe-player-v2/src/lib/components/__mocks__/Button.svelte ---
---- File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
-````svelte
-<!-- vibe-player-v2/src/lib/components/__mocks__/Generic.svelte -->
-<script lang="ts">
-  // Generic mock for any Skeleton component
-  // It can accept any props via $$props
-</script>
-
-<div data-testid="generic-skeleton-mock" {...$$props}>
-  <!-- Generic mock content -->
-</div>
-
-````
---- End of File: vibe-player-v2/src/lib/components/__mocks__/Generic.svelte ---
---- File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
-````svelte
-<!-- vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte -->
-<script lang="ts">
-  // Minimal mock for ProgressBar.svelte
-  export let value: number | undefined = undefined;
-  export let max: number = 100;
-  // Add any other props that might be minimally required if type checking is strict
-</script>
-
-<div data-testid="mock-progress-bar" role="progressbar" aria-valuenow={value} aria-valuemax={max}>
-  <!-- Mock content -->
-</div>
-
-````
---- End of File: vibe-player-v2/src/lib/components/__mocks__/ProgressBar.svelte ---
---- File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
-````svelte
-<!-- vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte -->
-<script lang="ts">
-  // Mock RangeSlider
-  export let value: number = 0;
-  export let name: string = ''; // This will be used as the ID for the label's 'for' attribute
-  export let min: number = 0;
-  export let max: number = 100;
-  export let step: number = 1;
-  export let disabled: boolean = false; // Explicitly declare the disabled prop
-
-  // Use the 'name' prop also as 'id' to match <label for="...">
-  const id = name;
-
-  // Capture any other props passed to the component, like data-testid
-  // We need to filter out the props we've explicitly declared to avoid conflicts if they are also in $$props
-  const { value: _v, name: _n, min: _min, max: _max, step: _s, disabled: _d, id: _id, ...restProps } = $$props;
-</script>
-
-<input
-  type="range"
-  class="mock-range-slider"
-  {id}
-  {name}
-  bind:value
-  {min}
-  {max}
-  {step}
-  {disabled}
-  on:input
-  on:change
-  {...restProps}
-/>
-
-````
---- End of File: vibe-player-v2/src/lib/components/__mocks__/RangeSlider.svelte ---
 --- File: vibe-player-v2/src/lib/components/visualizers/Spectrogram.svelte ---
 ````svelte
 <!-- vibe-player-v2/src/lib/components/visualizers/Spectrogram.svelte -->
@@ -2493,520 +2535,6 @@ describe("FileLoader.svelte", () => {
 
 ````
 --- End of File: vibe-player-v2/src/lib/index.ts ---
---- File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.test.ts ---
-````typescript
-// vibe-player-v2/src/lib/services/AudioOrchestrator.service.test.ts
-import {
-  vi,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  beforeAll,
-  type MockInstance,
-} from "vitest";
-// Import 'get' for use in tests; it will be the spied version.
-import { get, writable, type Writable } from "svelte/store";
-import { AudioOrchestrator } from "./AudioOrchestrator.service";
-import { audioEngine } from "./audioEngine.service";
-// Types for stores
-import type { PlayerState } from "$lib/stores/player.store";
-import type { AnalysisState } from "$lib/stores/analysis.store";
-import type { StatusState } from "$lib/stores/status.store";
-
-import { dtmfService } from "./dtmf.service";
-import { spectrogramService } from "./spectrogram.service";
-import { updateUrlWithParams } from "$lib/utils/urlState";
-import { URL_HASH_KEYS } from "$lib/utils/constants"; // UI_CONSTANTS removed as it's not used in current snippet
-import { act } from "@testing-library/svelte"; // Import act for store updates
-
-// --- Top-Level Mock Store Declarations ---
-let actualMockPlayerStore: Writable<PlayerState>;
-let actualMockAnalysisStore: Writable<AnalysisState>;
-let actualMockStatusStore: Writable<StatusState>;
-
-// Mock svelte/store's get explicitly for URL serialization tests
-// This needs to be done carefully if stores themselves are also heavily mocked.
-vi.mock("svelte/store", async (importOriginal) => {
-  const actualStoreModule =
-    await importOriginal<typeof import("svelte/store")>();
-  return {
-    ...actualStoreModule, // Spread all actual exports (including original writable, etc.)
-    get: vi.fn(actualStoreModule.get), // Spy on the original 'get' from the actual module
-  };
-});
-
-// --- Service Mocks ---
-vi.mock("./audioEngine.service", () => ({
-  audioEngine: {
-    unlockAudio: vi.fn().mockResolvedValue(undefined),
-    loadFile: vi.fn(),
-    getDuration: vi.fn(() => 120),
-    getSampleRate: vi.fn(() => 44100),
-    getNumberOfChannels: vi.fn(() => 1),
-  },
-}));
-vi.mock("./dtmf.service", () => ({
-  dtmfService: { init: vi.fn(), process: vi.fn().mockResolvedValue([]) },
-}));
-vi.mock("./spectrogram.service", () => ({
-  spectrogramService: {
-    init: vi.fn(),
-    process: vi.fn().mockResolvedValue(new Float32Array()),
-  },
-}));
-vi.mock("$lib/utils/urlState", () => ({ updateUrlWithParams: vi.fn() }));
-
-// --- Store Mocks (TDZ-Safe Pattern) ---
-vi.mock("$lib/stores/player.store.ts", async () => {
-  const { writable: actualWritable } =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  const initialPlayerStateInFactory: PlayerState = {
-    status: "Idle",
-    fileName: null,
-    duration: 0,
-    currentTime: 0,
-    isPlaying: false,
-    isPlayable: false,
-    speed: 1.0,
-    pitch: 0.0,
-    pitchShift: 0.0,
-    gain: 1.0,
-    waveformData: undefined,
-    error: null,
-    audioBuffer: undefined,
-    audioContextResumed: false,
-    channels: 0,
-    sampleRate: 0,
-    lastProcessedChunk: undefined,
-  };
-  const storeInstance = actualWritable(initialPlayerStateInFactory);
-  return {
-    playerStore: storeInstance,
-    getStore: () => storeInstance,
-    __initialState: initialPlayerStateInFactory,
-  };
-});
-
-vi.mock("$lib/stores/analysis.store.ts", async () => {
-  const { writable: actualWritable } =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  const initialAnalysisStateInFactory: AnalysisState = {
-    dtmfResults: [],
-    spectrogramData: null,
-    vadEvents: [],
-    vadPositiveThreshold: 0.9, // Default from component
-    vadNegativeThreshold: 0.7,
-    isSpeaking: false,
-    vadInitialized: false,
-    vadStatus: "idle",
-    vadError: null,
-    vadNoiseFloor: -70,
-    vadSensitivity: 0.5, // Added typical VAD fields
-  };
-  const storeInstance = actualWritable(initialAnalysisStateInFactory);
-  return {
-    analysisStore: storeInstance,
-    getStore: () => storeInstance,
-    __initialState: initialAnalysisStateInFactory,
-  };
-});
-
-vi.mock("$lib/stores/status.store.ts", async () => {
-  const { writable: actualWritable } =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  const initialStatusStateInFactory: StatusState = {
-    message: null,
-    type: null,
-    isLoading: false,
-    details: null,
-    progress: null,
-  };
-  const storeInstance = actualWritable(initialStatusStateInFactory);
-  return {
-    statusStore: storeInstance,
-    getStore: () => storeInstance,
-    __initialState: initialStatusStateInFactory,
-  };
-});
-
-describe("AudioOrchestrator.service.ts", () => {
-  let audioOrchestrator: AudioOrchestrator;
-  // Cast get to MockInstance for type safety with Vitest's vi.fn()
-  let svelteStoreGetMock: MockInstance<[Writable<unknown>], unknown>; // Adjusted type for 'get' mock if needed
-  const mockFile = new File([""], "test-audio.mp3", { type: "audio/mpeg" });
-  const mockAudioBuffer = {
-    // Keep this simple mock for audioEngine
-    duration: 120,
-    sampleRate: 44100,
-    numberOfChannels: 1,
-    getChannelData: vi.fn(() => new Float32Array(1024)),
-  } as unknown as AudioBuffer;
-
-  beforeAll(() => {
-    vi.useFakeTimers();
-  });
-
-  beforeEach(async () => {
-    // Make beforeEach async
-    audioOrchestrator = AudioOrchestrator.getInstance();
-    vi.clearAllMocks(); // Clears all mocks
-
-    // Dynamically import mocked stores and assign to top-level variables
-    const playerStoreModule = await import("$lib/stores/player.store.ts");
-    actualMockPlayerStore = playerStoreModule.getStore();
-    const analysisStoreModule = await import("$lib/stores/analysis.store.ts");
-    actualMockAnalysisStore = analysisStoreModule.getStore();
-    const statusStoreModule = await import("$lib/stores/status.store.ts");
-    actualMockStatusStore = statusStoreModule.getStore();
-
-    // Reset stores using their __initialState
-    act(() => {
-      actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
-      actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
-      actualMockStatusStore.set({ ...statusStoreModule.__initialState });
-    });
-
-    (audioEngine.loadFile as vi.Mock).mockResolvedValue(mockAudioBuffer);
-
-    // Dynamically import the mocked 'svelte/store' to get its spied 'get'
-    const svelteStoreModule = await import("svelte/store");
-    svelteStoreGetMock = svelteStoreModule.get as MockInstance<
-      [Writable<unknown>],
-      unknown
-    >;
-  });
-
-  afterEach(() => {
-    vi.clearAllTimers();
-  });
-
-  describe("loadFileAndAnalyze", () => {
-    it("should set loading status, update player store, and then set ready status on successful load", async () => {
-      await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-      // Assertions will now use get(actualMockStatusStore) or get(actualMockPlayerStore).
-      // The "Loading..." state is set and rapidly replaced by "Ready" or "Error".
-      // We will assert the final state after all operations within loadFileAndAnalyze are complete.
-
-      // Check playerStore state after successful load by inspecting its current value
-      const finalPlayerState = get(actualMockPlayerStore);
-      expect(finalPlayerState.fileName).toBe(mockFile.name);
-      expect(finalPlayerState.duration).toBe(mockAudioBuffer.duration);
-      expect(finalPlayerState.sampleRate).toBe(mockAudioBuffer.sampleRate);
-      expect(finalPlayerState.channels).toBe(mockAudioBuffer.numberOfChannels);
-      expect(finalPlayerState.isPlayable).toBe(true);
-      expect(finalPlayerState.status).toBe("Ready"); // Orchestrator should update this
-
-      // Check final statusStore state
-      expect(get(actualMockStatusStore)).toEqual({
-        message: "Ready", // This should be the last message
-        type: "success",
-        isLoading: false,
-      });
-
-      // Verify analysis services were initialized and called
-      expect(audioEngine.unlockAudio).toHaveBeenCalled();
-      expect(audioEngine.loadFile).toHaveBeenCalledWith(mockFile);
-      expect(spectrogramService.init).toHaveBeenCalledWith(
-        mockAudioBuffer.sampleRate,
-      );
-      expect(dtmfService.init).toHaveBeenCalledWith(mockAudioBuffer.sampleRate);
-      expect(spectrogramService.process).toHaveBeenCalled();
-      expect(dtmfService.process).toHaveBeenCalled();
-    });
-
-    it("should set error status in statusStore and playerStore if audioEngine.loadFile fails", async () => {
-      const errorMessage = "Failed to load file";
-      (audioEngine.loadFile as vi.Mock).mockRejectedValueOnce(
-        new Error(errorMessage),
-      );
-
-      await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-      // After await, the service method has completed, and stores should be in their final states.
-      // Check final statusStore state for error
-      // Service might not be setting progress and details explicitly to null in this path
-      expect(get(actualMockStatusStore)).toEqual(
-        expect.objectContaining({
-          message: "File processing failed.",
-          type: "error",
-          isLoading: false,
-          details: errorMessage,
-          // progress: null // progress might not be explicitly reset by the service here
-        }),
-      );
-
-      // Check playerStore state for error
-      const finalPlayerState = get(actualMockPlayerStore);
-      expect(finalPlayerState.status).toBe("Error");
-      expect(finalPlayerState.error).toBe(errorMessage);
-      expect(finalPlayerState.isPlayable).toBe(false);
-      expect(finalPlayerState.duration).toBe(0);
-    });
-
-    it("should handle errors from analysis services gracefully", async () => {
-      const dtmfError = "DTMF processing failed";
-      (dtmfService.process as vi.Mock).mockRejectedValueOnce(
-        new Error(dtmfError),
-      );
-
-      await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-      // Still loads successfully overall in statusStore
-      // Service might not be setting progress and details explicitly to null in this path
-      expect(get(actualMockStatusStore)).toEqual(
-        expect.objectContaining({
-          message: "Ready",
-          type: "success",
-          isLoading: false,
-          // details: null, // details might not be explicitly reset
-          // progress: null // progress might not be explicitly reset
-        }),
-      );
-      // Player store should also reflect 'Ready'
-      expect(get(actualMockPlayerStore).status).toBe("Ready");
-      // For now, this test ensures the main flow completes.
-    });
-  });
-
-  describe("setupUrlSerialization", () => {
-    const localInitialPlayerStateForUrlTest: PlayerState = {
-      speed: 0.75,
-      pitch: -2.5, // For service code expecting 'pitch'
-      pitchShift: -2.5, // Standard PlayerState field
-      gain: 1.25,
-      status: "Ready",
-      fileName: "test-audio.mp3",
-      duration: 120,
-      currentTime: 0,
-      isPlaying: false,
-      isPlayable: true,
-      waveformData: undefined,
-      error: null,
-      audioBuffer: undefined,
-      audioContextResumed: true,
-      channels: 1,
-      sampleRate: 44100,
-      lastProcessedChunk: undefined,
-    };
-
-    beforeEach(() => {
-      // This beforeEach is for the 'setupUrlSerialization' describe block
-      act(() => {
-        actualMockPlayerStore.set({ ...localInitialPlayerStateForUrlTest });
-      });
-
-      // The global 'get' mock is already a spy on originalGet.
-      // No need to further mockImplementation for svelteStoreGetMock here unless testing specific behavior of 'get' itself.
-      // The AudioOrchestrator will use the actual 'get' (which is now spied on).
-    });
-
-    it("should call updateUrlWithParams with correct parameters after debounced interval", () => {
-      audioOrchestrator.setupUrlSerialization();
-
-      act(() => {
-        actualMockPlayerStore.update((s) => ({ ...s, speed: 0.5 }));
-      });
-
-      vi.runAllTimers();
-
-      // Debounce might fire multiple times rapidly in test environment with act and runAllTimers.
-      // Check it was called and verify the arguments of the last call.
-      expect(updateUrlWithParams).toHaveBeenCalled();
-      expect(updateUrlWithParams).toHaveBeenLastCalledWith({
-        [URL_HASH_KEYS.SPEED]: "0.50",
-        [URL_HASH_KEYS.PITCH]:
-          localInitialPlayerStateForUrlTest.pitch.toFixed(1),
-        [URL_HASH_KEYS.GAIN]: localInitialPlayerStateForUrlTest.gain.toFixed(2),
-      });
-    });
-
-    it("should use updated values if store changes multiple times before debounce", () => {
-      audioOrchestrator.setupUrlSerialization();
-
-      act(() => {
-        actualMockPlayerStore.update((s) => ({ ...s, speed: 0.5 }));
-        actualMockPlayerStore.update((s) => ({
-          ...s,
-          speed: 0.8,
-          pitch: 1.5,
-          pitchShift: 1.5,
-        })); // Update .pitch
-      });
-
-      vi.runAllTimers();
-
-      expect(updateUrlWithParams).toHaveBeenCalled(); // Check it was called
-      expect(updateUrlWithParams).toHaveBeenLastCalledWith({
-        // Verify the last call
-        [URL_HASH_KEYS.SPEED]: "0.80",
-        [URL_HASH_KEYS.PITCH]: "1.5",
-        [URL_HASH_KEYS.GAIN]: localInitialPlayerStateForUrlTest.gain.toFixed(2),
-      });
-    });
-  });
-});
-
-````
---- End of File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.test.ts ---
---- File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts ---
-````typescript
-// vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts
-import { get } from "svelte/store";
-import { playerStore } from "$lib/stores/player.store";
-import { statusStore } from "$lib/stores/status.store";
-import type { StatusState } from "$lib/types/status.types"; // Added this import
-import { analysisStore } from "$lib/stores/analysis.store";
-import audioEngine from "./audioEngine.service"; // Changed to default import
-import dtmfService from "./dtmf.service"; // Changed to default import
-import spectrogramService from "./spectrogram.service"; // Changed to default import
-import { debounce } from "$lib/utils/async";
-import { updateUrlWithParams } from "$lib/utils/urlState";
-import { UI_CONSTANTS, URL_HASH_KEYS } from "$lib/utils/constants";
-
-export class AudioOrchestrator {
-  private static instance: AudioOrchestrator;
-
-  private constructor() {
-    // Private constructor for singleton
-  }
-
-  public static getInstance(): AudioOrchestrator {
-    if (!AudioOrchestrator.instance) {
-      AudioOrchestrator.instance = new AudioOrchestrator();
-    }
-    return AudioOrchestrator.instance;
-  }
-
-  public async loadFileAndAnalyze(file: File): Promise<void> {
-    console.log(`[Orchestrator] === Starting New File Load: ${file.name} ===`);
-    statusStore.set({
-      message: `Loading ${file.name}...`,
-      type: "info",
-      isLoading: true,
-      details: null,
-      progress: null,
-    });
-    // Ensure other relevant stores are reset if that's current behavior (e.g., analysisStore, waveformStore)
-    playerStore.update((s) => ({
-      ...s,
-      error: null,
-      status: "Loading",
-      isPlayable: false,
-      fileName: file.name,
-      duration: 0,
-      currentTime: 0,
-    })); // Added fileName and reset duration/currentTime
-    analysisStore.update((store) => ({
-      ...store,
-      dtmfResults: [],
-      spectrogramData: null,
-    }));
-
-    try {
-      await audioEngine.unlockAudio();
-      const audioBuffer = await audioEngine.loadFile(file);
-      // audioEngine.decodeAudioData() is usually part of loadFile or handled by the browser's AudioContext directly
-
-      const duration = audioBuffer.duration;
-      const sampleRate = audioBuffer.sampleRate;
-      const channels = audioBuffer.numberOfChannels; // Assuming this property exists
-
-      playerStore.update((s) => ({
-        ...s,
-        duration,
-        sampleRate,
-        channels, // Added channels
-        isPlayable: true,
-        status: "Ready", // Updated status here
-      }));
-      statusStore.set({ message: "Ready", type: "success", isLoading: false });
-
-      spectrogramService.init(audioBuffer.sampleRate);
-      dtmfService.init(audioBuffer.sampleRate);
-
-      console.log("AudioOrchestrator: Starting background analysis tasks.");
-      const analysisPromises = [
-        dtmfService.process(audioBuffer),
-        spectrogramService.process(audioBuffer.getChannelData(0)),
-      ];
-
-      const results = await Promise.allSettled(analysisPromises);
-      console.log(
-        "AudioOrchestrator: All background analysis tasks settled.",
-        results,
-      );
-
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          console.error(
-            `AudioOrchestrator: Analysis task ${index} failed:`,
-            result.reason,
-          );
-          // Optionally, update a specific error state in analysisStore or playerStore
-        }
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[Orchestrator] !!! CRITICAL ERROR during file load:`,
-        error,
-      );
-      statusStore.set({
-        message: "File processing failed.",
-        type: "error",
-        isLoading: false,
-        details: message,
-      });
-      // Update playerStore to reflect the error state specifically for the player
-      playerStore.update((s) => ({
-        ...s,
-        status: "Error",
-        error: message,
-        isPlayable: false,
-        duration: 0,
-        currentTime: 0,
-      }));
-    }
-  }
-
-  /**
-   * Sets up debounced URL serialization based on player and analysis store changes.
-   * @public
-   */
-  public setupUrlSerialization(): void {
-    console.log("[Orchestrator] Setting up URL serialization.");
-
-    const debouncedUpdater = debounce(() => {
-      const pStore = get(playerStore);
-      // const aStore = get(analysisStore); // Keep this commented out if analysisStore part is not for this step yet
-
-      const params: Record<string, string> = {
-        [URL_HASH_KEYS.SPEED]: pStore.speed.toFixed(2),
-        [URL_HASH_KEYS.PITCH]: pStore.pitch.toFixed(1), // Assuming pitch is semitones
-        [URL_HASH_KEYS.GAIN]: pStore.gain.toFixed(2),
-        // [URL_HASH_KEYS.VAD_THRESHOLD]: aStore.vadPositiveThreshold.toFixed(2), // Keep commented
-        // ... any other relevant params from playerStore that should be serialized
-      };
-
-      console.log(
-        `[Orchestrator/URL] Debounced update triggered. New params:`,
-        params,
-      );
-      updateUrlWithParams(params); // Make sure updateUrlWithParams is correctly imported/defined
-    }, UI_CONSTANTS.DEBOUNCE_TIME_MS_URL_UPDATE);
-
-    playerStore.subscribe(debouncedUpdater);
-    // analysisStore.subscribe(debouncedUpdater); // Only subscribe if aStore is used in params
-  }
-}
-
-export const audioOrchestrator = AudioOrchestrator.getInstance();
-
-````
---- End of File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts ---
 --- File: vibe-player-v2/src/lib/services/analysis.service.test.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/analysis.service.test.ts
@@ -4933,6 +4461,520 @@ export default AudioEngineService.getInstance();
 
 ````
 --- End of File: vibe-player-v2/src/lib/services/audioEngine.service.ts ---
+--- File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.test.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/AudioOrchestrator.service.test.ts
+import {
+  vi,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  type MockInstance,
+} from "vitest";
+// Import 'get' for use in tests; it will be the spied version.
+import { get, writable, type Writable } from "svelte/store";
+import { AudioOrchestrator } from "./AudioOrchestrator.service";
+import audioEngine from "./audioEngine.service";
+// Types for stores
+import type { PlayerState } from "$lib/stores/player.store";
+import type { AnalysisState } from "$lib/stores/analysis.store";
+import type { StatusState } from "$lib/stores/status.store";
+
+import dtmfService from "./dtmf.service";
+import spectrogramService from "./spectrogram.service";
+import { updateUrlWithParams } from "$lib/utils/urlState";
+import { URL_HASH_KEYS } from "$lib/utils/constants"; // UI_CONSTANTS removed as it's not used in current snippet
+import { act } from "@testing-library/svelte"; // Import act for store updates
+
+// --- Top-Level Mock Store Declarations ---
+let actualMockPlayerStore: Writable<PlayerState>;
+let actualMockAnalysisStore: Writable<AnalysisState>;
+let actualMockStatusStore: Writable<StatusState>;
+
+// Mock svelte/store's get explicitly for URL serialization tests
+// This needs to be done carefully if stores themselves are also heavily mocked.
+vi.mock("svelte/store", async (importOriginal) => {
+  const actualStoreModule =
+    await importOriginal<typeof import("svelte/store")>();
+  return {
+    ...actualStoreModule, // Spread all actual exports (including original writable, etc.)
+    get: vi.fn(actualStoreModule.get), // Spy on the original 'get' from the actual module
+  };
+});
+
+// --- Service Mocks ---
+vi.mock("./audioEngine.service", () => ({
+  default: {
+    unlockAudio: vi.fn().mockResolvedValue(undefined),
+    loadFile: vi.fn(),
+    getDuration: vi.fn(() => 120),
+    getSampleRate: vi.fn(() => 44100),
+    getNumberOfChannels: vi.fn(() => 1),
+  },
+}));
+vi.mock("./dtmf.service", () => ({
+  default: { init: vi.fn(), process: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock("./spectrogram.service", () => ({
+  default: {
+    init: vi.fn(),
+    process: vi.fn().mockResolvedValue(new Float32Array()),
+  },
+}));
+vi.mock("$lib/utils/urlState", () => ({ updateUrlWithParams: vi.fn() }));
+
+// --- Store Mocks (TDZ-Safe Pattern) ---
+vi.mock("$lib/stores/player.store.ts", async () => {
+  const { writable: actualWritable } =
+    await vi.importActual<typeof import("svelte/store")>("svelte/store");
+  const initialPlayerStateInFactory: PlayerState = {
+    status: "Idle",
+    fileName: null,
+    duration: 0,
+    currentTime: 0,
+    isPlaying: false,
+    isPlayable: false,
+    speed: 1.0,
+    pitch: 0.0,
+    pitchShift: 0.0,
+    gain: 1.0,
+    waveformData: undefined,
+    error: null,
+    audioBuffer: undefined,
+    audioContextResumed: false,
+    channels: 0,
+    sampleRate: 0,
+    lastProcessedChunk: undefined,
+  };
+  const storeInstance = actualWritable(initialPlayerStateInFactory);
+  return {
+    playerStore: storeInstance,
+    getStore: () => storeInstance,
+    __initialState: initialPlayerStateInFactory,
+  };
+});
+
+vi.mock("$lib/stores/analysis.store.ts", async () => {
+  const { writable: actualWritable } =
+    await vi.importActual<typeof import("svelte/store")>("svelte/store");
+  const initialAnalysisStateInFactory: AnalysisState = {
+    dtmfResults: [],
+    spectrogramData: null,
+    vadEvents: [],
+    vadPositiveThreshold: 0.9, // Default from component
+    vadNegativeThreshold: 0.7,
+    isSpeaking: false,
+    vadInitialized: false,
+    vadStatus: "idle",
+    vadError: null,
+    vadNoiseFloor: -70,
+    vadSensitivity: 0.5, // Added typical VAD fields
+  };
+  const storeInstance = actualWritable(initialAnalysisStateInFactory);
+  return {
+    analysisStore: storeInstance,
+    getStore: () => storeInstance,
+    __initialState: initialAnalysisStateInFactory,
+  };
+});
+
+vi.mock("$lib/stores/status.store.ts", async () => {
+  const { writable: actualWritable } =
+    await vi.importActual<typeof import("svelte/store")>("svelte/store");
+  const initialStatusStateInFactory: StatusState = {
+    message: null,
+    type: null,
+    isLoading: false,
+    details: null,
+    progress: null,
+  };
+  const storeInstance = actualWritable(initialStatusStateInFactory);
+  return {
+    statusStore: storeInstance,
+    getStore: () => storeInstance,
+    __initialState: initialStatusStateInFactory,
+  };
+});
+
+describe("AudioOrchestrator.service.ts", () => {
+  let audioOrchestrator: AudioOrchestrator;
+  // Cast get to MockInstance for type safety with Vitest's vi.fn()
+  let svelteStoreGetMock: MockInstance<[Writable<unknown>], unknown>; // Adjusted type for 'get' mock if needed
+  const mockFile = new File([""], "test-audio.mp3", { type: "audio/mpeg" });
+  const mockAudioBuffer = {
+    // Keep this simple mock for audioEngine
+    duration: 120,
+    sampleRate: 44100,
+    numberOfChannels: 1,
+    getChannelData: vi.fn(() => new Float32Array(1024)),
+  } as unknown as AudioBuffer;
+
+  beforeAll(() => {
+    vi.useFakeTimers();
+  });
+
+  beforeEach(async () => {
+    // Make beforeEach async
+    audioOrchestrator = AudioOrchestrator.getInstance();
+    vi.clearAllMocks(); // Clears all mocks
+
+    // Dynamically import mocked stores and assign to top-level variables
+    const playerStoreModule = await import("$lib/stores/player.store.ts");
+    actualMockPlayerStore = playerStoreModule.getStore();
+    const analysisStoreModule = await import("$lib/stores/analysis.store.ts");
+    actualMockAnalysisStore = analysisStoreModule.getStore();
+    const statusStoreModule = await import("$lib/stores/status.store.ts");
+    actualMockStatusStore = statusStoreModule.getStore();
+
+    // Reset stores using their __initialState
+    act(() => {
+      actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
+      actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
+      actualMockStatusStore.set({ ...statusStoreModule.__initialState });
+    });
+
+    (audioEngine.loadFile as vi.Mock).mockResolvedValue(mockAudioBuffer);
+
+    // Dynamically import the mocked 'svelte/store' to get its spied 'get'
+    const svelteStoreModule = await import("svelte/store");
+    svelteStoreGetMock = svelteStoreModule.get as MockInstance<
+      [Writable<unknown>],
+      unknown
+    >;
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+  });
+
+  describe("loadFileAndAnalyze", () => {
+    it("should set loading status, update player store, and then set ready status on successful load", async () => {
+      await audioOrchestrator.loadFileAndAnalyze(mockFile);
+
+      // Assertions will now use get(actualMockStatusStore) or get(actualMockPlayerStore).
+      // The "Loading..." state is set and rapidly replaced by "Ready" or "Error".
+      // We will assert the final state after all operations within loadFileAndAnalyze are complete.
+
+      // Check playerStore state after successful load by inspecting its current value
+      const finalPlayerState = get(actualMockPlayerStore);
+      expect(finalPlayerState.fileName).toBe(mockFile.name);
+      expect(finalPlayerState.duration).toBe(mockAudioBuffer.duration);
+      expect(finalPlayerState.sampleRate).toBe(mockAudioBuffer.sampleRate);
+      expect(finalPlayerState.channels).toBe(mockAudioBuffer.numberOfChannels);
+      expect(finalPlayerState.isPlayable).toBe(true);
+      expect(finalPlayerState.status).toBe("Ready"); // Orchestrator should update this
+
+      // Check final statusStore state
+      expect(get(actualMockStatusStore)).toEqual({
+        message: "Ready", // This should be the last message
+        type: "success",
+        isLoading: false,
+      });
+
+      // Verify analysis services were initialized and called
+      expect(audioEngine.unlockAudio).toHaveBeenCalled();
+      expect(audioEngine.loadFile).toHaveBeenCalledWith(mockFile);
+      expect(spectrogramService.init).toHaveBeenCalledWith(
+        mockAudioBuffer.sampleRate,
+      );
+      expect(dtmfService.init).toHaveBeenCalledWith(mockAudioBuffer.sampleRate);
+      expect(spectrogramService.process).toHaveBeenCalled();
+      expect(dtmfService.process).toHaveBeenCalled();
+    });
+
+    it("should set error status in statusStore and playerStore if audioEngine.loadFile fails", async () => {
+      const errorMessage = "Failed to load file";
+      (audioEngine.loadFile as vi.Mock).mockRejectedValueOnce(
+        new Error(errorMessage),
+      );
+
+      await audioOrchestrator.loadFileAndAnalyze(mockFile);
+
+      // After await, the service method has completed, and stores should be in their final states.
+      // Check final statusStore state for error
+      // Service might not be setting progress and details explicitly to null in this path
+      expect(get(actualMockStatusStore)).toEqual(
+        expect.objectContaining({
+          message: "File processing failed.",
+          type: "error",
+          isLoading: false,
+          details: errorMessage,
+          // progress: null // progress might not be explicitly reset by the service here
+        }),
+      );
+
+      // Check playerStore state for error
+      const finalPlayerState = get(actualMockPlayerStore);
+      expect(finalPlayerState.status).toBe("Error");
+      expect(finalPlayerState.error).toBe(errorMessage);
+      expect(finalPlayerState.isPlayable).toBe(false);
+      expect(finalPlayerState.duration).toBe(0);
+    });
+
+    it("should handle errors from analysis services gracefully", async () => {
+      const dtmfError = "DTMF processing failed";
+      (dtmfService.process as vi.Mock).mockRejectedValueOnce(
+        new Error(dtmfError),
+      );
+
+      await audioOrchestrator.loadFileAndAnalyze(mockFile);
+
+      // Still loads successfully overall in statusStore
+      // Service might not be setting progress and details explicitly to null in this path
+      expect(get(actualMockStatusStore)).toEqual(
+        expect.objectContaining({
+          message: "Ready",
+          type: "success",
+          isLoading: false,
+          // details: null, // details might not be explicitly reset
+          // progress: null // progress might not be explicitly reset
+        }),
+      );
+      // Player store should also reflect 'Ready'
+      expect(get(actualMockPlayerStore).status).toBe("Ready");
+      // For now, this test ensures the main flow completes.
+    });
+  });
+
+  describe("setupUrlSerialization", () => {
+    const localInitialPlayerStateForUrlTest: PlayerState = {
+      speed: 0.75,
+      pitch: -2.5, // For service code expecting 'pitch'
+      pitchShift: -2.5, // Standard PlayerState field
+      gain: 1.25,
+      status: "Ready",
+      fileName: "test-audio.mp3",
+      duration: 120,
+      currentTime: 0,
+      isPlaying: false,
+      isPlayable: true,
+      waveformData: undefined,
+      error: null,
+      audioBuffer: undefined,
+      audioContextResumed: true,
+      channels: 1,
+      sampleRate: 44100,
+      lastProcessedChunk: undefined,
+    };
+
+    beforeEach(() => {
+      // This beforeEach is for the 'setupUrlSerialization' describe block
+      act(() => {
+        actualMockPlayerStore.set({ ...localInitialPlayerStateForUrlTest });
+      });
+
+      // The global 'get' mock is already a spy on originalGet.
+      // No need to further mockImplementation for svelteStoreGetMock here unless testing specific behavior of 'get' itself.
+      // The AudioOrchestrator will use the actual 'get' (which is now spied on).
+    });
+
+    it("should call updateUrlWithParams with correct parameters after debounced interval", () => {
+      audioOrchestrator.setupUrlSerialization();
+
+      act(() => {
+        actualMockPlayerStore.update((s) => ({ ...s, speed: 0.5 }));
+      });
+
+      vi.runAllTimers();
+
+      // Debounce might fire multiple times rapidly in test environment with act and runAllTimers.
+      // Check it was called and verify the arguments of the last call.
+      expect(updateUrlWithParams).toHaveBeenCalled();
+      expect(updateUrlWithParams).toHaveBeenLastCalledWith({
+        [URL_HASH_KEYS.SPEED]: "0.50",
+        [URL_HASH_KEYS.PITCH]:
+          localInitialPlayerStateForUrlTest.pitch.toFixed(1),
+        [URL_HASH_KEYS.GAIN]: localInitialPlayerStateForUrlTest.gain.toFixed(2),
+      });
+    });
+
+    it("should use updated values if store changes multiple times before debounce", () => {
+      audioOrchestrator.setupUrlSerialization();
+
+      act(() => {
+        actualMockPlayerStore.update((s) => ({ ...s, speed: 0.5 }));
+        actualMockPlayerStore.update((s) => ({
+          ...s,
+          speed: 0.8,
+          pitch: 1.5,
+          pitchShift: 1.5,
+        })); // Update .pitch
+      });
+
+      vi.runAllTimers();
+
+      expect(updateUrlWithParams).toHaveBeenCalled(); // Check it was called
+      expect(updateUrlWithParams).toHaveBeenLastCalledWith({
+        // Verify the last call
+        [URL_HASH_KEYS.SPEED]: "0.80",
+        [URL_HASH_KEYS.PITCH]: "1.5",
+        [URL_HASH_KEYS.GAIN]: localInitialPlayerStateForUrlTest.gain.toFixed(2),
+      });
+    });
+  });
+});
+
+````
+--- End of File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.test.ts ---
+--- File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts ---
+````typescript
+// vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts
+import { get } from "svelte/store";
+import { playerStore } from "$lib/stores/player.store";
+import { statusStore } from "$lib/stores/status.store";
+import type { StatusState } from "$lib/types/status.types"; // Added this import
+import { analysisStore } from "$lib/stores/analysis.store";
+import audioEngine from "./audioEngine.service"; // Changed to default import
+import dtmfService from "./dtmf.service"; // Changed to default import
+import spectrogramService from "./spectrogram.service"; // Changed to default import
+import { debounce } from "$lib/utils/async";
+import { updateUrlWithParams } from "$lib/utils/urlState";
+import { UI_CONSTANTS, URL_HASH_KEYS } from "$lib/utils/constants";
+
+export class AudioOrchestrator {
+  private static instance: AudioOrchestrator;
+
+  private constructor() {
+    // Private constructor for singleton
+  }
+
+  public static getInstance(): AudioOrchestrator {
+    if (!AudioOrchestrator.instance) {
+      AudioOrchestrator.instance = new AudioOrchestrator();
+    }
+    return AudioOrchestrator.instance;
+  }
+
+  public async loadFileAndAnalyze(file: File): Promise<void> {
+    console.log(`[Orchestrator] === Starting New File Load: ${file.name} ===`);
+    statusStore.set({
+      message: `Loading ${file.name}...`,
+      type: "info",
+      isLoading: true,
+      details: null,
+      progress: null,
+    });
+    // Ensure other relevant stores are reset if that's current behavior (e.g., analysisStore, waveformStore)
+    playerStore.update((s) => ({
+      ...s,
+      error: null,
+      status: "Loading",
+      isPlayable: false,
+      fileName: file.name,
+      duration: 0,
+      currentTime: 0,
+    })); // Added fileName and reset duration/currentTime
+    analysisStore.update((store) => ({
+      ...store,
+      dtmfResults: [],
+      spectrogramData: null,
+    }));
+
+    try {
+      await audioEngine.unlockAudio();
+      const audioBuffer = await audioEngine.loadFile(file);
+      // audioEngine.decodeAudioData() is usually part of loadFile or handled by the browser's AudioContext directly
+
+      const duration = audioBuffer.duration;
+      const sampleRate = audioBuffer.sampleRate;
+      const channels = audioBuffer.numberOfChannels; // Assuming this property exists
+
+      playerStore.update((s) => ({
+        ...s,
+        duration,
+        sampleRate,
+        channels, // Added channels
+        isPlayable: true,
+        status: "Ready", // Updated status here
+      }));
+      statusStore.set({ message: "Ready", type: "success", isLoading: false });
+
+      spectrogramService.init(audioBuffer.sampleRate);
+      dtmfService.init(audioBuffer.sampleRate);
+
+      console.log("AudioOrchestrator: Starting background analysis tasks.");
+      const analysisPromises = [
+        dtmfService.process(audioBuffer),
+        spectrogramService.process(audioBuffer.getChannelData(0)),
+      ];
+
+      const results = await Promise.allSettled(analysisPromises);
+      console.log(
+        "AudioOrchestrator: All background analysis tasks settled.",
+        results,
+      );
+
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.error(
+            `AudioOrchestrator: Analysis task ${index} failed:`,
+            result.reason,
+          );
+          // Optionally, update a specific error state in analysisStore or playerStore
+        }
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[Orchestrator] !!! CRITICAL ERROR during file load:`,
+        error,
+      );
+      statusStore.set({
+        message: "File processing failed.",
+        type: "error",
+        isLoading: false,
+        details: message,
+      });
+      // Update playerStore to reflect the error state specifically for the player
+      playerStore.update((s) => ({
+        ...s,
+        status: "Error",
+        error: message,
+        isPlayable: false,
+        duration: 0,
+        currentTime: 0,
+      }));
+    }
+  }
+
+  /**
+   * Sets up debounced URL serialization based on player and analysis store changes.
+   * @public
+   */
+  public setupUrlSerialization(): void {
+    console.log("[Orchestrator] Setting up URL serialization.");
+
+    const debouncedUpdater = debounce(() => {
+      const pStore = get(playerStore);
+      // const aStore = get(analysisStore); // Keep this commented out if analysisStore part is not for this step yet
+
+      const params: Record<string, string> = {
+        [URL_HASH_KEYS.SPEED]: pStore.speed.toFixed(2),
+        [URL_HASH_KEYS.PITCH]: pStore.pitch.toFixed(1), // Assuming pitch is semitones
+        [URL_HASH_KEYS.GAIN]: pStore.gain.toFixed(2),
+        // [URL_HASH_KEYS.VAD_THRESHOLD]: aStore.vadPositiveThreshold.toFixed(2), // Keep commented
+        // ... any other relevant params from playerStore that should be serialized
+      };
+
+      console.log(
+        `[Orchestrator/URL] Debounced update triggered. New params:`,
+        params,
+      );
+      updateUrlWithParams(params); // Make sure updateUrlWithParams is correctly imported/defined
+    }, UI_CONSTANTS.DEBOUNCE_TIME_MS_URL_UPDATE);
+
+    playerStore.subscribe(debouncedUpdater);
+    // analysisStore.subscribe(debouncedUpdater); // Only subscribe if aStore is used in params
+  }
+}
+
+export const audioOrchestrator = AudioOrchestrator.getInstance();
+
+````
+--- End of File: vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts ---
 --- File: vibe-player-v2/src/lib/services/dtmf.service.test.ts ---
 ````typescript
 // vibe-player-v2/src/lib/services/dtmf.service.test.ts
@@ -6132,7 +6174,7 @@ const initialState: PlayerState = {
   isPlaying: false,
   isPlayable: false,
   speed: 1.0,
-  pitch: 0.0,
+  pitchShift: 0.0,
   gain: 1.0,
   waveformData: undefined,
   error: null,
@@ -6208,7 +6250,7 @@ export interface PlayerState {
   isPlaying: boolean;
   isPlayable: boolean;
   speed: number;
-  pitch: number;
+  pitchShift: number;
   gain: number;
   waveformData?: number[][];
   error: string | null;
@@ -9283,166 +9325,6 @@ test.describe("Application Startup Smoke Test", () => {
 
 ````
 --- End of File: vibe-player-v2/tests-e2e/00-load.e2e.spec.js ---
---- File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
-````mjs
-// vibe-player-v2/tests-e2e/PlayerPage.mjs
-import { expect } from "@playwright/test";
-
-export class PlayerPage {
-  /**
-   * A Page Object Model for the Vibe Player V2 application.
-   * Encapsulates locators and actions for interacting with the player UI.
-   * @param {import('@playwright/test').Page} page
-   */
-  constructor(page) {
-    this.page = page;
-    this.devServerUrl = "http://localhost:4173/";
-    this.appBarTitle = page.getByTestId("app-bar-title");
-    this.fileInput = page.locator('input[type="file"]');
-    this.fileNameDisplay = page.getByTestId("file-name-display");
-    this.fileStatusDisplay = page.getByTestId("file-status-display");
-    this.fileErrorDisplay = page.getByTestId("file-error-display");
-    this.playButton = page.getByTestId("play-button");
-    this.stopButton = page.getByTestId("stop-button");
-    this.timeDisplay = page.getByTestId("time-display");
-    this.seekSliderInput = page.getByTestId("seek-slider-input");
-    this.speedSliderInput = page.getByTestId("speed-slider-input");
-    this.speedValueDisplay = page.getByTestId("speed-value");
-    this.pitchSliderInput = page.getByTestId("pitch-slider-input");
-    this.pitchValueDisplay = page.getByTestId("pitch-value");
-    this.gainSliderInput = page.getByTestId("gain-slider-input");
-    this.gainValueDisplay = page.getByTestId("gain-value");
-    this.vadPositiveSliderInput = page.getByTestId("vad-positive-slider-input");
-    this.vadPositiveValueDisplay = page.getByTestId("vad-positive-value");
-    this.vadNegativeSliderInput = page.getByTestId("vad-negative-slider-input");
-    this.vadNegativeValueDisplay = page.getByTestId("vad-negative-value");
-    this.dtmfDisplay = page.getByTestId("dtmf-display");
-  }
-
-  /**
-   * Navigates to the application's base URL and verifies the page has loaded.
-   */
-  async goto() {
-    await this.page.goto(this.devServerUrl);
-    await expect(this.appBarTitle).toHaveText("Vibe Player V2", {
-      timeout: 15000,
-    });
-    await expect(this.fileInput).toBeVisible({ timeout: 10000 });
-  }
-
-  /**
-   * Loads an audio file using the file input.
-   * @param {string} fileName - The path to the file within the 'static' directory.
-   */
-  async loadAudioFile(fileName) {
-    const filePath = `static/${fileName}`;
-    await this.fileInput.setInputFiles(filePath);
-  }
-
-  /**
-   * Waits for the UI to be in a state where playback is possible after a file load.
-   */
-  async expectControlsToBeReadyForPlayback() {
-    await expect(this.fileStatusDisplay).toHaveText(/Ready/, {
-      timeout: 20000,
-    });
-    await expect(
-      this.timeDisplay,
-      "Time display did not update with audio duration",
-    ).not.toHaveText("0:00 / 0:00", { timeout: 1000 });
-    await expect(
-      this.playButton,
-      "Play button was not enabled after file load",
-    ).toBeEnabled({
-      timeout: 1000,
-    });
-  }
-
-  /**
-   * Gets the current text content of the play/pause button.
-   * @returns {Promise<string|null>}
-   */
-  async getPlayButtonText() {
-    return this.playButton.textContent();
-  }
-
-  /**
-   * Sets the value of a slider by calculating the click position based on the desired value.
-   * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
-   * @param {string} valueStr - The target value as a string (e.g., "1.5").
-   */
-  async setSliderValue(sliderInputLocator, valueStr) {
-    const targetValue = parseFloat(valueStr);
-    const boundingBox = await sliderInputLocator.boundingBox();
-    if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
-
-    const { min, max } = await sliderInputLocator.evaluate((el) => ({
-      min: parseFloat(el.getAttribute("min") || "0"),
-      max: parseFloat(el.getAttribute("max") || "100"),
-    }));
-
-    const ratio = (targetValue - min) / (max - min);
-    let clickX = boundingBox.x + boundingBox.width * ratio;
-
-    // Ensure clickX is within the bounding box width
-    clickX = Math.max(
-      boundingBox.x,
-      Math.min(clickX, boundingBox.x + boundingBox.width),
-    );
-
-    const clickY = boundingBox.y + boundingBox.height / 2;
-
-    await this.page.mouse.click(clickX, clickY);
-    await this.page.waitForTimeout(350); // Allow for debounced updates
-  }
-
-  /**
-   * Gets the current value of a slider input.
-   * @param {import('@playwright/test').Locator} sliderInputLocator
-   * @returns {Promise<string>}
-   */
-  async getSliderInputValue(sliderInputLocator) {
-    return sliderInputLocator.inputValue();
-  }
-
-  /**
-   * Gets the current playback time from the time display element.
-   * Assumes the time display format is "currentTimeFormatted / durationFormatted".
-   * @returns {Promise<number>} The current time in seconds.
-   */
-  async getCurrentTime() {
-    const timeDisplayText = await this.timeDisplay.textContent();
-    if (!timeDisplayText)
-      throw new Error("Time display text content is empty or null.");
-
-    const timeParts = timeDisplayText.split(" / ");
-    if (timeParts.length < 1)
-      throw new Error(`Unexpected time display format: ${timeDisplayText}`);
-
-    const currentTimeStr = timeParts[0].trim(); // "M:SS" or "H:MM:SS"
-    const segments = currentTimeStr.split(":").map(Number);
-    let currentTimeInSeconds = 0;
-    if (segments.length === 3) {
-      // H:MM:SS
-      currentTimeInSeconds =
-        segments[0] * 3600 + segments[1] * 60 + segments[2];
-    } else if (segments.length === 2) {
-      // M:SS
-      currentTimeInSeconds = segments[0] * 60 + segments[1];
-    } else if (segments.length === 1) {
-      // SS (less likely for current time but robust)
-      currentTimeInSeconds = segments[0];
-    } else {
-      throw new Error(
-        `Unexpected current time segment format: ${currentTimeStr}`,
-      );
-    }
-    return currentTimeInSeconds;
-  }
-}
-
-````
---- End of File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 --- File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
 ````javascript
 // vibe-player-v2/tests-e2e/player.e2e.spec.js
@@ -9671,6 +9553,166 @@ test.describe("Vibe Player V2 E2E", () => {
 
 ````
 --- End of File: vibe-player-v2/tests-e2e/player.e2e.spec.js ---
+--- File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
+````mjs
+// vibe-player-v2/tests-e2e/PlayerPage.mjs
+import { expect } from "@playwright/test";
+
+export class PlayerPage {
+  /**
+   * A Page Object Model for the Vibe Player V2 application.
+   * Encapsulates locators and actions for interacting with the player UI.
+   * @param {import('@playwright/test').Page} page
+   */
+  constructor(page) {
+    this.page = page;
+    this.devServerUrl = "http://localhost:4173/";
+    this.appBarTitle = page.getByTestId("app-bar-title");
+    this.fileInput = page.locator('input[type="file"]');
+    this.fileNameDisplay = page.getByTestId("file-name-display");
+    this.fileStatusDisplay = page.getByTestId("file-status-display");
+    this.fileErrorDisplay = page.getByTestId("file-error-display");
+    this.playButton = page.getByTestId("play-button");
+    this.stopButton = page.getByTestId("stop-button");
+    this.timeDisplay = page.getByTestId("time-display");
+    this.seekSliderInput = page.getByTestId("seek-slider-input");
+    this.speedSliderInput = page.getByTestId("speed-slider-input");
+    this.speedValueDisplay = page.getByTestId("speed-value");
+    this.pitchSliderInput = page.getByTestId("pitch-slider-input");
+    this.pitchValueDisplay = page.getByTestId("pitch-value");
+    this.gainSliderInput = page.getByTestId("gain-slider-input");
+    this.gainValueDisplay = page.getByTestId("gain-value");
+    this.vadPositiveSliderInput = page.getByTestId("vad-positive-slider-input");
+    this.vadPositiveValueDisplay = page.getByTestId("vad-positive-value");
+    this.vadNegativeSliderInput = page.getByTestId("vad-negative-slider-input");
+    this.vadNegativeValueDisplay = page.getByTestId("vad-negative-value");
+    this.dtmfDisplay = page.getByTestId("dtmf-display");
+  }
+
+  /**
+   * Navigates to the application's base URL and verifies the page has loaded.
+   */
+  async goto() {
+    await this.page.goto(this.devServerUrl);
+    await expect(this.appBarTitle).toHaveText("Vibe Player V2", {
+      timeout: 15000,
+    });
+    await expect(this.fileInput).toBeVisible({ timeout: 10000 });
+  }
+
+  /**
+   * Loads an audio file using the file input.
+   * @param {string} fileName - The path to the file within the 'static' directory.
+   */
+  async loadAudioFile(fileName) {
+    const filePath = `static/${fileName}`;
+    await this.fileInput.setInputFiles(filePath);
+  }
+
+  /**
+   * Waits for the UI to be in a state where playback is possible after a file load.
+   */
+  async expectControlsToBeReadyForPlayback() {
+    await expect(this.fileStatusDisplay).toHaveText(/Ready/, {
+      timeout: 20000,
+    });
+    await expect(
+      this.timeDisplay,
+      "Time display did not update with audio duration",
+    ).not.toHaveText("0:00 / 0:00", { timeout: 1000 });
+    await expect(
+      this.playButton,
+      "Play button was not enabled after file load",
+    ).toBeEnabled({
+      timeout: 1000,
+    });
+  }
+
+  /**
+   * Gets the current text content of the play/pause button.
+   * @returns {Promise<string|null>}
+   */
+  async getPlayButtonText() {
+    return this.playButton.textContent();
+  }
+
+  /**
+   * Sets the value of a slider by calculating the click position based on the desired value.
+   * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
+   * @param {string} valueStr - The target value as a string (e.g., "1.5").
+   */
+  async setSliderValue(sliderInputLocator, valueStr) {
+    const targetValue = parseFloat(valueStr);
+    const boundingBox = await sliderInputLocator.boundingBox();
+    if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
+
+    const { min, max } = await sliderInputLocator.evaluate((el) => ({
+      min: parseFloat(el.getAttribute("min") || "0"),
+      max: parseFloat(el.getAttribute("max") || "100"),
+    }));
+
+    const ratio = (targetValue - min) / (max - min);
+    let clickX = boundingBox.x + boundingBox.width * ratio;
+
+    // Ensure clickX is within the bounding box width
+    clickX = Math.max(
+      boundingBox.x,
+      Math.min(clickX, boundingBox.x + boundingBox.width),
+    );
+
+    const clickY = boundingBox.y + boundingBox.height / 2;
+
+    await this.page.mouse.click(clickX, clickY);
+    await this.page.waitForTimeout(350); // Allow for debounced updates
+  }
+
+  /**
+   * Gets the current value of a slider input.
+   * @param {import('@playwright/test').Locator} sliderInputLocator
+   * @returns {Promise<string>}
+   */
+  async getSliderInputValue(sliderInputLocator) {
+    return sliderInputLocator.inputValue();
+  }
+
+  /**
+   * Gets the current playback time from the time display element.
+   * Assumes the time display format is "currentTimeFormatted / durationFormatted".
+   * @returns {Promise<number>} The current time in seconds.
+   */
+  async getCurrentTime() {
+    const timeDisplayText = await this.timeDisplay.textContent();
+    if (!timeDisplayText)
+      throw new Error("Time display text content is empty or null.");
+
+    const timeParts = timeDisplayText.split(" / ");
+    if (timeParts.length < 1)
+      throw new Error(`Unexpected time display format: ${timeDisplayText}`);
+
+    const currentTimeStr = timeParts[0].trim(); // "M:SS" or "H:MM:SS"
+    const segments = currentTimeStr.split(":").map(Number);
+    let currentTimeInSeconds = 0;
+    if (segments.length === 3) {
+      // H:MM:SS
+      currentTimeInSeconds =
+        segments[0] * 3600 + segments[1] * 60 + segments[2];
+    } else if (segments.length === 2) {
+      // M:SS
+      currentTimeInSeconds = segments[0] * 60 + segments[1];
+    } else if (segments.length === 1) {
+      // SS (less likely for current time but robust)
+      currentTimeInSeconds = segments[0];
+    } else {
+      throw new Error(
+        `Unexpected current time segment format: ${currentTimeStr}`,
+      );
+    }
+    return currentTimeInSeconds;
+  }
+}
+
+````
+--- End of File: vibe-player-v2/tests-e2e/PlayerPage.mjs ---
 --- File: vibe-player-v2/tsconfig.json ---
 ````json
 // vibe-player-v2/tsconfig.json
