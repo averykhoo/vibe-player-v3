@@ -51,11 +51,11 @@ vi.mock("./audioEngine.service", () => ({
   },
 }));
 vi.mock("./dtmf.service", () => ({
-  default: { init: vi.fn(), process: vi.fn().mockResolvedValue([]) },
+  default: { initialize: vi.fn(), process: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("./spectrogram.service", () => ({
   default: {
-    init: vi.fn(),
+    initialize: vi.fn(),
     process: vi.fn().mockResolvedValue(new Float32Array()),
   },
 }));
@@ -212,10 +212,12 @@ describe("AudioOrchestrator.service.ts", () => {
       // Verify analysis services were initialized and called
       expect(audioEngine.unlockAudio).toHaveBeenCalled();
       expect(audioEngine.loadFile).toHaveBeenCalledWith(mockFile);
-      expect(spectrogramService.init).toHaveBeenCalledWith(
+      expect(spectrogramService.initialize).toHaveBeenCalledWith({
+        sampleRate: mockAudioBuffer.sampleRate,
+      });
+      expect(dtmfService.initialize).toHaveBeenCalledWith(
         mockAudioBuffer.sampleRate,
       );
-      expect(dtmfService.init).toHaveBeenCalledWith(mockAudioBuffer.sampleRate);
       expect(spectrogramService.process).toHaveBeenCalled();
       expect(dtmfService.process).toHaveBeenCalled();
     });

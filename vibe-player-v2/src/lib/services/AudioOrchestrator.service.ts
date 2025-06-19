@@ -69,8 +69,8 @@ export class AudioOrchestrator {
       }));
       statusStore.set({ message: "Ready", type: "success", isLoading: false });
 
-      spectrogramService.init(audioBuffer.sampleRate);
-      dtmfService.init(audioBuffer.sampleRate);
+      spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
+      dtmfService.initialize(audioBuffer.sampleRate);
 
       console.log("AudioOrchestrator: Starting background analysis tasks.");
       const analysisPromises = [
