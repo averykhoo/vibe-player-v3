@@ -7,7 +7,7 @@ export interface PlayerState {
   isPlaying: boolean;
   isPlayable: boolean;
   speed: number;
-  pitch: number;
+  pitchShift: number;
   gain: number;
   waveformData?: number[][];
   error: string | null;

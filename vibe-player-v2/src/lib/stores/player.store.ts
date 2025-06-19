@@ -12,7 +12,7 @@ const initialState: PlayerState = {
   isPlaying: false,
   isPlayable: false,
   speed: 1.0,
-  pitch: 0.0,
+  pitchShift: 0.0,
   gain: 1.0,
   waveformData: undefined,
   error: null,
