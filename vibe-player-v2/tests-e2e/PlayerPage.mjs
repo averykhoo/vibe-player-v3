@@ -90,15 +90,18 @@ export class PlayerPage {
     if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
 
     const { min, max } = await sliderInputLocator.evaluate((el) => ({
-        min: parseFloat(el.getAttribute('min') || '0'),
-        max: parseFloat(el.getAttribute('max') || '100')
+      min: parseFloat(el.getAttribute("min") || "0"),
+      max: parseFloat(el.getAttribute("max") || "100"),
     }));
 
     const ratio = (targetValue - min) / (max - min);
     let clickX = boundingBox.x + boundingBox.width * ratio;
 
     // Ensure clickX is within the bounding box width
-    clickX = Math.max(boundingBox.x, Math.min(clickX, boundingBox.x + boundingBox.width));
+    clickX = Math.max(
+      boundingBox.x,
+      Math.min(clickX, boundingBox.x + boundingBox.width),
+    );
 
     const clickY = boundingBox.y + boundingBox.height / 2;
 
@@ -122,22 +125,30 @@ export class PlayerPage {
    */
   async getCurrentTime() {
     const timeDisplayText = await this.timeDisplay.textContent();
-    if (!timeDisplayText) throw new Error("Time display text content is empty or null.");
+    if (!timeDisplayText)
+      throw new Error("Time display text content is empty or null.");
 
     const timeParts = timeDisplayText.split(" / ");
-    if (timeParts.length < 1) throw new Error(`Unexpected time display format: ${timeDisplayText}`);
+    if (timeParts.length < 1)
+      throw new Error(`Unexpected time display format: ${timeDisplayText}`);
 
     const currentTimeStr = timeParts[0].trim(); // "M:SS" or "H:MM:SS"
-    const segments = currentTimeStr.split(':').map(Number);
+    const segments = currentTimeStr.split(":").map(Number);
     let currentTimeInSeconds = 0;
-    if (segments.length === 3) { // H:MM:SS
-        currentTimeInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
-    } else if (segments.length === 2) { // M:SS
-        currentTimeInSeconds = segments[0] * 60 + segments[1];
-    } else if (segments.length === 1) { // SS (less likely for current time but robust)
-        currentTimeInSeconds = segments[0];
+    if (segments.length === 3) {
+      // H:MM:SS
+      currentTimeInSeconds =
+        segments[0] * 3600 + segments[1] * 60 + segments[2];
+    } else if (segments.length === 2) {
+      // M:SS
+      currentTimeInSeconds = segments[0] * 60 + segments[1];
+    } else if (segments.length === 1) {
+      // SS (less likely for current time but robust)
+      currentTimeInSeconds = segments[0];
     } else {
-        throw new Error(`Unexpected current time segment format: ${currentTimeStr}`);
+      throw new Error(
+        `Unexpected current time segment format: ${currentTimeStr}`,
+      );
     }
     return currentTimeInSeconds;
   }

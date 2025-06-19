@@ -25,15 +25,19 @@ const initialPlayerState: PlayerState = {
   sampleRate: undefined,
   lastProcessedChunk: undefined,
 };
-const playerStoreWritable: Writable<PlayerState> = writable({ ...initialPlayerState });
+const playerStoreWritable: Writable<PlayerState> = writable({
+  ...initialPlayerState,
+});
 
 // Mock stores first
 vi.mock("$lib/stores/player.store", () => ({
-  get playerStore() { return playerStoreWritable; }
+  get playerStore() {
+    return playerStoreWritable;
+  },
 }));
 
-vi.mock('$lib/utils/constants', async (importOriginal) => {
-  const originalConstants = await importOriginal() as any; // Cast to any to access properties dynamically
+vi.mock("$lib/utils/constants", async (importOriginal) => {
+  const originalConstants = (await importOriginal()) as any; // Cast to any to access properties dynamically
   return {
     ...originalConstants,
     AUDIO_ENGINE_CONSTANTS: {
@@ -85,7 +89,9 @@ const mockAudioContextInstance = {
     copyFromChannel: vi.fn(),
   })),
 };
-global.AudioContext = vi.fn().mockImplementation(() => mockAudioContextInstance);
+global.AudioContext = vi
+  .fn()
+  .mockImplementation(() => mockAudioContextInstance);
 
 // Mock fetch for worker dependencies.
 const globalFetchSpy = vi.spyOn(global, "fetch");
@@ -97,7 +103,6 @@ import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils/constants"; // For MAX_GAIN
 import { act } from "@testing-library/svelte"; // For wrapping state updates
 
-
 describe("AudioEngineService", () => {
   const MOCK_RAF_ID = 12345;
   let rafSpy: ReturnType<typeof vi.spyOn>;
@@ -106,16 +111,16 @@ describe("AudioEngineService", () => {
 
   const simulateWorkerMessage = (message: any) => {
     if (mockWorkerInstance.onmessage) {
-        act(() => {
-            mockWorkerInstance.onmessage!({ data: message } as MessageEvent);
-        });
+      act(() => {
+        mockWorkerInstance.onmessage!({ data: message } as MessageEvent);
+      });
     }
   };
   const simulateWorkerError = (errorEvent: ErrorEvent) => {
     if (mockWorkerInstance.onerror) {
-        act(() => {
-            mockWorkerInstance.onerror!(errorEvent);
-        });
+      act(() => {
+        mockWorkerInstance.onerror!(errorEvent);
+      });
     }
   };
 
@@ -138,25 +143,28 @@ describe("AudioEngineService", () => {
     // Reset and re-spy methods on the shared mockAudioContextInstance
     mockAudioContextInstance.state = "running";
     mockAudioContextInstance.currentTime = 0;
-    vi.spyOn(mockAudioContextInstance, 'decodeAudioData').mockReset();
+    vi.spyOn(mockAudioContextInstance, "decodeAudioData").mockReset();
 
     // Setup persistent spy for gain.setValueAtTime
     mockGainSetValueAtTime = vi.fn();
-    vi.spyOn(mockAudioContextInstance, 'createGain').mockImplementation(() => ({
-        connect: vi.fn(),
-        gain: { setValueAtTime: mockGainSetValueAtTime, value: 1.0 },
+    vi.spyOn(mockAudioContextInstance, "createGain").mockImplementation(() => ({
+      connect: vi.fn(),
+      gain: { setValueAtTime: mockGainSetValueAtTime, value: 1.0 },
     }));
-    vi.spyOn(mockAudioContextInstance, 'resume').mockResolvedValue(undefined);
-    vi.spyOn(mockAudioContextInstance, 'close').mockResolvedValue(undefined);
-    vi.spyOn(mockAudioContextInstance, 'createBufferSource').mockImplementation(() => ({
+    vi.spyOn(mockAudioContextInstance, "resume").mockResolvedValue(undefined);
+    vi.spyOn(mockAudioContextInstance, "close").mockResolvedValue(undefined);
+    vi.spyOn(mockAudioContextInstance, "createBufferSource").mockImplementation(
+      () => ({
         buffer: null as AudioBuffer | null,
         connect: vi.fn(),
         start: vi.fn(),
         stop: vi.fn(),
         onended: null as (() => void) | null,
         disconnect: vi.fn(),
-    }));
-    vi.spyOn(mockAudioContextInstance, 'createBuffer').mockImplementation((channels, length, sampleRate) => ({
+      }),
+    );
+    vi.spyOn(mockAudioContextInstance, "createBuffer").mockImplementation(
+      (channels, length, sampleRate) => ({
         numberOfChannels: channels,
         length: length,
         sampleRate: sampleRate,
@@ -164,20 +172,24 @@ describe("AudioEngineService", () => {
         getChannelData: vi.fn(() => new Float32Array(length)),
         copyToChannel: vi.fn(),
         copyFromChannel: vi.fn(),
-    }));
+      }),
+    );
 
     // Ensure global.AudioContext returns our consistently spied-upon mock
-    global.AudioContext = vi.fn().mockImplementation(() => mockAudioContextInstance);
+    global.AudioContext = vi
+      .fn()
+      .mockImplementation(() => mockAudioContextInstance);
 
     // Re-spy on worker methods and restore mock implementation for the constructor
     vi.mocked(RubberbandWorker).mockImplementation(() => mockWorkerInstance);
-    vi.spyOn(mockWorkerInstance, 'postMessage').mockClear();
-    vi.spyOn(mockWorkerInstance, 'terminate').mockClear();
+    vi.spyOn(mockWorkerInstance, "postMessage").mockClear();
+    vi.spyOn(mockWorkerInstance, "terminate").mockClear();
     // The import mock vi.mock("$lib/workers/rubberband.worker?worker&inline", ...) handles initial worker instantiation.
     // vi.resetAllMocks() clears the implementation of vi.fn() used in the module mock, so we restore it above.
 
-
-    rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+    rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockReturnValue(MOCK_RAF_ID);
     cafSpy = vi.spyOn(window, "cancelAnimationFrame");
 
     mockAudioBuffer = {
@@ -199,7 +211,9 @@ describe("AudioEngineService", () => {
     let mockFile: File;
 
     beforeEach(() => {
-      mockFile = new File(["dummy content"], "test.mp3", { type: "audio/mpeg" });
+      mockFile = new File(["dummy content"], "test.mp3", {
+        type: "audio/mpeg",
+      });
       mockFile.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(1024)); // Mock arrayBuffer
       // Explicitly set originalBuffer to null before each loadFile test
       (audioEngineService as any).originalBuffer = null;
@@ -208,7 +222,9 @@ describe("AudioEngineService", () => {
 
     it("should successfully load and decode a file, returning an AudioBuffer", async () => {
       // Corrected mock: decodeAudioData returns a Promise and does not use callbacks.
-      mockAudioContextInstance.decodeAudioData.mockResolvedValue(mockAudioBuffer);
+      mockAudioContextInstance.decodeAudioData.mockResolvedValue(
+        mockAudioBuffer,
+      );
 
       const buffer = await audioEngineService.loadFile(mockFile);
 
@@ -217,7 +233,9 @@ describe("AudioEngineService", () => {
       expect((audioEngineService as any).originalBuffer).toBe(mockAudioBuffer);
       // Assert no unintended side-effects that were removed
       expect(mockWorkerInstance.postMessage).not.toHaveBeenCalled(); // Should not try to init worker
-      expect(get(playerStoreWritable).isPlayable).toBe(initialPlayerState.isPlayable); // Should not set isPlayable
+      expect(get(playerStoreWritable).isPlayable).toBe(
+        initialPlayerState.isPlayable,
+      ); // Should not set isPlayable
       expect((audioEngineService as any).isWorkerReady).toBe(false); // isWorkerReady should remain false
     });
 
@@ -244,14 +262,14 @@ describe("AudioEngineService", () => {
 
   describe("initializeWorker", () => {
     beforeEach(() => {
-        // Reset playerStore to ensure initialSpeed and initialPitch are from a clean state
-        // Align with service expectation (playbackSpeed) vs PlayerState type (speed)
-        playerStoreWritable.set({
-            ...initialPlayerState,
-            // @ts-expect-error - speed vs playbackSpeed mismatch between type and usage
-            playbackSpeed: 1.2,
-            pitchShift: -2.0
-        });
+      // Reset playerStore to ensure initialSpeed and initialPitch are from a clean state
+      // Align with service expectation (playbackSpeed) vs PlayerState type (speed)
+      playerStoreWritable.set({
+        ...initialPlayerState,
+        // @ts-expect-error - speed vs playbackSpeed mismatch between type and usage
+        playbackSpeed: 1.2,
+        pitchShift: -2.0,
+      });
     });
 
     it("should initialize the worker, post INIT message, and update store on success", async () => {
@@ -280,7 +298,10 @@ describe("AudioEngineService", () => {
 
     it("should handle worker initialization failure (worker sends ERROR message)", async () => {
       const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
-      simulateWorkerMessage({ type: RB_WORKER_MSG_TYPE.ERROR, payload: { message: "Worker init crashed" } });
+      simulateWorkerMessage({
+        type: RB_WORKER_MSG_TYPE.ERROR,
+        payload: { message: "Worker init crashed" },
+      });
 
       await expect(initPromise).rejects.toThrow("Worker init crashed");
       expect(get(playerStoreWritable).isPlayable).toBe(false);
@@ -291,32 +312,46 @@ describe("AudioEngineService", () => {
     it("should handle worker initialization failure (worker.onerror callback)", async () => {
       const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
       // Directly trigger the worker's onerror
-      const mockErrorEvent = new ErrorEvent("error", { message: "Critical worker failure from onerror" });
+      const mockErrorEvent = new ErrorEvent("error", {
+        message: "Critical worker failure from onerror",
+      });
       simulateWorkerError(mockErrorEvent);
 
-      await expect(initPromise).rejects.toThrow("Critical worker failure from onerror");
+      await expect(initPromise).rejects.toThrow(
+        "Critical worker failure from onerror",
+      );
       expect(get(playerStoreWritable).isPlayable).toBe(false);
-      expect(get(playerStoreWritable).error).toBe("Worker crashed or encountered an unrecoverable error."); // Generic message set by service's onerror
+      expect(get(playerStoreWritable).error).toBe(
+        "Worker crashed or encountered an unrecoverable error.",
+      ); // Generic message set by service's onerror
       expect((audioEngineService as any).isWorkerReady).toBe(false);
     });
 
     it("should handle failure when fetching worker dependencies", async () => {
-      globalFetchSpy.mockResolvedValueOnce({ ok: false, status: 500, statusText: "Server Error" } as Response);
+      globalFetchSpy.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: "Server Error",
+      } as Response);
 
-      await expect(audioEngineService.initializeWorker(mockAudioBuffer)).rejects.toThrow(
-        /Failed to fetch worker dependencies/i,
-      );
+      await expect(
+        audioEngineService.initializeWorker(mockAudioBuffer),
+      ).rejects.toThrow(/Failed to fetch worker dependencies/i);
       expect(get(playerStoreWritable).isPlayable).toBe(false);
-      expect(get(playerStoreWritable).error).toMatch(/Error fetching worker dependencies: Failed to fetch worker dependencies/i);
+      expect(get(playerStoreWritable).error).toMatch(
+        /Error fetching worker dependencies: Failed to fetch worker dependencies/i,
+      );
       expect((audioEngineService as any).isWorkerReady).toBe(false);
     });
 
     it("should reject if no AudioBuffer is provided", async () => {
-        await expect(audioEngineService.initializeWorker(null as any)).rejects.toThrow(
-            "initializeWorker called with no AudioBuffer."
-        );
-        expect(get(playerStoreWritable).isPlayable).toBe(false);
-        expect(get(playerStoreWritable).error).toBe("initializeWorker called with no AudioBuffer.");
+      await expect(
+        audioEngineService.initializeWorker(null as any),
+      ).rejects.toThrow("initializeWorker called with no AudioBuffer.");
+      expect(get(playerStoreWritable).isPlayable).toBe(false);
+      expect(get(playerStoreWritable).error).toBe(
+        "initializeWorker called with no AudioBuffer.",
+      );
     });
   });
 
@@ -324,10 +359,16 @@ describe("AudioEngineService", () => {
     beforeEach(async () => {
       // Simulate successful load and init
       // Corrected mock: decodeAudioData returns a Promise.
-      mockAudioContextInstance.decodeAudioData.mockResolvedValue(mockAudioBuffer);
-      const localMockFile = new File(["dummy"], "test.wav", { type: "audio/wav" });
+      mockAudioContextInstance.decodeAudioData.mockResolvedValue(
+        mockAudioBuffer,
+      );
+      const localMockFile = new File(["dummy"], "test.wav", {
+        type: "audio/wav",
+      });
       // Add arrayBuffer mock for this localMockFile as well
-      localMockFile.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(1024));
+      localMockFile.arrayBuffer = vi
+        .fn()
+        .mockResolvedValue(new ArrayBuffer(1024));
       await audioEngineService.loadFile(localMockFile); // This sets this.originalBuffer
 
       const initPromise = audioEngineService.initializeWorker(mockAudioBuffer);
@@ -337,8 +378,17 @@ describe("AudioEngineService", () => {
       // Clear mocks that might have been called during setup
       vi.clearAllMocks();
       // Re-apply fetch mock if cleared
-      globalFetchSpy.mockImplementation(() => Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)), text: () => Promise.resolve("// Mock loader script")} as Response));
-      rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+      globalFetchSpy.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+          text: () => Promise.resolve("// Mock loader script"),
+        } as Response),
+      );
+      rafSpy = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockReturnValue(MOCK_RAF_ID);
       cafSpy = vi.spyOn(window, "cancelAnimationFrame");
     });
 
@@ -380,7 +430,9 @@ describe("AudioEngineService", () => {
       await audioEngineService.stop();
 
       expect(cafSpy).toHaveBeenCalledWith(currentRafId);
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({ type: RB_WORKER_MSG_TYPE.RESET });
+      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+        type: RB_WORKER_MSG_TYPE.RESET,
+      });
       expect((audioEngineService as any).isPlaying).toBe(false);
       expect((audioEngineService as any).sourcePlaybackOffset).toBe(0);
     });
@@ -389,12 +441,16 @@ describe("AudioEngineService", () => {
       it("should update internal time, reset worker, and keep paused state if paused", async () => {
         (audioEngineService as any).isPlaying = false; // Ensure paused
         vi.clearAllMocks(); // Clear postMessage calls from init
-        rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+        rafSpy = vi
+          .spyOn(window, "requestAnimationFrame")
+          .mockReturnValue(MOCK_RAF_ID);
 
         await audioEngineService.seek(5.0);
 
         expect(rafSpy).not.toHaveBeenCalled(); // Should not start playing
-        expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({ type: RB_WORKER_MSG_TYPE.RESET });
+        expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+          type: RB_WORKER_MSG_TYPE.RESET,
+        });
         expect((audioEngineService as any).sourcePlaybackOffset).toBe(5.0);
         expect((audioEngineService as any).isPlaying).toBe(false);
       });
@@ -403,14 +459,17 @@ describe("AudioEngineService", () => {
         await audioEngineService.play(); // Start playing
         const currentRafId = rafSpy.mock.results[0].value;
         vi.clearAllMocks(); // Clear postMessage calls
-        rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID);
+        rafSpy = vi
+          .spyOn(window, "requestAnimationFrame")
+          .mockReturnValue(MOCK_RAF_ID);
         cafSpy = vi.spyOn(window, "cancelAnimationFrame");
-
 
         await audioEngineService.seek(3.0);
 
         expect(cafSpy).toHaveBeenCalledWith(currentRafId); // Should have paused
-        expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({ type: RB_WORKER_MSG_TYPE.RESET });
+        expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+          type: RB_WORKER_MSG_TYPE.RESET,
+        });
         expect((audioEngineService as any).sourcePlaybackOffset).toBe(3.0);
         expect((audioEngineService as any).isPlaying).toBe(false); // Should be paused after seek
       });
@@ -419,41 +478,53 @@ describe("AudioEngineService", () => {
     it("setSpeed: should post SET_SPEED to worker if worker is ready", () => {
       audioEngineService.setSpeed(1.5);
       expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed: 1.5 } })
+        expect.objectContaining({
+          type: RB_WORKER_MSG_TYPE.SET_SPEED,
+          payload: { speed: 1.5 },
+        }),
       );
       // No direct store update expected here for playerStore.speed
     });
 
     it("setSpeed: should NOT post SET_SPEED if worker is not ready", () => {
-        (audioEngineService as any).isWorkerReady = false;
-        audioEngineService.setSpeed(1.5);
-        expect(mockWorkerInstance.postMessage).not.toHaveBeenCalledWith(
-            expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_SPEED })
-        );
+      (audioEngineService as any).isWorkerReady = false;
+      audioEngineService.setSpeed(1.5);
+      expect(mockWorkerInstance.postMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_SPEED }),
+      );
     });
 
     it("setPitch: should post SET_PITCH to worker if worker is ready", () => {
       audioEngineService.setPitch(2.0);
       expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch: 2.0 } })
+        expect.objectContaining({
+          type: RB_WORKER_MSG_TYPE.SET_PITCH,
+          payload: { pitch: 2.0 },
+        }),
       );
       // No direct store update expected here for playerStore.pitchShift
     });
 
     it("setGain: should update gainNode value", () => {
       audioEngineService.setGain(0.5);
-      expect(mockGainSetValueAtTime).toHaveBeenCalledWith(0.5, mockAudioContextInstance.currentTime);
+      expect(mockGainSetValueAtTime).toHaveBeenCalledWith(
+        0.5,
+        mockAudioContextInstance.currentTime,
+      );
       // No direct store update expected here for playerStore.gain
     });
 
     it("setGain: should clamp gain value to MAX_GAIN", () => {
-        const maxGain = AUDIO_ENGINE_CONSTANTS.MAX_GAIN; // e.g. 2.0
-        audioEngineService.setGain(maxGain + 0.5);
-        expect(mockGainSetValueAtTime).toHaveBeenCalledWith(maxGain, mockAudioContextInstance.currentTime);
+      const maxGain = AUDIO_ENGINE_CONSTANTS.MAX_GAIN; // e.g. 2.0
+      audioEngineService.setGain(maxGain + 0.5);
+      expect(mockGainSetValueAtTime).toHaveBeenCalledWith(
+        maxGain,
+        mockAudioContextInstance.currentTime,
+      );
     });
   });
 
-  describe('Seek Logic Methods', () => {
+  describe("Seek Logic Methods", () => {
     beforeEach(async () => {
       // Ensure a mock audio buffer is loaded and worker is initialized
       (audioEngineService as any).originalBuffer = mockAudioBuffer;
@@ -471,37 +542,37 @@ describe("AudioEngineService", () => {
       // cafSpy = vi.spyOn(window, "cancelAnimationFrame"); // Outer scope
     });
 
-    describe('startSeek', () => {
-      it('should set wasPlayingBeforeSeek and pause if playing', () => {
+    describe("startSeek", () => {
+      it("should set wasPlayingBeforeSeek and pause if playing", () => {
         (audioEngineService as any).isPlaying = true;
-        const pauseSpy = vi.spyOn(audioEngineService as any, 'pause');
+        const pauseSpy = vi.spyOn(audioEngineService as any, "pause");
         audioEngineService.startSeek();
         expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(true);
         expect(pauseSpy).toHaveBeenCalled();
       });
 
-      it('should set wasPlayingBeforeSeek and not pause if not playing', () => {
+      it("should set wasPlayingBeforeSeek and not pause if not playing", () => {
         (audioEngineService as any).isPlaying = false;
-        const pauseSpy = vi.spyOn(audioEngineService as any, 'pause');
+        const pauseSpy = vi.spyOn(audioEngineService as any, "pause");
         audioEngineService.startSeek();
         expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
         expect(pauseSpy).not.toHaveBeenCalled();
       });
 
-      it('should not proceed if not playable (no buffer)', () => {
+      it("should not proceed if not playable (no buffer)", () => {
         (audioEngineService as any).originalBuffer = null;
         (audioEngineService as any).wasPlayingBeforeSeek = false;
-        const pauseSpy = vi.spyOn(audioEngineService as any, 'pause');
+        const pauseSpy = vi.spyOn(audioEngineService as any, "pause");
         audioEngineService.startSeek();
         expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
         expect(pauseSpy).not.toHaveBeenCalled();
       });
     });
 
-    describe('updateSeek', () => {
-      it('should update playerStore currentTime if playable and assert the updater function', () => {
+    describe("updateSeek", () => {
+      it("should update playerStore currentTime if playable and assert the updater function", () => {
         const seekTime = 5.5;
-        const storeUpdateSpy = vi.spyOn(playerStoreWritable, 'update');
+        const storeUpdateSpy = vi.spyOn(playerStoreWritable, "update");
         audioEngineService.updateSeek(seekTime);
 
         expect(storeUpdateSpy).toHaveBeenCalledTimes(1);
@@ -509,7 +580,10 @@ describe("AudioEngineService", () => {
 
         // Check the effect of the updater function passed to store.update
         const updaterFunction = storeUpdateSpy.mock.calls[0][0];
-        const previousState: PlayerState = { ...initialPlayerState, currentTime: 0 }; // Example previous state
+        const previousState: PlayerState = {
+          ...initialPlayerState,
+          currentTime: 0,
+        }; // Example previous state
         const newState = updaterFunction(previousState);
         expect(newState.currentTime).toBe(seekTime);
 
@@ -518,22 +592,22 @@ describe("AudioEngineService", () => {
         storeUpdateSpy.mockRestore(); // Restore original update method
       });
 
-      it('should not update playerStore if not playable (worker not ready)', () => {
+      it("should not update playerStore if not playable (worker not ready)", () => {
         (audioEngineService as any).isWorkerReady = false;
         const originalTime = get(playerStoreWritable).currentTime;
         const seekTime = 3.3;
-        const storeUpdateSpy = vi.spyOn(playerStoreWritable, 'update');
+        const storeUpdateSpy = vi.spyOn(playerStoreWritable, "update");
         audioEngineService.updateSeek(seekTime);
         expect(storeUpdateSpy).not.toHaveBeenCalled();
         expect(get(playerStoreWritable).currentTime).toBe(originalTime); // Ensure it hasn't changed
       });
     });
 
-    describe('endSeek', () => {
-      it('should call internal seek, play if wasPlayingBeforeSeek is true, and reset flag', () => {
+    describe("endSeek", () => {
+      it("should call internal seek, play if wasPlayingBeforeSeek is true, and reset flag", () => {
         (audioEngineService as any).wasPlayingBeforeSeek = true;
-        const internalSeekSpy = vi.spyOn(audioEngineService as any, 'seek');
-        const playSpy = vi.spyOn(audioEngineService as any, 'play');
+        const internalSeekSpy = vi.spyOn(audioEngineService as any, "seek");
+        const playSpy = vi.spyOn(audioEngineService as any, "play");
         const seekEndTime = 7.2;
         audioEngineService.endSeek(seekEndTime);
         expect(internalSeekSpy).toHaveBeenCalledWith(seekEndTime);
@@ -541,10 +615,10 @@ describe("AudioEngineService", () => {
         expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
       });
 
-      it('should call internal seek, not play if wasPlayingBeforeSeek is false, and reset flag', () => {
+      it("should call internal seek, not play if wasPlayingBeforeSeek is false, and reset flag", () => {
         (audioEngineService as any).wasPlayingBeforeSeek = false;
-        const internalSeekSpy = vi.spyOn(audioEngineService as any, 'seek');
-        const playSpy = vi.spyOn(audioEngineService as any, 'play');
+        const internalSeekSpy = vi.spyOn(audioEngineService as any, "seek");
+        const playSpy = vi.spyOn(audioEngineService as any, "play");
         const seekEndTime = 8.1;
         audioEngineService.endSeek(seekEndTime);
         expect(internalSeekSpy).toHaveBeenCalledWith(seekEndTime);
@@ -552,10 +626,10 @@ describe("AudioEngineService", () => {
         expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
       });
 
-      it('should not proceed if not playable (no buffer)', () => {
+      it("should not proceed if not playable (no buffer)", () => {
         (audioEngineService as any).originalBuffer = null;
-        const internalSeekSpy = vi.spyOn(audioEngineService as any, 'seek');
-        const playSpy = vi.spyOn(audioEngineService as any, 'play');
+        const internalSeekSpy = vi.spyOn(audioEngineService as any, "seek");
+        const playSpy = vi.spyOn(audioEngineService as any, "play");
         audioEngineService.endSeek(1.0);
         expect(internalSeekSpy).not.toHaveBeenCalled();
         expect(playSpy).not.toHaveBeenCalled();

@@ -1,15 +1,15 @@
 // vibe-player-v2/src/lib/services/AudioOrchestrator.service.ts
-import { get } from 'svelte/store';
-import { playerStore } from '$lib/stores/player.store';
-import { statusStore } from '$lib/stores/status.store';
-import type { StatusState } from '$lib/types/status.types'; // Added this import
-import { analysisStore } from '$lib/stores/analysis.store';
-import { audioEngine } from './audioEngine.service';
-import { dtmfService } from './dtmf.service';
-import { spectrogramService } from './spectrogram.service';
-import { debounce } from '$lib/utils/async';
-import { updateUrlWithParams } from '$lib/utils/urlState';
-import { UI_CONSTANTS, URL_HASH_KEYS } from '$lib/utils/constants';
+import { get } from "svelte/store";
+import { playerStore } from "$lib/stores/player.store";
+import { statusStore } from "$lib/stores/status.store";
+import type { StatusState } from "$lib/types/status.types"; // Added this import
+import { analysisStore } from "$lib/stores/analysis.store";
+import audioEngine from "./audioEngine.service"; // Changed to default import
+import dtmfService from "./dtmf.service"; // Changed to default import
+import spectrogramService from "./spectrogram.service"; // Changed to default import
+import { debounce } from "$lib/utils/async";
+import { updateUrlWithParams } from "$lib/utils/urlState";
+import { UI_CONSTANTS, URL_HASH_KEYS } from "$lib/utils/constants";
 
 export class AudioOrchestrator {
   private static instance: AudioOrchestrator;
@@ -27,10 +27,24 @@ export class AudioOrchestrator {
 
   public async loadFileAndAnalyze(file: File): Promise<void> {
     console.log(`[Orchestrator] === Starting New File Load: ${file.name} ===`);
-    statusStore.set({ message: `Loading ${file.name}...`, type: 'info', isLoading: true, details: null, progress: null });
+    statusStore.set({
+      message: `Loading ${file.name}...`,
+      type: "info",
+      isLoading: true,
+      details: null,
+      progress: null,
+    });
     // Ensure other relevant stores are reset if that's current behavior (e.g., analysisStore, waveformStore)
-    playerStore.update(s => ({ ...s, error: null, status: 'Loading', isPlayable: false, fileName: file.name, duration: 0, currentTime: 0 })); // Added fileName and reset duration/currentTime
-    analysisStore.update(store => ({
+    playerStore.update((s) => ({
+      ...s,
+      error: null,
+      status: "Loading",
+      isPlayable: false,
+      fileName: file.name,
+      duration: 0,
+      currentTime: 0,
+    })); // Added fileName and reset duration/currentTime
+    analysisStore.update((store) => ({
       ...store,
       dtmfResults: [],
       spectrogramData: null,
@@ -45,41 +59,61 @@ export class AudioOrchestrator {
       const sampleRate = audioBuffer.sampleRate;
       const channels = audioBuffer.numberOfChannels; // Assuming this property exists
 
-      playerStore.update(s => ({
+      playerStore.update((s) => ({
         ...s,
         duration,
         sampleRate,
         channels, // Added channels
         isPlayable: true,
-        status: 'Ready', // Updated status here
+        status: "Ready", // Updated status here
       }));
-      statusStore.set({ message: 'Ready', type: 'success', isLoading: false });
+      statusStore.set({ message: "Ready", type: "success", isLoading: false });
 
       spectrogramService.init(audioBuffer.sampleRate);
       dtmfService.init(audioBuffer.sampleRate);
 
-      console.log('AudioOrchestrator: Starting background analysis tasks.');
+      console.log("AudioOrchestrator: Starting background analysis tasks.");
       const analysisPromises = [
         dtmfService.process(audioBuffer),
         spectrogramService.process(audioBuffer.getChannelData(0)),
       ];
 
       const results = await Promise.allSettled(analysisPromises);
-      console.log('AudioOrchestrator: All background analysis tasks settled.', results);
+      console.log(
+        "AudioOrchestrator: All background analysis tasks settled.",
+        results,
+      );
 
       results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          console.error(`AudioOrchestrator: Analysis task ${index} failed:`, result.reason);
+        if (result.status === "rejected") {
+          console.error(
+            `AudioOrchestrator: Analysis task ${index} failed:`,
+            result.reason,
+          );
           // Optionally, update a specific error state in analysisStore or playerStore
         }
       });
-
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[Orchestrator] !!! CRITICAL ERROR during file load:`, error);
-      statusStore.set({ message: 'File processing failed.', type: 'error', isLoading: false, details: message });
+      console.error(
+        `[Orchestrator] !!! CRITICAL ERROR during file load:`,
+        error,
+      );
+      statusStore.set({
+        message: "File processing failed.",
+        type: "error",
+        isLoading: false,
+        details: message,
+      });
       // Update playerStore to reflect the error state specifically for the player
-      playerStore.update(s => ({ ...s, status: 'Error', error: message, isPlayable: false, duration: 0, currentTime: 0 }));
+      playerStore.update((s) => ({
+        ...s,
+        status: "Error",
+        error: message,
+        isPlayable: false,
+        duration: 0,
+        currentTime: 0,
+      }));
     }
   }
 
@@ -88,7 +122,7 @@ export class AudioOrchestrator {
    * @public
    */
   public setupUrlSerialization(): void {
-    console.log('[Orchestrator] Setting up URL serialization.');
+    console.log("[Orchestrator] Setting up URL serialization.");
 
     const debouncedUpdater = debounce(() => {
       const pStore = get(playerStore);
@@ -102,7 +136,10 @@ export class AudioOrchestrator {
         // ... any other relevant params from playerStore that should be serialized
       };
 
-      console.log(`[Orchestrator/URL] Debounced update triggered. New params:`, params);
+      console.log(
+        `[Orchestrator/URL] Debounced update triggered. New params:`,
+        params,
+      );
       updateUrlWithParams(params); // Make sure updateUrlWithParams is correctly imported/defined
     }, UI_CONSTANTS.DEBOUNCE_TIME_MS_URL_UPDATE);
 

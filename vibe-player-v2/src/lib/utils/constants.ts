@@ -124,15 +124,15 @@ export const URL_HASH_KEYS: UrlHashKeys = {
   TIME: "time", // old key for time
 
   // New keys for the orchestrator
-  PLAYBACK_SPEED: 's', // as per prompt example
-  PITCH_SHIFT: 'p',    // as per prompt example
-  GAIN_LEVEL: 'g',     // as per prompt example
-  LOOP_ACTIVE: 'la',   // as per prompt example
-  LOOP_START: 'ls',    // as per prompt example
-  LOOP_END: 'le',      // as per prompt example
-  CURRENT_TIME: 't',   // as per prompt example (overwrites old "time" for new service logic)
-  DTMF_ENABLED: 'de',  // as per prompt example
-  SPECTROGRAM_ENABLED: 'se', // as per prompt example
+  PLAYBACK_SPEED: "s", // as per prompt example
+  PITCH_SHIFT: "p", // as per prompt example
+  GAIN_LEVEL: "g", // as per prompt example
+  LOOP_ACTIVE: "la", // as per prompt example
+  LOOP_START: "ls", // as per prompt example
+  LOOP_END: "le", // as per prompt example
+  CURRENT_TIME: "t", // as per prompt example (overwrites old "time" for new service logic)
+  DTMF_ENABLED: "de", // as per prompt example
+  SPECTROGRAM_ENABLED: "se", // as per prompt example
 };
 
 export interface DtmfConstants {

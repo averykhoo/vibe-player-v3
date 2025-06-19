@@ -8,28 +8,52 @@ import type { PlayerState } from "$lib/types/player.types";
 import type { AnalysisState } from "$lib/types/analysis.types";
 
 // --- Mock Declarations (No Assignment) ---
-let mockPlayerStore: Writable<PlayerState>;
-let mockAnalysisStore: Writable<AnalysisState>;
+// let mockPlayerStore: Writable<PlayerState>; // Removed due to TDZ issues with vi.mock hoisting
+// let mockAnalysisStore: Writable<AnalysisState>; // Removed due to TDZ issues with vi.mock hoisting
 
 // --- Mocks with Correct Hoisting Pattern ---
 vi.mock("$lib/stores/player.store", async () => {
-  const { writable: actualWritable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  // Assign the mock store inside the factory
-  mockPlayerStore = actualWritable({
-    /* initial state here */
-    status: "idle", isPlaying: false, isPlayable: false, speed: 1.0, pitchShift: 0.0, gain: 1.0,
-  } as PlayerState);
-  return { playerStore: mockPlayerStore };
+  const { writable: actualWritable } =
+    await vi.importActual<typeof import("svelte/store")>("svelte/store");
+
+  const initialPlayerStateForMock: PlayerState = {
+    status: "idle", fileName: null, duration: 100, currentTime: 0, isPlaying: false, isPlayable: false,
+    speed: 1.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined, error: null, audioBuffer: undefined,
+    audioContextResumed: false, channels: undefined, sampleRate: undefined, lastProcessedChunk: undefined,
+  };
+  const storeInstance = actualWritable(initialPlayerStateForMock);
+
+  return {
+    playerStore: storeInstance,
+    getMockStore: () => storeInstance,
+    __initialState: initialPlayerStateForMock,
+  };
 });
 
 vi.mock("$lib/stores/analysis.store", async () => {
-  const { writable: actualWritable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  // Assign the mock store inside the factory
-  mockAnalysisStore = actualWritable({
-    /* initial state here */
-    vadPositiveThreshold: 0.5, vadNegativeThreshold: 0.35,
-  } as AnalysisState);
-  return { analysisStore: mockAnalysisStore };
+  const { writable: actualWritable } =
+    await vi.importActual<typeof import("svelte/store")>("svelte/store");
+
+  const initialAnalysisStateForMock: AnalysisState = {
+    dtmfResults: [],
+    spectrogramData: null,
+    vadPositiveThreshold: 0.5,
+    vadNegativeThreshold: 0.35,
+    vadEvents: [],
+    isSpeaking: false,
+    vadInitialized: false,
+    vadStatus: "idle",
+    vadError: null,
+    vadNoiseFloor: 0.1,
+    vadSensitivity: 0.5,
+  };
+  const storeInstance = actualWritable(initialAnalysisStateForMock);
+
+  return {
+    analysisStore: storeInstance,
+    getMockStore: () => storeInstance, // To allow tests to get a direct handle if needed for reset
+    __initialState: initialAnalysisStateForMock, // For easier reset
+  };
 });
 
 vi.mock("$lib/services/audioEngine.service", () => ({
@@ -43,30 +67,29 @@ vi.mock("$lib/services/audioEngine.service", () => ({
   },
 }));
 
-
 describe("Controls.svelte", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  // Define initial states for resetting in beforeEach
-  const initialPlayerState: PlayerState = {
-    status: "idle", fileName: null, duration: 100, currentTime: 0, isPlaying: false, isPlayable: false,
-    speed: 1.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined, error: null, audioBuffer: undefined,
-    audioContextResumed: false, channels: undefined, sampleRate: undefined, lastProcessedChunk: undefined,
-  };
-  const initialAnalysisState: AnalysisState = {
-    dtmfResults: [], spectrogramData: null, vadPositiveThreshold: 0.5, vadNegativeThreshold: 0.35, vadEvents: [],
-    isSpeaking: false, vadInitialized: false, vadStatus: "idle", vadError: null,
-    // Added missing fields from original to match AnalysisState potentially more completely for reset
-    vadNoiseFloor: 0.1,
-    vadSensitivity: 0.5,
-  };
+  let actualMockPlayerStore: Writable<PlayerState>; // To hold the player store instance
+  let actualMockAnalysisStore: Writable<AnalysisState>; // To hold the analysis store instance
 
-  beforeEach(() => {
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  // Initial states are now defined within their respective mock factories' __initialState export.
+  // const initialPlayerState: PlayerState = { ... }; // Removed
+  // const initialAnalysisState: AnalysisState = { ... }; // Removed
+
+  beforeEach(async () => { // Made beforeEach async
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.clearAllMocks();
+
+    // Import the mocked stores to get access to getMockStore and __initialState
+    const playerStoreModule = await import("$lib/stores/player.store");
+    actualMockPlayerStore = playerStoreModule.getMockStore();
+    const analysisStoreModule = await import("$lib/stores/analysis.store");
+    actualMockAnalysisStore = analysisStoreModule.getMockStore();
+
     // Reset store states before each test
     act(() => {
-        mockPlayerStore.set({ ...initialPlayerState });
-        mockAnalysisStore.set({ ...initialAnalysisState });
+        actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
+        actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
     });
   });
 
@@ -85,15 +108,23 @@ describe("Controls.svelte", () => {
     expect(screen.getByLabelText(/Speed/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Pitch/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Gain/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/VAD Positive Threshold/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/VAD Negative Threshold/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/VAD Positive Threshold/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/VAD Negative Threshold/i),
+    ).toBeInTheDocument();
   });
 
   // Adding other tests from the original file to make it a complete test suite again
-    it("calls audioEngine.play() when play button is clicked and not playing", async () => {
+  it("calls audioEngine.play() when play button is clicked and not playing", async () => {
     render(Controls);
     act(() => {
-      mockPlayerStore.update((s) => ({ ...s, isPlayable: true, isPlaying: false }));
+      actualMockPlayerStore.update((s) => ({ // Use actualMockPlayerStore
+        ...s,
+        isPlayable: true,
+        isPlaying: false,
+      }));
     });
     await act();
     const playButton = screen.getByRole("button", { name: /Play/i });
@@ -104,7 +135,11 @@ describe("Controls.svelte", () => {
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
     render(Controls);
     act(() => {
-      mockPlayerStore.update((s) => ({ ...s, isPlayable: true, isPlaying: true }));
+      actualMockPlayerStore.update((s) => ({ // Use actualMockPlayerStore
+        ...s,
+        isPlayable: true,
+        isPlaying: true,
+      }));
     });
     await act();
     const pauseButton = screen.getByRole("button", { name: /Pause/i });
@@ -115,7 +150,7 @@ describe("Controls.svelte", () => {
   it("calls audioEngine.stop() on Stop button click", async () => {
     render(Controls);
     act(() => {
-      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
+      actualMockPlayerStore.update((s) => ({ ...s, isPlayable: true })); // Use actualMockPlayerStore
     });
     await act();
     const stopButton = screen.getByRole("button", { name: /Stop/i });
@@ -127,138 +162,207 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.speed in speed slider and label", async () => {
       render(Controls);
       act(() => {
-        mockPlayerStore.set({ ...get(mockPlayerStore), speed: 1.75, isPlayable: true });
+        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+          ...get(actualMockPlayerStore), // Use actualMockPlayerStore
+          speed: 1.75,
+          isPlayable: true,
+        });
       });
       await act();
-      const speedSlider = screen.getByTestId<HTMLInputElement>("speed-slider-input");
+      const speedSlider =
+        screen.getByTestId<HTMLInputElement>("speed-slider-input");
       expect(speedSlider.value).toBe("1.75");
-      expect(screen.getByTestId("speed-value")).toHaveTextContent("Speed: 1.75x");
+      expect(screen.getByTestId("speed-value")).toHaveTextContent(
+        "Speed: 1.75x",
+      );
     });
 
     it("reflects playerStore.pitchShift in pitch slider and label", async () => {
       render(Controls);
       act(() => {
-        mockPlayerStore.set({ ...get(mockPlayerStore), pitchShift: -6.5, isPlayable: true });
+        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+          ...get(actualMockPlayerStore), // Use actualMockPlayerStore
+          pitchShift: -6.5,
+          isPlayable: true,
+        });
       });
       await act();
-      const pitchSlider = screen.getByTestId<HTMLInputElement>("pitch-slider-input");
+      const pitchSlider =
+        screen.getByTestId<HTMLInputElement>("pitch-slider-input");
       expect(pitchSlider.value).toBe("-6.5");
-      expect(screen.getByTestId("pitch-value")).toHaveTextContent("Pitch: -6.5 semitones");
+      expect(screen.getByTestId("pitch-value")).toHaveTextContent(
+        "Pitch: -6.5 semitones",
+      );
     });
 
     it("reflects playerStore.gain in gain slider and label", async () => {
       render(Controls);
       act(() => {
-        mockPlayerStore.set({ ...get(mockPlayerStore), gain: 0.25, isPlayable: true });
+        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+          ...get(actualMockPlayerStore), // Use actualMockPlayerStore
+          gain: 0.25,
+          isPlayable: true,
+        });
       });
       await act();
-      const gainSlider = screen.getByTestId<HTMLInputElement>("gain-slider-input");
+      const gainSlider =
+        screen.getByTestId<HTMLInputElement>("gain-slider-input");
       expect(gainSlider.value).toBe("0.25");
       expect(screen.getByTestId("gain-value")).toHaveTextContent("Gain: 0.25");
     });
 
     it("reflects analysisStore.vadPositiveThreshold in VAD positive slider and label", async () => {
-        render(Controls);
-        act(() => {
-            mockAnalysisStore.set({ ...get(mockAnalysisStore), vadPositiveThreshold: 0.88 });
+      render(Controls);
+      act(() => {
+        actualMockAnalysisStore.set({ // Use actualMockAnalysisStore
+          ...get(actualMockAnalysisStore), // Use actualMockAnalysisStore
+          vadPositiveThreshold: 0.88,
         });
-        await act();
-        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-positive-slider-input");
-        expect(vadSlider.value).toBe("0.88");
-        expect(screen.getByTestId("vad-positive-value")).toHaveTextContent("VAD Positive Threshold: 0.88");
+      });
+      await act();
+      const vadSlider = screen.getByTestId<HTMLInputElement>(
+        "vad-positive-slider-input",
+      );
+      expect(vadSlider.value).toBe("0.88");
+      expect(screen.getByTestId("vad-positive-value")).toHaveTextContent(
+        "VAD Positive Threshold: 0.88",
+      );
     });
 
     it("reflects analysisStore.vadNegativeThreshold in VAD negative slider and label", async () => {
-        render(Controls);
-        act(() => {
-            mockAnalysisStore.set({ ...get(mockAnalysisStore), vadNegativeThreshold: 0.22 });
+      render(Controls);
+      act(() => {
+        actualMockAnalysisStore.set({ // Use actualMockAnalysisStore
+          ...get(actualMockAnalysisStore), // Use actualMockAnalysisStore
+          vadNegativeThreshold: 0.22,
         });
-        await act();
-        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-negative-slider-input");
-        expect(vadSlider.value).toBe("0.22");
-        expect(screen.getByTestId("vad-negative-value")).toHaveTextContent("VAD Negative Threshold: 0.22");
+      });
+      await act();
+      const vadSlider = screen.getByTestId<HTMLInputElement>(
+        "vad-negative-slider-input",
+      );
+      expect(vadSlider.value).toBe("0.22");
+      expect(screen.getByTestId("vad-negative-value")).toHaveTextContent(
+        "VAD Negative Threshold: 0.22",
+      );
     });
   });
 
   describe("Event Handling and Service Calls (UI -> Store -> Service/Log)", () => {
-     beforeEach(() => {
-        act(() => {
-            if (mockPlayerStore && typeof mockPlayerStore.update === 'function') {
-                mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
-            }
-        });
+    beforeEach(() => { // This beforeEach is nested, should be fine.
+      act(() => {
+        if (actualMockPlayerStore && typeof actualMockPlayerStore.update === "function") { // Use actualMockPlayerStore
+          actualMockPlayerStore.update((s) => ({ ...s, isPlayable: true })); // Use actualMockPlayerStore
+        }
+      });
     });
 
     it("updates speed, calls audioEngine.setSpeed, and logs on slider input", async () => {
       render(Controls);
-      const speedSlider = screen.getByTestId<HTMLInputElement>("speed-slider-input");
+      const speedSlider =
+        screen.getByTestId<HTMLInputElement>("speed-slider-input");
       const testValue = 1.5;
-      await fireEvent.input(speedSlider, { target: { value: testValue.toString() } });
-      expect(get(mockPlayerStore).speed).toBe(testValue);
+      await fireEvent.input(speedSlider, {
+        target: { value: testValue.toString() },
+      });
+      expect(get(actualMockPlayerStore).speed).toBe(testValue); // Use actualMockPlayerStore
       expect(audioEngineService.setSpeed).toHaveBeenCalledWith(testValue);
-      expect(consoleLogSpy).toHaveBeenCalledWith(`[Controls] User set speed to: ${testValue.toFixed(2)}`);
-      expect(screen.getByTestId("speed-value")).toHaveTextContent(`Speed: ${testValue.toFixed(2)}x`);
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        `[Controls] User set speed to: ${testValue.toFixed(2)}`,
+      );
+      expect(screen.getByTestId("speed-value")).toHaveTextContent(
+        `Speed: ${testValue.toFixed(2)}x`,
+      );
     });
 
     it("updates pitchShift, calls audioEngine.setPitch, and logs on slider input", async () => {
       render(Controls);
-      const pitchSlider = screen.getByTestId<HTMLInputElement>("pitch-slider-input");
+      const pitchSlider =
+        screen.getByTestId<HTMLInputElement>("pitch-slider-input");
       const testValue = -5.5;
-      await fireEvent.input(pitchSlider, { target: { value: testValue.toString() } });
-      expect(get(mockPlayerStore).pitchShift).toBe(testValue);
+      await fireEvent.input(pitchSlider, {
+        target: { value: testValue.toString() },
+      });
+      expect(get(actualMockPlayerStore).pitchShift).toBe(testValue); // Use actualMockPlayerStore
       expect(audioEngineService.setPitch).toHaveBeenCalledWith(testValue);
-      expect(consoleLogSpy).toHaveBeenCalledWith(`[Controls] User set pitch to: ${testValue.toFixed(1)}`);
-      expect(screen.getByTestId("pitch-value")).toHaveTextContent(`Pitch: ${testValue.toFixed(1)} semitones`);
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        `[Controls] User set pitch to: ${testValue.toFixed(1)}`,
+      );
+      expect(screen.getByTestId("pitch-value")).toHaveTextContent(
+        `Pitch: ${testValue.toFixed(1)} semitones`,
+      );
     });
 
     it("updates gain, calls audioEngine.setGain, and logs on slider input", async () => {
       render(Controls);
-      const gainSlider = screen.getByTestId<HTMLInputElement>("gain-slider-input");
+      const gainSlider =
+        screen.getByTestId<HTMLInputElement>("gain-slider-input");
       const testValue = 0.75;
-      await fireEvent.input(gainSlider, { target: { value: testValue.toString() } });
-      expect(get(mockPlayerStore).gain).toBe(testValue);
+      await fireEvent.input(gainSlider, {
+        target: { value: testValue.toString() },
+      });
+      expect(get(actualMockPlayerStore).gain).toBe(testValue); // Use actualMockPlayerStore
       expect(audioEngineService.setGain).toHaveBeenCalledWith(testValue);
-      expect(consoleLogSpy).toHaveBeenCalledWith(`[Controls] User set gain to: ${testValue.toFixed(2)}`);
-      expect(screen.getByTestId("gain-value")).toHaveTextContent(`Gain: ${testValue.toFixed(2)}`);
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        `[Controls] User set gain to: ${testValue.toFixed(2)}`,
+      );
+      expect(screen.getByTestId("gain-value")).toHaveTextContent(
+        `Gain: ${testValue.toFixed(2)}`,
+      );
     });
 
     it("updates VAD positive threshold in store and logs on slider input", async () => {
-        render(Controls);
-        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-positive-slider-input");
-        const testValue = 0.91;
-        act(() => {
-            mockAnalysisStore.update(s => ({ ...s, vadNegativeThreshold: 0.30 }));
-        });
-        await act();
-        await fireEvent.input(vadSlider, { target: { value: testValue.toString() } });
-        expect(get(mockAnalysisStore).vadPositiveThreshold).toBe(testValue);
-        expect(consoleLogSpy).toHaveBeenCalledWith(
-            `[Controls.svelte] updateVadThresholds() called. Positive: ${testValue.toFixed(2)}, Negative: ${0.30.toFixed(2)}`
-        );
-        expect(screen.getByTestId("vad-positive-value")).toHaveTextContent(`VAD Positive Threshold: ${testValue.toFixed(2)}`);
+      render(Controls);
+      const vadSlider = screen.getByTestId<HTMLInputElement>(
+        "vad-positive-slider-input",
+      );
+      const testValue = 0.91;
+      act(() => {
+        actualMockAnalysisStore.update((s) => ({ ...s, vadNegativeThreshold: 0.3 })); // Use actualMockAnalysisStore
+      });
+      await act();
+      await fireEvent.input(vadSlider, {
+        target: { value: testValue.toString() },
+      });
+      expect(get(actualMockAnalysisStore).vadPositiveThreshold).toBe(testValue); // Use actualMockAnalysisStore
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        `[Controls.svelte] updateVadThresholds() called. Positive: ${testValue.toFixed(2)}, Negative: ${(0.3).toFixed(2)}`,
+      );
+      expect(screen.getByTestId("vad-positive-value")).toHaveTextContent(
+        `VAD Positive Threshold: ${testValue.toFixed(2)}`,
+      );
     });
 
     it("updates VAD negative threshold in store and logs on slider input", async () => {
-        render(Controls);
-        const vadSlider = screen.getByTestId<HTMLInputElement>("vad-negative-slider-input");
-        const testValue = 0.11;
-        act(() => {
-            mockAnalysisStore.update(s => ({ ...s, vadPositiveThreshold: 0.80 }));
-        });
-        await act();
-        await fireEvent.input(vadSlider, { target: { value: testValue.toString() } });
-        expect(get(mockAnalysisStore).vadNegativeThreshold).toBe(testValue);
-        expect(consoleLogSpy).toHaveBeenCalledWith(
-            `[Controls.svelte] updateVadThresholds() called. Positive: ${0.80.toFixed(2)}, Negative: ${testValue.toFixed(2)}`
-        );
-        expect(screen.getByTestId("vad-negative-value")).toHaveTextContent(`VAD Negative Threshold: ${testValue.toFixed(2)}`);
+      render(Controls);
+      const vadSlider = screen.getByTestId<HTMLInputElement>(
+        "vad-negative-slider-input",
+      );
+      const testValue = 0.11;
+      act(() => {
+        actualMockAnalysisStore.update((s) => ({ ...s, vadPositiveThreshold: 0.8 })); // Use actualMockAnalysisStore
+      });
+      await act();
+      await fireEvent.input(vadSlider, {
+        target: { value: testValue.toString() },
+      });
+      expect(get(actualMockAnalysisStore).vadNegativeThreshold).toBe(testValue); // Use actualMockAnalysisStore
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        `[Controls.svelte] updateVadThresholds() called. Positive: ${(0.8).toFixed(2)}, Negative: ${testValue.toFixed(2)}`,
+      );
+      expect(screen.getByTestId("vad-negative-value")).toHaveTextContent(
+        `VAD Negative Threshold: ${testValue.toFixed(2)}`,
+      );
     });
   });
 
   describe("Control Disabling based on isPlayable", () => {
     it("disables controls when playerStore.isPlayable is false", () => {
       act(() => {
-        if (mockPlayerStore) mockPlayerStore.set({ ...initialPlayerState, isPlayable: false });
+        // Need to get the initial state from the module for consistency
+        const playerStoreModule = vi.importActual<any>("$lib/stores/player.store");
+        if (actualMockPlayerStore)
+          actualMockPlayerStore.set({ ...playerStoreModule.__initialState, isPlayable: false });
       });
       render(Controls);
       expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
@@ -266,13 +370,19 @@ describe("Controls.svelte", () => {
       expect(screen.getByTestId("speed-slider-input")).toBeDisabled();
       expect(screen.getByTestId("pitch-slider-input")).toBeDisabled();
       expect(screen.getByTestId("gain-slider-input")).toBeDisabled();
-      expect(screen.getByTestId("vad-positive-slider-input")).not.toBeDisabled();
-      expect(screen.getByTestId("vad-negative-slider-input")).not.toBeDisabled();
+      expect(
+        screen.getByTestId("vad-positive-slider-input"),
+      ).not.toBeDisabled();
+      expect(
+        screen.getByTestId("vad-negative-slider-input"),
+      ).not.toBeDisabled();
     });
 
     it("enables controls when playerStore.isPlayable is true", () => {
       act(() => {
-        if (mockPlayerStore) mockPlayerStore.set({ ...initialPlayerState, isPlayable: true });
+        const playerStoreModule = vi.importActual<any>("$lib/stores/player.store");
+        if (actualMockPlayerStore)
+          actualMockPlayerStore.set({ ...playerStoreModule.__initialState, isPlayable: true });
       });
       render(Controls);
       expect(screen.getByRole("button", { name: /Play/i })).not.toBeDisabled();
