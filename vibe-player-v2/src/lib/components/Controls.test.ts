@@ -17,9 +17,22 @@ vi.mock("$lib/stores/player.store", async () => {
     await vi.importActual<typeof import("svelte/store")>("svelte/store");
 
   const initialPlayerStateForMock: PlayerState = {
-    status: "idle", fileName: null, duration: 100, currentTime: 0, isPlaying: false, isPlayable: false,
-    speed: 1.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined, error: null, audioBuffer: undefined,
-    audioContextResumed: false, channels: undefined, sampleRate: undefined, lastProcessedChunk: undefined,
+    status: "idle",
+    fileName: null,
+    duration: 100,
+    currentTime: 0,
+    isPlaying: false,
+    isPlayable: false,
+    speed: 1.0,
+    pitchShift: 0.0,
+    gain: 1.0,
+    waveformData: undefined,
+    error: null,
+    audioBuffer: undefined,
+    audioContextResumed: false,
+    channels: undefined,
+    sampleRate: undefined,
+    lastProcessedChunk: undefined,
   };
   const storeInstance = actualWritable(initialPlayerStateForMock);
 
@@ -76,7 +89,8 @@ describe("Controls.svelte", () => {
   // const initialPlayerState: PlayerState = { ... }; // Removed
   // const initialAnalysisState: AnalysisState = { ... }; // Removed
 
-  beforeEach(async () => { // Made beforeEach async
+  beforeEach(async () => {
+    // Made beforeEach async
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.clearAllMocks();
 
@@ -88,8 +102,8 @@ describe("Controls.svelte", () => {
 
     // Reset store states before each test
     act(() => {
-        actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
-        actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
+      actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
+      actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
     });
   });
 
@@ -120,7 +134,8 @@ describe("Controls.svelte", () => {
   it("calls audioEngine.play() when play button is clicked and not playing", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.update((s) => ({ // Use actualMockPlayerStore
+      actualMockPlayerStore.update((s) => ({
+        // Use actualMockPlayerStore
         ...s,
         isPlayable: true,
         isPlaying: false,
@@ -135,7 +150,8 @@ describe("Controls.svelte", () => {
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.update((s) => ({ // Use actualMockPlayerStore
+      actualMockPlayerStore.update((s) => ({
+        // Use actualMockPlayerStore
         ...s,
         isPlayable: true,
         isPlaying: true,
@@ -162,7 +178,8 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.speed in speed slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+        actualMockPlayerStore.set({
+          // Use actualMockPlayerStore
           ...get(actualMockPlayerStore), // Use actualMockPlayerStore
           speed: 1.75,
           isPlayable: true,
@@ -180,7 +197,8 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.pitchShift in pitch slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+        actualMockPlayerStore.set({
+          // Use actualMockPlayerStore
           ...get(actualMockPlayerStore), // Use actualMockPlayerStore
           pitchShift: -6.5,
           isPlayable: true,
@@ -198,7 +216,8 @@ describe("Controls.svelte", () => {
     it("reflects playerStore.gain in gain slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockPlayerStore.set({ // Use actualMockPlayerStore
+        actualMockPlayerStore.set({
+          // Use actualMockPlayerStore
           ...get(actualMockPlayerStore), // Use actualMockPlayerStore
           gain: 0.25,
           isPlayable: true,
@@ -214,7 +233,8 @@ describe("Controls.svelte", () => {
     it("reflects analysisStore.vadPositiveThreshold in VAD positive slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockAnalysisStore.set({ // Use actualMockAnalysisStore
+        actualMockAnalysisStore.set({
+          // Use actualMockAnalysisStore
           ...get(actualMockAnalysisStore), // Use actualMockAnalysisStore
           vadPositiveThreshold: 0.88,
         });
@@ -232,7 +252,8 @@ describe("Controls.svelte", () => {
     it("reflects analysisStore.vadNegativeThreshold in VAD negative slider and label", async () => {
       render(Controls);
       act(() => {
-        actualMockAnalysisStore.set({ // Use actualMockAnalysisStore
+        actualMockAnalysisStore.set({
+          // Use actualMockAnalysisStore
           ...get(actualMockAnalysisStore), // Use actualMockAnalysisStore
           vadNegativeThreshold: 0.22,
         });
@@ -249,9 +270,14 @@ describe("Controls.svelte", () => {
   });
 
   describe("Event Handling and Service Calls (UI -> Store -> Service/Log)", () => {
-    beforeEach(() => { // This beforeEach is nested, should be fine.
+    beforeEach(() => {
+      // This beforeEach is nested, should be fine.
       act(() => {
-        if (actualMockPlayerStore && typeof actualMockPlayerStore.update === "function") { // Use actualMockPlayerStore
+        if (
+          actualMockPlayerStore &&
+          typeof actualMockPlayerStore.update === "function"
+        ) {
+          // Use actualMockPlayerStore
           actualMockPlayerStore.update((s) => ({ ...s, isPlayable: true })); // Use actualMockPlayerStore
         }
       });
@@ -318,7 +344,10 @@ describe("Controls.svelte", () => {
       );
       const testValue = 0.91;
       act(() => {
-        actualMockAnalysisStore.update((s) => ({ ...s, vadNegativeThreshold: 0.3 })); // Use actualMockAnalysisStore
+        actualMockAnalysisStore.update((s) => ({
+          ...s,
+          vadNegativeThreshold: 0.3,
+        })); // Use actualMockAnalysisStore
       });
       await act();
       await fireEvent.input(vadSlider, {
@@ -340,7 +369,10 @@ describe("Controls.svelte", () => {
       );
       const testValue = 0.11;
       act(() => {
-        actualMockAnalysisStore.update((s) => ({ ...s, vadPositiveThreshold: 0.8 })); // Use actualMockAnalysisStore
+        actualMockAnalysisStore.update((s) => ({
+          ...s,
+          vadPositiveThreshold: 0.8,
+        })); // Use actualMockAnalysisStore
       });
       await act();
       await fireEvent.input(vadSlider, {
@@ -360,9 +392,14 @@ describe("Controls.svelte", () => {
     it("disables controls when playerStore.isPlayable is false", () => {
       act(() => {
         // Need to get the initial state from the module for consistency
-        const playerStoreModule = vi.importActual<any>("$lib/stores/player.store");
+        const playerStoreModule = vi.importActual<any>(
+          "$lib/stores/player.store",
+        );
         if (actualMockPlayerStore)
-          actualMockPlayerStore.set({ ...playerStoreModule.__initialState, isPlayable: false });
+          actualMockPlayerStore.set({
+            ...playerStoreModule.__initialState,
+            isPlayable: false,
+          });
       });
       render(Controls);
       expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
@@ -380,9 +417,14 @@ describe("Controls.svelte", () => {
 
     it("enables controls when playerStore.isPlayable is true", () => {
       act(() => {
-        const playerStoreModule = vi.importActual<any>("$lib/stores/player.store");
+        const playerStoreModule = vi.importActual<any>(
+          "$lib/stores/player.store",
+        );
         if (actualMockPlayerStore)
-          actualMockPlayerStore.set({ ...playerStoreModule.__initialState, isPlayable: true });
+          actualMockPlayerStore.set({
+            ...playerStoreModule.__initialState,
+            isPlayable: true,
+          });
       });
       render(Controls);
       expect(screen.getByRole("button", { name: /Play/i })).not.toBeDisabled();

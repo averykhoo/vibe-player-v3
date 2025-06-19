@@ -12,14 +12,14 @@ import {
 // Import 'get' for use in tests; it will be the spied version.
 import { get, writable, type Writable } from "svelte/store";
 import { AudioOrchestrator } from "./AudioOrchestrator.service";
-import { audioEngine } from "./audioEngine.service";
+import audioEngine from "./audioEngine.service";
 // Types for stores
 import type { PlayerState } from "$lib/stores/player.store";
 import type { AnalysisState } from "$lib/stores/analysis.store";
 import type { StatusState } from "$lib/stores/status.store";
 
-import { dtmfService } from "./dtmf.service";
-import { spectrogramService } from "./spectrogram.service";
+import dtmfService from "./dtmf.service";
+import spectrogramService from "./spectrogram.service";
 import { updateUrlWithParams } from "$lib/utils/urlState";
 import { URL_HASH_KEYS } from "$lib/utils/constants"; // UI_CONSTANTS removed as it's not used in current snippet
 import { act } from "@testing-library/svelte"; // Import act for store updates
@@ -42,7 +42,7 @@ vi.mock("svelte/store", async (importOriginal) => {
 
 // --- Service Mocks ---
 vi.mock("./audioEngine.service", () => ({
-  audioEngine: {
+  default: {
     unlockAudio: vi.fn().mockResolvedValue(undefined),
     loadFile: vi.fn(),
     getDuration: vi.fn(() => 120),
@@ -51,10 +51,10 @@ vi.mock("./audioEngine.service", () => ({
   },
 }));
 vi.mock("./dtmf.service", () => ({
-  dtmfService: { init: vi.fn(), process: vi.fn().mockResolvedValue([]) },
+  default: { init: vi.fn(), process: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("./spectrogram.service", () => ({
-  spectrogramService: {
+  default: {
     init: vi.fn(),
     process: vi.fn().mockResolvedValue(new Float32Array()),
   },
