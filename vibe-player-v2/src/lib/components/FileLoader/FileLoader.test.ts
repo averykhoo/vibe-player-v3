@@ -1,226 +1,197 @@
 // vibe-player-v2/src/lib/components/FileLoader/FileLoader.test.ts
-import { act, fireEvent, render, screen } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import FileLoader from "./FileLoader.svelte";
-import { writable, type Writable, get } from "svelte/store"; // Added get
-import type { ErrorStoreState } from "$lib/stores/error.store"; // Assuming type definition
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import FileLoader from "../FileLoader.svelte"; // Corrected path
+import { writable, type Writable, get } from "svelte/store";
+import type { PlayerState } from "$lib/stores/player.store"; // Assuming PlayerState is exported or defined here
+import type { StatusState } from "$lib/stores/status.store"; // Assuming StatusState is exported or defined here
+
+// --- Mock Declarations ---
+let mockPlayerStoreInstance: Writable<PlayerState>;
+let mockStatusStoreInstance: Writable<StatusState>;
 
 // Mock AudioOrchestrator
-const mockLoadFileAndAnalyze = vi.fn(() => Promise.resolve());
+const mockLoadFileAndAnalyze = vi.fn();
 vi.mock("$lib/services/AudioOrchestrator.service", () => {
   return {
     AudioOrchestrator: class {
       static getInstance = vi.fn(() => ({
         loadFileAndAnalyze: mockLoadFileAndAnalyze,
-        // setupUrlSerialization: vi.fn(), // Not directly tested here but part of orchestrator
-        // loadUrlOrDefault: vi.fn() // Not directly tested here
       }));
     },
   };
 });
 
-// Hoisted Mocks for store structures
-vi.mock("$lib/stores/player.store", () => ({
-  playerStore: {
-    subscribe: vi.fn(),
-    update: vi.fn(),
-    set: vi.fn(),
-  },
-}));
+// --- Store Mocks (TDZ-Safe Pattern) ---
+vi.mock("$lib/stores/player.store", async () => {
+    const { writable: actualWritable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
+    // Define initial state INSIDE the factory
+    const initialPlayerStateInFactory: PlayerState = {
+        status: "Idle", fileName: null, duration: 0, currentTime: 0, isPlaying: false, isPlayable: false,
+        speed: 1.0, pitch: 0.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined, error: null, audioBuffer: undefined,
+        audioContextResumed: false, channels: 0, sampleRate: 0, lastProcessedChunk: undefined,
+    };
+    const storeInstance = actualWritable(initialPlayerStateInFactory);
+    return {
+        playerStore: storeInstance,
+        getStore: () => storeInstance,
+        __initialState: initialPlayerStateInFactory
+    };
+});
 
-vi.mock("$lib/stores/error.store", () => ({
-  errorStore: {
-    subscribe: vi.fn(),
-    set: vi.fn(),
-    // update: vi.fn(), // Add if error store has an update method
-  },
-}));
-
-
-// Declare types for store values
-type PlayerStoreValues = {
-  // Define only what FileLoader uses for display, if anything
-  status: string;
-  // error: string | null; // Error display is now from errorStore
-};
-
-// Original initial values
-const initialMockPlayerStoreValues: PlayerStoreValues = {
-  status: "Ready",
-};
-
-const initialMockErrorStoreValues: ErrorStoreState = {
-  message: null,
-};
-
-// This will hold the actual writable store instances, created in beforeEach
-let mockPlayerStoreWritable: Writable<PlayerStoreValues>;
-let mockErrorStoreWritable: Writable<ErrorStoreState>;
+vi.mock("$lib/stores/status.store", async () => { // Changed from error.store to status.store
+    const { writable: actualWritable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
+    // Define initial state INSIDE the factory
+    const initialStatusStateInFactory: StatusState = {
+        message: null, type: null, isLoading: false, details: null, progress: null
+    };
+    const storeInstance = actualWritable(initialStatusStateInFactory);
+    return {
+        statusStore: storeInstance,
+        getStore: () => storeInstance,
+        __initialState: initialStatusStateInFactory
+    };
+});
 
 
 describe("FileLoader.svelte", () => {
   beforeEach(async () => {
-    // Enable fake timers if any component or service relies on them for async ops post-orchestrator
     vi.useFakeTimers();
+    vi.clearAllMocks();
 
-    mockPlayerStoreWritable = writable(initialMockPlayerStoreValues);
-    mockErrorStoreWritable = writable(initialMockErrorStoreValues);
+    // Initialize stores using the TDZ-safe pattern
+    const playerStoreModule = await import("$lib/stores/player.store");
+    mockPlayerStoreInstance = playerStoreModule.getStore();
+    const statusStoreModule = await import("$lib/stores/status.store");
+    mockStatusStoreInstance = statusStoreModule.getStore();
 
-    // Setup playerStore mock
-    const playerStoreMocks = await import("$lib/stores/player.store");
-    vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
-      mockPlayerStoreWritable.subscribe,
-    );
-    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
-      mockPlayerStoreWritable.update,
-    );
-    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(
-      mockPlayerStoreWritable.set,
-    );
-     act(() => { // Reset store state
-      mockPlayerStoreWritable.set(initialMockPlayerStoreValues);
+    // Reset stores to their initial states
+    act(() => {
+      mockPlayerStoreInstance.set({ ...playerStoreModule.__initialState });
+      mockStatusStoreInstance.set({ ...statusStoreModule.__initialState });
     });
 
-    // Setup errorStore mock
-    const errorStoreMocks = await import("$lib/stores/error.store");
-    vi.mocked(errorStoreMocks.errorStore.subscribe).mockImplementation(
-      mockErrorStoreWritable.subscribe,
-    );
-    vi.mocked(errorStoreMocks.errorStore.set).mockImplementation(
-      mockErrorStoreWritable.set,
-    );
-    act(() => { // Reset store state
-      mockErrorStoreWritable.set(initialMockErrorStoreValues);
-    });
-
-    vi.clearAllMocks(); // Clear service mocks etc.
-
-    // Re-apply store mock implementations after vi.clearAllMocks() for playerStore
-     vi.mocked(playerStoreMocks.playerStore.subscribe).mockImplementation(
-      mockPlayerStoreWritable.subscribe,
-    );
-    vi.mocked(playerStoreMocks.playerStore.update).mockImplementation(
-      mockPlayerStoreWritable.update,
-    );
-    vi.mocked(playerStoreMocks.playerStore.set).mockImplementation(
-      mockPlayerStoreWritable.set,
-    );
-    // Re-apply store mock implementations after vi.clearAllMocks() for errorStore
-    vi.mocked(errorStoreMocks.errorStore.subscribe).mockImplementation(
-      mockErrorStoreWritable.subscribe,
-    );
-    vi.mocked(errorStoreMocks.errorStore.set).mockImplementation(
-      mockErrorStoreWritable.set,
-    );
+    mockLoadFileAndAnalyze.mockReset();
   });
 
-  it("renders the file input", () => {
-    const { container } = render(FileLoader);
-    const fileInput = container.querySelector("#fileInput");
+  afterEach(() => {
+    vi.runOnlyPendingTimers(); // Exhaust any remaining timers
+    vi.useRealTimers();
+  });
+
+  it("renders the file input and label", () => {
+    render(FileLoader);
+    const label = screen.getByText("Load Audio File"); // Check for label text
+    expect(label).toBeInTheDocument();
+    // Check if the input is associated with this label (e.g. by 'for' attribute if input has id)
+    const fileInput = screen.getByLabelText("Load Audio File");
     expect(fileInput).toBeInTheDocument();
+    expect(fileInput).toHaveAttribute("id", "fileInput"); // Assuming label has for="fileInput"
   });
 
-  it("calls AudioOrchestrator.loadFileAndAnalyze on file selection", async () => {
-    const { container } = render(FileLoader);
-    const fileInput = container.querySelector("#fileInput");
-    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
+  it("calls AudioOrchestrator.loadFileAndAnalyze on file selection and updates selectedFileDisplay", async () => {
+    mockLoadFileAndAnalyze.mockResolvedValue(undefined);
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File");
 
     const mockFile = new File(["dummy content"], "test.mp3", { type: "audio/mpeg" });
+    Object.defineProperty(mockFile, "size", { value: 1024 * 500 }); // 0.5 MB
 
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    await act(() => Promise.resolve());
+    // Orchestrator call is async, component updates store, UI reacts.
+    // We need to ensure loading state becomes false for selectedFileDisplay to show as per component logic
+    await act(() => { // Using await act for state change and subsequent UI update
+        mockStatusStoreInstance.set({ isLoading: false, message: null, type: null, details: null, progress: null });
+    });
 
+    expect(await screen.findByText(`Selected: ${mockFile.name} (0.49 MB)`)).toBeInTheDocument();
     expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
     expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(mockFile);
   });
 
-  it("displays selected file name and size", async () => {
-    const { container } = render(FileLoader);
-    const fileInput = container.querySelector("#fileInput");
-    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
+  it("shows loading message and disables input based on statusStore", async () => {
+    mockLoadFileAndAnalyze.mockImplementation(() => {
+      act(() => {
+        mockStatusStoreInstance.set({ isLoading: true, message: "Processing file...", type: 'info', details: null, progress: 0.5 });
+      });
+      return new Promise(resolve => setTimeout(resolve, 100));
+    });
 
-    const mockFile = new File(["dummy content"], "example.wav", { type: "audio/wav" });
-    Object.defineProperty(mockFile, "size", { value: 1024 * 500 }); // 0.5 MB
-
-    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
-    await act(() => Promise.resolve()); // allow component reactions
-
-    expect(screen.getByText(`Selected: ${mockFile.name} (0.49 MB)`)).toBeInTheDocument();
-  });
-
-  it("shows loading indicator text while isLoading is true (component internal state)", async () => {
-    mockLoadFileAndAnalyze.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)));
-
-    const { container } = render(FileLoader);
-    const fileInput = container.querySelector("#fileInput");
-    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
-
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File") as HTMLInputElement;
     const mockFile = new File(["dummy"], "loading_test.mp3", { type: "audio/mpeg" });
 
-    fireEvent.change(fileInput, { target: { files: [mockFile] } });
+    // fireEvent.change is synchronous in terms of dispatching, async work follows
+    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    await screen.findByText("Loading (handing off to orchestrator)...");
-    expect(screen.getByText("Loading (handing off to orchestrator)...")).toBeInTheDocument();
-
-    await act(async () => { // Ensure timer advancement is within act
-      await vi.advanceTimersByTimeAsync(100);
+    await waitFor(() => {
+        expect(screen.getByTestId("file-loading-message")).toHaveTextContent("Processing file... (50%)");
+        expect(fileInput.disabled).toBe(true);
     });
 
-    await vi.waitFor(() => {
-        expect(screen.queryByText("Loading (handing off to orchestrator)...")).not.toBeInTheDocument();
-    });
-  });
-
-  it("disables file input when isLoading (component internal state) is true", async () => {
-    mockLoadFileAndAnalyze.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 100)));
-    const { container } = render(FileLoader);
-    const fileInput = container.querySelector("#fileInput");
-    if (!fileInput) throw new Error("File input with ID 'fileInput' not found");
-
-    const mockFile = new File(["dummy"], "test.mp3", { type: "audio/mpeg" });
-
-    fireEvent.change(fileInput, { target: { files: [mockFile] } });
-    await screen.findByText("Loading (handing off to orchestrator)...");
-    expect(fileInput).toBeDisabled();
-
-    await act(async () => { // Ensure timer advancement is within act
-      await vi.advanceTimersByTimeAsync(100);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100); // Orchestrator's work finishes
+      // Simulate orchestrator updating statusStore upon completion
+      mockStatusStoreInstance.set({ isLoading: false, message: "Ready", type: 'success', details: null, progress: 1 });
     });
 
-    await vi.waitFor(() => {
-      expect(fileInput).not.toBeDisabled();
+    await waitFor(() => {
+      expect(screen.queryByTestId("file-loading-message")).not.toBeInTheDocument();
+      expect(fileInput.disabled).toBe(false);
     });
   });
 
-  it("displays status from playerStore and errors from errorStore", async () => {
+  it("displays error message from statusStore if loadFileAndAnalyze fails", async () => {
+    const errorMessage = "Failed to decode audio.";
+    const errorDetails = "The file format is not supported.";
+
+    mockLoadFileAndAnalyze.mockImplementation(async () => {
+      act(() => { // Simulate orchestrator updating the store upon failure
+        mockStatusStoreInstance.set({
+            message: errorMessage,
+            type: 'error',
+            isLoading: false,
+            details: errorDetails,
+            progress: null
+        });
+      });
+      throw new Error(errorMessage); // Simulate actual error for component's catch block
+    });
+
     render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File");
+    const mockFile = new File(["dummy"], "error_test.mp3", { type: "audio/mpeg" });
 
-    // Test status display from playerStore
-    act(() => {
-      mockPlayerStoreWritable.set({ status: "Playing audio..." });
-    });
-    expect(await screen.findByText("Player Status: Playing audio...")).toBeInTheDocument();
+    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    // Test error display from errorStore
-    act(() => {
-      mockErrorStoreWritable.set({ message: "A test error occurred." });
+    await waitFor(() => {
+        const errorDisplay = screen.getByTestId("file-error-message");
+        expect(errorDisplay).toBeInTheDocument();
+        expect(errorDisplay).toHaveTextContent(`Error: ${errorMessage}`);
+        expect(errorDisplay).toHaveTextContent(`Details: ${errorDetails}`);
     });
-    expect(await screen.findByText("Error: A test error occurred.")).toBeInTheDocument();
+  });
 
-    // Test clearing error
-    act(() => {
-      mockErrorStoreWritable.set({ message: null });
-    });
-    expect(screen.queryByText("Error: A test error occurred.")).not.toBeInTheDocument();
+  it("clears file input value after processing attempt", async () => {
+    mockLoadFileAndAnalyze.mockResolvedValue(undefined); // Simulate successful processing
+    render(FileLoader);
+    const fileInput = screen.getByLabelText("Load Audio File") as HTMLInputElement;
+    const mockFile = new File(["dummy"], "test-clear.mp3", { type: "audio/mpeg" });
 
-     act(() => {
-      mockPlayerStoreWritable.set({ status: "Ready" });
+    expect(fileInput.value).toBe("");
+
+    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
+    expect(fileInput.value).not.toBe("");
+
+    // Ensure all async operations from handleFileSelect (including the finally block) complete
+    await act(async () => {
+      // Allow the mockLoadFileAndAnalyze promise to resolve if it hasn't already
+      // For a mockResolvedValue, this ensures microtasks are flushed.
+      // For mockImplementation with setTimeout, timers would need advancing.
+      await Promise.resolve();
     });
-    expect(screen.queryByText(/Player Status:/)).not.toBeInTheDocument();
-     act(() => {
-      mockPlayerStoreWritable.set({ status: "Stopped" });
-    });
-    expect(screen.queryByText(/Player Status:/)).not.toBeInTheDocument();
+
+    expect(fileInput.value).toBe("");
   });
 });
