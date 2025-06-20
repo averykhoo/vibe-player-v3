@@ -83,27 +83,20 @@ export class PlayerPage {
    */
   async setSliderValue(sliderInputLocator, valueStr) {
     const targetValue = parseFloat(valueStr);
-    const boundingBox = await sliderInputLocator.boundingBox();
-    if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
+    const slider = await sliderInputLocator.boundingBox();
+    if (!slider) throw new Error("Could not get bounding box for slider.");
 
-    const { min, max } = await sliderInputLocator.evaluate((el) => ({
-      min: parseFloat(el.getAttribute("min") || "0"),
-      max: parseFloat(el.getAttribute("max") || "100"),
-    }));
-
-    const ratio = (targetValue - min) / (max - min);
-    let clickX = boundingBox.x + boundingBox.width * ratio;
-
-    // Ensure clickX is within the bounding box width
-    clickX = Math.max(
-      boundingBox.x,
-      Math.min(clickX, boundingBox.x + boundingBox.width),
+    const max = parseFloat(
+      (await sliderInputLocator.getAttribute("max")) || "1",
     );
+    const ratio = targetValue / max;
+    const x = slider.width * ratio;
 
-    const clickY = boundingBox.y + boundingBox.height / 2;
-
-    await this.page.mouse.click(clickX, clickY);
-    await this.page.waitForTimeout(350); // Allow for debounced updates
+    await sliderInputLocator.click({
+      position: { x: x, y: slider.height / 2 },
+    });
+    // Allow a brief moment for the service and store to update
+    await this.page.waitForTimeout(200);
   }
 
   /**

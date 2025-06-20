@@ -30,6 +30,27 @@
     import {formatTime} from '$lib/utils/formatters';
     // import {debounce, updateUrlWithParams} from '$lib/utils'; // No longer needed here
 
+// Make sure 'get' is imported
+function handleSeek(event: MouseEvent | TouchEvent) {
+    const slider = event.currentTarget as HTMLInputElement;
+    const rect = slider.getBoundingClientRect();
+
+    // Determine the click/touch position
+    let clientX: number;
+    if (window.TouchEvent && event instanceof TouchEvent) {
+        clientX = event.changedTouches[0].clientX;
+    } else {
+        clientX = (event as MouseEvent).clientX;
+    }
+
+    // Calculate the new time based on the click percentage
+    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const newTime = percent * get(playerStore).duration;
+
+    // Call the single, reliable seek method in the service
+    audioEngineService.seek(newTime);
+}
+
     onMount(() => {
         console.log('[+page.svelte] onMount: Initializing AudioOrchestrator.');
 
@@ -82,11 +103,7 @@
                 bind:value={$playerStore.currentTime}
                 max={$playerStore.duration || 1}
                 step="any"
-                on:input={(e) => audioEngineService.updateSeek(e.currentTarget.valueAsNumber)}
-                on:mousedown={audioEngineService.startSeek}
-                on:mouseup={(e) => audioEngineService.endSeek(e.currentTarget.valueAsNumber)}
-                on:touchstart={audioEngineService.startSeek}
-                on:touchend={(e) => audioEngineService.endSeek(e.currentTarget.valueAsNumber)}
+                on:click={handleSeek}
                 disabled={!$playerStore.isPlayable}
                 data-testid="seek-slider-input"
         />
