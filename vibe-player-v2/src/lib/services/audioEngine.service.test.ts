@@ -500,7 +500,7 @@ describe("AudioEngineService", () => {
           type: RB_WORKER_MSG_TYPE.RESET,
         });
         expect((audioEngineService as any).sourcePlaybackOffset).toBe(seekTime);
-        expect((audioEngineService as any).isPlaying).toBe(false); // Should be paused after seek
+        expect((audioEngineService as any).isPlaying).toBe(true); // Should resume playing
 
         expect(playerStoreUpdateSpy).toHaveBeenCalledTimes(1);
         // Check the effect of the updater function
@@ -513,6 +513,47 @@ describe("AudioEngineService", () => {
         expect(newState.currentTime).toBe(seekTime);
         // Also check the direct outcome on the store
         expect(get(playerStoreWritable).currentTime).toBe(seekTime);
+      });
+
+      it("should pause, seek, update store, and resume when seeking while playing", async () => {
+        // Arrange: Spy on the methods we expect to be called
+        const pauseSpy = vi.spyOn(audioEngineService, "pause");
+        const playSpy = vi.spyOn(audioEngineService, "play");
+        const storeUpdateSpy = vi.spyOn(playerStoreWritable, "update");
+
+        // Set the initial state to "playing" for this test
+        (audioEngineService as any).isPlaying = true;
+        // Ensure originalBuffer is set, as seek() checks for it
+        (audioEngineService as any).originalBuffer = mockAudioBuffer;
+        // Ensure worker is ready
+        (audioEngineService as any).isWorkerReady = true;
+
+        // Act: Call the seek method
+        await audioEngineService.seek(5.0);
+
+        // Assert: Verify the sequence of events
+        expect(pauseSpy).toHaveBeenCalledOnce();
+        expect(storeUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
+        // Check the effect of the update function on the store's state
+        const lastCallArgs =
+          storeUpdateSpy.mock.calls[storeUpdateSpy.mock.calls.length - 1];
+        const updaterFunction = lastCallArgs[0];
+        const previousState = get(playerStoreWritable); // Get current state or a representative previous state
+        const nextState = updaterFunction(previousState);
+        expect(nextState.currentTime).toBe(5.0);
+        // Also assert the store reflects the update if the updater was immediately applied
+        // This depends on whether the store update is synchronous in the test environment
+        // For this test, we'll assume the updater function itself is what we're testing primarily for its effect
+        // If `get(playerStoreWritable).currentTime` should be checked, ensure the store update has completed.
+        // Given the new seek logic, the store IS updated directly.
+        expect(get(playerStoreWritable).currentTime).toBe(5.0);
+
+        expect(playSpy).toHaveBeenCalledOnce();
+
+        // Cleanup spies
+        pauseSpy.mockRestore();
+        playSpy.mockRestore();
+        storeUpdateSpy.mockRestore();
       });
     });
 

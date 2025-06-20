@@ -362,36 +362,41 @@ class AudioEngineService {
    * @public
    */
   public seek = async (time: number): Promise<void> => {
-    console.log(
-      `[AudioEngineService] SEEK called. Target time: ${time.toFixed(2)}s`,
-    );
-    if (!this.originalBuffer) {
-      console.warn(
-        "AudioEngine: Seek attempted without an audio buffer loaded.",
-      );
+    if (!this.originalBuffer || !this.isWorkerReady) {
+      console.warn("AudioEngine: Seek attempted while not ready.");
       return;
     }
+
+    // Step 1: Immediately stop the playback loop to prevent race conditions.
+    // We remember the state so we can resume if needed, but we must stop the loop NOW.
+    const wasPlaying = this.isPlaying;
+    if (wasPlaying) {
+      this.pause();
+    }
+
+    // Step 2: Calculate and clamp the new time.
     const clampedTime = Math.max(
       0,
       Math.min(time, this.originalBuffer.duration),
     );
+    console.log(
+      `[AudioEngineService] SEEK called. Target time: ${clampedTime.toFixed(2)}s`,
+    );
 
-    if (this.isPlaying) {
-      this.pause(); // Always pause on seek
-    }
-
-    if (this.worker && this.isWorkerReady) {
-      console.log(
-        "[AudioEngineService] Posting RESET to worker due to seek().",
-      );
+    // Step 3: Update internal state and reset worker.
+    this.sourcePlaybackOffset = clampedTime;
+    if (this.worker) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
-
-    this.sourcePlaybackOffset = clampedTime;
-    // Ensure nextChunkTime is reset so playback doesn't use stale scheduling
     this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
 
+    // Step 4: Update the central store. This is now safe from being overwritten.
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
+
+    // Step 5: Resume playback if it was active before the seek.
+    if (wasPlaying) {
+      this.play();
+    }
   };
 
   /**
