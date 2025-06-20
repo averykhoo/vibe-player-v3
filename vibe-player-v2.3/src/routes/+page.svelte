@@ -1,4 +1,5 @@
 <!-- vibe-player-v2.3/src/routes/+page.svelte -->
+<!-- DO NOT ADD /* ... */ STYLE COMMENTS IN THIS FILE. SVELTE DOES NOT WORK LIKE THAT. -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { get } from 'svelte/store';
@@ -94,9 +95,9 @@
         <RangeSlider
             name="seek"
             bind:value={$timeStore}
-            max={$playerStore.duration > 0 ? $playerStore.duration : 1} /* Ensure max is at least 1 */
-            step="any" /* Finer control for seeking */
-            on:click={handleSeek} /* As per issue spec, though on:input might be more typical */
+            max={$playerStore.duration > 0 ? $playerStore.duration : 1}
+            step="any"
+            on:click={handleSeek}
             disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
             data-testid="seek-slider-input"
             aria-label="Seek audio track"
