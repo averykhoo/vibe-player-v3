@@ -79,14 +79,16 @@ class GoertzelFilter {
   }
 
   /**
-   * Calculates the squared magnitude of the target frequency.
-   * This is the mathematically correct formula.
+   * Calculates the squared magnitude of the target frequency after processing.
+   * This uses the standard, correct Goertzel algorithm formula.
    * @returns {number} The squared magnitude (power) of the signal at the target frequency.
    */
   public getMagnitudeSquared(): number {
-    const realPart = this.q1 - this.q2 * this.cosine;
-    const imagPart = this.q2 * this.sine;
-    return realPart * realPart + imagPart * imagPart;
+    // The full, correct formula for magnitude squared is:
+    // q1*q1 + q2*q2 - q1*q2*coeff
+    return (
+      this.q1 * this.q1 + this.q2 * this.q2 - this.q1 * this.q2 * this.coeff
+    );
   }
 }
 
