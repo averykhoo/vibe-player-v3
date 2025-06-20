@@ -20,7 +20,7 @@ test.describe("Vibe Player V2 E2E", () => {
   test.beforeEach(async ({ page }, testInfo) => {
     // 1. Reset the log buffer for each new test
     testLogs = [];
-    console.log(`+++ STARTING TEST: ${testInfo.titlePath.join(" > ")} +++`);
+    console.log(`\n+++ STARTING TEST: ${testInfo.titlePath.join(" > ")} +++`);
 
     // 2. Buffer console messages instead of printing them immediately
     page.on("console", (msg) => {
@@ -49,7 +49,7 @@ test.describe("Vibe Player V2 E2E", () => {
 
     // 3. Only print the buffered logs if the test did not pass
     if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
-      console.log("=== BROWSER LOGS FOR FAILED TEST +++");
+      console.log("+++ BROWSER LOGS FOR FAILED TEST +++");
       testLogs.forEach((log) => console.log(log));
       console.log("++++++++++++++++++++++++++++++++++++");
     }
