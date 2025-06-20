@@ -9,8 +9,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FileLoader from "../FileLoader.svelte"; // Corrected path
 import { writable, type Writable, get } from "svelte/store";
-import type { PlayerState } from "$lib/stores/player.store"; // Assuming PlayerState is exported or defined here
-import type { StatusState } from "$lib/stores/status.store"; // Assuming StatusState is exported or defined here
+import type { PlayerState } from "$lib/types/player.types"; // Assuming PlayerState is exported or defined here
+import type { StatusState } from "$lib/types/status.types"; // Assuming StatusState is exported or defined here
 
 // --- Mock Declarations ---
 let mockPlayerStoreInstance: Writable<PlayerState>;
