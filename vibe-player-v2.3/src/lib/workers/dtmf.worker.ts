@@ -223,8 +223,8 @@ self.onmessage = (event: MessageEvent) => {
             (detectedDtmf.length === 0 ||
               detectedDtmf[detectedDtmf.length - 1] !== tone)
           ) {
-          detectedDtmf.push(tone);
-        }
+            detectedDtmf.push(tone);
+          }
         } else {
           lastDetectedDtmf = null;
           consecutiveDtmfDetections = 0;

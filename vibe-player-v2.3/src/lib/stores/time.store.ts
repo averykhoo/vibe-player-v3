@@ -1,5 +1,5 @@
 // vibe-player-v2.3/src/lib/stores/time.store.ts
-import { writable } from 'svelte/store';
+import { writable } from "svelte/store";
 
 /**
  * A "hot" store that is updated on every animation frame during playback.
