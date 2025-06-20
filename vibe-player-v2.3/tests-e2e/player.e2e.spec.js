@@ -51,7 +51,7 @@ test.describe("Vibe Player V2 E2E", () => {
     if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
       console.log("+++ BROWSER LOGS FOR FAILED TEST +++");
       testLogs.forEach((log) => console.log(log));
-      console.log("++++++++++++++++++++++++++++++++++++");
+      console.log("\n\n---------------------------------------\n");
     }
   });
 
