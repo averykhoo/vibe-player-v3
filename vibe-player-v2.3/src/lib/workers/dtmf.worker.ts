@@ -8,7 +8,7 @@
 const DTMF_SAMPLE_RATE = 16000;
 const DTMF_BLOCK_SIZE = 410;
 const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0;
-const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 350;
+const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 400;
 const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941];
 const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633];
 export const DTMF_CHARACTERS: { [key: string]: string } = {
@@ -79,16 +79,14 @@ class GoertzelFilter {
   }
 
   /**
-   * Calculates the squared magnitude of the target frequency after processing.
-   * This uses the standard, correct Goertzel algorithm formula.
+   * Calculates the squared magnitude of the target frequency.
+   * This is the mathematically correct formula.
    * @returns {number} The squared magnitude (power) of the signal at the target frequency.
    */
   public getMagnitudeSquared(): number {
-    // The full, correct formula for magnitude squared is:
-    // q1*q1 + q2*q2 - q1*q2*coeff
-    return (
-      this.q1 * this.q1 + this.q2 * this.q2 - this.q1 * this.q2 * this.coeff
-    );
+    const realPart = this.q1 - this.q2 * this.cosine;
+    const imagPart = this.q2 * this.sine;
+    return realPart * realPart + imagPart * imagPart;
   }
 }
 
@@ -195,6 +193,13 @@ self.onmessage = (event: MessageEvent) => {
       const { pcmData } = payload;
       const detectedDtmf: string[] = [];
 
+      // --- START: CORRECTED V1 PROCESSING LOGIC ---
+      let lastDetectedDtmf: string | null = null;
+      let consecutiveDtmfDetections = 0;
+      const minConsecutiveDtmf = 2; // A tone must be stable for 2 blocks to be registered
+      // --- END: CORRECTED V1 PROCESSING LOGIC ---
+
+      // Ported processing loop from V1's app.js (simplified for DTMF only)
       for (
         let i = 0;
         i + DTMF_BLOCK_SIZE <= pcmData.length;
@@ -204,10 +209,25 @@ self.onmessage = (event: MessageEvent) => {
         const timestamp = i / DTMF_SAMPLE_RATE;
         const tone = dtmfParser.processAudioBlock(audioBlock, timestamp);
 
-        // If a tone is detected and it's not the same as the last one we added,
-        // push it to the results. This handles debouncing perfectly for batch processing.
-        if (tone && detectedDtmf[detectedDtmf.length - 1] !== tone) {
+        // --- START: CORRECTED V1 CONFIRMATION LOGIC ---
+        if (tone) {
+          if (tone === lastDetectedDtmf) {
+            consecutiveDtmfDetections++;
+          } else {
+            lastDetectedDtmf = tone;
+            consecutiveDtmfDetections = 1;
+          }
+
+          if (
+            consecutiveDtmfDetections === minConsecutiveDtmf &&
+            (detectedDtmf.length === 0 ||
+              detectedDtmf[detectedDtmf.length - 1] !== tone)
+          ) {
           detectedDtmf.push(tone);
+        }
+        } else {
+          lastDetectedDtmf = null;
+          consecutiveDtmfDetections = 0;
         }
       }
 
