@@ -221,7 +221,7 @@ class AudioEngineService {
           const wasmBinary = await wasmResponse.arrayBuffer();
           const loaderScriptText = await loaderResponse.text();
 
-          const { playbackSpeed, pitchShift } = get(playerStore);
+          const { speed, pitchShift } = get(playerStore);
 
           const initPayload: RubberbandInitPayload = {
             wasmBinary,
@@ -229,7 +229,7 @@ class AudioEngineService {
             origin: location.origin,
             sampleRate: audioBuffer.sampleRate,
             channels: audioBuffer.numberOfChannels,
-            initialSpeed: playbackSpeed,
+            initialSpeed: speed, // Use the correct property 'speed'
             initialPitch: pitchShift,
           };
 

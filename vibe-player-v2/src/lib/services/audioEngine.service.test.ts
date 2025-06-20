@@ -263,11 +263,9 @@ describe("AudioEngineService", () => {
   describe("initializeWorker", () => {
     beforeEach(() => {
       // Reset playerStore to ensure initialSpeed and initialPitch are from a clean state
-      // Align with service expectation (playbackSpeed) vs PlayerState type (speed)
       playerStoreWritable.set({
         ...initialPlayerState,
-        // @ts-expect-error - speed vs playbackSpeed mismatch between type and usage
-        playbackSpeed: 1.2,
+        speed: 1.2, // Ensure this uses 'speed', not 'playbackSpeed'
         pitchShift: -2.0,
       });
     });

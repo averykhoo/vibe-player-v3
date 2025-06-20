@@ -145,6 +145,7 @@ describe("Controls.svelte", () => {
     const playButton = screen.getByRole("button", { name: /Play/i });
     await fireEvent.click(playButton);
     expect(audioEngineService.play).toHaveBeenCalledTimes(1);
+    expect(get(actualMockPlayerStore).isPlaying).toBe(true);
   });
 
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
@@ -161,6 +162,7 @@ describe("Controls.svelte", () => {
     const pauseButton = screen.getByRole("button", { name: /Pause/i });
     await fireEvent.click(pauseButton);
     expect(audioEngineService.pause).toHaveBeenCalledTimes(1);
+    expect(get(actualMockPlayerStore).isPlaying).toBe(false);
   });
 
   it("calls audioEngine.stop() on Stop button click", async () => {
@@ -172,6 +174,8 @@ describe("Controls.svelte", () => {
     const stopButton = screen.getByRole("button", { name: /Stop/i });
     await fireEvent.click(stopButton);
     expect(audioEngineService.stop).toHaveBeenCalledTimes(1);
+    expect(get(actualMockPlayerStore).isPlaying).toBe(false);
+    expect(get(actualMockPlayerStore).currentTime).toBe(0);
   });
 
   describe("Slider Value Reflection (Store -> UI)", () => {

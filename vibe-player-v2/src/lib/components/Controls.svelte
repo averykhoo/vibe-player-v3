@@ -21,8 +21,10 @@
 	function handlePlayPause() {
 		if (get(playerStore).isPlaying) {
 			audioEngine.pause();
+			playerStore.update((s) => ({ ...s, isPlaying: false }));
 		} else {
 			audioEngine.play();
+			playerStore.update((s) => ({ ...s, isPlaying: true }));
 		}
 	}
 
@@ -31,6 +33,7 @@
 	 */
 	function handleStop() {
 		audioEngine.stop();
+		playerStore.update((s) => ({ ...s, isPlaying: false, currentTime: 0 }));
 	}
 
 	/**
