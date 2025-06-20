@@ -29,7 +29,10 @@ test.describe("Vibe Player V2 E2E", () => {
       testLogs.push(`[${type.toUpperCase()}]: ${text}`);
 
       // We still want to fail fast for critical errors
-      if (type === "error" && (text.includes("WASM") || text.includes("WebAssembly"))) {
+      if (
+        type === "error" &&
+        (text.includes("WASM") || text.includes("WebAssembly"))
+      ) {
         test.fail(true, `Critical WASM error detected in browser: ${text}`);
       }
     });
@@ -40,12 +43,14 @@ test.describe("Vibe Player V2 E2E", () => {
 
   // This new hook runs after each test
   test.afterEach(async ({ page }, testInfo) => {
-    console.log(`--- FINISHED TEST: ${testInfo.titlePath.join(" > ")} | STATUS: ${testInfo.status} ---`);
+    console.log(
+      `--- FINISHED TEST: ${testInfo.titlePath.join(" > ")} | STATUS: ${testInfo.status} ---`,
+    );
 
     // 3. Only print the buffered logs if the test did not pass
     if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
       console.log("--- BROWSER LOGS FOR FAILED TEST ---");
-      testLogs.forEach(log => console.log(log));
+      testLogs.forEach((log) => console.log(log));
       console.log("------------------------------------");
     }
   });

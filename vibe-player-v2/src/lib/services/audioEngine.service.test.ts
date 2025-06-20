@@ -436,24 +436,52 @@ describe("AudioEngineService", () => {
     });
 
     describe("seek", () => {
-      it("should update internal time, reset worker, and keep paused state if paused", async () => {
+      let playerStoreUpdateSpy: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        // Spy on playerStoreWritable.update before each test in this block
+        playerStoreUpdateSpy = vi.spyOn(playerStoreWritable, "update");
+      });
+
+      afterEach(() => {
+        // Restore the spy after each test in this block
+        playerStoreUpdateSpy.mockRestore();
+      });
+
+      it("should update internal time, reset worker, update store and keep paused state if paused", async () => {
         (audioEngineService as any).isPlaying = false; // Ensure paused
         vi.clearAllMocks(); // Clear postMessage calls from init
         rafSpy = vi
           .spyOn(window, "requestAnimationFrame")
           .mockReturnValue(MOCK_RAF_ID);
+        // Re-spy on playerStoreWritable.update for this specific test context if needed after clearAllMocks
+        // However, the beforeEach for the describe block should handle this.
+        if (playerStoreUpdateSpy.mockClear) playerStoreUpdateSpy.mockClear(); // Clear calls from potential previous interactions in other tests.
 
-        await audioEngineService.seek(5.0);
+        const seekTime = 5.0;
+        await audioEngineService.seek(seekTime);
 
         expect(rafSpy).not.toHaveBeenCalled(); // Should not start playing
         expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
           type: RB_WORKER_MSG_TYPE.RESET,
         });
-        expect((audioEngineService as any).sourcePlaybackOffset).toBe(5.0);
+        expect((audioEngineService as any).sourcePlaybackOffset).toBe(seekTime);
         expect((audioEngineService as any).isPlaying).toBe(false);
+
+        expect(playerStoreUpdateSpy).toHaveBeenCalledTimes(1);
+        // Check the effect of the updater function
+        const updaterFunction = playerStoreUpdateSpy.mock.calls[0][0];
+        const previousState: PlayerState = {
+          ...initialPlayerState,
+          currentTime: 0,
+        };
+        const newState = updaterFunction(previousState);
+        expect(newState.currentTime).toBe(seekTime);
+        // Also check the direct outcome on the store
+        expect(get(playerStoreWritable).currentTime).toBe(seekTime);
       });
 
-      it("should pause playback, update internal time, reset worker if playing", async () => {
+      it("should pause playback, update internal time, reset worker, update store if playing", async () => {
         await audioEngineService.play(); // Start playing
         const currentRafId = rafSpy.mock.results[0].value;
         vi.clearAllMocks(); // Clear postMessage calls
@@ -461,15 +489,30 @@ describe("AudioEngineService", () => {
           .spyOn(window, "requestAnimationFrame")
           .mockReturnValue(MOCK_RAF_ID);
         cafSpy = vi.spyOn(window, "cancelAnimationFrame");
+        // Re-spy on playerStoreWritable.update for this specific test context
+        if (playerStoreUpdateSpy.mockClear) playerStoreUpdateSpy.mockClear();
 
-        await audioEngineService.seek(3.0);
+        const seekTime = 3.0;
+        await audioEngineService.seek(seekTime);
 
         expect(cafSpy).toHaveBeenCalledWith(currentRafId); // Should have paused
         expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
           type: RB_WORKER_MSG_TYPE.RESET,
         });
-        expect((audioEngineService as any).sourcePlaybackOffset).toBe(3.0);
+        expect((audioEngineService as any).sourcePlaybackOffset).toBe(seekTime);
         expect((audioEngineService as any).isPlaying).toBe(false); // Should be paused after seek
+
+        expect(playerStoreUpdateSpy).toHaveBeenCalledTimes(1);
+        // Check the effect of the updater function
+        const updaterFunction = playerStoreUpdateSpy.mock.calls[0][0];
+        const previousState: PlayerState = {
+          ...initialPlayerState,
+          currentTime: get(playerStoreWritable).currentTime,
+        }; // Use current time before seek
+        const newState = updaterFunction(previousState);
+        expect(newState.currentTime).toBe(seekTime);
+        // Also check the direct outcome on the store
+        expect(get(playerStoreWritable).currentTime).toBe(seekTime);
       });
     });
 

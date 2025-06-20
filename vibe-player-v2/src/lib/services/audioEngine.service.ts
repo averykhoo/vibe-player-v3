@@ -391,7 +391,7 @@ class AudioEngineService {
     // Ensure nextChunkTime is reset so playback doesn't use stale scheduling
     this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
 
-    // playerStore.update((s) => ({ ...s, currentTime: clampedTime })); // Orchestrator or UI component may handle this
+    playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
   };
 
   /**
