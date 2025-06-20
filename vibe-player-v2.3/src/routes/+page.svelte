@@ -75,7 +75,7 @@
             bind:value={$timeStore}
             max={$playerStore.duration || 1}
             step="any"
-            on:click={handleSeek} /* Changed from on:input and on:mousedown/on:touchstart */
+            on:click={handleSeek}
             disabled={!$playerStore.isPlayable}
             data-testid="seek-slider-input"
         />
