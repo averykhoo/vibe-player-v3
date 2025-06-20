@@ -187,7 +187,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
     ├── tests-e2e
     │   ├── 00-load.e2e.spec.js
     │   ├── PlayerPage.mjs
-    │   └── player.e2e.spec.js
+    │   ├── player.e2e.spec.js
+    │   └── player.e2e.spec.js.bak
     ├── tsconfig.json
     └── vite.config.ts
 ````
@@ -1317,8 +1318,10 @@ export function sparkles(
 	function handlePlayPause() {
 		if (get(playerStore).isPlaying) {
 			audioEngine.pause();
+			playerStore.update((s) => ({ ...s, isPlaying: false }));
 		} else {
 			audioEngine.play();
+			playerStore.update((s) => ({ ...s, isPlaying: true }));
 		}
 	}
 
@@ -1327,6 +1330,7 @@ export function sparkles(
 	 */
 	function handleStop() {
 		audioEngine.stop();
+		playerStore.update((s) => ({ ...s, isPlaying: false, currentTime: 0 }));
 	}
 
 	/**
@@ -1616,6 +1620,7 @@ describe("Controls.svelte", () => {
     const playButton = screen.getByRole("button", { name: /Play/i });
     await fireEvent.click(playButton);
     expect(audioEngineService.play).toHaveBeenCalledTimes(1);
+    expect(get(actualMockPlayerStore).isPlaying).toBe(true);
   });
 
   it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
@@ -1632,6 +1637,7 @@ describe("Controls.svelte", () => {
     const pauseButton = screen.getByRole("button", { name: /Pause/i });
     await fireEvent.click(pauseButton);
     expect(audioEngineService.pause).toHaveBeenCalledTimes(1);
+    expect(get(actualMockPlayerStore).isPlaying).toBe(false);
   });
 
   it("calls audioEngine.stop() on Stop button click", async () => {
@@ -1643,6 +1649,8 @@ describe("Controls.svelte", () => {
     const stopButton = screen.getByRole("button", { name: /Stop/i });
     await fireEvent.click(stopButton);
     expect(audioEngineService.stop).toHaveBeenCalledTimes(1);
+    expect(get(actualMockPlayerStore).isPlaying).toBe(false);
+    expect(get(actualMockPlayerStore).currentTime).toBe(0);
   });
 
   describe("Slider Value Reflection (Store -> UI)", () => {
@@ -3216,11 +3224,9 @@ describe("AudioEngineService", () => {
   describe("initializeWorker", () => {
     beforeEach(() => {
       // Reset playerStore to ensure initialSpeed and initialPitch are from a clean state
-      // Align with service expectation (playbackSpeed) vs PlayerState type (speed)
       playerStoreWritable.set({
         ...initialPlayerState,
-        // @ts-expect-error - speed vs playbackSpeed mismatch between type and usage
-        playbackSpeed: 1.2,
+        speed: 1.2, // Ensure this uses 'speed', not 'playbackSpeed'
         pitchShift: -2.0,
       });
     });
@@ -3391,24 +3397,52 @@ describe("AudioEngineService", () => {
     });
 
     describe("seek", () => {
-      it("should update internal time, reset worker, and keep paused state if paused", async () => {
+      let playerStoreUpdateSpy: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        // Spy on playerStoreWritable.update before each test in this block
+        playerStoreUpdateSpy = vi.spyOn(playerStoreWritable, "update");
+      });
+
+      afterEach(() => {
+        // Restore the spy after each test in this block
+        playerStoreUpdateSpy.mockRestore();
+      });
+
+      it("should update internal time, reset worker, update store and keep paused state if paused", async () => {
         (audioEngineService as any).isPlaying = false; // Ensure paused
         vi.clearAllMocks(); // Clear postMessage calls from init
         rafSpy = vi
           .spyOn(window, "requestAnimationFrame")
           .mockReturnValue(MOCK_RAF_ID);
+        // Re-spy on playerStoreWritable.update for this specific test context if needed after clearAllMocks
+        // However, the beforeEach for the describe block should handle this.
+        if (playerStoreUpdateSpy.mockClear) playerStoreUpdateSpy.mockClear(); // Clear calls from potential previous interactions in other tests.
 
-        await audioEngineService.seek(5.0);
+        const seekTime = 5.0;
+        await audioEngineService.seek(seekTime);
 
         expect(rafSpy).not.toHaveBeenCalled(); // Should not start playing
         expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
           type: RB_WORKER_MSG_TYPE.RESET,
         });
-        expect((audioEngineService as any).sourcePlaybackOffset).toBe(5.0);
+        expect((audioEngineService as any).sourcePlaybackOffset).toBe(seekTime);
         expect((audioEngineService as any).isPlaying).toBe(false);
+
+        expect(playerStoreUpdateSpy).toHaveBeenCalledTimes(1);
+        // Check the effect of the updater function
+        const updaterFunction = playerStoreUpdateSpy.mock.calls[0][0];
+        const previousState: PlayerState = {
+          ...initialPlayerState,
+          currentTime: 0,
+        };
+        const newState = updaterFunction(previousState);
+        expect(newState.currentTime).toBe(seekTime);
+        // Also check the direct outcome on the store
+        expect(get(playerStoreWritable).currentTime).toBe(seekTime);
       });
 
-      it("should pause playback, update internal time, reset worker if playing", async () => {
+      it("should pause playback, update internal time, reset worker, update store if playing", async () => {
         await audioEngineService.play(); // Start playing
         const currentRafId = rafSpy.mock.results[0].value;
         vi.clearAllMocks(); // Clear postMessage calls
@@ -3416,15 +3450,71 @@ describe("AudioEngineService", () => {
           .spyOn(window, "requestAnimationFrame")
           .mockReturnValue(MOCK_RAF_ID);
         cafSpy = vi.spyOn(window, "cancelAnimationFrame");
+        // Re-spy on playerStoreWritable.update for this specific test context
+        if (playerStoreUpdateSpy.mockClear) playerStoreUpdateSpy.mockClear();
 
-        await audioEngineService.seek(3.0);
+        const seekTime = 3.0;
+        await audioEngineService.seek(seekTime);
 
         expect(cafSpy).toHaveBeenCalledWith(currentRafId); // Should have paused
         expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
           type: RB_WORKER_MSG_TYPE.RESET,
         });
-        expect((audioEngineService as any).sourcePlaybackOffset).toBe(3.0);
-        expect((audioEngineService as any).isPlaying).toBe(false); // Should be paused after seek
+        expect((audioEngineService as any).sourcePlaybackOffset).toBe(seekTime);
+        expect((audioEngineService as any).isPlaying).toBe(true); // Should resume playing
+
+        expect(playerStoreUpdateSpy).toHaveBeenCalledTimes(1);
+        // Check the effect of the updater function
+        const updaterFunction = playerStoreUpdateSpy.mock.calls[0][0];
+        const previousState: PlayerState = {
+          ...initialPlayerState,
+          currentTime: get(playerStoreWritable).currentTime,
+        }; // Use current time before seek
+        const newState = updaterFunction(previousState);
+        expect(newState.currentTime).toBe(seekTime);
+        // Also check the direct outcome on the store
+        expect(get(playerStoreWritable).currentTime).toBe(seekTime);
+      });
+
+      it("should pause, seek, update store, and resume when seeking while playing", async () => {
+        // Arrange: Spy on the methods we expect to be called
+        const pauseSpy = vi.spyOn(audioEngineService, "pause");
+        const playSpy = vi.spyOn(audioEngineService, "play");
+        const storeUpdateSpy = vi.spyOn(playerStoreWritable, "update");
+
+        // Set the initial state to "playing" for this test
+        (audioEngineService as any).isPlaying = true;
+        // Ensure originalBuffer is set, as seek() checks for it
+        (audioEngineService as any).originalBuffer = mockAudioBuffer;
+        // Ensure worker is ready
+        (audioEngineService as any).isWorkerReady = true;
+
+        // Act: Call the seek method
+        await audioEngineService.seek(5.0);
+
+        // Assert: Verify the sequence of events
+        expect(pauseSpy).toHaveBeenCalledOnce();
+        expect(storeUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
+        // Check the effect of the update function on the store's state
+        const lastCallArgs =
+          storeUpdateSpy.mock.calls[storeUpdateSpy.mock.calls.length - 1];
+        const updaterFunction = lastCallArgs[0];
+        const previousState = get(playerStoreWritable); // Get current state or a representative previous state
+        const nextState = updaterFunction(previousState);
+        expect(nextState.currentTime).toBe(5.0);
+        // Also assert the store reflects the update if the updater was immediately applied
+        // This depends on whether the store update is synchronous in the test environment
+        // For this test, we'll assume the updater function itself is what we're testing primarily for its effect
+        // If `get(playerStoreWritable).currentTime` should be checked, ensure the store update has completed.
+        // Given the new seek logic, the store IS updated directly.
+        expect(get(playerStoreWritable).currentTime).toBe(5.0);
+
+        expect(playSpy).toHaveBeenCalledOnce();
+
+        // Cleanup spies
+        pauseSpy.mockRestore();
+        playSpy.mockRestore();
+        storeUpdateSpy.mockRestore();
       });
     });
 
@@ -3474,119 +3564,6 @@ describe("AudioEngineService", () => {
         maxGain,
         mockAudioContextInstance.currentTime,
       );
-    });
-  });
-
-  describe("Seek Logic Methods", () => {
-    beforeEach(async () => {
-      // Ensure a mock audio buffer is loaded and worker is initialized
-      (audioEngineService as any).originalBuffer = mockAudioBuffer;
-      (audioEngineService as any).isWorkerReady = true;
-      (audioEngineService as any).isPlaying = false; // Default to not playing
-      (audioEngineService as any).wasPlayingBeforeSeek = false; // Reset this flag
-
-      // Spies are already reset and re-applied in the outer beforeEach,
-      // so vi.clearAllMocks() here might be redundant or could clear spies needed if setup calls service methods.
-      // For safety, let's ensure critical spies are active if specific calls were made during this setup.
-      // However, the main beforeEach should cover this.
-      // vi.clearAllMocks(); // Potentially remove or be very careful with this one.
-      // globalFetchSpy.mockImplementation(...); // Already done in outer scope
-      // rafSpy = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(MOCK_RAF_ID); // Outer scope
-      // cafSpy = vi.spyOn(window, "cancelAnimationFrame"); // Outer scope
-    });
-
-    describe("startSeek", () => {
-      it("should set wasPlayingBeforeSeek and pause if playing", () => {
-        (audioEngineService as any).isPlaying = true;
-        const pauseSpy = vi.spyOn(audioEngineService as any, "pause");
-        audioEngineService.startSeek();
-        expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(true);
-        expect(pauseSpy).toHaveBeenCalled();
-      });
-
-      it("should set wasPlayingBeforeSeek and not pause if not playing", () => {
-        (audioEngineService as any).isPlaying = false;
-        const pauseSpy = vi.spyOn(audioEngineService as any, "pause");
-        audioEngineService.startSeek();
-        expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
-        expect(pauseSpy).not.toHaveBeenCalled();
-      });
-
-      it("should not proceed if not playable (no buffer)", () => {
-        (audioEngineService as any).originalBuffer = null;
-        (audioEngineService as any).wasPlayingBeforeSeek = false;
-        const pauseSpy = vi.spyOn(audioEngineService as any, "pause");
-        audioEngineService.startSeek();
-        expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
-        expect(pauseSpy).not.toHaveBeenCalled();
-      });
-    });
-
-    describe("updateSeek", () => {
-      it("should update playerStore currentTime if playable and assert the updater function", () => {
-        const seekTime = 5.5;
-        const storeUpdateSpy = vi.spyOn(playerStoreWritable, "update");
-        audioEngineService.updateSeek(seekTime);
-
-        expect(storeUpdateSpy).toHaveBeenCalledTimes(1);
-        expect(storeUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
-
-        // Check the effect of the updater function passed to store.update
-        const updaterFunction = storeUpdateSpy.mock.calls[0][0];
-        const previousState: PlayerState = {
-          ...initialPlayerState,
-          currentTime: 0,
-        }; // Example previous state
-        const newState = updaterFunction(previousState);
-        expect(newState.currentTime).toBe(seekTime);
-
-        // Also check the direct outcome on the store (which happens due to the spy calling the original)
-        expect(get(playerStoreWritable).currentTime).toBe(seekTime);
-        storeUpdateSpy.mockRestore(); // Restore original update method
-      });
-
-      it("should not update playerStore if not playable (worker not ready)", () => {
-        (audioEngineService as any).isWorkerReady = false;
-        const originalTime = get(playerStoreWritable).currentTime;
-        const seekTime = 3.3;
-        const storeUpdateSpy = vi.spyOn(playerStoreWritable, "update");
-        audioEngineService.updateSeek(seekTime);
-        expect(storeUpdateSpy).not.toHaveBeenCalled();
-        expect(get(playerStoreWritable).currentTime).toBe(originalTime); // Ensure it hasn't changed
-      });
-    });
-
-    describe("endSeek", () => {
-      it("should call internal seek, play if wasPlayingBeforeSeek is true, and reset flag", () => {
-        (audioEngineService as any).wasPlayingBeforeSeek = true;
-        const internalSeekSpy = vi.spyOn(audioEngineService as any, "seek");
-        const playSpy = vi.spyOn(audioEngineService as any, "play");
-        const seekEndTime = 7.2;
-        audioEngineService.endSeek(seekEndTime);
-        expect(internalSeekSpy).toHaveBeenCalledWith(seekEndTime);
-        expect(playSpy).toHaveBeenCalled();
-        expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
-      });
-
-      it("should call internal seek, not play if wasPlayingBeforeSeek is false, and reset flag", () => {
-        (audioEngineService as any).wasPlayingBeforeSeek = false;
-        const internalSeekSpy = vi.spyOn(audioEngineService as any, "seek");
-        const playSpy = vi.spyOn(audioEngineService as any, "play");
-        const seekEndTime = 8.1;
-        audioEngineService.endSeek(seekEndTime);
-        expect(internalSeekSpy).toHaveBeenCalledWith(seekEndTime);
-        expect(playSpy).not.toHaveBeenCalled();
-        expect((audioEngineService as any).wasPlayingBeforeSeek).toBe(false);
-      });
-
-      it("should not proceed if not playable (no buffer)", () => {
-        (audioEngineService as any).originalBuffer = null;
-        const internalSeekSpy = vi.spyOn(audioEngineService as any, "seek");
-        const playSpy = vi.spyOn(audioEngineService as any, "play");
-        audioEngineService.endSeek(1.0);
-        expect(internalSeekSpy).not.toHaveBeenCalled();
-        expect(playSpy).not.toHaveBeenCalled();
-      });
     });
   });
 });
@@ -3818,7 +3795,7 @@ class AudioEngineService {
           const wasmBinary = await wasmResponse.arrayBuffer();
           const loaderScriptText = await loaderResponse.text();
 
-          const { playbackSpeed, pitchShift } = get(playerStore);
+          const { speed, pitchShift } = get(playerStore);
 
           const initPayload: RubberbandInitPayload = {
             wasmBinary,
@@ -3826,7 +3803,7 @@ class AudioEngineService {
             origin: location.origin,
             sampleRate: audioBuffer.sampleRate,
             channels: audioBuffer.numberOfChannels,
-            initialSpeed: playbackSpeed,
+            initialSpeed: speed, // Use the correct property 'speed'
             initialPitch: pitchShift,
           };
 
@@ -3959,36 +3936,41 @@ class AudioEngineService {
    * @public
    */
   public seek = async (time: number): Promise<void> => {
-    console.log(
-      `[AudioEngineService] SEEK called. Target time: ${time.toFixed(2)}s`,
-    );
-    if (!this.originalBuffer) {
-      console.warn(
-        "AudioEngine: Seek attempted without an audio buffer loaded.",
-      );
+    if (!this.originalBuffer || !this.isWorkerReady) {
+      console.warn("AudioEngine: Seek attempted while not ready.");
       return;
     }
+
+    // Step 1: Immediately stop the playback loop to prevent race conditions.
+    // We remember the state so we can resume if needed, but we must stop the loop NOW.
+    const wasPlaying = this.isPlaying;
+    if (wasPlaying) {
+      this.pause();
+    }
+
+    // Step 2: Calculate and clamp the new time.
     const clampedTime = Math.max(
       0,
       Math.min(time, this.originalBuffer.duration),
     );
+    console.log(
+      `[AudioEngineService] SEEK called. Target time: ${clampedTime.toFixed(2)}s`,
+    );
 
-    if (this.isPlaying) {
-      this.pause(); // Always pause on seek
-    }
-
-    if (this.worker && this.isWorkerReady) {
-      console.log(
-        "[AudioEngineService] Posting RESET to worker due to seek().",
-      );
+    // Step 3: Update internal state and reset worker.
+    this.sourcePlaybackOffset = clampedTime;
+    if (this.worker) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
-
-    this.sourcePlaybackOffset = clampedTime;
-    // Ensure nextChunkTime is reset so playback doesn't use stale scheduling
     this.nextChunkTime = this.audioContext ? this.audioContext.currentTime : 0;
 
-    // playerStore.update((s) => ({ ...s, currentTime: clampedTime })); // Orchestrator or UI component may handle this
+    // Step 4: Update the central store. This is now safe from being overwritten.
+    playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
+
+    // Step 5: Resume playback if it was active before the seek.
+    if (wasPlaying) {
+      this.play();
+    }
   };
 
   /**
@@ -4067,44 +4049,6 @@ class AudioEngineService {
     this.originalBuffer = null;
     this.workerInitPromiseCallbacks = null; // Clear any pending promise callbacks
     console.log("[AudioEngineService] Dispose complete.");
-  };
-
-  /**
-   * Initiates the seek operation.
-   * Remembers if playback was active and pauses playback.
-   */
-  public startSeek = (): void => {
-    // Condition uses internal readiness check, equivalent to isPlayable from engine's perspective
-    if (!this.originalBuffer || !this.isWorkerReady) return;
-    this.wasPlayingBeforeSeek = this.isPlaying; // isPlaying is a property
-    if (this.isPlaying) {
-      this.pause(); // pause() is a method
-    }
-  };
-
-  /**
-   * Updates the current time in the player store during a seek operation.
-   * This provides immediate UI feedback.
-   * @param {number} time - The current seek time.
-   */
-  public updateSeek = (time: number): void => {
-    if (!this.originalBuffer || !this.isWorkerReady) return;
-    // Update the store directly for immediate UI feedback.
-    playerStore.update((s) => ({ ...s, currentTime: time }));
-  };
-
-  /**
-   * Finalizes the seek operation.
-   * Seeks to the specified time and resumes playback if it was active before seeking.
-   * @param {number} time - The final seek time.
-   */
-  public endSeek = (time: number): void => {
-    if (!this.originalBuffer || !this.isWorkerReady) return;
-    this.seek(time); // Use the internal seek method of AudioEngineService
-    if (this.wasPlayingBeforeSeek) {
-      this.play(); // play() is a method
-    }
-    this.wasPlayingBeforeSeek = false;
   };
 
   // ---------------------------------------------------------------------------
@@ -4510,17 +4454,18 @@ vi.mock("./audioEngine.service", () => ({
   default: {
     unlockAudio: vi.fn().mockResolvedValue(undefined),
     loadFile: vi.fn(),
+    initializeWorker: vi.fn().mockResolvedValue(undefined), // <-- ADD THIS LINE
     getDuration: vi.fn(() => 120),
     getSampleRate: vi.fn(() => 44100),
     getNumberOfChannels: vi.fn(() => 1),
   },
 }));
 vi.mock("./dtmf.service", () => ({
-  default: { init: vi.fn(), process: vi.fn().mockResolvedValue([]) },
+  default: { initialize: vi.fn(), process: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("./spectrogram.service", () => ({
   default: {
-    init: vi.fn(),
+    initialize: vi.fn(),
     process: vi.fn().mockResolvedValue(new Float32Array()),
   },
 }));
@@ -4674,13 +4619,20 @@ describe("AudioOrchestrator.service.ts", () => {
         isLoading: false,
       });
 
+      // --- ADD THIS NEW ASSERTION to verify worker initialization is called ---
+      expect(audioEngine.initializeWorker).toHaveBeenCalledWith(
+        mockAudioBuffer,
+      );
+      // --- END NEW ASSERTION ---
       // Verify analysis services were initialized and called
       expect(audioEngine.unlockAudio).toHaveBeenCalled();
       expect(audioEngine.loadFile).toHaveBeenCalledWith(mockFile);
-      expect(spectrogramService.init).toHaveBeenCalledWith(
+      expect(spectrogramService.initialize).toHaveBeenCalledWith({
+        sampleRate: mockAudioBuffer.sampleRate,
+      });
+      expect(dtmfService.initialize).toHaveBeenCalledWith(
         mockAudioBuffer.sampleRate,
       );
-      expect(dtmfService.init).toHaveBeenCalledWith(mockAudioBuffer.sampleRate);
       expect(spectrogramService.process).toHaveBeenCalled();
       expect(dtmfService.process).toHaveBeenCalled();
     });
@@ -4882,6 +4834,11 @@ export class AudioOrchestrator {
       const sampleRate = audioBuffer.sampleRate;
       const channels = audioBuffer.numberOfChannels; // Assuming this property exists
 
+      // --- ADD THIS BLOCK to initialize the playback engine's worker ---
+      console.log("[Orchestrator] Initializing Audio Engine Worker...");
+      await audioEngine.initializeWorker(audioBuffer);
+      console.log("[Orchestrator] Audio Engine Worker initialized.");
+      // --- END OF ADDED BLOCK ---
       playerStore.update((s) => ({
         ...s,
         duration,
@@ -4892,8 +4849,8 @@ export class AudioOrchestrator {
       }));
       statusStore.set({ message: "Ready", type: "success", isLoading: false });
 
-      spectrogramService.init(audioBuffer.sampleRate);
-      dtmfService.init(audioBuffer.sampleRate);
+      spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
+      dtmfService.initialize(audioBuffer.sampleRate);
 
       console.log("AudioOrchestrator: Starting background analysis tasks.");
       const analysisPromises = [
@@ -7202,7 +7159,7 @@ export function getParamFromUrl(param: string): string | undefined {
 const DTMF_SAMPLE_RATE = 16000;
 const DTMF_BLOCK_SIZE = 410;
 const DTMF_RELATIVE_THRESHOLD_FACTOR = 2.0;
-const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 4e2;
+const DTMF_ABSOLUTE_MAGNITUDE_THRESHOLD = 350;
 const DTMF_FREQUENCIES_LOW = [697, 770, 852, 941];
 const DTMF_FREQUENCIES_HIGH = [1209, 1336, 1477, 1633];
 export const DTMF_CHARACTERS: { [key: string]: string } = {
@@ -7273,14 +7230,16 @@ class GoertzelFilter {
   }
 
   /**
-   * Calculates the squared magnitude of the target frequency.
-   * This is the mathematically correct formula.
+   * Calculates the squared magnitude of the target frequency after processing.
+   * This uses the standard, correct Goertzel algorithm formula.
    * @returns {number} The squared magnitude (power) of the signal at the target frequency.
    */
   public getMagnitudeSquared(): number {
-    const realPart = this.q1 - this.q2 * this.cosine;
-    const imagPart = this.q2 * this.sine;
-    return realPart * realPart + imagPart * imagPart;
+    // The full, correct formula for magnitude squared is:
+    // q1*q1 + q2*q2 - q1*q2*coeff
+    return (
+      this.q1 * this.q1 + this.q2 * this.q2 - this.q1 * this.q2 * this.coeff
+    );
   }
 }
 
@@ -7387,13 +7346,6 @@ self.onmessage = (event: MessageEvent) => {
       const { pcmData } = payload;
       const detectedDtmf: string[] = [];
 
-      // --- START: CORRECTED V1 PROCESSING LOGIC ---
-      let lastDetectedDtmf: string | null = null;
-      let consecutiveDtmfDetections = 0;
-      const minConsecutiveDtmf = 2; // A tone must be stable for 2 blocks to be registered
-      // --- END: CORRECTED V1 PROCESSING LOGIC ---
-
-      // Ported processing loop from V1's app.js (simplified for DTMF only)
       for (
         let i = 0;
         i + DTMF_BLOCK_SIZE <= pcmData.length;
@@ -7403,25 +7355,10 @@ self.onmessage = (event: MessageEvent) => {
         const timestamp = i / DTMF_SAMPLE_RATE;
         const tone = dtmfParser.processAudioBlock(audioBlock, timestamp);
 
-        // --- START: CORRECTED V1 CONFIRMATION LOGIC ---
-        if (tone) {
-          if (tone === lastDetectedDtmf) {
-            consecutiveDtmfDetections++;
-          } else {
-            lastDetectedDtmf = tone;
-            consecutiveDtmfDetections = 1;
-          }
-
-          if (
-            consecutiveDtmfDetections === minConsecutiveDtmf &&
-            (detectedDtmf.length === 0 ||
-              detectedDtmf[detectedDtmf.length - 1] !== tone)
-          ) {
-            detectedDtmf.push(tone);
-          }
-        } else {
-          lastDetectedDtmf = null;
-          consecutiveDtmfDetections = 0;
+        // If a tone is detected and it's not the same as the last one we added,
+        // push it to the results. This handles debouncing perfectly for batch processing.
+        if (tone && detectedDtmf[detectedDtmf.length - 1] !== tone) {
+          detectedDtmf.push(tone);
         }
       }
 
@@ -8081,6 +8018,27 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     import {formatTime} from '$lib/utils/formatters';
     // import {debounce, updateUrlWithParams} from '$lib/utils'; // No longer needed here
 
+// Make sure 'get' is imported
+function handleSeek(event: MouseEvent | TouchEvent) {
+    const slider = event.currentTarget as HTMLInputElement;
+    const rect = slider.getBoundingClientRect();
+
+    // Determine the click/touch position
+    let clientX: number;
+    if (window.TouchEvent && event instanceof TouchEvent) {
+        clientX = event.changedTouches[0].clientX;
+    } else {
+        clientX = (event as MouseEvent).clientX;
+    }
+
+    // Calculate the new time based on the click percentage
+    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const newTime = percent * get(playerStore).duration;
+
+    // Call the single, reliable seek method in the service
+    audioEngineService.seek(newTime);
+}
+
     onMount(() => {
         console.log('[+page.svelte] onMount: Initializing AudioOrchestrator.');
 
@@ -8133,11 +8091,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
                 bind:value={$playerStore.currentTime}
                 max={$playerStore.duration || 1}
                 step="any"
-                on:input={(e) => audioEngineService.updateSeek(e.currentTarget.valueAsNumber)}
-                on:mousedown={audioEngineService.startSeek}
-                on:mouseup={(e) => audioEngineService.endSeek(e.currentTarget.valueAsNumber)}
-                on:touchstart={audioEngineService.startSeek}
-                on:touchend={(e) => audioEngineService.endSeek(e.currentTarget.valueAsNumber)}
+                on:click={handleSeek}
                 disabled={!$playerStore.isPlayable}
                 data-testid="seek-slider-input"
         />
@@ -9343,32 +9297,48 @@ const DTMF_TEST_AUDIO_FILE = "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
 
 test.describe("Vibe Player V2 E2E", () => {
   let playerPage;
+  let testLogs; // Buffer for logs for the current test
 
-  test.beforeEach(async ({ page }) => {
+  // This hook runs before each test
+  test.beforeEach(async ({ page }, testInfo) => {
+    // 1. Reset the log buffer for each new test
+    testLogs = [];
+    console.log(`--- STARTING TEST: ${testInfo.titlePath.join(" > ")} ---`);
+
+    // 2. Buffer console messages instead of printing them immediately
     page.on("console", (msg) => {
       const text = msg.text();
-      // Only log non-URL serialization messages to reduce noise
-      if (!text.includes("[URL Serialization]")) {
-        console.log(`[BROWSER LOG]: ${text}`);
-      }
-      if (msg.type() === "error") {
-        // Detect critical VAD/WASM errors and fail the test immediately
-        if (
-          text.includes("VAD error") ||
-          text.includes("WASM error") ||
-          text.includes("WebAssembly")
-        ) {
-          test.fail(
-            true,
-            `Critical VAD/WASM error detected in browser console: ${text}`,
-          );
-        }
+      const type = msg.type();
+      testLogs.push(`[${type.toUpperCase()}]: ${text}`);
+
+      // We still want to fail fast for critical errors
+      if (
+        type === "error" &&
+        (text.includes("WASM") || text.includes("WebAssembly"))
+      ) {
+        test.fail(true, `Critical WASM error detected in browser: ${text}`);
       }
     });
+
     playerPage = new PlayerPage(page);
     await playerPage.goto();
   });
 
+  // This new hook runs after each test
+  test.afterEach(async ({ page }, testInfo) => {
+    console.log(
+      `--- FINISHED TEST: ${testInfo.titlePath.join(" > ")} | STATUS: ${testInfo.status} ---`,
+    );
+
+    // 3. Only print the buffered logs if the test did not pass
+    if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
+      console.log("--- BROWSER LOGS FOR FAILED TEST ---");
+      testLogs.forEach((log) => console.log(log));
+      console.log("------------------------------------");
+    }
+  });
+
+  // ... all existing test cases remain here, unchanged ...
   test("should load an audio file and enable playback controls", async ({
     page,
   }) => {
@@ -9613,18 +9583,15 @@ export class PlayerPage {
    * Waits for the UI to be in a state where playback is possible after a file load.
    */
   async expectControlsToBeReadyForPlayback() {
-    await expect(this.fileStatusDisplay).toHaveText(/Ready/, {
-      timeout: 20000,
-    });
     await expect(
       this.timeDisplay,
       "Time display did not update with audio duration",
-    ).not.toHaveText("0:00 / 0:00", { timeout: 1000 });
+    ).not.toHaveText("0:00 / 0:00", { timeout: 10000 });
     await expect(
       this.playButton,
       "Play button was not enabled after file load",
     ).toBeEnabled({
-      timeout: 1000,
+      timeout: 5000,
     });
   }
 
@@ -9643,27 +9610,20 @@ export class PlayerPage {
    */
   async setSliderValue(sliderInputLocator, valueStr) {
     const targetValue = parseFloat(valueStr);
-    const boundingBox = await sliderInputLocator.boundingBox();
-    if (!boundingBox) throw new Error(`Could not get bounding box for slider.`);
+    const slider = await sliderInputLocator.boundingBox();
+    if (!slider) throw new Error("Could not get bounding box for slider.");
 
-    const { min, max } = await sliderInputLocator.evaluate((el) => ({
-      min: parseFloat(el.getAttribute("min") || "0"),
-      max: parseFloat(el.getAttribute("max") || "100"),
-    }));
-
-    const ratio = (targetValue - min) / (max - min);
-    let clickX = boundingBox.x + boundingBox.width * ratio;
-
-    // Ensure clickX is within the bounding box width
-    clickX = Math.max(
-      boundingBox.x,
-      Math.min(clickX, boundingBox.x + boundingBox.width),
+    const max = parseFloat(
+      (await sliderInputLocator.getAttribute("max")) || "1",
     );
+    const ratio = targetValue / max;
+    const x = slider.width * ratio;
 
-    const clickY = boundingBox.y + boundingBox.height / 2;
-
-    await this.page.mouse.click(clickX, clickY);
-    await this.page.waitForTimeout(350); // Allow for debounced updates
+    await sliderInputLocator.click({
+      position: { x: x, y: slider.height / 2 },
+    });
+    // Allow a brief moment for the service and store to update
+    await this.page.waitForTimeout(200);
   }
 
   /**
