@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/index.ts
-
+// vibe-player-v2.0/src/lib/utils/index.ts
 export * from "./assert";
 export * from "./constants";
 export * from "./formatters";

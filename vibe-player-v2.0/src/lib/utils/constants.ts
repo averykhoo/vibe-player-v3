@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/constants.ts
+// vibe-player-v2.0/src/lib/utils/constants.ts
 export interface AudioEngineConstants {
   PROCESSOR_SCRIPT_URL: string;
   PROCESSOR_NAME: string;

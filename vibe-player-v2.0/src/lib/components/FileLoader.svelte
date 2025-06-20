@@ -1,5 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/FileLoader.svelte -->
-
+<!-- vibe-player-v2.0/src/lib/components/FileLoader.svelte -->
 <script lang="ts">
     import { playerStore } from '$lib/stores/player.store'; // To show status or file name
     import AudioOrchestrator from '$lib/services/AudioOrchestrator.service';

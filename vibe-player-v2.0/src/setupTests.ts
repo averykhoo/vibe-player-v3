@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/setupTests.ts
+// vibe-player-v2.0/src/setupTests.ts
 // General setup for Svelte component testing with Vitest and Testing Library
 import "@testing-library/svelte/vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";

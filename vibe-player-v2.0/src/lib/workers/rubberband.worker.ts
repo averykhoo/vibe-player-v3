@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/workers/rubberband.worker.ts
+// vibe-player-v2.0/src/lib/workers/rubberband.worker.ts
 import type {
   RubberbandInitPayload,
   RubberbandProcessPayload,

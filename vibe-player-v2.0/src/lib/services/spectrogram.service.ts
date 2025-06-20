@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/services/spectrogram.service.ts
+// vibe-player-v2.0/src/lib/services/spectrogram.service.ts
 import { browser } from "$app/environment"; // <-- ADD THIS IMPORT
 import type {
   SpectrogramInitPayload,

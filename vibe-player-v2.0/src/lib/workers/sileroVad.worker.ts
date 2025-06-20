@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/workers/sileroVad.worker.ts
+// vibe-player-v2.0/src/lib/workers/sileroVad.worker.ts
 import * as ort from "onnxruntime-web";
 import type {
   SileroVadInitPayload,

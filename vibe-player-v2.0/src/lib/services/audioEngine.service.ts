@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/services/audioEngine.service.ts
-
+// vibe-player-v2.0/src/lib/services/audioEngine.service.ts
 // ─────────────────────────────────────────────────────────────────────────────
 //  SECTION: Imports
 // ─────────────────────────────────────────────────────────────────────────────

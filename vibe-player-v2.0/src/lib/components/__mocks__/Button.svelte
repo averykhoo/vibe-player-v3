@@ -1,4 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/__mocks__/Button.svelte -->
+<!-- vibe-player-v2.0/src/lib/components/__mocks__/Button.svelte -->
 <script>
   // Mock Button
   export let color = 'primary'; // Example prop

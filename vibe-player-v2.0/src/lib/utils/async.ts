@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/async.ts
+// vibe-player-v2.0/src/lib/utils/async.ts
 export async function yieldToMainThread(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }

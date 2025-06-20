@@ -1,4 +1,4 @@
-// vibe-player-v2.3/svelte.config.js
+// vibe-player-v2.0/svelte.config.js
 import adapter from "@sveltejs/adapter-static";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 

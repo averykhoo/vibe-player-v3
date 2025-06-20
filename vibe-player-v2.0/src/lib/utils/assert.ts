@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/assert.ts
-
+// vibe-player-v2.0/src/lib/utils/assert.ts
 /**
  * Asserts that a condition is true, throwing an error in development if it's not.
  * This function is stripped from production builds.

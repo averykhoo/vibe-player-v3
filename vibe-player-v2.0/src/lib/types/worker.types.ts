@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/types/worker.types.ts
-
+// vibe-player-v2.0/src/lib/types/worker.types.ts
 // General message structure for worker communication
 export interface WorkerMessage<T = unknown> {
   type: string;

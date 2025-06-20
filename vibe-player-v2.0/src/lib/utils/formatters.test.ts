@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/formatters.test.ts
+// vibe-player-v2.0/src/lib/utils/formatters.test.ts
 import { describe, expect, it } from "vitest";
 import { formatTime } from "./formatters";
 

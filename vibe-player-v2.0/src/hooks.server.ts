@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/hooks.server.ts
+// vibe-player-v2.0/src/hooks.server.ts
 import type { Handle } from "@sveltejs/kit";
 
 /**

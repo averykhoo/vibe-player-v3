@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/urlState.ts
-
+// vibe-player-v2.0/src/lib/utils/urlState.ts
 import { BROWSER } from "esm-env";
 
 /**

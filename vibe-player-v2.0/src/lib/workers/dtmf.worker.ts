@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/workers/dtmf.worker.ts
-
+// vibe-player-v2.0/src/lib/workers/dtmf.worker.ts
 // ─────────────────────────────────────────────────────────────────────────────
 //  SECTION: Constants
 // ─────────────────────────────────────────────────────────────────────────────

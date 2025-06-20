@@ -1,5 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/visualizers/Spectrogram.svelte -->
-
+<!-- vibe-player-v2.0/src/lib/components/visualizers/Spectrogram.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { get } from 'svelte/store';

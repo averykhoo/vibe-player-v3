@@ -1,5 +1,4 @@
-// vibe-player-v2.3/static/vendor/rubberband/rubberband-loader.js
-
+// vibe-player-v2.0/static/vendor/rubberband/rubberband-loader.js
 // ** MODIFIED Emscripten Loader for AudioWorklet **
 // Original source: Emscripten-generated loader for Rubberband library (@echogarden)
 // Modifications:

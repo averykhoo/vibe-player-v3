@@ -1,4 +1,4 @@
-// vibe-player-v2.3/tailwind.config.ts
+// vibe-player-v2.0/tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 export default {

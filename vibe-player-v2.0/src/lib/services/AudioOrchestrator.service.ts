@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/services/AudioOrchestrator.service.ts
+// vibe-player-v2.0/src/lib/services/AudioOrchestrator.service.ts
 import { playerStore } from "$lib/stores/player.store";
 import { dtmfStore } from "$lib/stores/dtmf.store";
 import audioEngine from "./audioEngine.service";

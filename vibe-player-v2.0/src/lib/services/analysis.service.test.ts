@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/services/analysis.service.test.ts
-
+// vibe-player-v2.0/src/lib/services/analysis.service.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // --- Test Suite ---
 // import analysisService from "./analysis.service"; // No longer imported at top level

@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/stores/url.store.ts
+// vibe-player-v2.0/src/lib/stores/url.store.ts
 import { derived, get } from "svelte/store";
 import { playerStore } from "./player.store";
 import { analysisStore } from "./analysis.store";

@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/stores/dtmf.store.ts
-
+// vibe-player-v2.0/src/lib/stores/dtmf.store.ts
 import { writable } from "svelte/store";
 
 export interface DtmfState {

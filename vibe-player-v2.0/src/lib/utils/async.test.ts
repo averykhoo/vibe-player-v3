@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/async.test.ts
+// vibe-player-v2.0/src/lib/utils/async.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { debounce, yieldToMainThread } from "./async";
 

@@ -1,5 +1,4 @@
-// vibe-player-v2.3/playwright.config.ts
-
+// vibe-player-v2.0/playwright.config.ts
 import { defineConfig, devices } from "@playwright/test";
 
 // SvelteKit's default preview port is 4173.

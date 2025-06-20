@@ -1,3 +1,4 @@
+<!-- vibe-player-v2.0/src/routes/+page.svelte -->
 <!-- vibe-player-v2.3/src/routes/+page.svelte -->
 <script lang="ts">
     /**

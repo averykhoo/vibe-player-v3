@@ -1,4 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/ToneDisplay.svelte -->
+<!-- vibe-player-v2.0/src/lib/components/ToneDisplay.svelte -->
 <script lang="ts">
   import { dtmfStore } from '$lib/stores/dtmf.store';
 </script>

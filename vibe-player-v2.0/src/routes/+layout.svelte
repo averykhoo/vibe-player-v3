@@ -1,3 +1,4 @@
+<!-- vibe-player-v2.0/src/routes/+layout.svelte -->
 <!-- vibe-player-v2.3/src/routes/+layout.svelte -->
 <script lang="ts">
   import "../app.css";

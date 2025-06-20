@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/workers/spectrogram.worker.ts
+// vibe-player-v2.0/src/lib/workers/spectrogram.worker.ts
 import type {
   SpectrogramInitPayload,
   SpectrogramProcessPayload,

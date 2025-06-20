@@ -1,5 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/urlState.test.ts
-
+// vibe-player-v2.0/src/lib/utils/urlState.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
 // Removed static imports of functions from ./urlState
 

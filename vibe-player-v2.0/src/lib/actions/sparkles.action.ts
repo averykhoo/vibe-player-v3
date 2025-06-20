@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/actions/sparkles.action.ts
+// vibe-player-v2.0/src/lib/actions/sparkles.action.ts
 interface Sparkle {
   id: number;
   x: number;

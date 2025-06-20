@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/stores/player.store.ts
+// vibe-player-v2.0/src/lib/stores/player.store.ts
 import { writable } from "svelte/store";
 import type { PlayerState } from "$lib/types/player.types";
 import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils";

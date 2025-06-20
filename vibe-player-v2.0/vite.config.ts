@@ -1,4 +1,4 @@
-// vibe-player-v2.3/vite.config.ts
+// vibe-player-v2.0/vite.config.ts
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vitest/config"; // Changed from "vite"
 import { viteStaticCopy } from "vite-plugin-static-copy";

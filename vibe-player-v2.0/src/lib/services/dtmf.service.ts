@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/services/dtmf.service.ts
+// vibe-player-v2.0/src/lib/services/dtmf.service.ts
 import { browser } from "$app/environment";
 import DtmfWorker from "$lib/workers/dtmf.worker?worker&inline";
 import { dtmfStore } from "$lib/stores/dtmf.store";

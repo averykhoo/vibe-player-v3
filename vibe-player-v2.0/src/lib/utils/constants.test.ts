@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/utils/constants.test.ts
+// vibe-player-v2.0/src/lib/utils/constants.test.ts
 import { describe, expect, it } from "vitest";
 import * as AllConstants from "./constants";
 

@@ -1,5 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/visualizers/Waveform.svelte -->
-
+<!-- vibe-player-v2.0/src/lib/components/visualizers/Waveform.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { playerStore } from '$lib/stores/player.store';

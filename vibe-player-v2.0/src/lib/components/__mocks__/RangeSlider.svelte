@@ -1,4 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/__mocks__/RangeSlider.svelte -->
+<!-- vibe-player-v2.0/src/lib/components/__mocks__/RangeSlider.svelte -->
 <script>
   // Mock RangeSlider
   export let value = 0;

@@ -1,4 +1,4 @@
-// vibe-player-v2.3/src/lib/services/audioEngine.service.test.ts
+// vibe-player-v2.0/src/lib/services/audioEngine.service.test.ts
 import { writable, type Writable } from "svelte/store";
 import { vi } from "vitest";
 

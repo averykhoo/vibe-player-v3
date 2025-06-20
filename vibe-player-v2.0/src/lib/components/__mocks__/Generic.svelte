@@ -1,4 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/__mocks__/Generic.svelte -->
+<!-- vibe-player-v2.0/src/lib/components/__mocks__/Generic.svelte -->
 <script lang="ts">
   // Generic mock for any Skeleton component
   // It can accept any props via $$props

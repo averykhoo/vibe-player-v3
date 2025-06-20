@@ -1,4 +1,4 @@
-<!-- vibe-player-v2.3/src/lib/components/Controls.svelte -->
+<!-- vibe-player-v2.0/src/lib/components/Controls.svelte -->
 <script lang="ts">
 	/**
 	 * @file Controls component for Vibe Player V2.
