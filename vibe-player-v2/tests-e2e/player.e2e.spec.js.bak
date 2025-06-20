@@ -14,43 +14,32 @@ const DTMF_TEST_AUDIO_FILE = "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
 
 test.describe("Vibe Player V2 E2E", () => {
   let playerPage;
-  let testLogs; // Buffer for logs for the current test
 
-  // This hook runs before each test
-  test.beforeEach(async ({ page }, testInfo) => {
-    // 1. Reset the log buffer for each new test
-    testLogs = [];
-    console.log(`--- STARTING TEST: ${testInfo.titlePath.join(" > ")} ---`);
-
-    // 2. Buffer console messages instead of printing them immediately
+  test.beforeEach(async ({ page }) => {
     page.on("console", (msg) => {
       const text = msg.text();
-      const type = msg.type();
-      testLogs.push(`[${type.toUpperCase()}]: ${text}`);
-
-      // We still want to fail fast for critical errors
-      if (type === "error" && (text.includes("WASM") || text.includes("WebAssembly"))) {
-        test.fail(true, `Critical WASM error detected in browser: ${text}`);
+      // Only log non-URL serialization messages to reduce noise
+      if (!text.includes("[URL Serialization]")) {
+        console.log(`[BROWSER LOG]: ${text}`);
+      }
+      if (msg.type() === "error") {
+        // Detect critical VAD/WASM errors and fail the test immediately
+        if (
+          text.includes("VAD error") ||
+          text.includes("WASM error") ||
+          text.includes("WebAssembly")
+        ) {
+          test.fail(
+            true,
+            `Critical VAD/WASM error detected in browser console: ${text}`,
+          );
+        }
       }
     });
-
     playerPage = new PlayerPage(page);
     await playerPage.goto();
   });
 
-  // This new hook runs after each test
-  test.afterEach(async ({ page }, testInfo) => {
-    console.log(`--- FINISHED TEST: ${testInfo.titlePath.join(" > ")} | STATUS: ${testInfo.status} ---`);
-
-    // 3. Only print the buffered logs if the test did not pass
-    if (testInfo.status !== "passed" && testInfo.status !== "skipped") {
-      console.log("--- BROWSER LOGS FOR FAILED TEST ---");
-      testLogs.forEach(log => console.log(log));
-      console.log("------------------------------------");
-    }
-  });
-
-  // ... all existing test cases remain here, unchanged ...
   test("should load an audio file and enable playback controls", async ({
     page,
   }) => {
