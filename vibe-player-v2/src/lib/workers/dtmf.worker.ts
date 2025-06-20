@@ -193,13 +193,6 @@ self.onmessage = (event: MessageEvent) => {
       const { pcmData } = payload;
       const detectedDtmf: string[] = [];
 
-      // --- START: CORRECTED V1 PROCESSING LOGIC ---
-      let lastDetectedDtmf: string | null = null;
-      let consecutiveDtmfDetections = 0;
-      const minConsecutiveDtmf = 2; // A tone must be stable for 2 blocks to be registered
-      // --- END: CORRECTED V1 PROCESSING LOGIC ---
-
-      // Ported processing loop from V1's app.js (simplified for DTMF only)
       for (
         let i = 0;
         i + DTMF_BLOCK_SIZE <= pcmData.length;
@@ -209,25 +202,10 @@ self.onmessage = (event: MessageEvent) => {
         const timestamp = i / DTMF_SAMPLE_RATE;
         const tone = dtmfParser.processAudioBlock(audioBlock, timestamp);
 
-        // --- START: CORRECTED V1 CONFIRMATION LOGIC ---
-        if (tone) {
-          if (tone === lastDetectedDtmf) {
-            consecutiveDtmfDetections++;
-          } else {
-            lastDetectedDtmf = tone;
-            consecutiveDtmfDetections = 1;
-          }
-
-          if (
-            consecutiveDtmfDetections === minConsecutiveDtmf &&
-            (detectedDtmf.length === 0 ||
-              detectedDtmf[detectedDtmf.length - 1] !== tone)
-          ) {
-            detectedDtmf.push(tone);
-          }
-        } else {
-          lastDetectedDtmf = null;
-          consecutiveDtmfDetections = 0;
+        // If a tone is detected and it's not the same as the last one we added,
+        // push it to the results. This handles debouncing perfectly for batch processing.
+        if (tone && detectedDtmf[detectedDtmf.length - 1] !== tone) {
+          detectedDtmf.push(tone);
         }
       }
 
