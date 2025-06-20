@@ -1,156 +1,183 @@
 // vibe-player-v2.3/src/lib/services/AudioOrchestrator.service.ts
-import { get } from "svelte/store";
-import { playerStore } from "$lib/stores/player.store";
-import { statusStore } from "$lib/stores/status.store";
-import type { StatusState } from "$lib/types/status.types"; // Added this import
-import { analysisStore } from "$lib/stores/analysis.store";
-import audioEngine from "./audioEngine.service"; // Changed to default import
-import dtmfService from "./dtmf.service"; // Changed to default import
-import spectrogramService from "./spectrogram.service"; // Changed to default import
-import { debounce } from "$lib/utils/async";
-import { updateUrlWithParams } from "$lib/utils/urlState";
-import { UI_CONSTANTS, URL_HASH_KEYS } from "$lib/utils/constants";
+import { get } from 'svelte/store';
+import { playerStore } from '$lib/stores/player.store';
+import { timeStore } from '$lib/stores/time.store'; // NEW
+import { statusStore } from '$lib/stores/status.store';
+import { analysisStore } from '$lib/stores/analysis.store';
+import audioEngine from './audioEngine.service';
+import dtmfService from './dtmf.service';
+import spectrogramService from './spectrogram.service';
+import { debounce } from '$lib/utils/async';
+import { updateUrlWithParams } from '$lib/utils/urlState';
+import { UI_CONSTANTS, URL_HASH_KEYS } from '$lib/utils/constants';
 
 export class AudioOrchestrator {
-  private static instance: AudioOrchestrator;
+    private static instance: AudioOrchestrator;
+    private isBusy = false; // Prevents re-entrancy
 
-  private constructor() {
-    // Private constructor for singleton
-  }
+    private constructor() { }
 
-  public static getInstance(): AudioOrchestrator {
-    if (!AudioOrchestrator.instance) {
-      AudioOrchestrator.instance = new AudioOrchestrator();
-    }
-    return AudioOrchestrator.instance;
-  }
-
-  public async loadFileAndAnalyze(file: File): Promise<void> {
-    console.log(`[Orchestrator] === Starting New File Load: ${file.name} ===`);
-    statusStore.set({
-      message: `Loading ${file.name}...`,
-      type: "info",
-      isLoading: true,
-      details: null,
-      progress: null,
-    });
-    // Ensure other relevant stores are reset if that's current behavior (e.g., analysisStore, waveformStore)
-    playerStore.update((s) => ({
-      ...s,
-      error: null,
-      status: "Loading",
-      isPlayable: false,
-      fileName: file.name,
-      duration: 0,
-      currentTime: 0,
-    })); // Added fileName and reset duration/currentTime
-    analysisStore.update((store) => ({
-      ...store,
-      dtmfResults: [],
-      spectrogramData: null,
-    }));
-
-    try {
-      await audioEngine.unlockAudio();
-      const audioBuffer = await audioEngine.loadFile(file);
-      // audioEngine.decodeAudioData() is usually part of loadFile or handled by the browser's AudioContext directly
-
-      const duration = audioBuffer.duration;
-      const sampleRate = audioBuffer.sampleRate;
-      const channels = audioBuffer.numberOfChannels; // Assuming this property exists
-
-      // --- ADD THIS BLOCK to initialize the playback engine's worker ---
-      console.log("[Orchestrator] Initializing Audio Engine Worker...");
-      await audioEngine.initializeWorker(audioBuffer);
-      console.log("[Orchestrator] Audio Engine Worker initialized.");
-      // --- END OF ADDED BLOCK ---
-      playerStore.update((s) => ({
-        ...s,
-        duration,
-        sampleRate,
-        channels, // Added channels
-        isPlayable: true,
-        status: "Ready", // Updated status here
-      }));
-      statusStore.set({ message: "Ready", type: "success", isLoading: false });
-
-      spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
-      dtmfService.initialize(audioBuffer.sampleRate);
-
-      console.log("AudioOrchestrator: Starting background analysis tasks.");
-      const analysisPromises = [
-        dtmfService.process(audioBuffer),
-        spectrogramService.process(audioBuffer.getChannelData(0)),
-      ];
-
-      const results = await Promise.allSettled(analysisPromises);
-      console.log(
-        "AudioOrchestrator: All background analysis tasks settled.",
-        results,
-      );
-
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          console.error(
-            `AudioOrchestrator: Analysis task ${index} failed:`,
-            result.reason,
-          );
-          // Optionally, update a specific error state in analysisStore or playerStore
+    public static getInstance(): AudioOrchestrator {
+        if (!AudioOrchestrator.instance) {
+            AudioOrchestrator.instance = new AudioOrchestrator();
         }
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[Orchestrator] !!! CRITICAL ERROR during file load:`,
-        error,
-      );
-      statusStore.set({
-        message: "File processing failed.",
-        type: "error",
-        isLoading: false,
-        details: message,
-      });
-      // Update playerStore to reflect the error state specifically for the player
-      playerStore.update((s) => ({
-        ...s,
-        status: "Error",
-        error: message,
-        isPlayable: false,
-        duration: 0,
-        currentTime: 0,
-      }));
+        return AudioOrchestrator.instance;
     }
-  }
 
-  /**
-   * Sets up debounced URL serialization based on player and analysis store changes.
-   * @public
-   */
-  public setupUrlSerialization(): void {
-    console.log("[Orchestrator] Setting up URL serialization.");
+    private async _processAudioBuffer(buffer: ArrayBuffer, name: string): Promise<void> {
+        statusStore.set({ message: `Decoding audio...`, type: 'info', isLoading: true });
+        const audioBuffer = await audioEngine.decodeAudioData(buffer);
 
-    const debouncedUpdater = debounce(() => {
-      const pStore = get(playerStore);
-      // const aStore = get(analysisStore); // Keep this commented out if analysisStore part is not for this step yet
+        statusStore.set({ message: `Initializing audio engine...`, type: 'info', isLoading: true });
+        await audioEngine.initializeWorker(audioBuffer);
 
-      const params: Record<string, string> = {
-        [URL_HASH_KEYS.SPEED]: pStore.speed.toFixed(2),
-        [URL_HASH_KEYS.PITCH]: pStore.pitch.toFixed(1), // Assuming pitch is semitones
-        [URL_HASH_KEYS.GAIN]: pStore.gain.toFixed(2),
-        // [URL_HASH_KEYS.VAD_THRESHOLD]: aStore.vadPositiveThreshold.toFixed(2), // Keep commented
-        // ... any other relevant params from playerStore that should be serialized
-      };
+        playerStore.update(s => ({
+            ...s,
+            duration: audioBuffer.duration,
+            sampleRate: audioBuffer.sampleRate,
+            fileName: name,
+            isPlayable: true,
+            // Reset relevant state for new file
+            audioBuffer: audioBuffer, // Store the original buffer if needed for re-processing
+            currentTime: 0,
+            error: null,
+        }));
+        timeStore.set(0); // Ensure timeStore is also reset
 
-      console.log(
-        `[Orchestrator/URL] Debounced update triggered. New params:`,
-        params,
-      );
-      updateUrlWithParams(params); // Make sure updateUrlWithParams is correctly imported/defined
-    }, UI_CONSTANTS.DEBOUNCE_TIME_MS_URL_UPDATE);
+        statusStore.set({ isLoading: false, message: 'Ready', type: 'success' });
 
-    playerStore.subscribe(debouncedUpdater);
-    // analysisStore.subscribe(debouncedUpdater); // Only subscribe if aStore is used in params
-  }
+        this._runBackgroundAnalysis(audioBuffer);
+    }
+
+    private _runBackgroundAnalysis(audioBuffer: AudioBuffer) {
+        // Ensure services are initialized before processing
+        // This might be better handled in the respective services' getInstance or a dedicated init method
+        // if they also have internal state that needs resetting.
+        dtmfService.initialize(audioBuffer.sampleRate);
+        spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate });
+
+        // Reset previous analysis results
+        analysisStore.update(s => ({
+            ...s,
+            dtmfResults: [],
+            spectrogramData: null,
+            // Reset any other analysis-specific state here
+        }));
+
+        Promise.allSettled([
+            dtmfService.process(audioBuffer),
+            spectrogramService.process(audioBuffer.getChannelData(0)), // Assuming mono for now or first channel
+        ]).then(results => {
+            results.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    console.error(`Analysis task ${index} failed:`, result.reason);
+                    // Optionally update statusStore or a dedicated analysisErrorStore
+                }
+            });
+        });
+    }
+
+    public async loadFileAndAnalyze(file: File): Promise<void> {
+        if (this.isBusy) {
+            console.warn("AudioOrchestrator is busy, skipping loadFileAndAnalyze for:", file.name);
+            return;
+        }
+        this.isBusy = true;
+
+        statusStore.set({ message: `Loading ${file.name}...`, type: 'info', isLoading: true });
+        // Reset player state more comprehensively
+        playerStore.update(s => ({
+            ...s,
+            isPlayable: false,
+            error: null,
+            fileName: file.name,
+            duration: 0,
+            // waveformData: undefined, // if this is generated per file
+            // audioBuffer: undefined, // Handled in _processAudioBuffer
+            // channels: undefined,
+            // sampleRate: undefined,
+        }));
+        analysisStore.update(s => ({ ...s, dtmfResults: [], spectrogramData: null }));
+        timeStore.set(0);
+        audioEngine.stop(); // Stop any ongoing playback before loading new file
+
+        try {
+            await audioEngine.unlockAudio(); // Ensure audio context is unlocked
+            const arrayBuffer = await file.arrayBuffer();
+            await this._processAudioBuffer(arrayBuffer, file.name);
+            this.updateUrlFromState(); // Update URL after successful load
+        } catch (e: any) {
+            console.error("Error in loadFileAndAnalyze:", e);
+            statusStore.set({ isLoading: false, message: `Failed to load file: ${e.message}`, type: 'error' });
+            playerStore.update(s => ({ ...s, error: e.message, isPlayable: false }));
+        } finally {
+            this.isBusy = false;
+        }
+    }
+
+    public updateUrlFromState = (): void => {
+        if (typeof window === 'undefined') return;
+
+        const pStore = get(playerStore);
+        // const aStore = get(analysisStore); // analysisStore changes shouldn't trigger URL updates directly
+        const tStore = get(timeStore);
+
+        const params: Record<string, string> = {};
+
+        if (pStore.fileName) params[URL_HASH_KEYS.FILE_NAME] = encodeURIComponent(pStore.fileName); // Add filename if desired
+        if (pStore.speed !== 1.0) params[URL_HASH_KEYS.SPEED] = pStore.speed.toFixed(2);
+        if (pStore.pitchShift !== 0.0) params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2);
+        if (pStore.gain !== 1.0) params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(2);
+
+        // Only include time if it's significantly different from 0, to avoid cluttering URL on initial load/stop
+        if (tStore > 0.1 && pStore.isPlayable) { // Check isPlayable to avoid adding time for a non-loaded file
+            params[URL_HASH_KEYS.TIME] = tStore.toFixed(2);
+        }
+
+
+        // Example for analysis params if needed in future:
+        // if (aStore.someAnalysisParam) params['analysis_param'] = aStore.someAnalysisParam;
+
+        updateUrlWithParams(params);
+    };
+
+    public setupUrlSerialization(): void {
+        if (typeof window === 'undefined') return;
+
+        const debouncedUpdater = debounce(this.updateUrlFromState, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
+
+        // Subscribe to stores that should trigger URL updates
+        playerStore.subscribe(state => {
+            // Call updater only for relevant state changes to avoid unnecessary updates
+            // e.g. isPlaying, isPlayable, error, fileName, duration, speed, pitch, gain
+            // This is a common pattern, or can use a more sophisticated derived store if needed.
+            debouncedUpdater();
+        });
+
+        // timeStore changes are handled by explicit calls in audioEngine.seek() and potentially play/pause
+        // However, if we want live URL updates during playback (e.g. every few seconds), we might subscribe here too,
+        // but that's generally not desired due to excessive history entries.
+        // The current approach of updating on seek/load is usually sufficient.
+
+        // analysisStore changes typically do not update the URL unless explicitly desired.
+        // analysisStore.subscribe(debouncedUpdater);
+    }
+
+    /**
+     * Handles errors reported by other services (e.g., AudioEngine worker).
+     * @param error The error object.
+     */
+    public handleError(error: Error): void {
+        console.error("[AudioOrchestrator] Handling error:", error);
+        statusStore.set({
+            message: `Error: ${error.message}`,
+            type: 'error',
+            isLoading: false,
+        });
+        playerStore.update(s => ({ ...s, error: error.message, isPlaying: false, isPlayable: false }));
+        // Potentially stop audio engine as well
+        audioEngine.stop();
+    }
 }
 
-export const audioOrchestrator = AudioOrchestrator.getInstance();
+export default AudioOrchestrator.getInstance();

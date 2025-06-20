@@ -1,11 +1,9 @@
 // vibe-player-v2.3/src/lib/stores/player.store.ts
-import { writable } from "svelte/store";
-import type { PlayerState } from "$lib/types/player.types";
-// import { updateUrlWithParams } from "../utils/urlState"; // No longer used in this file
-// import { debounce } from "../utils/async"; // No longer used in this file
+import { writable } from 'svelte/store';
+import type { PlayerState } from '$lib/types/player.types';
 
 const initialState: PlayerState = {
-  status: "idle",
+  status: 'idle',
   fileName: null,
   duration: 0,
   currentTime: 0,
@@ -26,5 +24,4 @@ const initialState: PlayerState = {
 export const playerStore = writable<PlayerState>(initialState);
 
 // Self-subscription logic for URL serialization has been removed.
-// This responsibility is now handled by AudioOrchestrator.service.ts,
-// which listens to this store (and others) to update URL parameters.
+// This responsibility is now handled by AudioOrchestrator.service.ts.

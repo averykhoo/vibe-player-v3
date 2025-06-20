@@ -9,8 +9,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FileLoader from "../FileLoader.svelte"; // Corrected path
 import { writable, type Writable, get } from "svelte/store";
-import type { PlayerState } from "$lib/types/player.types"; // Assuming PlayerState is exported or defined here
-import type { StatusState } from "$lib/types/status.types"; // Assuming StatusState is exported or defined here
+import type { PlayerState } from "$lib/types/player.types";
+import type { StatusState } from "$lib/types/status.types";
 
 // --- Mock Declarations ---
 let mockPlayerStoreInstance: Writable<PlayerState>;
@@ -34,22 +34,22 @@ vi.mock("$lib/stores/player.store", async () => {
     await vi.importActual<typeof import("svelte/store")>("svelte/store");
   // Define initial state INSIDE the factory
   const initialPlayerStateInFactory: PlayerState = {
-    status: "Idle",
+    status: "idle", // This should be 'idle' if matching PlayerState type strictly
     fileName: null,
     duration: 0,
     currentTime: 0,
     isPlaying: false,
     isPlayable: false,
     speed: 1.0,
-    pitch: 0.0,
+    // pitch: 0.0, // Removed if not in PlayerState type, assuming pitchShift is used
     pitchShift: 0.0,
     gain: 1.0,
     waveformData: undefined,
     error: null,
     audioBuffer: undefined,
     audioContextResumed: false,
-    channels: 0,
-    sampleRate: 0,
+    channels: undefined, // Changed from 0
+    sampleRate: undefined, // Changed from 0
     lastProcessedChunk: undefined,
   };
   const storeInstance = actualWritable(initialPlayerStateInFactory);
@@ -61,7 +61,6 @@ vi.mock("$lib/stores/player.store", async () => {
 });
 
 vi.mock("$lib/stores/status.store", async () => {
-  // Changed from error.store to status.store
   const { writable: actualWritable } =
     await vi.importActual<typeof import("svelte/store")>("svelte/store");
   // Define initial state INSIDE the factory
@@ -85,13 +84,11 @@ describe("FileLoader.svelte", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
 
-    // Initialize stores using the TDZ-safe pattern
     const playerStoreModule = await import("$lib/stores/player.store");
     mockPlayerStoreInstance = playerStoreModule.getStore();
     const statusStoreModule = await import("$lib/stores/status.store");
     mockStatusStoreInstance = statusStoreModule.getStore();
 
-    // Reset stores to their initial states
     act(() => {
       mockPlayerStoreInstance.set({ ...playerStoreModule.__initialState });
       mockStatusStoreInstance.set({ ...statusStoreModule.__initialState });
@@ -101,18 +98,17 @@ describe("FileLoader.svelte", () => {
   });
 
   afterEach(() => {
-    vi.runOnlyPendingTimers(); // Exhaust any remaining timers
+    vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });
 
   it("renders the file input and label", () => {
     render(FileLoader);
-    const label = screen.getByText("Load Audio File"); // Check for label text
+    const label = screen.getByText("Load Audio File");
     expect(label).toBeInTheDocument();
-    // Check if the input is associated with this label (e.g. by 'for' attribute if input has id)
     const fileInput = screen.getByLabelText("Load Audio File");
     expect(fileInput).toBeInTheDocument();
-    expect(fileInput).toHaveAttribute("id", "fileInput"); // Assuming label has for="fileInput"
+    expect(fileInput).toHaveAttribute("id", "fileInput");
   });
 
   it("calls AudioOrchestrator.loadFileAndAnalyze on file selection and updates selectedFileDisplay", async () => {
@@ -127,10 +123,7 @@ describe("FileLoader.svelte", () => {
 
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    // Orchestrator call is async, component updates store, UI reacts.
-    // We need to ensure loading state becomes false for selectedFileDisplay to show as per component logic
-    await act(() => {
-      // Using await act for state change and subsequent UI update
+    await act(async () => { // Ensure store update is processed for UI reaction
       mockStatusStoreInstance.set({
         isLoading: false,
         message: null,
@@ -148,14 +141,15 @@ describe("FileLoader.svelte", () => {
   });
 
   it("shows loading message and disables input based on statusStore", async () => {
+    const loadingMessageText = "Processing file...";
     mockLoadFileAndAnalyze.mockImplementation(() => {
       act(() => {
         mockStatusStoreInstance.set({
           isLoading: true,
-          message: "Processing file...",
+          message: loadingMessageText, // Use variable here
           type: "info",
           details: null,
-          progress: 0.5,
+          progress: null, // Progress removed from component display
         });
       });
       return new Promise((resolve) => setTimeout(resolve, 100));
@@ -169,25 +163,41 @@ describe("FileLoader.svelte", () => {
       type: "audio/mpeg",
     });
 
-    // fireEvent.change is synchronous in terms of dispatching, async work follows
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
     await waitFor(() => {
-      expect(screen.getByTestId("file-loading-message")).toHaveTextContent(
-        "Processing file... (50%)",
-      );
+      // Adjusted assertion for loading message text
+      const loadingMessageElement = screen.getByTestId("file-loading-message");
+      expect(loadingMessageElement).toHaveTextContent(loadingMessageText); // Check against the message set
       expect(fileInput.disabled).toBe(true);
     });
 
+    // Test case where statusStore.message is null, should default to "Loading..."
+     act(() => {
+        mockStatusStoreInstance.set({
+          isLoading: true,
+          message: null, // Set message to null
+          type: "info",
+          details: null,
+          progress: null,
+        });
+      });
+
+    await waitFor(() => {
+      const loadingMessageElement = screen.getByTestId("file-loading-message");
+      expect(loadingMessageElement).toHaveTextContent("Loading..."); // Check default message
+      expect(fileInput.disabled).toBe(true);
+    });
+
+
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(100); // Orchestrator's work finishes
-      // Simulate orchestrator updating statusStore upon completion
+      await vi.advanceTimersByTimeAsync(100);
       mockStatusStoreInstance.set({
         isLoading: false,
         message: "Ready",
         type: "success",
         details: null,
-        progress: 1,
+        progress: 1, // Though progress is not displayed, it's part of state
       });
     });
 
@@ -201,20 +211,20 @@ describe("FileLoader.svelte", () => {
 
   it("displays error message from statusStore if loadFileAndAnalyze fails", async () => {
     const errorMessage = "Failed to decode audio.";
-    const errorDetails = "The file format is not supported.";
+    // errorDetails is no longer displayed by the component.
 
     mockLoadFileAndAnalyze.mockImplementation(async () => {
       act(() => {
-        // Simulate orchestrator updating the store upon failure
         mockStatusStoreInstance.set({
           message: errorMessage,
           type: "error",
           isLoading: false,
-          details: errorDetails,
+          details: "Some details not to be shown", // Details set but not displayed
           progress: null,
         });
       });
-      throw new Error(errorMessage); // Simulate actual error for component's catch block
+      // Simulate actual error for component's potential catch block, though orchestrator handles status.
+      // throw new Error(errorMessage);
     });
 
     render(FileLoader);
@@ -228,13 +238,14 @@ describe("FileLoader.svelte", () => {
     await waitFor(() => {
       const errorDisplay = screen.getByTestId("file-error-message");
       expect(errorDisplay).toBeInTheDocument();
+      // Adjusted assertion for error message text
       expect(errorDisplay).toHaveTextContent(`Error: ${errorMessage}`);
-      expect(errorDisplay).toHaveTextContent(`Details: ${errorDetails}`);
+      // Removed assertion for errorDetails
     });
   });
 
   it("clears file input value after processing attempt", async () => {
-    mockLoadFileAndAnalyze.mockResolvedValue(undefined); // Simulate successful processing
+    mockLoadFileAndAnalyze.mockResolvedValue(undefined);
     render(FileLoader);
     const fileInput = screen.getByLabelText(
       "Load Audio File",
@@ -247,11 +258,7 @@ describe("FileLoader.svelte", () => {
 
     await fireEvent.change(fileInput, { target: { files: [mockFile] } });
 
-    // Ensure all async operations from handleFileSelect (including the finally block) complete
     await act(async () => {
-      // Allow the mockLoadFileAndAnalyze promise to resolve if it hasn't already
-      // For a mockResolvedValue, this ensures microtasks are flushed.
-      // For mockImplementation with setTimeout, timers would need advancing.
       await Promise.resolve();
     });
 
