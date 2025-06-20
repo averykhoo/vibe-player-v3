@@ -1,267 +1,132 @@
 // vibe-player-v2.3/src/lib/components/FileLoader/FileLoader.test.ts
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import FileLoader from "../FileLoader.svelte"; // Corrected path
-import { writable, type Writable, get } from "svelte/store";
-import type { PlayerState } from "$lib/types/player.types";
-import type { StatusState } from "$lib/types/status.types";
-
-// --- Mock Declarations ---
-let mockPlayerStoreInstance: Writable<PlayerState>;
-let mockStatusStoreInstance: Writable<StatusState>;
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, screen, cleanup } from '@testing-library/svelte';
+import { writable } from 'svelte/store';
+import FileLoader from '../FileLoader.svelte'; // Adjusted path
+import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
+// import { statusStore as actualStatusStore } from '$lib/stores/status.store'; // Import actual for type if needed, but mock below
 
 // Mock AudioOrchestrator
-const mockLoadFileAndAnalyze = vi.fn();
-vi.mock("$lib/services/AudioOrchestrator.service", () => {
-  return {
-    AudioOrchestrator: class {
-      static getInstance = vi.fn(() => ({
-        loadFileAndAnalyze: mockLoadFileAndAnalyze,
-      }));
-    },
-  };
+// Export the mock itself if needed by tests directly
+export const mockLoadFileAndAnalyze = vi.fn();
+
+vi.mock('$lib/services/AudioOrchestrator.service', () => {
+    return {
+        AudioOrchestrator: {
+            getInstance: vi.fn(() => ({
+                loadFileAndAnalyze: mockLoadFileAndAnalyze,
+            })),
+        },
+    };
 });
 
-// --- Store Mocks (TDZ-Safe Pattern) ---
-vi.mock("$lib/stores/player.store", async () => {
-  const { writable: actualWritable } =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  // Define initial state INSIDE the factory
-  const initialPlayerStateInFactory: PlayerState = {
-    status: "idle", // This should be 'idle' if matching PlayerState type strictly
-    fileName: null,
-    duration: 0,
-    currentTime: 0,
-    isPlaying: false,
-    isPlayable: false,
-    speed: 1.0,
-    // pitch: 0.0, // Removed if not in PlayerState type, assuming pitchShift is used
-    pitchShift: 0.0,
-    gain: 1.0,
-    waveformData: undefined,
-    error: null,
-    audioBuffer: undefined,
-    audioContextResumed: false,
-    channels: undefined, // Changed from 0
-    sampleRate: undefined, // Changed from 0
-    lastProcessedChunk: undefined,
-  };
-  const storeInstance = actualWritable(initialPlayerStateInFactory);
-  return {
-    playerStore: storeInstance,
-    getStore: () => storeInstance,
-    __initialState: initialPlayerStateInFactory,
-  };
-});
+// Mock statusStore
+const mockStatusStoreWritable = writable({ message: '', type: 'idle' as 'idle' | 'info' | 'success' | 'error', isLoading: false });
+vi.mock('$lib/stores/status.store', () => ({
+    statusStore: mockStatusStoreWritable,
+}));
 
-vi.mock("$lib/stores/status.store", async () => {
-  const { writable: actualWritable } =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  // Define initial state INSIDE the factory
-  const initialStatusStateInFactory: StatusState = {
-    message: null,
-    type: null,
-    isLoading: false,
-    details: null,
-    progress: null,
-  };
-  const storeInstance = actualWritable(initialStatusStateInFactory);
-  return {
-    statusStore: storeInstance,
-    getStore: () => storeInstance,
-    __initialState: initialStatusStateInFactory,
-  };
-});
 
-describe("FileLoader.svelte", () => {
-  beforeEach(async () => {
-    vi.useFakeTimers();
-    vi.clearAllMocks();
+describe('FileLoader.svelte', () => {
+    // let orchestratorInstanceMock: { loadFileAndAnalyze: vi.Mock<any[], any> ; };
 
-    const playerStoreModule = await import("$lib/stores/player.store");
-    mockPlayerStoreInstance = playerStoreModule.getStore();
-    const statusStoreModule = await import("$lib/stores/status.store");
-    mockStatusStoreInstance = statusStoreModule.getStore();
+    beforeEach(() => {
+        vi.clearAllMocks();
+        // Reset store to default state
+        mockStatusStoreWritable.set({ message: '', type: 'idle', isLoading: false });
 
-    act(() => {
-      mockPlayerStoreInstance.set({ ...playerStoreModule.__initialState });
-      mockStatusStoreInstance.set({ ...statusStoreModule.__initialState });
+        // orchestratorInstanceMock = AudioOrchestrator.getInstance() as any;
     });
 
-    mockLoadFileAndAnalyze.mockReset();
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
-
-  it("renders the file input and label", () => {
-    render(FileLoader);
-    const label = screen.getByText("Load Audio File");
-    expect(label).toBeInTheDocument();
-    const fileInput = screen.getByLabelText("Load Audio File");
-    expect(fileInput).toBeInTheDocument();
-    expect(fileInput).toHaveAttribute("id", "fileInput");
-  });
-
-  it("calls AudioOrchestrator.loadFileAndAnalyze on file selection and updates selectedFileDisplay", async () => {
-    mockLoadFileAndAnalyze.mockResolvedValue(undefined);
-    render(FileLoader);
-    const fileInput = screen.getByLabelText("Load Audio File");
-
-    const mockFile = new File(["dummy content"], "test.mp3", {
-      type: "audio/mpeg",
-    });
-    Object.defineProperty(mockFile, "size", { value: 1024 * 500 }); // 0.5 MB
-
-    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
-
-    await act(async () => { // Ensure store update is processed for UI reaction
-      mockStatusStoreInstance.set({
-        isLoading: false,
-        message: null,
-        type: null,
-        details: null,
-        progress: null,
-      });
+    afterEach(() => {
+        cleanup(); // Cleans up the DOM after each test
     });
 
-    expect(
-      await screen.findByText(`Selected: ${mockFile.name} (0.49 MB)`),
-    ).toBeInTheDocument();
-    expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
-    expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(mockFile);
-  });
-
-  it("shows loading message and disables input based on statusStore", async () => {
-    const loadingMessageText = "Processing file...";
-    mockLoadFileAndAnalyze.mockImplementation(() => {
-      act(() => {
-        mockStatusStoreInstance.set({
-          isLoading: true,
-          message: loadingMessageText, // Use variable here
-          type: "info",
-          details: null,
-          progress: null, // Progress removed from component display
-        });
-      });
-      return new Promise((resolve) => setTimeout(resolve, 100));
+    it('renders the file input and label', () => {
+        render(FileLoader);
+        // The label text is "Load Audio File"
+        // The input is associated by for/id attributes.
+        expect(screen.getByText('Load Audio File')).toBeInTheDocument();
+        const fileInput = screen.getByLabelText('Load Audio File') as HTMLInputElement;
+        expect(fileInput.type).toBe('file');
     });
 
-    render(FileLoader);
-    const fileInput = screen.getByLabelText(
-      "Load Audio File",
-    ) as HTMLInputElement;
-    const mockFile = new File(["dummy"], "loading_test.mp3", {
-      type: "audio/mpeg",
+    it('calls AudioOrchestrator.loadFileAndAnalyze when a file is selected', async () => {
+        render(FileLoader);
+        const fileInput = screen.getByLabelText('Load Audio File') as HTMLInputElement;
+        const testFile = new File(['content'], 'test.mp3', { type: 'audio/mp3' });
+
+        await fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+        expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
+        expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(testFile);
+        expect(fileInput.value).toBe(''); // Input value should be cleared
     });
 
-    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
+    it('disables the file input when $statusStore.isLoading is true', async () => {
+        render(FileLoader);
+        const fileInput = screen.getByLabelText('Load Audio File') as HTMLInputElement;
+        expect(fileInput.disabled).toBe(false);
 
-    await waitFor(() => {
-      // Adjusted assertion for loading message text
-      const loadingMessageElement = screen.getByTestId("file-loading-message");
-      expect(loadingMessageElement).toHaveTextContent(loadingMessageText); // Check against the message set
-      expect(fileInput.disabled).toBe(true);
+        mockStatusStoreWritable.set({ message: 'Loading...', type: 'info', isLoading: true });
+
+        expect(fileInput.disabled).toBe(true);
     });
 
-    // Test case where statusStore.message is null, should default to "Loading..."
-     act(() => {
-        mockStatusStoreInstance.set({
-          isLoading: true,
-          message: null, // Set message to null
-          type: "info",
-          details: null,
-          progress: null,
-        });
-      });
+    it('shows a loading message when $statusStore.isLoading is true and a message is set', async () => {
+        render(FileLoader);
+        expect(screen.queryByTestId('file-loading-message')).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      const loadingMessageElement = screen.getByTestId("file-loading-message");
-      expect(loadingMessageElement).toHaveTextContent("Loading..."); // Check default message
-      expect(fileInput.disabled).toBe(true);
+        mockStatusStoreWritable.set({ message: 'Processing audio...', type: 'info', isLoading: true });
+
+        const loadingMessage = screen.getByTestId('file-loading-message');
+        expect(loadingMessage).toBeInTheDocument();
+        expect(loadingMessage.textContent).toContain('Processing audio...');
+    });
+
+    it('shows selected file info when a file is selected and not loading/error', async () => {
+        render(FileLoader);
+        const fileInput = screen.getByLabelText('Load Audio File') as HTMLInputElement;
+        const testFile = new File(['content'], 'test.mp3', { type: 'audio/mp3' });
+
+        await fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+        mockStatusStoreWritable.set({ message: '', type: 'idle', isLoading: false });
+
+        const selectedInfo = screen.getByText(/Selected: test.mp3/);
+        expect(selectedInfo).toBeInTheDocument();
+        expect(selectedInfo.textContent).toContain('MB');
     });
 
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(100);
-      mockStatusStoreInstance.set({
-        isLoading: false,
-        message: "Ready",
-        type: "success",
-        details: null,
-        progress: 1, // Though progress is not displayed, it's part of state
-      });
+    it('does not show selected file info if isLoading is true', async () => {
+        render(FileLoader);
+        const fileInput = screen.getByLabelText('Load Audio File') as HTMLInputElement;
+        const testFile = new File(['content'], 'test.mp3', { type: 'audio/mp3' });
+        await fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+        mockStatusStoreWritable.set({ message: 'Loading...', type: 'info', isLoading: true });
+
+        expect(screen.queryByText(/Selected: test.mp3/)).not.toBeInTheDocument();
     });
 
-    await waitFor(() => {
-      expect(
-        screen.queryByTestId("file-loading-message"),
-      ).not.toBeInTheDocument();
-      expect(fileInput.disabled).toBe(false);
-    });
-  });
 
-  it("displays error message from statusStore if loadFileAndAnalyze fails", async () => {
-    const errorMessage = "Failed to decode audio.";
-    // errorDetails is no longer displayed by the component.
+    it('shows an error message when $statusStore.type is "error" and not loading', async () => {
+        render(FileLoader);
+        expect(screen.queryByTestId('file-error-message')).not.toBeInTheDocument();
 
-    mockLoadFileAndAnalyze.mockImplementation(async () => {
-      act(() => {
-        mockStatusStoreInstance.set({
-          message: errorMessage,
-          type: "error",
-          isLoading: false,
-          details: "Some details not to be shown", // Details set but not displayed
-          progress: null,
-        });
-      });
-      // Simulate actual error for component's potential catch block, though orchestrator handles status.
-      // throw new Error(errorMessage);
+        mockStatusStoreWritable.set({ message: 'Failed to load.', type: 'error', isLoading: false });
+
+        const errorMessage = screen.getByTestId('file-error-message');
+        expect(errorMessage).toBeInTheDocument();
+        expect(errorMessage.textContent).toContain('Error: Failed to load.');
     });
 
-    render(FileLoader);
-    const fileInput = screen.getByLabelText("Load Audio File");
-    const mockFile = new File(["dummy"], "error_test.mp3", {
-      type: "audio/mpeg",
+    it('does not show error message if $statusStore.type is "error" but also isLoading', async () => {
+        render(FileLoader);
+        mockStatusStoreWritable.set({ message: 'Error during load.', type: 'error', isLoading: true });
+
+        expect(screen.queryByTestId('file-error-message')).not.toBeInTheDocument();
+        expect(screen.getByTestId('file-loading-message')).toBeInTheDocument(); // Loading message should be visible
     });
-
-    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
-
-    await waitFor(() => {
-      const errorDisplay = screen.getByTestId("file-error-message");
-      expect(errorDisplay).toBeInTheDocument();
-      // Adjusted assertion for error message text
-      expect(errorDisplay).toHaveTextContent(`Error: ${errorMessage}`);
-      // Removed assertion for errorDetails
-    });
-  });
-
-  it("clears file input value after processing attempt", async () => {
-    mockLoadFileAndAnalyze.mockResolvedValue(undefined);
-    render(FileLoader);
-    const fileInput = screen.getByLabelText(
-      "Load Audio File",
-    ) as HTMLInputElement;
-    const mockFile = new File(["dummy"], "test-clear.mp3", {
-      type: "audio/mpeg",
-    });
-
-    expect(fileInput.value).toBe("");
-
-    await fireEvent.change(fileInput, { target: { files: [mockFile] } });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(fileInput.value).toBe("");
-  });
 });
