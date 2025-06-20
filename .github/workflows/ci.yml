@@ -22,22 +22,22 @@ jobs:
         with:
           node-version: '18.x'
           cache: 'npm'
-          cache-dependency-path: 'vibe-player-v2/package-lock.json'
+          cache-dependency-path: 'vibe-player-v2.3/package-lock.json'
 
       - name: Install V2 dependencies
-        working-directory: ./vibe-player-v2
+        working-directory: ./vibe-player-v2.3
         run: npm ci
 
       - name: Lint V2
-        working-directory: ./vibe-player-v2
+        working-directory: ./vibe-player-v2.3
         run: npm run lint
 
       - name: Run V2 unit and component tests
-        working-directory: ./vibe-player-v2
+        working-directory: ./vibe-player-v2.3
         run: npm run test:unit
 
       - name: Build Vibe Player V2
-        working-directory: ./vibe-player-v2
+        working-directory: ./vibe-player-v2.3
         run: npm run build
 
       - name: Restore Playwright cache
@@ -45,11 +45,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /home/runner/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2/package-lock.json') }}
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
 
       - name: Install Playwright and OS dependencies
         if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
-        working-directory: ./vibe-player-v2
+        working-directory: ./vibe-player-v2.3
         run: npx playwright install --with-deps
 
       - name: Save Playwright cache
@@ -61,7 +61,7 @@ jobs:
           path: /home/runner/.cache/ms-playwright
 
       - name: Run Playwright E2E tests
-        working-directory: ./vibe-player-v2
+        working-directory: ./vibe-player-v2.3
         run: npx playwright test
 
       - name: Upload Playwright report
