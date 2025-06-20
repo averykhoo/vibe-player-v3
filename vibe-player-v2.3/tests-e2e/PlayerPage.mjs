@@ -37,7 +37,7 @@ export class PlayerPage {
    */
   async goto() {
     await this.page.goto(this.devServerUrl);
-    await expect(this.appBarTitle).toHaveText("Vibe Player V2", {
+    await expect(this.appBarTitle).toHaveText("Vibe Player V2.3", {
       timeout: 15000,
     });
     await expect(this.fileInput).toBeVisible({ timeout: 10000 });
