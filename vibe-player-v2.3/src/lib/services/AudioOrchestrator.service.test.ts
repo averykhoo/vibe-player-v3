@@ -1,443 +1,317 @@
 // vibe-player-v2.3/src/lib/services/AudioOrchestrator.service.test.ts
-import {
-  vi,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  beforeAll, // Keep beforeAll for useFakeTimers
-  type MockInstance,
-} from "vitest";
-import { get, writable, type Writable } from "svelte/store";
-import { act } from "@testing-library/svelte"; // Import act for store updates
+import { vi, describe, it, expect, beforeEach, afterEach, SpyInstance } from 'vitest';
+import { get, writable } from 'svelte/store';
+import AudioOrchestratorService from './AudioOrchestrator.service'; // Assuming default export
+import audioEngine from './audioEngine.service';
+import dtmfService from './dtmf.service';
+import spectrogramService from './spectrogram.service';
+import { playerStore } from '$lib/stores/player.store';
+import { timeStore } from '$lib/stores/time.store';
+import { statusStore } from '$lib/stores/status.store';
+import { analysisStore } from '$lib/stores/analysis.store';
+import * as urlState from '$lib/utils/urlState'; // To mock updateUrlWithParams
+import { URL_HASH_KEYS } from '$lib/utils/constants'; // Import for use in tests
 
-import { AudioOrchestrator } from "./AudioOrchestrator.service";
-import type { PlayerState } from "$lib/types/player.types"; // Corrected path if necessary
-import type { StatusState } from "$lib/types/status.types";   // Corrected path if necessary
-import type { AnalysisState } from "$lib/types/analysis.types"; // Corrected path if necessary
-import { URL_HASH_KEYS, UI_CONSTANTS } from "$lib/utils/constants"; // UI_CONSTANTS needed for debounce
-
-// --- Mocking Services ---
-// Updated audioEngine.service mock
-const mockAudioEngineService = {
-  unlockAudio: vi.fn().mockResolvedValue(undefined),
-  decodeAudioData: vi.fn(), // Changed from loadFile
-  initializeWorker: vi.fn().mockResolvedValue(undefined),
-  stop: vi.fn(), // Added
-  play: vi.fn(), // Keep other methods if they might be called indirectly or by future tests
-  pause: vi.fn(),
-  seek: vi.fn(),
-  setSpeed: vi.fn(),
-  setPitch: vi.fn(),
-  setGain: vi.fn(),
-  dispose: vi.fn(),
-  // handleError: vi.fn(), // Removed as per plan, unless orchestrator calls it on engine
-};
-vi.mock("$lib/services/audioEngine.service", () => ({
-  default: mockAudioEngineService,
+// Mock services and stores
+vi.mock('./audioEngine.service', () => ({
+    default: {
+        decodeAudioData: vi.fn(),
+        initializeWorker: vi.fn(),
+        stop: vi.fn(),
+        unlockAudio: vi.fn().mockResolvedValue(undefined), // Mock unlockAudio
+        // Add any other methods called by AudioOrchestrator if necessary
+    }
 }));
 
-const mockDtmfService = {
-  initialize: vi.fn(),
-  process: vi.fn().mockResolvedValue([]),
-  dispose: vi.fn(), // Keep dispose if used in other tests or setup
-};
-vi.mock("$lib/services/dtmf.service", () => ({ default: mockDtmfService }));
-
-const mockSpectrogramService = {
-  initialize: vi.fn(),
-  process: vi.fn().mockResolvedValue(new Float32Array()),
-  dispose: vi.fn(), // Keep dispose
-};
-vi.mock("$lib/services/spectrogram.service", () => ({ default: mockSpectrogramService }));
-
-// analysis.service mock can remain if other parts of orchestrator use it.
-// If not, it could be removed. For now, keeping it as plan didn't specify removal.
-const mockAnalysisService = {
-  processWithVAD: vi.fn().mockResolvedValue({ voicedSegments: [], noiseProfile: [], error: null }),
-  dispose: vi.fn(),
-};
-vi.mock("$lib/services/analysis.service", () => ({ default: mockAnalysisService }));
-
-// --- Mocking Stores ---
-let actualWritableSingleton: typeof import("svelte/store").writable; // To ensure same writable is used
-
-// Player Store - Updated initial state
-const initialPlayerStateInFactory: PlayerState = {
-  status: 'idle',
-  fileName: null,
-  duration: 0,
-  currentTime: 0,
-  isPlaying: false,
-  isPlayable: false,
-  speed: 1.0,
-  pitchShift: 0.0,
-  gain: 1.0,
-  waveformData: undefined,
-  error: null,
-  audioBuffer: undefined,
-  audioContextResumed: false,
-  channels: undefined,
-  sampleRate: undefined,
-  lastProcessedChunk: undefined,
-};
-let mockPlayerStoreInstance: Writable<PlayerState>;
-vi.mock("$lib/stores/player.store.ts", async () => {
-  const { writable: actualWritableImport } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  if (!actualWritableSingleton) actualWritableSingleton = actualWritableImport;
-  mockPlayerStoreInstance = actualWritableSingleton(initialPlayerStateInFactory);
-  return { playerStore: mockPlayerStoreInstance, getStore: () => mockPlayerStoreInstance, __initialState: initialPlayerStateInFactory };
-});
-
-// Status Store - Assuming initial state is fine as per existing or simple default
-const initialStatusStateInFactory: StatusState = {
-  isLoading: false,
-  message: "", // Or null as per original
-  type: "idle",  // Or null
-  progress: null,
-  details: undefined, // Or null
-};
-let mockStatusStoreInstance: Writable<StatusState>;
-vi.mock("$lib/stores/status.store.ts", async () => {
-  const { writable: actualWritableImport } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  if (!actualWritableSingleton) actualWritableSingleton = actualWritableImport;
-  mockStatusStoreInstance = actualWritableSingleton(initialStatusStateInFactory);
-  return { statusStore: mockStatusStoreInstance, getStore: () => mockStatusStoreInstance, __initialState: initialStatusStateInFactory };
-});
-
-// Analysis Store - Assuming initial state is fine
-const initialAnalysisStateInFactory: AnalysisState = {
-  dtmfResults: [],
-  spectrogramData: null,
-  // vadResults: undefined, // These were in existing file, remove if not in type
-  // vadPositiveThreshold: 0.6,
-  // vadNegativeThreshold: 0.3,
-};
-let mockAnalysisStoreInstance: Writable<AnalysisState>;
-vi.mock("$lib/stores/analysis.store.ts", async () => {
-  const { writable: actualWritableImport } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  if (!actualWritableSingleton) actualWritableSingleton = actualWritableImport;
-  mockAnalysisStoreInstance = actualWritableSingleton(initialAnalysisStateInFactory);
-  return { analysisStore: mockAnalysisStoreInstance, getStore: () => mockAnalysisStoreInstance, __initialState: initialAnalysisStateInFactory };
-});
-
-// Added time.store.ts mock
-vi.mock("$lib/stores/time.store.ts", async () => {
-  const { writable: actualWritableImport } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  if (!actualWritableSingleton) actualWritableSingleton = actualWritableImport;
-  const storeInstance = actualWritableSingleton(0);
-  return { timeStore: storeInstance, getStore: () => storeInstance, __initialState: 0 };
-});
-
-// --- Mocking Utils ---
-const mockUpdateUrlWithParams = vi.fn();
-vi.mock("$lib/utils/urlState", () => ({
-  updateUrlWithParams: mockUpdateUrlWithParams,
+vi.mock('./dtmf.service', () => ({
+    default: {
+        initialize: vi.fn(),
+        process: vi.fn().mockResolvedValue([]), // Mock process to return empty results
+    }
 }));
 
-// --- Test Suite ---
-describe("AudioOrchestrator.service.ts", () => {
-  let audioOrchestrator: AudioOrchestrator;
-  let actualMockPlayerStore: Writable<PlayerState>;
-  let actualMockStatusStore: Writable<StatusState>;
-  let actualMockAnalysisStore: Writable<AnalysisState>;
-  let actualMockTimeStore: Writable<number>; // Added
+vi.mock('./spectrogram.service', () => ({
+    default: {
+        initialize: vi.fn(),
+        process: vi.fn().mockResolvedValue(null), // Mock process
+    }
+}));
 
-  const mockFile = new File(["dummy audio data"], "test-audio.mp3", { type: "audio/mpeg" });
-  const mockArrayBuffer = new ArrayBuffer(8);
-  const mockDecodedAudioBuffer = {
-    duration: 120,
-    sampleRate: 44100,
-    numberOfChannels: 2, // Keep consistent with playerStore.channels if possible
-    getChannelData: vi.fn().mockReturnValue(new Float32Array()),
-  } as unknown as AudioBuffer;
+// Mock stores
+vi.mock('$lib/stores/player.store', () => ({
+    playerStore: writable({ /* initial player state */
+        status: 'idle', fileName: null, duration: 0, currentTime: 0, isPlaying: false,
+        isPlayable: false, speed: 1.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined,
+        error: null, audioBuffer: undefined, audioContextResumed: false, channels: undefined,
+        sampleRate: undefined, lastProcessedChunk: undefined,
+    })
+}));
+vi.mock('$lib/stores/time.store', () => ({ timeStore: writable(0) }));
+vi.mock('$lib/stores/status.store', () => ({ statusStore: writable({ message: '', type: 'idle', isLoading: false }) }));
+vi.mock('$lib/stores/analysis.store', () => ({
+    analysisStore: writable({ dtmfResults: [], spectrogramData: null })
+}));
 
-  beforeAll(() => { // Keep for useFakeTimers
-    vi.useFakeTimers();
-  });
-
-  beforeEach(async () => {
-    // Get actual store instances
-    const playerStoreModule = await import("$lib/stores/player.store.ts");
-    actualMockPlayerStore = playerStoreModule.getStore();
-    act(() => { actualMockPlayerStore.set(playerStoreModule.__initialState); });
-
-    const statusStoreModule = await import("$lib/stores/status.store.ts");
-    actualMockStatusStore = statusStoreModule.getStore();
-    act(() => { actualMockStatusStore.set(statusStoreModule.__initialState); });
-
-    const analysisStoreModule = await import("$lib/stores/analysis.store.ts");
-    actualMockAnalysisStore = analysisStoreModule.getStore();
-    act(() => { actualMockAnalysisStore.set(analysisStoreModule.__initialState); });
-
-    // Added for timeStore
-    const timeStoreModule = await import("$lib/stores/time.store.ts");
-    actualMockTimeStore = timeStoreModule.getStore();
-    act(() => { actualMockTimeStore.set(timeStoreModule.__initialState); });
-
-    vi.clearAllMocks();
-
-    // Mock specific service method implementations for general cases
-    // Removed audioEngine.loadFile mock
-    mockAudioEngineService.decodeAudioData.mockResolvedValue(mockDecodedAudioBuffer); // Default success
-    mockAudioEngineService.unlockAudio.mockResolvedValue(undefined);
-    mockAudioEngineService.initializeWorker.mockResolvedValue(undefined); // Default success
-    mockAudioEngineService.stop.mockReset(); // Reset stop mock
-
-    audioOrchestrator = AudioOrchestrator.getInstance();
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers(); // Or vi.runAllTimers();
-    vi.useRealTimers(); // Restore real timers
-    vi.resetModules();
-  });
-
-  it("should be a singleton", () => {
-    const instance1 = AudioOrchestrator.getInstance();
-    const instance2 = AudioOrchestrator.getInstance();
-    expect(instance1).toBe(instance2);
-  });
-
-  describe("loadFileAndAnalyze", () => {
-    beforeEach(() => {
-      (mockFile.arrayBuffer as vi.Mock) = vi.fn().mockResolvedValue(mockArrayBuffer);
-    });
-
-    // Refactored success test
-    it("should set loading states, decode, init worker, update stores, run analysis, call URL update, and set ready state on success", async () => {
-      const statusStoreSetSpy = vi.spyOn(actualMockStatusStore, "set");
-      // Player store is updated, not set directly for the final state.
-      const playerStoreUpdateSpy = vi.spyOn(actualMockPlayerStore, "update");
-      const timeStoreSetSpy = vi.spyOn(actualMockTimeStore, "set");
-
-
-      await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-      expect(statusStoreSetSpy).toHaveBeenCalledWith(expect.objectContaining({ message: `Loading ${mockFile.name}...`, type: "info", isLoading: true }));
-      expect(statusStoreSetSpy).toHaveBeenCalledWith(expect.objectContaining({ message: "Decoding audio...", type: "info", isLoading: true }));
-      expect(statusStoreSetSpy).toHaveBeenCalledWith(expect.objectContaining({ message: "Initializing audio engine...", type: "info", isLoading: true }));
-      expect(statusStoreSetSpy).toHaveBeenCalledWith(expect.objectContaining({ isLoading: false, message: "Ready", type: "success" }));
-
-      expect(mockAudioEngineService.stop).toHaveBeenCalledOnce();
-      expect(mockAudioEngineService.unlockAudio).toHaveBeenCalledOnce();
-      expect(mockFile.arrayBuffer).toHaveBeenCalledOnce();
-      expect(mockAudioEngineService.decodeAudioData).toHaveBeenCalledWith(mockArrayBuffer);
-      expect(mockAudioEngineService.initializeWorker).toHaveBeenCalledWith(mockDecodedAudioBuffer);
-
-      const finalPlayerState = get(actualMockPlayerStore);
-      expect(finalPlayerState.fileName).toBe(mockFile.name);
-      expect(finalPlayerState.duration).toBe(mockDecodedAudioBuffer.duration);
-      expect(finalPlayerState.sampleRate).toBe(mockDecodedAudioBuffer.sampleRate);
-      expect(finalPlayerState.isPlayable).toBe(true);
-      expect(finalPlayerState.audioBuffer).toBe(mockDecodedAudioBuffer);
-      expect(finalPlayerState.currentTime).toBe(0);
-      expect(finalPlayerState.error).toBeNull();
-      // No assertion for playerStore.status as it's not in the target PlayerState
-
-      expect(timeStoreSetSpy).toHaveBeenCalledWith(0); // Check timeStore reset
-
-      expect(mockDtmfService.initialize).toHaveBeenCalledWith(mockDecodedAudioBuffer.sampleRate);
-      expect(mockSpectrogramService.initialize).toHaveBeenCalledWith({ sampleRate: mockDecodedAudioBuffer.sampleRate });
-      expect(mockDtmfService.process).toHaveBeenCalledWith(mockDecodedAudioBuffer);
-      expect(mockSpectrogramService.process).toHaveBeenCalledWith(expect.any(Float32Array));
-
-      expect(updateUrlWithParams).toHaveBeenCalled();
-    });
-
-    // New failure test for decodeAudioData
-    it("should set error status if decodeAudioData fails", async () => {
-      const decodeError = new Error("Simulated decode error");
-      mockAudioEngineService.decodeAudioData.mockRejectedValueOnce(decodeError);
-
-      await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-      expect(get(actualMockStatusStore)).toEqual(expect.objectContaining({
-        message: `Failed to load file: ${decodeError.message}`,
-        type: 'error',
-        isLoading: false,
-      }));
-      expect(get(actualMockPlayerStore)).toEqual(expect.objectContaining({
-        error: decodeError.message,
-        isPlayable: false,
-      }));
-    });
-
-    // New failure test for initializeWorker
-    it("should set error status if initializeWorker fails", async () => {
-      const workerError = new Error("Simulated worker init error");
-      mockAudioEngineService.initializeWorker.mockRejectedValueOnce(workerError);
-
-      await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-      expect(get(actualMockStatusStore)).toEqual(expect.objectContaining({
-        message: `Failed to load file: ${workerError.message}`,
-        type: 'error',
-        isLoading: false,
-      }));
-      expect(get(actualMockPlayerStore)).toEqual(expect.objectContaining({
-        error: workerError.message,
-        isPlayable: false,
-      }));
-    });
-
-    // Keeping re-entrancy test from existing file as plan didn't say to remove
-     it("should prevent re-entrancy if already busy", async () => {
-        let releaseFirstCall: () => void;
-        const firstCallPromise = new Promise<void>(resolve => { releaseFirstCall = resolve; });
-        // Mock decodeAudioData for the re-entrancy test
-        mockAudioEngineService.decodeAudioData.mockImplementationOnce(async () => {
-            await firstCallPromise;
-            return mockDecodedAudioBuffer;
-        });
-
-        const firstLoadPromise = audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-        const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-        await audioOrchestrator.loadFileAndAnalyze(mockFile);
-
-        expect(consoleWarnSpy).toHaveBeenCalledWith(
-            "AudioOrchestrator is busy, skipping loadFileAndAnalyze for:",
-            mockFile.name
-        );
-
-        releaseFirstCall!();
-        await firstLoadPromise;
-        consoleWarnSpy.mockRestore();
-    });
-  });
-
-  describe("setupUrlSerialization", () => {
-    const initialTimeForUrlTest = 0; // Defined in describe block
-    // Updated localInitialPlayerStateForUrlTest
-    const localInitialPlayerStateForUrlTest: PlayerState = {
-      status: 'idle',
-      fileName: "test-audio.mp3",
-      duration: 120,
-      currentTime: 0, // This specific field isn't used by orchestrator for URL, timeStore is
-      isPlaying: false,
-      isPlayable: true, // Ensure isPlayable for TIME to be included
-      speed: 0.75,
-      pitchShift: -2.5,
-      gain: 1.25,
-      waveformData: undefined,
-      error: null,
-      audioBuffer: undefined,
-      audioContextResumed: true,
-      channels: undefined,
-      sampleRate: 44100,
-      lastProcessedChunk: undefined,
+// Mock utility functions
+vi.mock('$lib/utils/urlState', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        updateUrlWithParams: vi.fn(),
     };
+});
+
+
+describe('AudioOrchestratorService', () => {
+    let orchestrator: typeof AudioOrchestratorService;
+    let statusStoreSpy: SpyInstance<[unknown], void>;
+    let playerStoreSpy: SpyInstance<[unknown], void>;
+    let timeStoreSpy: SpyInstance<[number], void>;
+    let analysisStoreSpy: SpyInstance<[unknown], void>;
 
     beforeEach(() => {
-      act(() => {
-        actualMockPlayerStore.set(localInitialPlayerStateForUrlTest);
-        actualMockTimeStore.set(initialTimeForUrlTest); // Set timeStore in beforeEach
-      });
-      vi.clearAllMocks(); // Clear mocks, especially updateUrlWithParams
-    });
+        vi.clearAllMocks(); // Clear mocks before each test
 
-    it("should call updateUrlWithParams with fileName, speed, pitch, gain but not time if time is 0 and isPlayable is true", () => {
-      act(() => { actualMockTimeStore.set(0); }); // Ensure time is 0
-      audioOrchestrator.setupUrlSerialization();
-      act(() => {
-          actualMockPlayerStore.update(s => ({ ...s, speed: 0.5, isPlayable: true }));
-      });
-      vi.runAllTimers(); // Uses UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS from AudioOrchestrator
-
-      expect(updateUrlWithParams).toHaveBeenLastCalledWith({
-          [URL_HASH_KEYS.FILE_NAME]: encodeURIComponent(localInitialPlayerStateForUrlTest.fileName!),
-          [URL_HASH_KEYS.SPEED]: "0.50",
-          [URL_HASH_KEYS.PITCH]: localInitialPlayerStateForUrlTest.pitchShift.toFixed(2),
-          [URL_HASH_KEYS.GAIN]: localInitialPlayerStateForUrlTest.gain.toFixed(2),
-      });
-       const lastCallArgs = (updateUrlWithParams as vi.Mock).mock.lastCall[0];
-       expect(lastCallArgs).not.toHaveProperty(URL_HASH_KEYS.TIME);
-    });
-
-    it("should include TIME in URL if timeStore > 0.1 and player is playable", () => {
-      const testTime = 15.5;
-      act(() => { actualMockTimeStore.set(testTime); });
-      audioOrchestrator.setupUrlSerialization();
-      act(() => {
-          actualMockPlayerStore.update(s => ({ ...s, isPlayable: true }));
-      });
-      vi.runAllTimers();
-
-      expect(updateUrlWithParams).toHaveBeenLastCalledWith(
-          expect.objectContaining({
-              [URL_HASH_KEYS.FILE_NAME]: encodeURIComponent(localInitialPlayerStateForUrlTest.fileName!),
-              [URL_HASH_KEYS.TIME]: testTime.toFixed(2),
-              [URL_HASH_KEYS.SPEED]: localInitialPlayerStateForUrlTest.speed.toFixed(2),
-              [URL_HASH_KEYS.PITCH]: localInitialPlayerStateForUrlTest.pitchShift.toFixed(2),
-              [URL_HASH_KEYS.GAIN]: localInitialPlayerStateForUrlTest.gain.toFixed(2),
-          })
-      );
-    });
-
-    it("should not include TIME if player is not playable, even if timeStore > 0.1", () => {
-        act(() => {
-            actualMockTimeStore.set(15.5); // Set a time that would normally be included
-            actualMockPlayerStore.update(s => ({ ...s, isPlayable: false })); // Make player not playable
+        // Reset stores to initial-like states if needed, or ensure mocks handle it
+        playerStore.set({
+            status: 'idle', fileName: null, duration: 0, currentTime: 0, isPlaying: false,
+            isPlayable: false, speed: 1.0, pitchShift: 0.0, gain: 1.0, waveformData: undefined,
+            error: null, audioBuffer: undefined, audioContextResumed: false, channels: undefined,
+            sampleRate: undefined, lastProcessedChunk: undefined,
         });
-        audioOrchestrator.setupUrlSerialization();
-        act(() => {
-            actualMockPlayerStore.update(s => ({ ...s, speed: 0.9 })); // Trigger an update
-        });
-        vi.runAllTimers();
+        timeStore.set(0);
+        statusStore.set({ message: '', type: 'idle', isLoading: false });
+        analysisStore.set({ dtmfResults: [], spectrogramData: null });
 
-        const lastCallArgs = (updateUrlWithParams as vi.Mock).mock.lastCall[0];
-        expect(lastCallArgs).not.toHaveProperty(URL_HASH_KEYS.TIME);
-        expect(lastCallArgs[URL_HASH_KEYS.SPEED]).toBe("0.90"); // Ensure other params are there
+        statusStoreSpy = vi.spyOn(statusStore, 'set');
+        playerStoreSpy = vi.spyOn(playerStore, 'update');
+        timeStoreSpy = vi.spyOn(timeStore, 'set');
+        analysisStoreSpy = vi.spyOn(analysisStore, 'update');
+
+        orchestrator = AudioOrchestratorService; // Get the singleton instance
+
+        // Mock AudioEngine methods
+        (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue({ duration: 10, sampleRate: 44100, numberOfChannels: 2 });
+        (audioEngine.initializeWorker as vi.Mock).mockResolvedValue(undefined);
+        (audioEngine.stop as vi.Mock).mockResolvedValue(undefined);
     });
 
-    it("should not include optional params if they are at default values (speed 1.0, pitchShift 0.0, gain 1.0)", () => {
-        const testTime = 20.5; // A non-zero time to ensure TIME is included if playable
-        act(() => {
-            actualMockTimeStore.set(testTime);
-            actualMockPlayerStore.update(s => ({
-                ...s,
-                speed: 1.0, // Default
-                pitchShift: 0.0, // Default
-                gain: 1.0, // Default
-                isPlayable: true,
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    describe('loadFileAndAnalyze', () => {
+        const mockFile = new File([new ArrayBuffer(100)], 'test.mp3', { type: 'audio/mp3' });
+        const mockAudioBuffer = { duration: 10, sampleRate: 44100, numberOfChannels: 2, getChannelData: vi.fn(() => new Float32Array(0)) } as unknown as AudioBuffer;
+
+        it('should follow the full sequence for successful file loading and analysis', async () => {
+            (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue(mockAudioBuffer);
+
+            await orchestrator.loadFileAndAnalyze(mockFile);
+
+            // 1. audioEngine.stop is called
+            expect(audioEngine.stop).toHaveBeenCalledTimes(1);
+
+            // 2. Initial statusStore update (loading)
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                message: `Loading ${mockFile.name}...`, type: 'info', isLoading: true
             }));
-        });
-        audioOrchestrator.setupUrlSerialization();
-         act(() => {
-            actualMockPlayerStore.update(s => ({ ...s, duration: 121 })); // Trigger update
-        });
-        vi.runAllTimers();
 
-        expect(updateUrlWithParams).toHaveBeenLastCalledWith({
-            [URL_HASH_KEYS.FILE_NAME]: encodeURIComponent(localInitialPlayerStateForUrlTest.fileName!),
-            [URL_HASH_KEYS.TIME]: testTime.toFixed(2),
-            // SPEED, PITCH, GAIN should not be present
+            // 3. playerStore reset (update)
+            expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function));
+            // Check specific initial state values after reset (inside the update function)
+            // This is tricky as the update function is internal. We check the resulting state later.
+
+            // 4. analysisStore reset (update)
+            expect(analysisStoreSpy).toHaveBeenCalledWith(expect.any(Function));
+
+            // 5. timeStore reset
+            expect(timeStoreSpy).toHaveBeenCalledWith(0);
+
+            // 6. audioEngine.unlockAudio called
+            expect(audioEngine.unlockAudio).toHaveBeenCalledTimes(1);
+
+            // 7. audioEngine.decodeAudioData called
+            expect(audioEngine.decodeAudioData).toHaveBeenCalledWith(await mockFile.arrayBuffer());
+
+            // 8. statusStore update (decoding) - this is internal to _processAudioBuffer
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                message: `Decoding audio: ${mockFile.name}...`, type: 'info', isLoading: true
+            }));
+
+            // 9. audioEngine.initializeWorker called
+            expect(audioEngine.initializeWorker).toHaveBeenCalledWith(mockAudioBuffer);
+
+            // 10. statusStore update (initializing engine) - internal to _processAudioBuffer
+             expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                message: `Initializing audio engine for ${mockFile.name}...`, type: 'info', isLoading: true
+            }));
+
+            // 11. playerStore update (playable state)
+            expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function));
+            const finalPlayerState = get(playerStore);
+            expect(finalPlayerState.isPlayable).toBe(true);
+            expect(finalPlayerState.duration).toBe(mockAudioBuffer.duration);
+            expect(finalPlayerState.sampleRate).toBe(mockAudioBuffer.sampleRate);
+            expect(finalPlayerState.fileName).toBe(mockFile.name);
+            expect(finalPlayerState.audioBuffer).toBe(mockAudioBuffer);
+
+
+            // 12. timeStore set to 0 (after processing within _processAudioBuffer)
+            // This call might be redundant if the earlier reset to 0 is the one we care about.
+            // Let's ensure it's called at least once with 0 after decode.
+            expect(timeStoreSpy).toHaveBeenCalledWith(0);
+
+
+            // 13. statusStore update (ready)
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                isLoading: false, message: `Ready: ${mockFile.name}`, type: 'success'
+            }));
+
+            // 14. Background analysis initiated
+            expect(dtmfService.initialize).toHaveBeenCalledWith(mockAudioBuffer.sampleRate);
+            expect(spectrogramService.initialize).toHaveBeenCalledWith({ sampleRate: mockAudioBuffer.sampleRate });
+            expect(dtmfService.process).toHaveBeenCalledWith(mockAudioBuffer);
+            expect(spectrogramService.process).toHaveBeenCalledWith(mockAudioBuffer.getChannelData(0));
+
+            // 15. URL update
+            expect(urlState.updateUrlWithParams).toHaveBeenCalled();
         });
-        const lastCallArgs = (updateUrlWithParams as vi.Mock).mock.lastCall[0];
-        expect(lastCallArgs).not.toHaveProperty(URL_HASH_KEYS.SPEED);
-        expect(lastCallArgs).not.toHaveProperty(URL_HASH_KEYS.PITCH);
-        expect(lastCallArgs).not.toHaveProperty(URL_HASH_KEYS.GAIN);
+
+        it('should handle error during decodeAudioData', async () => {
+            const decodeError = new Error('Decode failed');
+            (audioEngine.decodeAudioData as vi.Mock).mockRejectedValue(decodeError);
+
+            await orchestrator.loadFileAndAnalyze(mockFile);
+
+            expect(audioEngine.stop).toHaveBeenCalledTimes(1);
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'info', isLoading: true, message: `Loading ${mockFile.name}...`})); // Initial
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'info', isLoading: true, message: `Decoding audio: ${mockFile.name}...`})); // Decoding attempt
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                message: `Error: Failed to decode audio: ${decodeError.message}`, type: 'error', isLoading: false
+            }));
+            const finalPlayerState = get(playerStore);
+            expect(finalPlayerState.isPlayable).toBe(false);
+            expect(finalPlayerState.error).toBe(`Failed to decode audio: ${decodeError.message}`);
+            expect(finalPlayerState.status).toBe('error');
+        });
+
+        it('should handle error during initializeWorker', async () => {
+            const workerError = new Error('Worker init failed');
+            (audioEngine.initializeWorker as vi.Mock).mockRejectedValue(workerError);
+             (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue(mockAudioBuffer);
+
+
+            await orchestrator.loadFileAndAnalyze(mockFile);
+
+            expect(audioEngine.stop).toHaveBeenCalledTimes(1);
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'info', isLoading: true, message: `Initializing audio engine for ${mockFile.name}...`}));
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                message: `Error: Failed to initialize audio engine: ${workerError.message}`, type: 'error', isLoading: false
+            }));
+            const finalPlayerState = get(playerStore);
+            expect(finalPlayerState.isPlayable).toBe(false);
+            expect(finalPlayerState.error).toBe(`Failed to initialize audio engine: ${workerError.message}`);
+            expect(finalPlayerState.status).toBe('error');
+        });
+
+        it('should not proceed if isBusy is true', async () => {
+            // Manually set isBusy for the test, as the internal state is not easily controlled otherwise for a singleton.
+            // This requires a way to inspect or control 'isBusy' or mock it.
+            // For this test, we'll assume a simplified scenario where the first call makes it busy.
+            // A better approach would be to spy on console.warn or statusStore for the busy message.
+
+            (orchestrator as any).isBusy = true; // Forcefully set isBusy for testing this scenario
+
+            await orchestrator.loadFileAndAnalyze(mockFile);
+
+            expect(audioEngine.stop).not.toHaveBeenCalled();
+            expect(statusStoreSpy).toHaveBeenCalledWith(expect.objectContaining({
+                 message: 'Player is busy. Please wait.', type: 'warning', isLoading: true
+            }));
+
+            (orchestrator as any).isBusy = false; // Reset for other tests
+        });
     });
-  });
 
-  describe("handleError", () => {
-    it("should update statusStore and playerStore correctly, and stop audio engine", () => {
-      const testError = new Error("Test worker error");
-      audioOrchestrator.handleError(testError);
+    describe('updateUrlFromState', () => {
+        it('should call updateUrlWithParams with correct parameters', () => {
+            playerStore.set({
+                fileName: 'test.mp3',
+                isPlayable: true,
+                speed: 1.5,
+                pitchShift: 2.0,
+                gain: 0.8,
+                duration: 120,
+                status: 'playing', // ensure other properties are set to satisfy type
+                currentTime: 30.5,
+                waveformData: undefined, error: null, audioBuffer: undefined, audioContextResumed: true,
+                channels: 1, sampleRate: 44100, lastProcessedChunk: undefined
+            });
+            timeStore.set(30.5);
 
-      const statusState = get(actualMockStatusStore);
-      expect(statusState.message).toBe(`Error: ${testError.message}`);
-      expect(statusState.type).toBe("error");
-      expect(statusState.isLoading).toBe(false);
+            orchestrator.updateUrlFromState();
 
-      const playerState = get(actualMockPlayerStore);
-      expect(playerState.error).toBe(testError.message);
-      expect(playerState.isPlaying).toBe(false);
-      expect(playerState.isPlayable).toBe(false);
+            expect(urlState.updateUrlWithParams).toHaveBeenCalledWith({
+                [URL_HASH_KEYS.SPEED]: '1.50',
+                [URL_HASH_KEYS.PITCH]: '2.00',
+                [URL_HASH_KEYS.GAIN]: '0.80',
+                [URL_HASH_KEYS.TIME]: '30.50',
+            });
+        });
 
-      expect(mockAudioEngineService.stop).toHaveBeenCalledOnce();
+        it('should not include time if near start or end', () => {
+             playerStore.set({
+                fileName: 'test.mp3', isPlayable: true, duration: 100, speed: 1, pitchShift: 0, gain: 1,
+                status: 'playing', currentTime: 0, waveformData: undefined, error: null, audioBuffer: undefined,
+                audioContextResumed: true, channels: 1, sampleRate: 44100, lastProcessedChunk: undefined
+            });
+
+            timeStore.set(0.05); // Near start
+            orchestrator.updateUrlFromState();
+            expect(urlState.updateUrlWithParams).toHaveBeenCalledWith(expect.not.objectContaining({ [URL_HASH_KEYS.TIME]: '0.05' }));
+
+            timeStore.set(99.95); // Near end
+            orchestrator.updateUrlFromState();
+            expect(urlState.updateUrlWithParams).toHaveBeenCalledWith(expect.not.objectContaining({ [URL_HASH_KEYS.TIME]: '99.95' }));
+
+            timeStore.set(0);
+            orchestrator.updateUrlFromState();
+            expect(urlState.updateUrlWithParams).toHaveBeenCalledWith(expect.not.objectContaining({ [URL_HASH_KEYS.TIME]: '0.00' }));
+        });
+
+        it('should clear params if not playable by calling with empty object', () => {
+            playerStore.set({
+                isPlayable: false, duration: 100, speed: 1, pitchShift: 0, gain: 1,
+                status: 'idle', currentTime: 0, fileName: null, waveformData: undefined, error: null,
+                audioBuffer: undefined, audioContextResumed: false, channels: undefined, sampleRate: undefined,
+                lastProcessedChunk: undefined
+            });
+            orchestrator.updateUrlFromState();
+            // If not playable, and other params are at default, it should result in an empty params object.
+            expect(urlState.updateUrlWithParams).toHaveBeenCalledWith({});
+        });
     });
-  });
+
+    describe('handleError', () => {
+        it('should update statusStore and playerStore correctly and call audioEngine.stop', () => {
+            const errorMessage = "Test error message";
+            orchestrator.handleError(new Error(errorMessage));
+
+            expect(statusStoreSpy).toHaveBeenCalledWith({
+                message: `Error: ${errorMessage}`,
+                type: 'error',
+                isLoading: false,
+            });
+
+            const playerState = get(playerStore);
+            expect(playerState.error).toBe(errorMessage);
+            expect(playerState.isPlaying).toBe(false);
+            expect(playerState.isPlayable).toBe(false);
+            expect(playerState.status).toBe('error');
+
+            expect(audioEngine.stop).toHaveBeenCalledTimes(1);
+            expect(urlState.updateUrlWithParams).toHaveBeenCalled();
+        });
+    });
 });

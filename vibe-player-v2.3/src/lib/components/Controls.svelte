@@ -3,99 +3,95 @@
 	import { RangeSlider } from '@skeletonlabs/skeleton';
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
-	import { analysisStore } from '$lib/stores/analysis.store'; // This import seems unused in the script block
+	// import { analysisStore } from '$lib/stores/analysis.store'; // Not used here
 	import { get } from 'svelte/store';
 
+	const engine = audioEngine; // Cache instance
+
 	function handlePlayPause() {
-		get(playerStore).isPlaying ? audioEngine.pause() : audioEngine.play();
+		get(playerStore).isPlaying ? engine.pause() : engine.play();
 	}
 
 	function handleStop() {
-		audioEngine.stop();
+		engine.stop();
 	}
-
-    // Functions to call audioEngine service methods directly for sliders
-    // These will be used in on:input events in the template
-    function updateSpeed(event: Event) {
-        const newSpeed = parseFloat((event.target as HTMLInputElement).value);
-        playerStore.update(s => ({ ...s, speed: newSpeed })); // Update store optimistically
-        audioEngine.setSpeed(newSpeed);
-    }
-
-    function updatePitch(event: Event) {
-        const newPitch = parseFloat((event.target as HTMLInputElement).value);
-        playerStore.update(s => ({ ...s, pitchShift: newPitch })); // Update store optimistically
-        audioEngine.setPitch(newPitch);
-    }
-
-    function updateGain(event: Event) {
-        const newGain = parseFloat((event.target as HTMLInputElement).value);
-        playerStore.update(s => ({ ...s, gain: newGain })); // Update store optimistically
-        audioEngine.setGain(newGain);
-    }
 </script>
 
-<div class="card p-4 space-y-4">
-	<h3 class="h3">Controls</h3>
-	<div class="flex space-x-2">
+<div class="card p-4 space-y-4 rounded-lg shadow-md">
+	<h3 class="h3 text-lg font-semibold text-gray-700 dark:text-gray-300">Playback Controls</h3>
+
+	<div class="flex items-center space-x-2">
 		<button
 			type="button"
-			class="btn"
+			class="btn btn-primary"
 			data-testid="play-button"
 			on:click={handlePlayPause}
-			disabled={!$playerStore.isPlayable}
+			disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
+			aria-label={$playerStore.isPlaying ? 'Pause audio' : 'Play audio'}
 		>
-			{$playerStore.isPlaying ? 'Pause' : 'Play'}
+			{#if $playerStore.isPlaying}
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M6.25 5.007C6.25 4.451 6.694 4 7.25 4h1.5c.556 0 1 .451 1 .007v14.986c0 .556-.444 1.007-1 1.007h-1.5c-.556 0-1-.451-1-1.007V5.007zM15.25 5.007C15.25 4.451 15.694 4 16.25 4h1.5c.556 0 1 .451 1 .007v14.986c0 .556-.444 1.007-1 1.007h-1.5c-.556 0-1-.451-1-1.007V5.007z"></path></svg>
+				<span>Pause</span>
+			{:else}
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M5.055 7.06C3.805 7.06 2.75 8.115 2.75 9.365v5.27c0 1.25 1.055 2.305 2.305 2.305h1.24c.39 0 .745.195.975.515l3.565 4.625a1.5 1.5 0 002.415-.011l.11-.135c.585-.72 1.51-1.125 2.485-1.125h3.005c1.25 0 2.305-1.055 2.305-2.305V9.365c0-1.25-1.055-2.305-2.305-2.305h-3.005a3.75 3.75 0 00-2.485-1.125l-.11-.135a1.5 1.5 0 00-2.415-.01L7.27 6.545a1.25 1.25 0 00-.975.515H5.055z"></path></svg>
+				<span>Play</span>
+			{/if}
 		</button>
 		<button
 			type="button"
-			class="btn"
+			class="btn btn-secondary"
 			data-testid="stop-button"
 			on:click={handleStop}
-			disabled={!$playerStore.isPlayable}>Stop</button
+			disabled={!$playerStore.isPlayable && !$playerStore.isPlaying}
+			aria-label="Stop audio"
 		>
+			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M5.25 6.375a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zM4.125 7.5A2.25 2.25 0 108.625 7.5 2.25 2.25 0 004.125 7.5zM15.375 5.25a1.125 1.125 0 110 2.25 1.125 1.125 0 010-2.25zM16.5 4.125a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5zM4.5 10.875a.75.75 0 000 1.5h15a.75.75 0 000-1.5H4.5z"></path></svg>
+			<span>Stop</span>
+		</button>
 	</div>
-	<div>
-		<label for="speedSlider" class="label" data-testid="speed-value"
+
+	<div class="space-y-1">
+		<label for="speedSlider" class="label text-sm font-medium text-gray-700 dark:text-gray-300" data-testid="speed-value"
 			>Speed: {$playerStore.speed.toFixed(2)}x</label
 		>
 		<RangeSlider
 			data-testid="speed-slider-input"
 			name="speedSlider"
 			bind:value={$playerStore.speed}
-			min={0.5}
-			max={2.0}
-			step={0.01}
-			on:input={updateSpeed}
+			on:input={() => engine.setSpeed($playerStore.speed)}
+			min={0.5} max={2.0} step={0.01}
 			disabled={!$playerStore.isPlayable}
+			class="w-full"
 		/>
 	</div>
-	<div>
-		<label for="pitchSlider" class="label" data-testid="pitch-value"
+
+	<div class="space-y-1">
+		<label for="pitchSlider" class="label text-sm font-medium text-gray-700 dark:text-gray-300" data-testid="pitch-value"
 			>Pitch: {$playerStore.pitchShift.toFixed(1)} semitones</label
 		>
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
 			bind:value={$playerStore.pitchShift}
-			min={-12}
-			max={12}
-			step={0.1}
-			on:input={updatePitch}
+			on:input={() => engine.setPitch($playerStore.pitchShift)}
+			min={-12} max={12} step={0.1}
 			disabled={!$playerStore.isPlayable}
+			class="w-full"
 		/>
 	</div>
-	<div>
-		<label for="gainSlider" class="label" data-testid="gain-value">Gain: {$playerStore.gain.toFixed(2)}</label>
+
+	<div class="space-y-1">
+		<label for="gainSlider" class="label text-sm font-medium text-gray-700 dark:text-gray-300" data-testid="gain-value"
+			>Gain: {$playerStore.gain.toFixed(2)}</label
+		>
 		<RangeSlider
 			data-testid="gain-slider-input"
 			name="gainSlider"
 			bind:value={$playerStore.gain}
-			min={0}
-			max={2.0}
-			step={0.01}
-			on:input={updateGain}
+			on:input={() => engine.setGain($playerStore.gain)}
+			min={0} max={2.0} step={0.01}
 			disabled={!$playerStore.isPlayable}
+			class="w-full"
 		/>
 	</div>
 </div>
