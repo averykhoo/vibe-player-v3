@@ -105,10 +105,11 @@ class AudioEngineService {
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
 
-      // --- FIND THIS LINE:
-      this.worker.onmessage = this.handleWorkerMessage;
-      // --- REPLACE WITH:
+      // --- START: THE FIX & DIAGNOSTIC LOGGING ---
+      console.log(`[VIBE-FIX-TRACE] Assigning onmessage handler for worker. Engine instance ID: ${this.instanceId}`);
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      // --- END: THE FIX & DIAGNOSTIC LOGGING ---
+
       this.worker.onerror = (err: ErrorEvent) => {
         const errorMsg =
           "Worker crashed or encountered an unrecoverable error.";
@@ -168,6 +169,9 @@ class AudioEngineService {
   }
 
   public async play(): Promise<void> {
+    // --- DIAGNOSTIC LOG ---
+    console.log(`[VIBE-FIX-TRACE] play() method entered. isPlaying=${this.isPlaying}, isWorkerReady=${this.isWorkerReady}`);
+
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
       return;
     }
@@ -281,6 +285,9 @@ class AudioEngineService {
   }
 
   private _performSingleProcessAndPlayIteration(): void {
+    // --- DIAGNOSTIC LOG ---
+    console.log(`[VIBE-FIX-TRACE] _performSingleProcessAndPlayIteration loop entered. this.isPlaying=${this.isPlaying}, offset=${this.sourcePlaybackOffset.toFixed(2)}s`);
+
     if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
 
     // Check if we have processed the entire source buffer.
@@ -372,6 +379,9 @@ class AudioEngineService {
   private handleWorkerMessage = (
     event: MessageEvent<WorkerMessage<any>>,
   ): void => {
+    // --- DIAGNOSTIC LOG ---
+    console.log(`[VIBE-FIX-TRACE] handleWorkerMessage called. this.instanceId = ${this.instanceId}, this.isPlaying = ${this.isPlaying}`);
+
     const { type, payload } = event.data;
 
     switch (type) {
