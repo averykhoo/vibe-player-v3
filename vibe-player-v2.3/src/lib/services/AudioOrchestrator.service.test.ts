@@ -360,10 +360,10 @@ describe("AudioOrchestratorService", () => {
         expect.objectContaining({
           duration: mockAudioBuffer.duration,
           sampleRate: mockAudioBuffer.sampleRate,
-          numberOfChannels: mockAudioBuffer.numberOfChannels
+          numberOfChannels: mockAudioBuffer.numberOfChannels,
           // Removed getChannelData check as it's causing persistent issues
           // and is not strictly necessary for this test's primary assertion.
-        })
+        }),
       );
       expect(spectrogramService.process).not.toHaveBeenCalled();
 

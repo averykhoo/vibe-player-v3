@@ -339,4 +339,21 @@ describe("Controls.svelte", () => {
       expect(screen.getByTestId("gain-slider-input")).not.toBeDisabled();
     });
   });
+
+  it("disables controls when player is playable but status is loading", async () => {
+    render(Controls);
+    act(() => {
+      actualMockPlayerStore.set({
+        ...get(actualMockPlayerStore),
+        isPlayable: true, // Playable...
+        status: "loading", // ...but still loading.
+      });
+    });
+    await act(); // ensure UI updates
+
+    expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
+    expect(screen.getByTestId("speed-slider-input")).toBeDisabled();
+    expect(screen.getByTestId("pitch-slider-input")).toBeDisabled();
+    expect(screen.getByTestId("gain-slider-input")).toBeDisabled();
+  });
 });

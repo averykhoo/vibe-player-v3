@@ -103,6 +103,7 @@ export class AudioOrchestrator {
         isPlayable: true,
         audioBuffer: audioBuffer,
         error: null,
+        status: "ready", // <-- THE FIX: Update the status to a non-loading state.
       }));
       statusStore.set({
         isLoading: false,

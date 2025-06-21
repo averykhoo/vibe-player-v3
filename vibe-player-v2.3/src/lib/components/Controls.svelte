@@ -3,10 +3,12 @@
 	import { RangeSlider } from '@skeletonlabs/skeleton';
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
-	// import { analysisStore } from '$lib/stores/analysis.store'; // Not used here
 	import { get } from 'svelte/store';
 
 	const engine = audioEngine; // Cache instance
+
+	// Reactive variable to unify disabled logic
+	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
 	function handlePlayPause() {
 		get(playerStore).isPlaying ? engine.pause() : engine.play();
@@ -26,7 +28,7 @@
 			class="btn btn-primary"
 			data-testid="play-button"
 			on:click={handlePlayPause}
-			disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
+			disabled={controlsDisabled}
 			aria-label={$playerStore.isPlaying ? 'Pause audio' : 'Play audio'}
 		>
 			{#if $playerStore.isPlaying}
@@ -42,7 +44,7 @@
 			class="btn btn-secondary"
 			data-testid="stop-button"
 			on:click={handleStop}
-			disabled={!$playerStore.isPlayable && !$playerStore.isPlaying}
+			disabled={controlsDisabled && !$playerStore.isPlaying}
 			aria-label="Stop audio"
 		>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M5.25 6.375a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zM4.125 7.5A2.25 2.25 0 108.625 7.5 2.25 2.25 0 004.125 7.5zM15.375 5.25a1.125 1.125 0 110 2.25 1.125 1.125 0 010-2.25zM16.5 4.125a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5zM4.5 10.875a.75.75 0 000 1.5h15a.75.75 0 000-1.5H4.5z"></path></svg>
@@ -60,7 +62,7 @@
 			bind:value={$playerStore.speed}
 			on:input={() => engine.setSpeed($playerStore.speed)}
 			min={0.5} max={2.0} step={0.01}
-			disabled={!$playerStore.isPlayable}
+			disabled={controlsDisabled}
 			class="w-full"
 		/>
 	</div>
@@ -75,7 +77,7 @@
 			bind:value={$playerStore.pitchShift}
 			on:input={() => engine.setPitch($playerStore.pitchShift)}
 			min={-12} max={12} step={0.1}
-			disabled={!$playerStore.isPlayable}
+			disabled={controlsDisabled}
 			class="w-full"
 		/>
 	</div>
@@ -90,7 +92,7 @@
 			bind:value={$playerStore.gain}
 			on:input={() => engine.setGain($playerStore.gain)}
 			min={0} max={2.0} step={0.01}
-			disabled={!$playerStore.isPlayable}
+			disabled={controlsDisabled}
 			class="w-full"
 		/>
 	</div>
