@@ -90,9 +90,9 @@ class AudioEngineService {
 
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
-      
+
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
-      
+
       this.worker.onerror = (err: ErrorEvent) => {
         const errorMsg = "Worker crashed or encountered an unrecoverable error.";
         console.error("[AudioEngineService] Worker onerror:", err);
@@ -172,7 +172,7 @@ class AudioEngineService {
 
     this.isPlaying = false;
     playerStore.update((s) => ({ ...s, isPlaying: false }));
-    
+
     // --- START: ADDED FOR DIAGNOSTICS ---
     if(this.heartbeatInterval) {
         clearInterval(this.heartbeatInterval);
@@ -275,7 +275,13 @@ class AudioEngineService {
     const currentGain = get(playerStore).gain;
 
     for (let i = 0; i < numChannels; i++) {
-      const segment = this.originalBuffer.getChannelData(i).subarray(startSample, endSample);
+      // --- THE FIX IS HERE ---
+      // .slice() creates a true copy of the data with its own underlying ArrayBuffer.
+      // .subarray() created a "view" on the same original buffer, which caused the
+      // original buffer to be detached and made inaccessible after the first transfer.
+      const segment = this.originalBuffer.getChannelData(i).slice(startSample, endSample);
+      // --- END OF FIX ---
+
       if (currentGain !== 1.0) {
         for (let j = 0; j < segment.length; j++) {
           segment[j] *= currentGain;
@@ -309,7 +315,7 @@ class AudioEngineService {
     // --- START: ADDED FOR DIAGNOSTICS ---
     console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`);
     // --- END: ADDED FOR DIAGNOSTICS ---
-    
+
     const { type, payload } = event.data;
 
     switch (type) {
@@ -372,14 +378,14 @@ class AudioEngineService {
     this.isWorkerReady = false;
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
-    
+
     // --- START: ADDED FOR DIAGNOSTICS ---
     if(this.heartbeatInterval) {
         clearInterval(this.heartbeatInterval);
         this.heartbeatInterval = null;
     }
     // --- END: ADDED FOR DIAGNOSTICS ---
-    
+
     console.log("[AudioEngineService] Disposed");
   }
 }
