@@ -1,7 +1,6 @@
 // vibe-player-v2.3/src/lib/services/audioEngine.service.ts
 import { get } from "svelte/store";
 import { playerStore } from "$lib/stores/player.store";
-import { timeStore } from "$lib/stores/time.store"; // NEW
 import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
 import type {
   RubberbandInitPayload,
@@ -12,7 +11,7 @@ import type {
 } from "$lib/types/worker.types";
 import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { assert, AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
-import { AudioOrchestrator } from "./AudioOrchestrator.service"; // NEW
+import { AudioOrchestrator } from "./AudioOrchestrator.service";
 
 class AudioEngineService {
   private static instance: AudioEngineService;
@@ -28,7 +27,7 @@ class AudioEngineService {
   private isStopping = false;
 
   private sourcePlaybackOffset = 0;
-  private animationFrameId: number | null = null; // <-- ADD THIS
+  private animationFrameId: number | null = null;
 
   private workerInitPromiseCallbacks: {
     resolve: () => void;
@@ -37,16 +36,12 @@ class AudioEngineService {
 
   private constructor() {
     this.instanceId = Math.floor(Math.random() * 10000);
-    console.log(
-      `[VIBE-346-TRACE] AudioEngineService CONSTRUCTOR called. NEW instance created with ID: ${this.instanceId}`,
-    );
   }
 
   public static getInstance(): AudioEngineService {
     if (!AudioEngineService.instance) {
       AudioEngineService.instance = new AudioEngineService();
     }
-    console.log(`[LOG-VIBE-341] AudioEngineService.getInstance() called.`);
     return AudioEngineService.instance;
   }
 
@@ -58,9 +53,6 @@ class AudioEngineService {
   }
 
   public togglePlayPause(): void {
-    console.log(
-      `[VIBE-346-TRACE] audioEngine.togglePlayPause() entered on instance ID: ${this.instanceId}. isPlaying=${this.isPlaying}`,
-    );
     if (this.isPlaying) {
       this.pause();
     } else {
@@ -93,12 +85,9 @@ class AudioEngineService {
 
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
-
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
-
       this.worker.onerror = (err: ErrorEvent) => {
-        const errorMsg =
-          "Worker crashed or encountered an unrecoverable error.";
+        const errorMsg = "Worker crashed or encountered an unrecoverable error.";
         console.error("[AudioEngineService] Worker onerror:", err);
         if (this.workerInitPromiseCallbacks) {
           this.workerInitPromiseCallbacks.reject(
@@ -153,56 +142,37 @@ class AudioEngineService {
   }
 
   public async play(): Promise<void> {
-    console.log(`[VIBE-FIX-TRACE] play() method entered. isPlaying=${this.isPlaying}, isWorkerReady=${this.isWorkerReady}`);
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
       return;
     }
-
     await this.unlockAudio();
     this.isPlaying = true;
     playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
 
-    // --- START: FIX ---
-    // Start the rAF loop for UI updates
-    this.animationFrameId = requestAnimationFrame(this.updateUiTimeLoop.bind(this));
-    // --- END: FIX ---
-
-    this._performSingleProcessAndPlayIteration();
+    this.animationFrameId = requestAnimationFrame(
+      this._recursiveProcessAndPlayLoop.bind(this),
+    );
   }
 
   public pause(): void {
     if (!this.isPlaying) return;
-
     this.isPlaying = false;
-    // --- START: FIX ---
-    // Stop the rAF loop
     if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = null;
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
     }
-    // --- END: FIX ---
     playerStore.update((s) => ({ ...s, isPlaying: false }));
   }
 
-  // --- START: FIX ---
-  // New method for the rAF loop
-  private updateUiTimeLoop(): void {
-    if (!this.isPlaying) return;
-    timeStore.set(this.sourcePlaybackOffset);
-    this.animationFrameId = requestAnimationFrame(this.updateUiTimeLoop.bind(this));
-  }
-  // --- END: FIX ---
-
   public async stop(): Promise<void> {
     this.isStopping = true;
-    this.pause(); 
+    this.pause();
 
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
 
     this.sourcePlaybackOffset = 0;
-    timeStore.set(0);
     playerStore.update((s) => ({ ...s, currentTime: 0, isPlaying: false }));
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -214,11 +184,9 @@ class AudioEngineService {
       console.warn("Seek called without an originalBuffer.");
       return;
     }
-
     if (this.isPlaying) {
       this.pause();
     }
-
     const clampedTime = Math.max(
       0,
       Math.min(time, this.originalBuffer.duration),
@@ -228,8 +196,6 @@ class AudioEngineService {
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
-
-    timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
   }
 
@@ -280,9 +246,24 @@ class AudioEngineService {
     return this.audioContext;
   }
 
+  private _recursiveProcessAndPlayLoop(): void {
+    if (!this.isPlaying) {
+        this.animationFrameId = null;
+        return;
+    }
+
+    playerStore.update((s) => ({ ...s, currentTime: this.sourcePlaybackOffset }));
+    this._performSingleProcessAndPlayIteration();
+
+    if (this.isPlaying) {
+        this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop.bind(this));
+    } else {
+        this.animationFrameId = null;
+    }
+  }
+
   private _performSingleProcessAndPlayIteration(): void {
-    console.log(`[VIBE-FIX-TRACE] _performSingleProcessAndPlayIteration loop entered. this.isPlaying=${this.isPlaying}, offset=${this.sourcePlaybackOffset.toFixed(2)}s`);
-    if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
+    if (!this.worker || !this.isWorkerReady || !this.originalBuffer || this.isStopping) return;
 
     if (this.sourcePlaybackOffset >= this.originalBuffer.duration) {
       if (this.isPlaying) this.pause();
@@ -313,13 +294,11 @@ class AudioEngineService {
       const segment = this.originalBuffer
         .getChannelData(i)
         .subarray(startSample, endSample);
-
       if (currentGain !== 1.0) {
         for (let j = 0; j < segment.length; j++) {
           segment[j] *= currentGain;
         }
       }
-
       inputBuffer.push(segment);
       transferableObjects.push(segment.buffer);
     }
@@ -361,9 +340,7 @@ class AudioEngineService {
   private handleWorkerMessage = (
     event: MessageEvent<WorkerMessage<any>>,
   ): void => {
-    console.log(`[VIBE-FIX-TRACE] handleWorkerMessage called. this.instanceId = ${this.instanceId}, this.isPlaying = ${this.isPlaying}`);
     const { type, payload } = event.data;
-
     switch (type) {
       case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
         this.isWorkerReady = true;
@@ -383,19 +360,13 @@ class AudioEngineService {
         break;
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
-
         if (this.isStopping || !this.isPlaying) break;
-
         if (
           result.outputBuffer?.length > 0 &&
           result.outputBuffer[0].length > 0
         ) {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
-        
-        // --- REMOVED `timeStore.set` FROM HERE ---
-        
-        this._performSingleProcessAndPlayIteration();
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
         const workerErrorMsg =
@@ -432,14 +403,10 @@ class AudioEngineService {
     this.isWorkerReady = false;
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
-    
-    // --- START: FIX ---
     if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = null;
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
     }
-    // --- END: FIX ---
-    
     console.log("[AudioEngineService] Disposed");
   }
 }
