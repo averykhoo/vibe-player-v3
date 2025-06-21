@@ -36,15 +36,12 @@ export interface RubberbandInitPayload {
 
 export interface RubberbandProcessPayload {
   inputBuffer: Float32Array[];
-  isLastChunk: boolean; // ADD THIS
-  playbackTime: number; // ADD THIS
+  isLastChunk: boolean; // Keep this
 }
 
 export interface RubberbandProcessResultPayload {
   outputBuffer: Float32Array[];
-  playbackTime: number; // ADD THIS
-  duration: number; // ADD THIS
-  isLastChunk: boolean; // ADD THIS
+  isLastChunk: boolean; // Keep this
 }
 
 export interface RubberbandStatusPayload {

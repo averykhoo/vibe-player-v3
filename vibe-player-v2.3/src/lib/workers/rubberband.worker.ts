@@ -79,9 +79,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case RB_WORKER_MSG_TYPE.PROCESS:
-        const { inputBuffer, isLastChunk, playbackTime } =
+        const { inputBuffer, isLastChunk } =
           payload as RubberbandProcessPayload;
-        const result = handleProcess(inputBuffer, isLastChunk, playbackTime);
+        const result = handleProcess(inputBuffer, isLastChunk); // Correctly call with new signature
         self.postMessage(
           {
             type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
@@ -171,7 +171,6 @@ async function handleInit(payload: RubberbandInitPayload) {
 function handleProcess(
   inputBuffer: Float32Array[],
   isLastChunk: boolean,
-  playbackTime: number,
 ): RubberbandProcessResultPayload {
   if (!wasmModule || !stretcher) {
     throw new Error("Worker not initialized for processing.");
@@ -179,10 +178,14 @@ function handleProcess(
 
   const channels = inputBuffer.length;
   if (channels === 0) {
-    return { outputBuffer: [], playbackTime, duration: 0, isLastChunk: true };
+    return { outputBuffer: [], isLastChunk: true };
   }
 
   const frameCount = inputBuffer[0].length;
+  if (frameCount === 0) {
+    return { outputBuffer: [], isLastChunk };
+  }
+
   const inputPtrs = wasmModule._malloc(channels * 4);
 
   try {
@@ -208,7 +211,6 @@ function handleProcess(
 
   const available = wasmModule._rubberband_available(stretcher);
   const outputBuffer: Float32Array[] = [];
-  let duration = 0;
 
   if (available > 0) {
     const outputPtrs = wasmModule._malloc(channels * 4);
@@ -225,7 +227,6 @@ function handleProcess(
         outputPtrs,
         available,
       );
-      duration = retrievedCount > 0 ? retrievedCount / sampleRate : 0;
 
       for (let i = 0; i < channels; i++) {
         const channelData = new Float32Array(retrievedCount);
@@ -238,7 +239,7 @@ function handleProcess(
         outputBuffer.push(channelData);
       }
     } finally {
-      // Assuming retrievedPtrs is not needed outside the try block
+      // Free the temporary output pointers
       for (let i = 0; i < channels; i++) {
         const ptr = wasmModule.HEAPU32[outputPtrs / 4 + i];
         if (ptr) wasmModule._free(ptr);
@@ -247,5 +248,5 @@ function handleProcess(
     }
   }
 
-  return { outputBuffer, playbackTime, duration, isLastChunk };
+  return { outputBuffer, isLastChunk };
 }
