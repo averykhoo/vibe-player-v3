@@ -203,11 +203,17 @@ class AnalysisService {
       analysisStore.update((s) => ({ ...s, vadError: errorMsg }));
       throw new Error(errorMsg);
     }
-    const payload: SileroVadProcessPayload = { audioFrame, timestamp };
+
+    // --- ROBUSTNESS FIX ---
+    // Create a copy of the audio frame to ensure the original buffer is not detached.
+    const audioFrameCopy = new Float32Array(audioFrame);
+    const payload: SileroVadProcessPayload = { audioFrame: audioFrameCopy, timestamp };
+    // --- END OF FIX ---
+
     try {
       const result = await this.postMessageToWorker<SileroVadProcessPayload>(
         { type: VAD_WORKER_MSG_TYPE.PROCESS, payload },
-        [payload.audioFrame.buffer],
+        [payload.audioFrame.buffer], // Transfer the copy's buffer
       );
       return result as SileroVadProcessResultPayload;
     } catch (error) {
