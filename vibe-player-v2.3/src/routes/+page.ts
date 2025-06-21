@@ -1,3 +1,4 @@
+// vibe-player-v2.3/src/routes/+page.ts
 // src/routes/+page.ts
 import { URL_HASH_KEYS } from "$lib/utils/constants";
 import type { PageLoad } from "./$types";
