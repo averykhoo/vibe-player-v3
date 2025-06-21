@@ -27,7 +27,6 @@ class AudioEngineService {
   private isStopping = false;
 
   private sourcePlaybackOffset = 0;
-  private animationFrameId: number | null = null;
 
   private workerInitPromiseCallbacks: {
     resolve: () => void;
@@ -49,10 +48,6 @@ class AudioEngineService {
     console.log(`[LOG-VIBE-341] AudioEngineService.getInstance() called.`);
     return AudioEngineService.instance;
   }
-
-  // Safeguard for test environments with immediate requestAnimationFrame
-  private _testLoopSafeguard = 0;
-  private readonly _TEST_MAX_LOOP_ITERATIONS = 1000;
 
   public unlockAudio = async (): Promise<void> => {
     const ctx = this._getAudioContext();
@@ -169,45 +164,26 @@ class AudioEngineService {
   };
 
   public play = async (): Promise<void> => {
-    // ADD THIS LOG
-    console.log(
-      `[LOG-VIBE-341] audioEngine.play() entered. Guard check: isPlaying=${this.isPlaying}, hasBuffer=${!!this.originalBuffer}, isWorkerReady=${this.isWorkerReady}`,
-    );
-
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
-      console.log(
-        `Play called but conditions not met: isPlaying=${this.isPlaying}, originalBuffer=${!!this.originalBuffer}, isWorkerReady=${this.isWorkerReady}`,
-      );
       return;
     }
 
-    await this.unlockAudio(); // Ensure audio context is active
-    // const audioCtxTime = this._getAudioContext().currentTime; // nextChunkTime removed
+    await this.unlockAudio();
     this.isPlaying = true;
-    playerStore.update((s) => ({ ...s, isPlaying: true, error: null })); // Clear previous errors on play
+    playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
 
-    // If playback stopped and then restarted, or if seeking caused nextChunkTime to be in the past.
-    // if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtxTime) { // nextChunkTime removed
-    //   this.nextChunkTime = audioCtxTime; // nextChunkTime removed
-    // } // nextChunkTime removed
-    this._testLoopSafeguard = 0; // Reset safeguard on new play intent
-
-    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); // Ensure no ghost loops
-    this.animationFrameId = requestAnimationFrame(
-      this._recursiveProcessAndPlayLoop,
-    );
+    // Kick off the deterministic loop by processing the FIRST chunk.
+    // The loop will perpetuate itself from here.
+    this._performSingleProcessAndPlayIteration();
   };
 
   public pause = (): void => {
-    // ADD THIS LOG
-    console.log(`[LOG-VIBE-341] audioEngine.pause() entered.`);
     if (!this.isPlaying) return;
+
+    // Simply flipping this flag will break the loop when the next
+    // result comes back from the worker. No timers to clear.
     this.isPlaying = false;
     playerStore.update((s) => ({ ...s, isPlaying: false }));
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
   };
 
   public stop = async (): Promise<void> => {
@@ -300,37 +276,6 @@ class AudioEngineService {
     return this.audioContext;
   }
 
-  private _recursiveProcessAndPlayLoop = (): void => {
-    if (!this.isPlaying || this.isStopping) {
-      if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-      return;
-    }
-
-    // Test safeguard
-    if (
-      (globalThis as any).vi &&
-      this._testLoopSafeguard++ > this._TEST_MAX_LOOP_ITERATIONS
-    ) {
-      console.warn(
-        "[AudioEngineService] Test safeguard: Max loop iterations reached.",
-      );
-      this.pause();
-      return;
-    }
-
-    // Update the UI time store every frame.
-    timeStore.set(this.sourcePlaybackOffset);
-
-    // Call the processing iteration.
-    this._performSingleProcessAndPlayIteration();
-
-    // Schedule the next frame.
-    this.animationFrameId = requestAnimationFrame(
-      this._recursiveProcessAndPlayLoop,
-    );
-  };
-
   private _performSingleProcessAndPlayIteration(): void {
     if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
 
@@ -385,6 +330,9 @@ class AudioEngineService {
 
     // Immediately advance the source offset. The engine is now self-driven.
     this.sourcePlaybackOffset += chunkSamples / this.originalBuffer.sampleRate;
+
+    // Update the UI with the latest time. This was moved to handleWorkerMessage
+    // timeStore.set(this.sourcePlaybackOffset);
 
     const processPayload: RubberbandProcessPayload = {
       inputBuffer,
@@ -441,8 +389,12 @@ class AudioEngineService {
         break;
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
-        if (this.isStopping) break;
 
+        // --- START: NEW LOGIC ---
+        // If we are stopping or paused, discard the result and break the loop.
+        if (this.isStopping || !this.isPlaying) break;
+
+        // Schedule the chunk we just received for immediate playback.
         if (
           result.outputBuffer?.length > 0 &&
           result.outputBuffer[0].length > 0
@@ -450,11 +402,12 @@ class AudioEngineService {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
 
-        if (result.isLastChunk) {
-          // The main loop now handles the end-of-file condition by checking sourcePlaybackOffset,
-          // so this check is primarily a failsafe.
-          if (this.isPlaying) this.pause();
-        }
+        // Update the UI with the latest time.
+        timeStore.set(this.sourcePlaybackOffset);
+
+        // Immediately process the next chunk. This self-perpetuates the loop.
+        this._performSingleProcessAndPlayIteration();
+        // --- END: NEW LOGIC ---
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
         const workerErrorMsg =
@@ -494,10 +447,7 @@ class AudioEngineService {
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
     // this.nextChunkTime = 0; // nextChunkTime removed
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    // animationFrameId was removed, so no need to check or cancel it here.
     console.log("[AudioEngineService] Disposed");
   }
 }
