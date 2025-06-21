@@ -34,12 +34,19 @@ class AudioEngineService {
     reject: (reason?: any) => void;
   } | null = null;
 
-  private constructor() {}
+  private constructor() {
+    // ADD THIS LOG
+    console.log(
+      `[LOG-VIBE-341] AudioEngineService CONSTRUCTOR called. A new instance is being created.`,
+    );
+  }
 
   public static getInstance(): AudioEngineService {
     if (!AudioEngineService.instance) {
       AudioEngineService.instance = new AudioEngineService();
     }
+    // ADD THIS LOG
+    console.log(`[LOG-VIBE-341] AudioEngineService.getInstance() called.`);
     return AudioEngineService.instance;
   }
 
@@ -55,6 +62,10 @@ class AudioEngineService {
   };
 
   public togglePlayPause = (): void => {
+    // ADD THIS LOG
+    console.log(
+      `[LOG-VIBE-341] audioEngine.togglePlayPause() entered. isPlaying=${this.isPlaying}`,
+    );
     if (this.isPlaying) {
       this.pause();
     } else {
@@ -158,6 +169,11 @@ class AudioEngineService {
   };
 
   public play = async (): Promise<void> => {
+    // ADD THIS LOG
+    console.log(
+      `[LOG-VIBE-341] audioEngine.play() entered. Guard check: isPlaying=${this.isPlaying}, hasBuffer=${!!this.originalBuffer}, isWorkerReady=${this.isWorkerReady}`,
+    );
+
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
       console.log(
         `Play called but conditions not met: isPlaying=${this.isPlaying}, originalBuffer=${!!this.originalBuffer}, isWorkerReady=${this.isWorkerReady}`,
@@ -183,6 +199,8 @@ class AudioEngineService {
   };
 
   public pause = (): void => {
+    // ADD THIS LOG
+    console.log(`[LOG-VIBE-341] audioEngine.pause() entered.`);
     if (!this.isPlaying) return;
     this.isPlaying = false;
     playerStore.update((s) => ({ ...s, isPlaying: false }));

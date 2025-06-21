@@ -4,14 +4,20 @@
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
 
+    // ADD THIS LOG
+    console.log(`[LOG-VIBE-341] Controls.svelte script block executed. Importing audioEngine service.`);
+
 	const engine = audioEngine; // Cache instance
+
+    // ADD THIS LOG
+    console.log(`[LOG-VIBE-341] Controls.svelte: 'engine' variable set. Is it defined? ${!!engine}`);
 
 	// Reactive variable to unify disabled logic
 	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
 	// CORRECTED: The component simply reports the user's INTENT to toggle playback.
 	function handlePlayPause() {
-        console.log('[Controls.svelte] handlePlayPause triggered. Calling engine.togglePlayPause()');
+        console.log('[LOG-VIBE-341] Controls.svelte handlePlayPause triggered. Calling engine.togglePlayPause().');
 		engine.togglePlayPause();
 	}
 
