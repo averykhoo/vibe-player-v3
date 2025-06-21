@@ -96,8 +96,9 @@ describe("AudioEngineService (Robust Loop)", () => {
     getChannelData: vi.fn(() => new Float32Array(441000).fill(0.1)),
   } as unknown as AudioBuffer;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    // Make the hook async
+    vi.resetAllMocks(); // Changed from clearAllMocks
 
     // Reset the state of the module-scoped store instances for each test
     __mockPlayerStoreInstance.set({ ...hoistedData.initialPlayerState });
@@ -109,7 +110,12 @@ describe("AudioEngineService (Robust Loop)", () => {
       mockOrchestrator,
     );
 
-    mockWorker = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }; // Add null handlers
+    mockWorker = {
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      onmessage: null,
+      onerror: null,
+    }; // Add null handlers
     (RubberbandWorker as vi.Mock).mockReturnValue(mockWorker);
 
     mockAudioContext = {
@@ -121,6 +127,7 @@ describe("AudioEngineService (Robust Loop)", () => {
       })),
       createBufferSource: vi.fn(() => ({ connect: vi.fn(), start: vi.fn() })),
       createBuffer: vi.fn(() => ({ copyToChannel: vi.fn() })),
+      close: vi.fn(), // Added mock for close
     };
     (globalThis as any).AudioContext = vi.fn(() => mockAudioContext);
 
@@ -128,6 +135,12 @@ describe("AudioEngineService (Robust Loop)", () => {
     (globalThis as any).cancelAnimationFrame = vi.fn();
 
     engine = AudioEngineService; // Reverted: AudioEngineService is already the instance
+
+    // --- ADD THIS ASYNC DISPOSE CALL ---
+    // This ensures the singleton is reset to a clean state before each test.
+    await engine.dispose();
+    // --- END OF ADDITION ---
+
     // --- START OF FIX ---
     // Manually instantiate the worker and assign it to the service instance for tests.
     // This simulates the state after `initializeWorker` has been successfully called.
@@ -138,7 +151,7 @@ describe("AudioEngineService (Robust Loop)", () => {
     (engine as any).isPlaying = false;
     (engine as any).sourcePlaybackOffset = 0;
     (engine as any)._getAudioContext(); // Restored
-    (engine as any).worker = mockWorker; // Restored
+    // (engine as any).worker = mockWorker; // Removed redundant assignment
   });
 
   describe("seek", () => {
