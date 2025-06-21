@@ -346,7 +346,7 @@ jobs:
         run: npm run build
 
       - name: Restore Playwright cache
-        id: cache-playwright-restore # <-- Important ID
+        id: cache-playwright-restore
         uses: actions/cache/restore@v4
         with:
           path: /home/runner/.cache/ms-playwright
@@ -361,8 +361,11 @@ jobs:
         if: always() && steps.cache-playwright-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          # Use the exact key from the restore step to ensure consistency.
-          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key }}
+          # --- START OF FIX ---
+          # The key used for saving MUST be the same string as the key used for restoring.
+          # Do not use the `outputs.cache-primary-key` as it's empty on a miss.
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
+          # --- END OF FIX ---
           path: /home/runner/.cache/ms-playwright
 
       - name: Run Playwright E2E tests
@@ -374,9 +377,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: vibe-player-v2.3/playwright-report/ # Corrected path to be relative to workspace root
           retention-days: 7
-
 ````
 --- End of File: .github/workflows/ci.yml ---
 --- File: .github/workflows/deploy.yml ---
@@ -12426,7 +12428,7 @@ describe("AudioEngineService (Robust Loop)", () => {
 // vibe-player-v2.3/src/lib/services/audioEngine.service.ts
 import { get } from "svelte/store";
 import { playerStore } from "$lib/stores/player.store";
-import { timeStore } from "$lib/stores/time.store"; // NEW
+import { timeStore } from "$lib/stores/time.store";
 import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
 import type {
   RubberbandInitPayload,
@@ -12437,11 +12439,11 @@ import type {
 } from "$lib/types/worker.types";
 import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { assert, AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
-import { AudioOrchestrator } from "./AudioOrchestrator.service"; // NEW
+import { AudioOrchestrator } from "./AudioOrchestrator.service";
 
 class AudioEngineService {
   private static instance: AudioEngineService;
-  public readonly instanceId: number; // <-- ADD THIS PUBLIC, READONLY PROPERTY
+  public readonly instanceId: number;
 
   private worker: Worker | null = null;
   private audioContext: AudioContext | null = null;
@@ -12454,24 +12456,24 @@ class AudioEngineService {
 
   private sourcePlaybackOffset = 0;
 
+  // --- START: ADDED FOR DIAGNOSTICS ---
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private loopCounter = 0;
+  // --- END: ADDED FOR DIAGNOSTICS ---
+
   private workerInitPromiseCallbacks: {
     resolve: () => void;
     reject: (reason?: any) => void;
   } | null = null;
 
   private constructor() {
-    this.instanceId = Math.floor(Math.random() * 10000); // <-- ADD THIS LINE
-    console.log(
-      `[VIBE-346-TRACE] AudioEngineService CONSTRUCTOR called. NEW instance created with ID: ${this.instanceId}`,
-    );
+    this.instanceId = Math.floor(Math.random() * 10000);
   }
 
   public static getInstance(): AudioEngineService {
     if (!AudioEngineService.instance) {
       AudioEngineService.instance = new AudioEngineService();
     }
-    // ADD THIS LOG
-    console.log(`[LOG-VIBE-341] AudioEngineService.getInstance() called.`);
     return AudioEngineService.instance;
   }
 
@@ -12483,9 +12485,6 @@ class AudioEngineService {
   }
 
   public togglePlayPause(): void {
-    console.log(
-      `[VIBE-346-TRACE] audioEngine.togglePlayPause() entered on instance ID: ${this.instanceId}. isPlaying=${this.isPlaying}`,
-    );
     if (this.isPlaying) {
       this.pause();
     } else {
@@ -12493,16 +12492,11 @@ class AudioEngineService {
     }
   }
 
-  /**
-   * Decodes an ArrayBuffer into an AudioBuffer. This is its only responsibility.
-   * @param buffer The ArrayBuffer containing the audio data.
-   * @returns A promise that resolves with the decoded AudioBuffer.
-   */
   public async decodeAudioData(buffer: ArrayBuffer): Promise<AudioBuffer> {
     const ctx = this._getAudioContext();
     try {
       this.originalBuffer = await ctx.decodeAudioData(buffer);
-      this.isWorkerReady = false; // Worker needs re-initialization with new buffer
+      this.isWorkerReady = false;
       return this.originalBuffer;
     } catch (e) {
       this.originalBuffer = null;
@@ -12511,15 +12505,9 @@ class AudioEngineService {
     }
   }
 
-  /**
-   * Initializes the Rubberband Web Worker.
-   * @param audioBuffer The AudioBuffer to initialize the worker with.
-   * @returns A promise that resolves on successful worker initialization.
-   */
   public initializeWorker(audioBuffer: AudioBuffer): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!audioBuffer) {
-        // It's important to clear callbacks if an early error occurs.
         this.workerInitPromiseCallbacks = null;
         return reject(
           new Error("initializeWorker called with no AudioBuffer."),
@@ -12530,13 +12518,10 @@ class AudioEngineService {
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
 
-      // --- FIND THIS LINE:
-      this.worker.onmessage = this.handleWorkerMessage;
-      // --- REPLACE WITH:
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
+
       this.worker.onerror = (err: ErrorEvent) => {
-        const errorMsg =
-          "Worker crashed or encountered an unrecoverable error.";
+        const errorMsg = "Worker crashed or encountered an unrecoverable error.";
         console.error("[AudioEngineService] Worker onerror:", err);
         if (this.workerInitPromiseCallbacks) {
           this.workerInitPromiseCallbacks.reject(
@@ -12544,7 +12529,6 @@ class AudioEngineService {
           );
           this.workerInitPromiseCallbacks = null;
         }
-        // Communicate error to Orchestrator
         AudioOrchestrator.getInstance().handleError(
           new Error(err.message || errorMsg),
         );
@@ -12586,7 +12570,6 @@ class AudioEngineService {
             this.workerInitPromiseCallbacks.reject(e);
             this.workerInitPromiseCallbacks = null;
           }
-          // Communicate error to Orchestrator
           AudioOrchestrator.getInstance().handleError(e);
         });
     });
@@ -12601,35 +12584,43 @@ class AudioEngineService {
     this.isPlaying = true;
     playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
 
-    // Kick off the deterministic loop by processing the FIRST chunk.
-    // The loop will perpetuate itself from here.
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    this.loopCounter = 0;
+    this.heartbeatInterval = setInterval(() => {
+        console.log(`[HEARTBEAT] Main thread is alive. Timestamp: ${performance.now().toFixed(0)}`);
+    }, 250);
+    // --- END: ADDED FOR DIAGNOSTICS ---
+
     this._performSingleProcessAndPlayIteration();
   }
 
   public pause(): void {
     if (!this.isPlaying) return;
 
-    // Simply flipping this flag will break the loop when the next
-    // result comes back from the worker. No timers to clear.
     this.isPlaying = false;
     playerStore.update((s) => ({ ...s, isPlaying: false }));
+
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    if(this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+        console.log("[HEARTBEAT] Heartbeat timer cleared.");
+    }
+    // --- END: ADDED FOR DIAGNOSTICS ---
   }
 
   public async stop(): Promise<void> {
-    this.isStopping = true; // Signal that a stop operation is in progress
-    this.pause(); // This will cancel animationFrame and set isPlaying to false
+    this.isStopping = true;
+    this.pause();
 
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
 
     this.sourcePlaybackOffset = 0;
-    // this.nextChunkTime = 0; // nextChunkTime removed
-    timeStore.set(0); // Reset time store to 0
+    timeStore.set(0);
     playerStore.update((s) => ({ ...s, currentTime: 0, isPlaying: false }));
 
-    // Short delay to allow any in-flight operations to cease
-    // This might need adjustment or a more robust mechanism if race conditions persist
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.isStopping = false;
   }
@@ -12639,55 +12630,36 @@ class AudioEngineService {
       console.warn("Seek called without an originalBuffer.");
       return;
     }
-
     if (this.isPlaying) {
       this.pause();
     }
-
-    const clampedTime = Math.max(
-      0,
-      Math.min(time, this.originalBuffer.duration),
-    );
+    const clampedTime = Math.max(0, Math.min(time, this.originalBuffer.duration));
     this.sourcePlaybackOffset = clampedTime;
-
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
-
     timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
   }
 
   public setSpeed(speed: number): void {
     if (this.worker && this.isWorkerReady) {
-      this.worker.postMessage({
-        type: RB_WORKER_MSG_TYPE.SET_SPEED,
-        payload: { speed },
-      });
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed } });
     }
     playerStore.update((s) => ({ ...s, speed }));
   }
 
   public setPitch(pitch: number): void {
     if (this.worker && this.isWorkerReady) {
-      this.worker.postMessage({
-        type: RB_WORKER_MSG_TYPE.SET_PITCH,
-        payload: { pitch },
-      });
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch } });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
   }
 
   public setGain(level: number): void {
-    const newGain = Math.max(
-      0,
-      Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level),
-    );
+    const newGain = Math.max(0, Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level));
     if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(
-        newGain,
-        this._getAudioContext().currentTime,
-      );
+      this.gainNode.gain.setValueAtTime(newGain, this._getAudioContext().currentTime);
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
   }
@@ -12697,34 +12669,26 @@ class AudioEngineService {
       this.audioContext = new AudioContext();
       this.gainNode = this.audioContext.createGain();
       this.gainNode.connect(this.audioContext.destination);
-      playerStore.update((s) => ({
-        ...s,
-        audioContextResumed: this.audioContext!.state === "running",
-      }));
+      playerStore.update((s) => ({ ...s, audioContextResumed: this.audioContext!.state === "running" }));
     }
     return this.audioContext;
   }
 
   private _performSingleProcessAndPlayIteration(): void {
-    if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    this.loopCounter++;
+    console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Posting chunk. Offset: ${this.sourcePlaybackOffset.toFixed(3)}s`);
+    // --- END: ADDED FOR DIAGNOSTICS ---
 
-    // Check if we have processed the entire source buffer.
+    if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
     if (this.sourcePlaybackOffset >= this.originalBuffer.duration) {
-      if (this.isPlaying) this.pause(); // All done, pause playback.
+      if (this.isPlaying) this.pause();
       return;
     }
 
-    // This is the core logic: send a fixed-size chunk to the worker.
     const frameSize = AUDIO_ENGINE_CONSTANTS.PROCESS_FRAME_SIZE;
-    const startSample = Math.floor(
-      this.sourcePlaybackOffset * this.originalBuffer.sampleRate,
-    );
-
-    // Ensure we don't read past the end of the buffer.
-    const endSample = Math.min(
-      startSample + frameSize,
-      this.originalBuffer.length,
-    );
+    const startSample = Math.floor(this.sourcePlaybackOffset * this.originalBuffer.sampleRate);
+    const endSample = Math.min(startSample + frameSize, this.originalBuffer.length);
     const chunkSamples = endSample - startSample;
 
     if (chunkSamples <= 0) {
@@ -12735,68 +12699,44 @@ class AudioEngineService {
     const numChannels = this.originalBuffer.numberOfChannels;
     const inputBuffer: Float32Array[] = [];
     const transferableObjects: Transferable[] = [];
-    const currentGain = get(playerStore).gain; // <-- ADD THIS LINE
+    const currentGain = get(playerStore).gain;
 
     for (let i = 0; i < numChannels; i++) {
-      const segment = this.originalBuffer
-        .getChannelData(i)
-        .subarray(startSample, endSample);
-
-      // --- START: NEW GAIN APPLICATION LOGIC ---
+      const segment = this.originalBuffer.getChannelData(i).subarray(startSample, endSample);
       if (currentGain !== 1.0) {
-        // Only process if gain is not neutral
         for (let j = 0; j < segment.length; j++) {
           segment[j] *= currentGain;
         }
       }
-      // --- END: NEW GAIN APPLICATION LOGIC ---
-
       inputBuffer.push(segment);
       transferableObjects.push(segment.buffer);
     }
 
     const isLastChunk = endSample >= this.originalBuffer.length;
-
-    // Immediately advance the source offset. The engine is now self-driven.
     this.sourcePlaybackOffset += chunkSamples / this.originalBuffer.sampleRate;
-
-    // Update the UI with the latest time. This was moved to handleWorkerMessage
-    // timeStore.set(this.sourcePlaybackOffset);
-
-    const processPayload: RubberbandProcessPayload = {
-      inputBuffer,
-      isLastChunk,
-    };
-    this.worker.postMessage(
-      { type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
-      transferableObjects,
-    );
+    const processPayload: RubberbandProcessPayload = { inputBuffer, isLastChunk };
+    this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload }, transferableObjects);
   }
 
   private scheduleChunkPlayback(channelData: Float32Array[]): void {
     if (!this.audioContext || !this.gainNode || this.isStopping) return;
-
     const frameCount = channelData[0]?.length;
     if (!frameCount) return;
-
-    const chunkBuffer = this.audioContext.createBuffer(
-      channelData.length,
-      frameCount,
-      this.audioContext.sampleRate,
-    );
+    const chunkBuffer = this.audioContext.createBuffer(channelData.length, frameCount, this.audioContext.sampleRate);
     for (let i = 0; i < channelData.length; i++) {
       chunkBuffer.copyToChannel(channelData[i], i);
     }
-
     const source = this.audioContext.createBufferSource();
     source.buffer = chunkBuffer;
     source.connect(this.gainNode);
-    source.start(this.audioContext.currentTime); // Play immediately
+    source.start(this.audioContext.currentTime);
   }
 
-  private handleWorkerMessage = (
-    event: MessageEvent<WorkerMessage<any>>,
-  ): void => {
+  private handleWorkerMessage = (event: MessageEvent<WorkerMessage<any>>): void => {
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`);
+    // --- END: ADDED FOR DIAGNOSTICS ---
+
     const { type, payload } = event.data;
 
     switch (type) {
@@ -12818,33 +12758,18 @@ class AudioEngineService {
         break;
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
-
-        // --- START: NEW LOGIC ---
-        // If we are stopping or paused, discard the result and break the loop.
         if (this.isStopping || !this.isPlaying) break;
-
-        // Schedule the chunk we just received for immediate playback.
-        if (
-          result.outputBuffer?.length > 0 &&
-          result.outputBuffer[0].length > 0
-        ) {
+        if (result.outputBuffer?.length > 0 && result.outputBuffer[0].length > 0) {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
-
-        // Update the UI with the latest time.
         timeStore.set(this.sourcePlaybackOffset);
-
-        // Immediately process the next chunk. This self-perpetuates the loop.
         this._performSingleProcessAndPlayIteration();
-        // --- END: NEW LOGIC ---
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
-        const workerErrorMsg =
-          (payload as WorkerErrorPayload)?.message || "Unknown worker error";
+        const workerErrorMsg = (payload as WorkerErrorPayload)?.message || "Unknown worker error";
         console.error("[AudioEngineService] Worker error:", workerErrorMsg);
         AudioOrchestrator.getInstance().handleError(new Error(workerErrorMsg));
-        // Optionally, pause or stop playback here.
-        this.pause(); // Good practice to pause on worker error
+        this.pause();
         break;
       default:
         console.warn("[AudioEngineService] Unknown worker message type:", type);
@@ -12852,14 +12777,14 @@ class AudioEngineService {
   };
 
   public async dispose(): Promise<void> {
-    await this.stop(); // Ensure playback is stopped and resources are potentially released by stop()
+    await this.stop();
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
     }
     if (this.audioContext && this.audioContext.state !== "closed") {
       try {
-        await this.audioContext.close(); // Await closing
+        await this.audioContext.close();
       } catch (e) {
         console.error("Error closing audio context:", e);
       } finally {
@@ -12874,14 +12799,19 @@ class AudioEngineService {
     this.isWorkerReady = false;
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
-    // this.nextChunkTime = 0; // nextChunkTime removed
-    // animationFrameId was removed, so no need to check or cancel it here.
+
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    if(this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+    }
+    // --- END: ADDED FOR DIAGNOSTICS ---
+
     console.log("[AudioEngineService] Disposed");
   }
 }
 
 export default AudioEngineService.getInstance();
-
 ````
 --- End of File: vibe-player-v2.3/src/lib/services/audioEngine.service.ts ---
 --- File: vibe-player-v2.3/src/lib/services/dtmf.service.test.ts ---
