@@ -3,15 +3,16 @@
 	import { RangeSlider } from '@skeletonlabs/skeleton';
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
-	import { get } from 'svelte/store';
 
 	const engine = audioEngine; // Cache instance
 
 	// Reactive variable to unify disabled logic
 	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
+	// CORRECTED: The component simply reports the user's INTENT to toggle playback.
 	function handlePlayPause() {
-		get(playerStore).isPlaying ? engine.pause() : engine.play();
+        console.log('[Controls.svelte] handlePlayPause triggered. Calling engine.togglePlayPause()');
+		engine.togglePlayPause();
 	}
 
 	function handleStop() {
@@ -59,8 +60,8 @@
 		<RangeSlider
 			data-testid="speed-slider-input"
 			name="speedSlider"
-			bind:value={$playerStore.speed}
-			on:input={() => engine.setSpeed($playerStore.speed)}
+			value={$playerStore.speed}
+			on:input={(e) => engine.setSpeed(e.currentTarget.valueAsNumber)}
 			min={0.5} max={2.0} step={0.01}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -74,8 +75,8 @@
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
-			bind:value={$playerStore.pitchShift}
-			on:input={() => engine.setPitch($playerStore.pitchShift)}
+			value={$playerStore.pitchShift}
+			on:input={(e) => engine.setPitch(e.currentTarget.valueAsNumber)}
 			min={-12} max={12} step={0.1}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -89,8 +90,8 @@
 		<RangeSlider
 			data-testid="gain-slider-input"
 			name="gainSlider"
-			bind:value={$playerStore.gain}
-			on:input={() => engine.setGain($playerStore.gain)}
+			value={$playerStore.gain}
+			on:input={(e) => engine.setGain(e.currentTarget.valueAsNumber)}
 			min={0} max={2.0} step={0.01}
 			disabled={controlsDisabled}
 			class="w-full"

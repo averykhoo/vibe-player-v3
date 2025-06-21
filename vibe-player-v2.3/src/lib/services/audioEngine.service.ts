@@ -55,6 +55,14 @@ class AudioEngineService {
     }
   };
 
+  public togglePlayPause = (): void => {
+    if (this.isPlaying) {
+      this.pause();
+    } else {
+      this.play();
+    }
+  };
+
   /**
    * Decodes an ArrayBuffer into an AudioBuffer. This is its only responsibility.
    * @param buffer The ArrayBuffer containing the audio data.
