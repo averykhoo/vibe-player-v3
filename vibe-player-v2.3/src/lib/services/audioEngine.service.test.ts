@@ -53,6 +53,7 @@ const { hoistedData } = vi.hoisted(() => {
 // This happens after `writable` is imported and before mock factories need these instances.
 const __mockPlayerStoreInstance = writable<PlayerState>({
   ...hoistedData.initialPlayerState,
+  gain: 1.0, // <-- ADDED gain to match PlayerState type (already present in hoistedData, ensuring it here if not)
 });
 const __mockTimeStoreInstance = writable<number>(hoistedData.initialTime);
 
@@ -108,7 +109,7 @@ describe("AudioEngineService (Robust Loop)", () => {
       mockOrchestrator,
     );
 
-    mockWorker = { postMessage: vi.fn(), terminate: vi.fn() };
+    mockWorker = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }; // Add null handlers
     (RubberbandWorker as vi.Mock).mockReturnValue(mockWorker);
 
     mockAudioContext = {
@@ -126,13 +127,18 @@ describe("AudioEngineService (Robust Loop)", () => {
     (globalThis as any).requestAnimationFrame = vi.fn();
     (globalThis as any).cancelAnimationFrame = vi.fn();
 
-    engine = AudioEngineService;
+    engine = AudioEngineService; // Reverted: AudioEngineService is already the instance
+    // --- START OF FIX ---
+    // Manually instantiate the worker and assign it to the service instance for tests.
+    // This simulates the state after `initializeWorker` has been successfully called.
+    (engine as any).worker = new (RubberbandWorker as any)();
+    // --- END OF FIX ---
     (engine as any).originalBuffer = mockAudioBuffer;
     (engine as any).isWorkerReady = true;
     (engine as any).isPlaying = false;
     (engine as any).sourcePlaybackOffset = 0;
-    (engine as any)._getAudioContext();
-    (engine as any).worker = mockWorker; // Ensure mock worker is assigned
+    (engine as any)._getAudioContext(); // Restored
+    (engine as any).worker = mockWorker; // Restored
   });
 
   describe("seek", () => {
@@ -262,6 +268,11 @@ describe("AudioEngineService (Robust Loop)", () => {
     (engine as any).worker = mockWorker; // ADDED: Ensure engine's worker is our mock (though not strictly needed for this path, good for consistency)
     const pauseSpy = vi.spyOn(engine, "pause");
     (engine as any).sourcePlaybackOffset = mockAudioBuffer.duration; // Set to the end
+
+    // --- THIS IS THE FIX ---
+    // Set the precondition that the engine is actively playing.
+    (engine as any).isPlaying = true;
+    // --- END OF FIX ---
 
     (engine as any)._performSingleProcessAndPlayIteration();
 

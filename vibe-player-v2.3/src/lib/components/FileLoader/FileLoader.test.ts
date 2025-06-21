@@ -12,8 +12,8 @@ import FileLoader from "../FileLoader.svelte";
 
 // Mock svelte's createEventDispatcher
 const mockDispatch = vi.fn();
-vi.mock('svelte', async (importOriginal) => {
-  const actualSvelte = await importOriginal<typeof import('svelte')>();
+vi.mock("svelte", async (importOriginal) => {
+  const actualSvelte = await importOriginal<typeof import("svelte")>();
   return {
     ...actualSvelte,
     createEventDispatcher: vi.fn(() => mockDispatch), // Return the mockDispatch
@@ -83,7 +83,7 @@ describe("FileLoader.svelte", () => {
     await fireEvent.change(fileInput, { target: { files: [testFile] } });
 
     expect(mockDispatch).toHaveBeenCalledTimes(1);
-    expect(mockDispatch).toHaveBeenCalledWith('load', { file: testFile });
+    expect(mockDispatch).toHaveBeenCalledWith("load", { file: testFile });
     expect(fileInput.value).toBe("");
   });
 
