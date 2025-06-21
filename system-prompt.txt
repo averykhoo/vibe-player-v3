@@ -294,6 +294,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   ├── player.e2e.spec.js
     │   └── player.e2e.spec.js.bak
     ├── tsconfig.json
+    ├── vibe-player-v2.3
+    │   └── package-lock.json
     └── vite.config.ts
 ````
 
@@ -10029,14 +10031,23 @@ export function sparkles(
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
 
+    // ADD THIS LOG
+    console.log(`[LOG-VIBE-341] Controls.svelte script block executed. Importing audioEngine service.`);
+
 	const engine = audioEngine; // Cache instance
+
+    // --- ADD THIS LOG ---
+    console.log(`[VIBE-346-TRACE] Controls.svelte has cached 'engine' instance with ID: ${engine.instanceId}`);
+    // --- END LOG ---
 
 	// Reactive variable to unify disabled logic
 	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
 	// CORRECTED: The component simply reports the user's INTENT to toggle playback.
 	function handlePlayPause() {
-        console.log('[Controls.svelte] handlePlayPause triggered. Calling engine.togglePlayPause()');
+        // --- ADD THIS LOG ---
+        console.log(`[VIBE-346-TRACE] Controls.svelte handlePlayPause called on engine instance ID: ${engine.instanceId}`);
+        // --- END LOG ---
 		engine.togglePlayPause();
 	}
 
@@ -11453,6 +11464,13 @@ export class AudioOrchestrator {
       return;
     }
     this.isBusy = true;
+
+    // --- ADD THIS LOG ---
+    console.log(
+      `[VIBE-346-TRACE] Orchestrator starting file load. It will use audioEngine instance ID: ${audioEngine.instanceId}`,
+    );
+    // --- END LOG ---
+
     statusStore.set({
       message: `Loading ${file.name}...`,
       type: "info",
@@ -12188,8 +12206,9 @@ describe("AudioEngineService (Robust Loop)", () => {
     getChannelData: vi.fn(() => new Float32Array(441000).fill(0.1)),
   } as unknown as AudioBuffer;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    // Make the hook async
+    vi.resetAllMocks(); // Changed from clearAllMocks
 
     // Reset the state of the module-scoped store instances for each test
     __mockPlayerStoreInstance.set({ ...hoistedData.initialPlayerState });
@@ -12201,7 +12220,12 @@ describe("AudioEngineService (Robust Loop)", () => {
       mockOrchestrator,
     );
 
-    mockWorker = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }; // Add null handlers
+    mockWorker = {
+      postMessage: vi.fn(),
+      terminate: vi.fn(),
+      onmessage: null,
+      onerror: null,
+    }; // Add null handlers
     (RubberbandWorker as vi.Mock).mockReturnValue(mockWorker);
 
     mockAudioContext = {
@@ -12213,6 +12237,7 @@ describe("AudioEngineService (Robust Loop)", () => {
       })),
       createBufferSource: vi.fn(() => ({ connect: vi.fn(), start: vi.fn() })),
       createBuffer: vi.fn(() => ({ copyToChannel: vi.fn() })),
+      close: vi.fn(), // Added mock for close
     };
     (globalThis as any).AudioContext = vi.fn(() => mockAudioContext);
 
@@ -12220,6 +12245,12 @@ describe("AudioEngineService (Robust Loop)", () => {
     (globalThis as any).cancelAnimationFrame = vi.fn();
 
     engine = AudioEngineService; // Reverted: AudioEngineService is already the instance
+
+    // --- ADD THIS ASYNC DISPOSE CALL ---
+    // This ensures the singleton is reset to a clean state before each test.
+    await engine.dispose();
+    // --- END OF ADDITION ---
+
     // --- START OF FIX ---
     // Manually instantiate the worker and assign it to the service instance for tests.
     // This simulates the state after `initializeWorker` has been successfully called.
@@ -12230,7 +12261,7 @@ describe("AudioEngineService (Robust Loop)", () => {
     (engine as any).isPlaying = false;
     (engine as any).sourcePlaybackOffset = 0;
     (engine as any)._getAudioContext(); // Restored
-    (engine as any).worker = mockWorker; // Restored
+    // (engine as any).worker = mockWorker; // Removed redundant assignment
   });
 
   describe("seek", () => {
@@ -12308,32 +12339,26 @@ describe("AudioEngineService (Robust Loop)", () => {
     });
   });
 
-  it("play() should start the animation loop", async () => {
-    await engine.play();
-    expect(get(playerStore).isPlaying).toBe(true);
-    expect(requestAnimationFrame).toHaveBeenCalledWith(expect.any(Function));
-  });
-
-  it("pause() should stop the animation loop", () => {
-    (engine as any).isPlaying = true;
-    (engine as any).animationFrameId = 123;
-    engine.pause();
-    expect(get(playerStore).isPlaying).toBe(false);
-    expect(cancelAnimationFrame).toHaveBeenCalledWith(123);
-  });
-
-  it("_recursiveProcessAndPlayLoop should update timeStore and call iteration", () => {
+  it("play() should kick off the processing loop by calling a single iteration", async () => {
     const iterationSpy = vi
       .spyOn(engine as any, "_performSingleProcessAndPlayIteration")
       .mockImplementation(() => {});
-    (engine as any).isPlaying = true;
-    (engine as any).sourcePlaybackOffset = 5.0;
-    (engine as any).audioContext = mockAudioContext;
 
-    (engine as any)._recursiveProcessAndPlayLoop();
+    await engine.play();
 
-    expect(get(timeStore)).toBe(5.0);
+    expect(get(playerStore).isPlaying).toBe(true);
     expect(iterationSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("pause() should set the isPlaying flag to false", () => {
+    // Set up the playing state first
+    (engine as any).isPlaying = true;
+    playerStore.update((s) => ({ ...s, isPlaying: true }));
+
+    engine.pause();
+
+    expect(get(playerStore).isPlaying).toBe(false);
+    expect((engine as any).isPlaying).toBe(false);
   });
 
   it("_performSingleProcessAndPlayIteration should post a chunk to the worker and advance offset", () => {
@@ -12381,6 +12406,11 @@ describe("AudioEngineService (Robust Loop)", () => {
       isLastChunk: false,
     };
 
+    // --- ADD THIS LINE ---
+    // Set the precondition that the engine is actively playing.
+    (engine as any).isPlaying = true;
+    // --- END OF ADDITION ---
+
     (engine as any).handleWorkerMessage({
       data: { type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: mockResult },
     });
@@ -12411,6 +12441,7 @@ import { AudioOrchestrator } from "./AudioOrchestrator.service"; // NEW
 
 class AudioEngineService {
   private static instance: AudioEngineService;
+  public readonly instanceId: number; // <-- ADD THIS PUBLIC, READONLY PROPERTY
 
   private worker: Worker | null = null;
   private audioContext: AudioContext | null = null;
@@ -12422,40 +12453,45 @@ class AudioEngineService {
   private isStopping = false;
 
   private sourcePlaybackOffset = 0;
-  private animationFrameId: number | null = null;
 
   private workerInitPromiseCallbacks: {
     resolve: () => void;
     reject: (reason?: any) => void;
   } | null = null;
 
-  private constructor() {}
+  private constructor() {
+    this.instanceId = Math.floor(Math.random() * 10000); // <-- ADD THIS LINE
+    console.log(
+      `[VIBE-346-TRACE] AudioEngineService CONSTRUCTOR called. NEW instance created with ID: ${this.instanceId}`,
+    );
+  }
 
   public static getInstance(): AudioEngineService {
     if (!AudioEngineService.instance) {
       AudioEngineService.instance = new AudioEngineService();
     }
+    // ADD THIS LOG
+    console.log(`[LOG-VIBE-341] AudioEngineService.getInstance() called.`);
     return AudioEngineService.instance;
   }
 
-  // Safeguard for test environments with immediate requestAnimationFrame
-  private _testLoopSafeguard = 0;
-  private readonly _TEST_MAX_LOOP_ITERATIONS = 1000;
-
-  public unlockAudio = async (): Promise<void> => {
+  public async unlockAudio(): Promise<void> {
     const ctx = this._getAudioContext();
     if (ctx.state === "suspended") {
       await ctx.resume();
     }
-  };
+  }
 
-  public togglePlayPause = (): void => {
+  public togglePlayPause(): void {
+    console.log(
+      `[VIBE-346-TRACE] audioEngine.togglePlayPause() entered on instance ID: ${this.instanceId}. isPlaying=${this.isPlaying}`,
+    );
     if (this.isPlaying) {
       this.pause();
     } else {
       this.play();
     }
-  };
+  }
 
   /**
    * Decodes an ArrayBuffer into an AudioBuffer. This is its only responsibility.
@@ -12480,7 +12516,7 @@ class AudioEngineService {
    * @param audioBuffer The AudioBuffer to initialize the worker with.
    * @returns A promise that resolves on successful worker initialization.
    */
-  public initializeWorker = (audioBuffer: AudioBuffer): Promise<void> => {
+  public initializeWorker(audioBuffer: AudioBuffer): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!audioBuffer) {
         // It's important to clear callbacks if an early error occurs.
@@ -12493,7 +12529,11 @@ class AudioEngineService {
 
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
+
+      // --- FIND THIS LINE:
       this.worker.onmessage = this.handleWorkerMessage;
+      // --- REPLACE WITH:
+      this.worker.onmessage = this.handleWorkerMessage.bind(this);
       this.worker.onerror = (err: ErrorEvent) => {
         const errorMsg =
           "Worker crashed or encountered an unrecoverable error.";
@@ -12550,44 +12590,32 @@ class AudioEngineService {
           AudioOrchestrator.getInstance().handleError(e);
         });
     });
-  };
+  }
 
-  public play = async (): Promise<void> => {
+  public async play(): Promise<void> {
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
-      console.log(
-        `Play called but conditions not met: isPlaying=${this.isPlaying}, originalBuffer=${!!this.originalBuffer}, isWorkerReady=${this.isWorkerReady}`,
-      );
       return;
     }
 
-    await this.unlockAudio(); // Ensure audio context is active
-    // const audioCtxTime = this._getAudioContext().currentTime; // nextChunkTime removed
+    await this.unlockAudio();
     this.isPlaying = true;
-    playerStore.update((s) => ({ ...s, isPlaying: true, error: null })); // Clear previous errors on play
+    playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
 
-    // If playback stopped and then restarted, or if seeking caused nextChunkTime to be in the past.
-    // if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtxTime) { // nextChunkTime removed
-    //   this.nextChunkTime = audioCtxTime; // nextChunkTime removed
-    // } // nextChunkTime removed
-    this._testLoopSafeguard = 0; // Reset safeguard on new play intent
+    // Kick off the deterministic loop by processing the FIRST chunk.
+    // The loop will perpetuate itself from here.
+    this._performSingleProcessAndPlayIteration();
+  }
 
-    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); // Ensure no ghost loops
-    this.animationFrameId = requestAnimationFrame(
-      this._recursiveProcessAndPlayLoop,
-    );
-  };
-
-  public pause = (): void => {
+  public pause(): void {
     if (!this.isPlaying) return;
+
+    // Simply flipping this flag will break the loop when the next
+    // result comes back from the worker. No timers to clear.
     this.isPlaying = false;
     playerStore.update((s) => ({ ...s, isPlaying: false }));
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-  };
+  }
 
-  public stop = async (): Promise<void> => {
+  public async stop(): Promise<void> {
     this.isStopping = true; // Signal that a stop operation is in progress
     this.pause(); // This will cancel animationFrame and set isPlaying to false
 
@@ -12604,9 +12632,9 @@ class AudioEngineService {
     // This might need adjustment or a more robust mechanism if race conditions persist
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.isStopping = false;
-  };
+  }
 
-  public seek = (time: number): void => {
+  public seek(time: number): void {
     if (!this.originalBuffer) {
       console.warn("Seek called without an originalBuffer.");
       return;
@@ -12628,9 +12656,9 @@ class AudioEngineService {
 
     timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
-  };
+  }
 
-  public setSpeed = (speed: number): void => {
+  public setSpeed(speed: number): void {
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({
         type: RB_WORKER_MSG_TYPE.SET_SPEED,
@@ -12638,9 +12666,9 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, speed }));
-  };
+  }
 
-  public setPitch = (pitch: number): void => {
+  public setPitch(pitch: number): void {
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({
         type: RB_WORKER_MSG_TYPE.SET_PITCH,
@@ -12648,9 +12676,9 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
-  };
+  }
 
-  public setGain = (level: number): void => {
+  public setGain(level: number): void {
     const newGain = Math.max(
       0,
       Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level),
@@ -12662,7 +12690,7 @@ class AudioEngineService {
       );
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
-  };
+  }
 
   private _getAudioContext(): AudioContext {
     if (!this.audioContext || this.audioContext.state === "closed") {
@@ -12676,37 +12704,6 @@ class AudioEngineService {
     }
     return this.audioContext;
   }
-
-  private _recursiveProcessAndPlayLoop = (): void => {
-    if (!this.isPlaying || this.isStopping) {
-      if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-      return;
-    }
-
-    // Test safeguard
-    if (
-      (globalThis as any).vi &&
-      this._testLoopSafeguard++ > this._TEST_MAX_LOOP_ITERATIONS
-    ) {
-      console.warn(
-        "[AudioEngineService] Test safeguard: Max loop iterations reached.",
-      );
-      this.pause();
-      return;
-    }
-
-    // Update the UI time store every frame.
-    timeStore.set(this.sourcePlaybackOffset);
-
-    // Call the processing iteration.
-    this._performSingleProcessAndPlayIteration();
-
-    // Schedule the next frame.
-    this.animationFrameId = requestAnimationFrame(
-      this._recursiveProcessAndPlayLoop,
-    );
-  };
 
   private _performSingleProcessAndPlayIteration(): void {
     if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
@@ -12763,6 +12760,9 @@ class AudioEngineService {
     // Immediately advance the source offset. The engine is now self-driven.
     this.sourcePlaybackOffset += chunkSamples / this.originalBuffer.sampleRate;
 
+    // Update the UI with the latest time. This was moved to handleWorkerMessage
+    // timeStore.set(this.sourcePlaybackOffset);
+
     const processPayload: RubberbandProcessPayload = {
       inputBuffer,
       isLastChunk,
@@ -12818,8 +12818,12 @@ class AudioEngineService {
         break;
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
-        if (this.isStopping) break;
 
+        // --- START: NEW LOGIC ---
+        // If we are stopping or paused, discard the result and break the loop.
+        if (this.isStopping || !this.isPlaying) break;
+
+        // Schedule the chunk we just received for immediate playback.
         if (
           result.outputBuffer?.length > 0 &&
           result.outputBuffer[0].length > 0
@@ -12827,11 +12831,12 @@ class AudioEngineService {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
 
-        if (result.isLastChunk) {
-          // The main loop now handles the end-of-file condition by checking sourcePlaybackOffset,
-          // so this check is primarily a failsafe.
-          if (this.isPlaying) this.pause();
-        }
+        // Update the UI with the latest time.
+        timeStore.set(this.sourcePlaybackOffset);
+
+        // Immediately process the next chunk. This self-perpetuates the loop.
+        this._performSingleProcessAndPlayIteration();
+        // --- END: NEW LOGIC ---
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
         const workerErrorMsg =
@@ -12847,7 +12852,6 @@ class AudioEngineService {
   };
 
   public async dispose(): Promise<void> {
-    // Made async
     await this.stop(); // Ensure playback is stopped and resources are potentially released by stop()
     if (this.worker) {
       this.worker.terminate();
@@ -12871,10 +12875,7 @@ class AudioEngineService {
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
     // this.nextChunkTime = 0; // nextChunkTime removed
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    // animationFrameId was removed, so no need to check or cancel it here.
     console.log("[AudioEngineService] Disposed");
   }
 }
