@@ -78,7 +78,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case RB_WORKER_MSG_TYPE.PROCESS:
-        const result = handleProcess(payload as RubberbandProcessPayload);
+        const { inputBuffer, isLastChunk, playbackTime } =
+          payload as RubberbandProcessPayload;
+        const result = handleProcess(inputBuffer, isLastChunk, playbackTime);
         self.postMessage(
           {
             type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
@@ -160,71 +162,86 @@ async function handleInit(payload: RubberbandInitPayload) {
 }
 
 function handleProcess(
-  payload: RubberbandProcessPayload,
+  inputBuffer: Float32Array[],
+  isLastChunk: boolean,
+  playbackTime: number,
 ): RubberbandProcessResultPayload {
-  if (!wasmModule || !stretcher)
+  if (!wasmModule || !stretcher) {
     throw new Error("Worker not initialized for processing.");
+  }
 
-  const { inputBuffer } = payload;
   const channels = inputBuffer.length;
-  if (channels === 0) return { outputBuffer: [] };
+  if (channels === 0) {
+    return { outputBuffer: [], playbackTime, duration: 0, isLastChunk: true };
+  }
 
   const frameCount = inputBuffer[0].length;
-  if (frameCount === 0) {
-    return { outputBuffer: [] };
-  }
-
-  // 1. Allocate memory in the WASM heap for an array of pointers (one for each channel).
   const inputPtrs = wasmModule._malloc(channels * 4);
 
-  // 2. For each channel, allocate memory and copy the audio data into the WASM heap.
-  //    Store the pointer to this memory in the pointers array.
-  for (let i = 0; i < channels; i++) {
-    const bufferPtr = wasmModule._malloc(frameCount * 4);
-    wasmModule.HEAPF32.set(inputBuffer[i], bufferPtr / 4);
-    wasmModule.HEAPU32[inputPtrs / 4 + i] = bufferPtr;
+  try {
+    for (let i = 0; i < channels; i++) {
+      const bufferPtr = wasmModule._malloc(frameCount * 4);
+      wasmModule.HEAPF32.set(inputBuffer[i], bufferPtr / 4);
+      wasmModule.HEAPU32[inputPtrs / 4 + i] = bufferPtr;
+    }
+
+    wasmModule._rubberband_process(
+      stretcher,
+      inputPtrs,
+      frameCount,
+      isLastChunk ? 1 : 0,
+    );
+  } finally {
+    for (let i = 0; i < channels; i++) {
+      const ptr = wasmModule.HEAPU32[inputPtrs / 4 + i];
+      if (ptr) wasmModule._free(ptr);
+    }
+    wasmModule._free(inputPtrs);
   }
 
-  // 3. Call the C++ `rubberband_process` function.
-  wasmModule._rubberband_process(stretcher, inputPtrs, frameCount, 0);
-
-  // 4. Free the memory we allocated for the input buffers and the pointer array.
-  for (let i = 0; i < channels; i++) {
-    wasmModule._free(wasmModule.HEAPU32[inputPtrs / 4 + i]);
-  }
-  wasmModule._free(inputPtrs);
-
-  // 5. Retrieve the processed audio from Rubberband's internal buffers.
   const available = wasmModule._rubberband_available(stretcher);
   const outputBuffer: Float32Array[] = [];
+  let duration = 0;
+
   if (available > 0) {
     const outputPtrs = wasmModule._malloc(channels * 4);
-    const retrievedPtrs: number[] = [];
-    for (let i = 0; i < channels; i++) {
-      const bufferPtr = wasmModule._malloc(available * 4);
-      wasmModule.HEAPU32[outputPtrs / 4 + i] = bufferPtr;
-      retrievedPtrs.push(bufferPtr);
-    }
+    try {
+      const retrievedPtrs: number[] = [];
+      for (let i = 0; i < channels; i++) {
+        const bufferPtr = wasmModule._malloc(available * 4);
+        wasmModule.HEAPU32[outputPtrs / 4 + i] = bufferPtr;
+        retrievedPtrs.push(bufferPtr);
+      }
 
-    const retrievedCount = wasmModule._rubberband_retrieve(
-      stretcher,
-      outputPtrs,
-      available,
-    );
-
-    for (let i = 0; i < channels; i++) {
-      const channelData = new Float32Array(retrievedCount);
-      channelData.set(
-        wasmModule.HEAPF32.subarray(
-          retrievedPtrs[i] / 4,
-          retrievedPtrs[i] / 4 + retrievedCount,
-        ),
+      // TODO: VIBE-328 This needs to come from playerStore, but workers can't access Svelte stores.
+      // This needs to be passed in during INIT or PROCESS. For now, hardcoding to 48000 as a temporary measure.
+      const sampleRate = 48000;
+      const retrievedCount = wasmModule._rubberband_retrieve(
+        stretcher,
+        outputPtrs,
+        available,
       );
-      outputBuffer.push(channelData);
-      wasmModule._free(retrievedPtrs[i]);
+      duration = retrievedCount > 0 ? retrievedCount / sampleRate : 0;
+
+      for (let i = 0; i < channels; i++) {
+        const channelData = new Float32Array(retrievedCount);
+        channelData.set(
+          wasmModule.HEAPF32.subarray(
+            retrievedPtrs[i] / 4,
+            retrievedPtrs[i] / 4 + retrievedCount,
+          ),
+        );
+        outputBuffer.push(channelData);
+      }
+    } finally {
+      // Assuming retrievedPtrs is not needed outside the try block
+      for (let i = 0; i < channels; i++) {
+        const ptr = wasmModule.HEAPU32[outputPtrs / 4 + i];
+        if (ptr) wasmModule._free(ptr);
+      }
+      wasmModule._free(outputPtrs);
     }
-    wasmModule._free(outputPtrs);
   }
 
-  return { outputBuffer };
+  return { outputBuffer, playbackTime, duration, isLastChunk };
 }
