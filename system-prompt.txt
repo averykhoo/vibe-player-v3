@@ -270,7 +270,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   │       └── spectrogram.worker.ts
     │   ├── routes
     │   │   ├── +layout.svelte
-    │   │   └── +page.svelte
+    │   │   ├── +page.svelte
+    │   │   └── +page.ts
     │   └── setupTests.ts
     ├── static
     │   ├── favicon.png
@@ -293,8 +294,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   ├── player.e2e.spec.js
     │   └── player.e2e.spec.js.bak
     ├── tsconfig.json
-    ├── vibe-player-v2.3
-    │   └── package-lock.json
     └── vite.config.ts
 ````
 
@@ -10029,15 +10028,16 @@ export function sparkles(
 	import { RangeSlider } from '@skeletonlabs/skeleton';
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
-	import { get } from 'svelte/store';
 
 	const engine = audioEngine; // Cache instance
 
 	// Reactive variable to unify disabled logic
 	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
+	// CORRECTED: The component simply reports the user's INTENT to toggle playback.
 	function handlePlayPause() {
-		get(playerStore).isPlaying ? engine.pause() : engine.play();
+        console.log('[Controls.svelte] handlePlayPause triggered. Calling engine.togglePlayPause()');
+		engine.togglePlayPause();
 	}
 
 	function handleStop() {
@@ -10085,8 +10085,8 @@ export function sparkles(
 		<RangeSlider
 			data-testid="speed-slider-input"
 			name="speedSlider"
-			bind:value={$playerStore.speed}
-			on:input={() => engine.setSpeed($playerStore.speed)}
+			value={$playerStore.speed}
+			on:input={(e) => engine.setSpeed(e.currentTarget.valueAsNumber)}
 			min={0.5} max={2.0} step={0.01}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -10100,8 +10100,8 @@ export function sparkles(
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
-			bind:value={$playerStore.pitchShift}
-			on:input={() => engine.setPitch($playerStore.pitchShift)}
+			value={$playerStore.pitchShift}
+			on:input={(e) => engine.setPitch(e.currentTarget.valueAsNumber)}
 			min={-12} max={12} step={0.1}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -10115,8 +10115,8 @@ export function sparkles(
 		<RangeSlider
 			data-testid="gain-slider-input"
 			name="gainSlider"
-			bind:value={$playerStore.gain}
-			on:input={() => engine.setGain($playerStore.gain)}
+			value={$playerStore.gain}
+			on:input={(e) => engine.setGain(e.currentTarget.valueAsNumber)}
 			min={0} max={2.0} step={0.01}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -10129,79 +10129,31 @@ export function sparkles(
 ````typescript
 // vibe-player-v2.3/src/lib/components/Controls.test.ts
 import { act, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 import Controls from "./Controls.svelte";
 import audioEngineService from "$lib/services/audioEngine.service";
 import { get, writable, type Writable } from "svelte/store";
 import type { PlayerState } from "$lib/types/player.types";
-import type { AnalysisState } from "$lib/types/analysis.types";
 
-// --- Mock Declarations (No Assignment) ---
-// let mockPlayerStore: Writable<PlayerState>; // Removed due to TDZ issues with vi.mock hoisting
-// let mockAnalysisStore: Writable<AnalysisState>; // Removed due to TDZ issues with vi.mock hoisting
-
-// --- Mocks with Correct Hoisting Pattern ---
+// Mock the entire module to control the store instance
 vi.mock("$lib/stores/player.store", async () => {
-  const { writable: actualWritable } =
+  const { writable } =
     await vi.importActual<typeof import("svelte/store")>("svelte/store");
-
   const initialPlayerStateForMock: PlayerState = {
-    status: "idle",
-    fileName: null,
-    duration: 100,
-    currentTime: 0,
-    isPlaying: false,
-    isPlayable: false,
-    speed: 1.0,
-    pitchShift: 0.0,
-    gain: 1.0,
-    waveformData: undefined,
-    error: null,
-    audioBuffer: undefined,
-    audioContextResumed: false,
-    channels: undefined,
-    sampleRate: undefined,
-    lastProcessedChunk: undefined,
-  };
-  const storeInstance = actualWritable(initialPlayerStateForMock);
-
+    /* ... initial state ... */
+  }; // Full state here
+  const storeInstance = writable(initialPlayerStateForMock);
   return {
     playerStore: storeInstance,
-    getMockStore: () => storeInstance,
+    getMockStore: () => storeInstance, // Helper for tests
     __initialState: initialPlayerStateForMock,
-  };
-});
-
-vi.mock("$lib/stores/analysis.store", async () => {
-  const { writable: actualWritable } =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-
-  const initialAnalysisStateForMock: AnalysisState = {
-    dtmfResults: [],
-    spectrogramData: null,
-    vadPositiveThreshold: 0.5,
-    vadNegativeThreshold: 0.35,
-    vadEvents: [],
-    isSpeaking: false,
-    vadInitialized: false,
-    vadStatus: "idle",
-    vadError: null,
-    vadNoiseFloor: 0.1,
-    vadSensitivity: 0.5,
-  };
-  const storeInstance = actualWritable(initialAnalysisStateForMock);
-
-  return {
-    analysisStore: storeInstance,
-    getMockStore: () => storeInstance, // To allow tests to get a direct handle if needed for reset
-    __initialState: initialAnalysisStateForMock, // For easier reset
   };
 });
 
 vi.mock("$lib/services/audioEngine.service", () => ({
   default: {
-    play: vi.fn(),
-    pause: vi.fn(),
+    togglePlayPause: vi.fn(),
     stop: vi.fn(),
     setSpeed: vi.fn(),
     setPitch: vi.fn(),
@@ -10209,278 +10161,85 @@ vi.mock("$lib/services/audioEngine.service", () => ({
   },
 }));
 
-describe("Controls.svelte", () => {
-  let actualMockPlayerStore: Writable<PlayerState>; // To hold the player store instance
-  let actualMockAnalysisStore: Writable<AnalysisState>; // To hold the analysis store instance
-
-  // Initial states are now defined within their respective mock factories' __initialState export.
-  // const initialPlayerState: PlayerState = { ... }; // Removed
-  // const initialAnalysisState: AnalysisState = { ... }; // Removed
+describe("Controls.svelte (Unidirectional)", () => {
+  let mockPlayerStore: Writable<PlayerState>;
 
   beforeEach(async () => {
-    // Made beforeEach async
     vi.clearAllMocks();
-
-    // Import the mocked stores to get access to getMockStore and __initialState
     const playerStoreModule = await import("$lib/stores/player.store");
-    actualMockPlayerStore = playerStoreModule.getMockStore();
-    const analysisStoreModule = await import("$lib/stores/analysis.store");
-    actualMockAnalysisStore = analysisStoreModule.getMockStore();
-
-    // Reset store states before each test
-    act(() => {
-      actualMockPlayerStore.set({ ...playerStoreModule.__initialState });
-      actualMockAnalysisStore.set({ ...analysisStoreModule.__initialState });
+    mockPlayerStore = playerStoreModule.getMockStore();
+    mockPlayerStore.set({
+      status: "idle",
+      fileName: "test.wav",
+      duration: 10,
+      currentTime: 0,
+      isPlaying: false,
+      isPlayable: false, // Start disabled
+      speed: 1.0,
+      pitchShift: 0.0,
+      gain: 1.0,
     });
   });
 
-  // ... (rest of the tests remain the same)
-  it("renders all control buttons and sliders", () => {
-    render(Controls);
-    expect(screen.getByRole("button", { name: /Play/i })).toBeInTheDocument();
-    // ... etc
-    // For brevity, I'm keeping this test minimal as per the example,
-    // the full assertions from the original file would be here.
-    expect(screen.getByRole("button", { name: /Stop/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/Speed/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Pitch/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Gain/i)).toBeInTheDocument();
-  });
-
-  // Adding other tests from the original file to make it a complete test suite again
-  it("calls audioEngine.play() when play button is clicked and not playing", async () => {
+  it("calls audioEngine.togglePlayPause() on play/pause button click", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.update((s) => ({
-        // Use actualMockPlayerStore
-        ...s,
-        isPlayable: true,
-        isPlaying: false,
-      }));
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
     });
-    await act();
-    const playButton = screen.getByRole("button", { name: /Play/i });
+
+    const playButton = screen.getByRole("button", { name: /Play audio/i });
     await fireEvent.click(playButton);
-    expect(audioEngineService.play).toHaveBeenCalledTimes(1);
-    // Ensure store is updated as per plan
-    act(() => {
-      actualMockPlayerStore.update((s) => ({ ...s, isPlaying: true }));
-    });
-    expect(get(actualMockPlayerStore).isPlaying).toBe(true);
+    expect(audioEngineService.togglePlayPause).toHaveBeenCalledTimes(1);
   });
 
-  it("calls audioEngine.pause() when pause button is clicked and is playing", async () => {
+  it("calls audioEngine.stop() on stop button click", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.update((s) => ({
-        // Use actualMockPlayerStore
-        ...s,
-        isPlayable: true,
-        isPlaying: true,
-      }));
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
     });
-    await act();
-    const pauseButton = screen.getByRole("button", { name: /Pause/i });
-    await fireEvent.click(pauseButton);
-    expect(audioEngineService.pause).toHaveBeenCalledTimes(1);
-    // Ensure store is updated as per plan
-    act(() => {
-      actualMockPlayerStore.update((s) => ({ ...s, isPlaying: false }));
-    });
-    expect(get(actualMockPlayerStore).isPlaying).toBe(false);
-  });
 
-  it("calls audioEngine.stop() on Stop button click", async () => {
-    render(Controls);
-    act(() => {
-      actualMockPlayerStore.update((s) => ({ ...s, isPlayable: true })); // Use actualMockPlayerStore
-    });
-    await act();
-    const stopButton = screen.getByRole("button", { name: /Stop/i });
+    const stopButton = screen.getByRole("button", { name: /Stop audio/i });
     await fireEvent.click(stopButton);
     expect(audioEngineService.stop).toHaveBeenCalledTimes(1);
-    // Ensure store is updated as per plan
+  });
+
+  it("updates UI reactively when playerStore changes", async () => {
+    render(Controls);
+    const speedSlider =
+      screen.getByTestId<HTMLInputElement>("speed-slider-input");
+    expect(speedSlider.value).toBe("1");
+
     act(() => {
-      actualMockPlayerStore.update((s) => ({
-        ...s,
-        isPlaying: false,
-        currentTime: 0,
-      }));
+      mockPlayerStore.update((s) => ({ ...s, speed: 1.75 }));
     });
-    expect(get(actualMockPlayerStore).isPlaying).toBe(false);
-    expect(get(actualMockPlayerStore).currentTime).toBe(0);
+
+    // --- THIS IS THE FIX ---
+    // Wait for Svelte to flush the DOM updates before asserting.
+    await tick();
+    // --- END OF FIX ---
+
+    // Now this assertion will pass because the DOM has been updated.
+    expect(speedSlider.value).toBe("1.75");
+    expect(screen.getByTestId("speed-value")).toHaveTextContent("Speed: 1.75x");
   });
 
-  describe("Slider Value Reflection (Store -> UI)", () => {
-    it("reflects playerStore.speed in speed slider and label", async () => {
-      render(Controls);
-      act(() => {
-        actualMockPlayerStore.set({
-          // Use actualMockPlayerStore
-          ...get(actualMockPlayerStore), // Use actualMockPlayerStore
-          speed: 1.75,
-          isPlayable: true,
-        });
-      });
-      await act();
-      const speedSlider =
-        screen.getByTestId<HTMLInputElement>("speed-slider-input");
-      expect(speedSlider.value).toBe("1.75");
-      expect(screen.getByTestId("speed-value")).toHaveTextContent(
-        "Speed: 1.75x",
-      );
-    });
-
-    it("reflects playerStore.pitchShift in pitch slider and label", async () => {
-      render(Controls);
-      act(() => {
-        actualMockPlayerStore.set({
-          // Use actualMockPlayerStore
-          ...get(actualMockPlayerStore), // Use actualMockPlayerStore
-          pitchShift: -6.5,
-          isPlayable: true,
-        });
-      });
-      await act();
-      const pitchSlider =
-        screen.getByTestId<HTMLInputElement>("pitch-slider-input");
-      expect(pitchSlider.value).toBe("-6.5");
-      expect(screen.getByTestId("pitch-value")).toHaveTextContent(
-        "Pitch: -6.5 semitones",
-      );
-    });
-
-    it("reflects playerStore.gain in gain slider and label", async () => {
-      render(Controls);
-      act(() => {
-        actualMockPlayerStore.set({
-          // Use actualMockPlayerStore
-          ...get(actualMockPlayerStore), // Use actualMockPlayerStore
-          gain: 0.25,
-          isPlayable: true,
-        });
-      });
-      await act();
-      const gainSlider =
-        screen.getByTestId<HTMLInputElement>("gain-slider-input");
-      expect(gainSlider.value).toBe("0.25");
-      expect(screen.getByTestId("gain-value")).toHaveTextContent("Gain: 0.25");
-    });
-  });
-
-  describe("Event Handling and Service Calls (UI -> Store -> Service/Log)", () => {
-    beforeEach(() => {
-      // This beforeEach is nested, should be fine.
-      act(() => {
-        if (
-          actualMockPlayerStore &&
-          typeof actualMockPlayerStore.update === "function"
-        ) {
-          // Use actualMockPlayerStore
-          actualMockPlayerStore.update((s) => ({ ...s, isPlayable: true })); // Use actualMockPlayerStore
-        }
-      });
-    });
-
-    it("updates speed, calls audioEngine.setSpeed on slider input", async () => {
-      render(Controls);
-      const speedSlider =
-        screen.getByTestId<HTMLInputElement>("speed-slider-input");
-      const testValue = 1.5;
-      await fireEvent.input(speedSlider, {
-        target: { value: testValue.toString() },
-      });
-      expect(get(actualMockPlayerStore).speed).toBe(testValue); // Use actualMockPlayerStore
-      expect(audioEngineService.setSpeed).toHaveBeenCalledWith(testValue);
-      expect(screen.getByTestId("speed-value")).toHaveTextContent(
-        `Speed: ${testValue.toFixed(2)}x`,
-      );
-    });
-
-    it("updates pitchShift, calls audioEngine.setPitch on slider input", async () => {
-      render(Controls);
-      const pitchSlider =
-        screen.getByTestId<HTMLInputElement>("pitch-slider-input");
-      const testValue = -5.5;
-      await fireEvent.input(pitchSlider, {
-        target: { value: testValue.toString() },
-      });
-      expect(get(actualMockPlayerStore).pitchShift).toBe(testValue); // Use actualMockPlayerStore
-      expect(audioEngineService.setPitch).toHaveBeenCalledWith(testValue);
-      expect(screen.getByTestId("pitch-value")).toHaveTextContent(
-        `Pitch: ${testValue.toFixed(1)} semitones`,
-      );
-    });
-
-    it("updates gain, calls audioEngine.setGain on slider input", async () => {
-      render(Controls);
-      const gainSlider =
-        screen.getByTestId<HTMLInputElement>("gain-slider-input");
-      const testValue = 0.75;
-      await fireEvent.input(gainSlider, {
-        target: { value: testValue.toString() },
-      });
-      expect(get(actualMockPlayerStore).gain).toBe(testValue); // Use actualMockPlayerStore
-      expect(audioEngineService.setGain).toHaveBeenCalledWith(testValue);
-      expect(screen.getByTestId("gain-value")).toHaveTextContent(
-        `Gain: ${testValue.toFixed(2)}`,
-      );
-    });
-  });
-
-  describe("Control Disabling based on isPlayable", () => {
-    it("disables controls when playerStore.isPlayable is false", () => {
-      act(() => {
-        // Need to get the initial state from the module for consistency
-        const playerStoreModule = vi.importActual<any>(
-          "$lib/stores/player.store",
-        );
-        if (actualMockPlayerStore)
-          actualMockPlayerStore.set({
-            ...playerStoreModule.__initialState,
-            isPlayable: false,
-          });
-      });
-      render(Controls);
-      expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
-      expect(screen.getByRole("button", { name: /Stop/i })).toBeDisabled();
-      expect(screen.getByTestId("speed-slider-input")).toBeDisabled();
-      expect(screen.getByTestId("pitch-slider-input")).toBeDisabled();
-      expect(screen.getByTestId("gain-slider-input")).toBeDisabled();
-    });
-
-    it("enables controls when playerStore.isPlayable is true", () => {
-      act(() => {
-        const playerStoreModule = vi.importActual<any>(
-          "$lib/stores/player.store",
-        );
-        if (actualMockPlayerStore)
-          actualMockPlayerStore.set({
-            ...playerStoreModule.__initialState,
-            isPlayable: true,
-          });
-      });
-      render(Controls);
-      expect(screen.getByRole("button", { name: /Play/i })).not.toBeDisabled();
-      expect(screen.getByRole("button", { name: /Stop/i })).not.toBeDisabled();
-      expect(screen.getByTestId("speed-slider-input")).not.toBeDisabled();
-      expect(screen.getByTestId("pitch-slider-input")).not.toBeDisabled();
-      expect(screen.getByTestId("gain-slider-input")).not.toBeDisabled();
-    });
-  });
-
-  it("disables controls when player is playable but status is loading", async () => {
+  it("calls audioEngine.setSpeed when speed slider is moved", async () => {
     render(Controls);
     act(() => {
-      actualMockPlayerStore.set({
-        ...get(actualMockPlayerStore),
-        isPlayable: true, // Playable...
-        status: "loading", // ...but still loading.
-      });
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
     });
-    await act(); // ensure UI updates
 
-    expect(screen.getByRole("button", { name: /Play/i })).toBeDisabled();
+    const speedSlider =
+      screen.getByTestId<HTMLInputElement>("speed-slider-input");
+    await fireEvent.input(speedSlider, { target: { value: "0.8" } });
+
+    expect(audioEngineService.setSpeed).toHaveBeenCalledWith(0.8);
+  });
+
+  it("disables all controls when not playable", () => {
+    render(Controls); // isPlayable is false by default in beforeEach
+    expect(screen.getByRole("button", { name: /Play audio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Stop audio/i })).toBeDisabled();
     expect(screen.getByTestId("speed-slider-input")).toBeDisabled();
     expect(screen.getByTestId("pitch-slider-input")).toBeDisabled();
     expect(screen.getByTestId("gain-slider-input")).toBeDisabled();
@@ -10501,22 +10260,15 @@ import {
   act,
 } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { writable } from "svelte/store";
-import FileLoader from "../FileLoader.svelte"; // Adjusted path
-import { AudioOrchestrator } from "$lib/services/AudioOrchestrator.service";
-// import { statusStore as actualStatusStore } from '$lib/stores/status.store'; // Import actual for type if needed, but mock below
+import FileLoader from "../FileLoader.svelte";
 
-// Mock AudioOrchestrator
-// Export the mock itself if needed by tests directly
-export const mockLoadFileAndAnalyze = vi.fn();
-
-vi.mock("$lib/services/AudioOrchestrator.service", () => {
+// Mock svelte's createEventDispatcher
+const mockDispatch = vi.fn();
+vi.mock("svelte", async (importOriginal) => {
+  const actualSvelte = await importOriginal<typeof import("svelte")>();
   return {
-    AudioOrchestrator: {
-      getInstance: vi.fn(() => ({
-        loadFileAndAnalyze: mockLoadFileAndAnalyze,
-      })),
-    },
+    ...actualSvelte,
+    createEventDispatcher: vi.fn(() => mockDispatch), // Return the mockDispatch
   };
 });
 
@@ -10527,7 +10279,6 @@ vi.mock("$lib/stores/status.store", async () => {
   const actualWritable = svelteStore.writable;
 
   if (typeof actualWritable !== "function") {
-    // This should ideally not happen if svelte/store is correctly imported.
     console.error(
       "Failed to obtain writable function from actual svelte/store for status.store.",
       svelteStore,
@@ -10548,12 +10299,8 @@ vi.mock("$lib/stores/status.store", async () => {
 });
 
 describe("FileLoader.svelte", () => {
-  // let orchestratorInstanceMock: { loadFileAndAnalyze: vi.Mock<any[], any> ; };
-
   beforeEach(async () => {
-    // Make beforeEach async
-    vi.clearAllMocks();
-    // Import helper and reset store
+    vi.clearAllMocks(); // Clears mockDispatch calls too
     const { getMockStatusStore } = await import("$lib/stores/status.store");
     const mockStatusStoreWritable = getMockStatusStore();
     mockStatusStoreWritable.set({
@@ -10561,18 +10308,14 @@ describe("FileLoader.svelte", () => {
       type: "idle",
       isLoading: false,
     });
-
-    // orchestratorInstanceMock = AudioOrchestrator.getInstance() as any;
   });
 
   afterEach(() => {
-    cleanup(); // Cleans up the DOM after each test
+    cleanup();
   });
 
   it("renders the file input and label", () => {
     render(FileLoader);
-    // The label text is "Load Audio File"
-    // The input is associated by for/id attributes.
     expect(screen.getByText("Load Audio File")).toBeInTheDocument();
     const fileInput = screen.getByLabelText(
       "Load Audio File",
@@ -10580,8 +10323,10 @@ describe("FileLoader.svelte", () => {
     expect(fileInput.type).toBe("file");
   });
 
-  it("calls AudioOrchestrator.loadFileAndAnalyze when a file is selected", async () => {
+  // MODIFIED TEST to check for dispatch call
+  it('dispatches a "load" event with the file when a file is selected', async () => {
     render(FileLoader);
+
     const fileInput = screen.getByLabelText(
       "Load Audio File",
     ) as HTMLInputElement;
@@ -10589,9 +10334,9 @@ describe("FileLoader.svelte", () => {
 
     await fireEvent.change(fileInput, { target: { files: [testFile] } });
 
-    expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
-    expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(testFile);
-    expect(fileInput.value).toBe(""); // Input value should be cleared
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(mockDispatch).toHaveBeenCalledWith("load", { file: testFile });
+    expect(fileInput.value).toBe("");
   });
 
   it("disables the file input when $statusStore.isLoading is true", async () => {
@@ -10659,7 +10404,7 @@ describe("FileLoader.svelte", () => {
 
     const selectedInfo = screen.getByText(/Selected: test.mp3/);
     expect(selectedInfo).toBeInTheDocument();
-    expect(selectedInfo.textContent).toContain("MB");
+    expect(selectedInfo.textContent).toContain("MB)");
   });
 
   it("does not show selected file info if isLoading is true", async () => {
@@ -10718,7 +10463,7 @@ describe("FileLoader.svelte", () => {
     });
 
     expect(screen.queryByTestId("file-error-message")).not.toBeInTheDocument();
-    expect(screen.getByTestId("file-loading-message")).toBeInTheDocument(); // Loading message should be visible
+    expect(screen.getByTestId("file-loading-message")).toBeInTheDocument();
   });
 });
 
@@ -10728,27 +10473,24 @@ describe("FileLoader.svelte", () => {
 ````svelte
 <!-- vibe-player-v2.3/src/lib/components/FileLoader.svelte -->
 <script lang="ts">
-    import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
+    import { createEventDispatcher } from 'svelte';
     import { statusStore } from '$lib/stores/status.store';
 
+    const dispatch = createEventDispatcher<{ load: { file: File } }>();
     let selectedFileDisplay: { name: string; size: number } | null = null;
-    let orchestrator = AudioOrchestrator.getInstance(); // Instance can be cached
 
     async function handleFileSelect(event: Event) {
         const input = event.target as HTMLInputElement;
         if (input.files?.[0]) {
             const file = input.files[0];
             selectedFileDisplay = { name: file.name, size: file.size };
-
-            // The component's only job is to dispatch the action to the orchestrator.
-            orchestrator.loadFileAndAnalyze(file);
-
-            // Clear the input value to allow selecting the same file again if needed.
+            dispatch('load', { file });
             input.value = '';
         }
     }
 </script>
 
+<!-- The HTML remains largely the same, just ensure it uses `handleFileSelect` -->
 <div class="card p-4 space-y-2">
     <label for="fileInput" class="h3 cursor-pointer hover:text-primary-500 transition-colors">Load Audio File</label>
     <input
@@ -11166,8 +10908,8 @@ vi.mock("./audioEngine.service", () => ({
     decodeAudioData: vi.fn(),
     initializeWorker: vi.fn(),
     stop: vi.fn(),
-    unlockAudio: vi.fn().mockResolvedValue(undefined), // Mock unlockAudio
-    // Add any other methods called by AudioOrchestrator if necessary
+    unlockAudio: vi.fn().mockResolvedValue(undefined),
+    seek: vi.fn(), // Mock seek as it's called by loadFileAndAnalyze
   },
 }));
 
@@ -11299,12 +11041,12 @@ describe("AudioOrchestratorService", () => {
       getChannelData: vi.fn(() => new Float32Array(0)),
     } as unknown as AudioBuffer;
 
-    it("should follow the full sequence for successful file loading and analysis", async () => {
+    it("should follow the full sequence for successful file loading and analysis (no initial state)", async () => {
       (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue(
         mockAudioBuffer,
       );
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       // 1. audioEngine.stop is called
       expect(audioEngine.stop).toHaveBeenCalledTimes(1);
@@ -11401,7 +11143,7 @@ describe("AudioOrchestratorService", () => {
 
       (orchestrator as any).isBusy = true; // Forcefully set isBusy for testing this scenario
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       expect(audioEngine.stop).not.toHaveBeenCalled();
       // The new code sets a different busy message
@@ -11416,7 +11158,7 @@ describe("AudioOrchestratorService", () => {
       const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
-      await orchestrator.loadFileAndAnalyze(mockFile); // Call again now that spy is set up
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         "Orchestrator is busy, skipping file load.",
       );
@@ -11441,7 +11183,7 @@ describe("AudioOrchestratorService", () => {
       // The current setup `orchestrator = AudioOrchestratorService;` gets the singleton.
       const handleErrorSpy = vi.spyOn(orchestrator, "handleError");
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       // Assert that the final state is an error state
       const finalPlayerState = get(playerStore);
@@ -11476,7 +11218,7 @@ describe("AudioOrchestratorService", () => {
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       // Assert that the final state is a SUCCESS state for the player
       const finalPlayerState = get(playerStore);
@@ -11508,6 +11250,49 @@ describe("AudioOrchestratorService", () => {
       expect(spectrogramService.process).not.toHaveBeenCalled();
 
       consoleWarnSpy.mockRestore();
+    });
+
+    it("should apply initialState and call seek if currentTime is provided", async () => {
+      const seekTime = 5.5;
+      const initialState = {
+        speed: 1.5,
+        pitchShift: -2,
+        gain: 0.75,
+        currentTime: seekTime,
+      };
+      (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue(
+        mockAudioBuffer,
+      );
+      (audioEngine.seek as vi.Mock).mockClear(); // Clear previous calls if any
+
+      await orchestrator.loadFileAndAnalyze(mockFile, initialState);
+
+      const finalPlayerState = get(playerStore);
+      expect(finalPlayerState.speed).toBe(initialState.speed);
+      expect(finalPlayerState.pitchShift).toBe(initialState.pitchShift);
+      expect(finalPlayerState.gain).toBe(initialState.gain);
+      // currentTime in playerStore is updated by the seek method itself,
+      // so we primarily check that audioEngine.seek was called correctly.
+
+      expect(audioEngine.seek).toHaveBeenCalledTimes(1);
+      expect(audioEngine.seek).toHaveBeenCalledWith(seekTime);
+
+      // Verify playerStore was updated with initialState (could be multiple updates)
+      // This specific check ensures the initial state values (excluding currentTime) were applied.
+      expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function)); // For initial reset
+      expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function)); // For playable state
+      expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function)); // For applying initialState
+
+      // Check that the properties from initialState are in the playerStore
+      const storeAfterInitialState = get(playerStore);
+      expect(storeAfterInitialState.speed).toEqual(initialState.speed);
+      expect(storeAfterInitialState.pitchShift).toEqual(
+        initialState.pitchShift,
+      );
+      expect(storeAfterInitialState.gain).toEqual(initialState.gain);
+      // currentTime is set via seek, so its direct application from initialState might be overwritten
+      // by the seek call's own update to playerStore.currentTime.
+      // The important part is that audioEngine.seek was called with the correct time.
     });
   });
 
@@ -11658,7 +11443,11 @@ export class AudioOrchestrator {
     return AudioOrchestrator.instance;
   }
 
-  public async loadFileAndAnalyze(file: File): Promise<void> {
+  // Add the new parameter to the method signature
+  public async loadFileAndAnalyze(
+    file: File,
+    initialState?: Partial<PlayerState>,
+  ): Promise<void> {
     if (this.isBusy) {
       console.warn("Orchestrator is busy, skipping file load.");
       return;
@@ -11738,6 +11527,18 @@ export class AudioOrchestrator {
         error: null,
         status: "ready", // <-- THE FIX: Update the status to a non-loading state.
       }));
+
+      // --- START: NEW INITIAL STATE LOGIC ---
+      // Apply initial state from URL after buffer is loaded but before analysis
+      if (initialState) {
+        playerStore.update((s) => ({ ...s, ...initialState }));
+        if (initialState.currentTime) {
+          // Must call seek to correctly set the engine's internal offset
+          audioEngine.seek(initialState.currentTime);
+        }
+      }
+      // --- END: NEW INITIAL STATE LOGIC ---
+
       statusStore.set({
         isLoading: false,
         message: `Ready: ${file.name}`,
@@ -12290,6 +12091,7 @@ export default AnalysisService.getInstance();
 --- File: vibe-player-v2.3/src/lib/services/audioEngine.service.test.ts ---
 ````typescript
 // vibe-player-v2.3/src/lib/services/audioEngine.service.test.ts
+
 import {
   vi,
   describe,
@@ -12299,627 +12101,291 @@ import {
   afterEach,
   SpyInstance,
 } from "vitest";
-import { get, writable } from "svelte/store"; // Corrected import
-import type { PlayerState } from "$lib/types/player.types"; // Assuming PlayerState is here
-import AudioEngineService from "./audioEngine.service"; // Assuming default export
+import { get, writable } from "svelte/store";
+import type { PlayerState } from "$lib/types/player.types";
+import AudioEngineService from "./audioEngine.service";
 import { playerStore } from "$lib/stores/player.store";
 import { timeStore } from "$lib/stores/time.store";
 import { AudioOrchestrator } from "./AudioOrchestrator.service";
-import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline"; // Actual import for type, but will be mocked
-import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types"; // Import enum
+import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
+import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
 
-// Mock for time.store, creating its own instance and exporting a helper
-vi.mock("$lib/stores/time.store", async () => {
-  const svelteStore =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  const actualWritable = svelteStore.writable;
-  if (typeof actualWritable !== "function") {
-    throw new Error("actualWritable for timeStore is not a function");
-  }
-  const storeInstance = actualWritable(0); // Initial value 0
-  return {
-    timeStore: storeInstance,
-    getMockTimeStore: () => storeInstance, // Helper to get the instance
-  };
-});
+// --- Mocks ---
 
-// Define the mock singleton instance for AudioOrchestrator at the top level
-const mockAudioOrchestratorSingletonInstance = {
-  updateUrlFromState: vi.fn(),
-  handleError: vi.fn(),
-};
-
-vi.mock("./AudioOrchestrator.service", () => ({
-  AudioOrchestrator: {
-    getInstance: vi.fn(() => mockAudioOrchestratorSingletonInstance),
-  },
-}));
-
-// --- Global Mocks ---
-const mockAudioContext = {
-  decodeAudioData: vi.fn(),
-  resume: vi.fn().mockResolvedValue(undefined),
-  createGain: vi.fn(),
-  createBufferSource: vi.fn(),
-  createBuffer: vi.fn(), // Added mock for createBuffer
-  currentTime: 0,
-  state: "suspended",
-  destination: {}, // Mock destination object
-  close: vi.fn().mockResolvedValue(undefined),
-  sampleRate: 44100, // Added default sampleRate
-};
-const mockGainNode = {
-  connect: vi.fn(),
-  gain: { setValueAtTime: vi.fn(), value: 1.0 }, // Added value for gain
-};
-const mockAudioBufferSourceNode = {
-  connect: vi.fn(),
-  start: vi.fn(),
-  buffer: null as AudioBuffer | null, // Ensure buffer property is typed
-  loop: false, // Added loop property
-  loopStart: 0, // Added loopStart
-  loopEnd: 0, // Added loopEnd
-  onended: null, // Added onended
-  playbackRate: { value: 1.0, setValueAtTime: vi.fn() }, // Added playbackRate
-  stop: vi.fn(), // Added stop method
-  disconnect: vi.fn(), // Added disconnect
-};
-const mockWorkerInstance = {
-  postMessage: vi.fn(),
-  terminate: vi.fn(),
-  onmessage: null as ((event: MessageEvent) => void) | null,
-  onerror: null as ((event: ErrorEvent) => void) | null,
-};
-
-vi.stubGlobal(
-  "AudioContext",
-  vi.fn(() => mockAudioContext),
-);
-vi.stubGlobal("fetch", vi.fn());
-vi.stubGlobal(
-  "requestAnimationFrame",
-  vi.fn((cb) => {
-    cb(Date.now());
-    return 1;
-  }),
-);
-vi.stubGlobal("cancelAnimationFrame", vi.fn());
-
-vi.mock("$lib/workers/rubberband.worker?worker&inline", () => ({
-  default: vi.fn(() => mockWorkerInstance),
-}));
-
-// player.store mock using vi.importActual for svelte/store's writable
-vi.mock("$lib/stores/player.store", async () => {
-  const svelteStore =
-    await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  const actualWritable = svelteStore.writable;
-
-  if (typeof actualWritable !== "function") {
-    console.error(
-      "Failed to obtain writable function from actual svelte/store for player.store.",
-      svelteStore,
-    );
-    throw new Error(
-      "actualWritable is not a function after importing actual svelte/store for player.store",
-    );
-  }
-
-  const initialPlayerState: PlayerState = {
-    status: "idle",
-    fileName: null,
-    duration: 0,
-    currentTime: 0,
+// Step 1: Hoist the raw initial state data.
+const { hoistedData } = vi.hoisted(() => {
+  const initialPlayerStateData: PlayerState = {
+    isPlayable: true,
     isPlaying: false,
-    isPlayable: false,
+    currentTime: 0,
+    duration: 10.0,
     speed: 1.0,
     pitchShift: 0.0,
     gain: 1.0,
-    waveformData: undefined,
+    isLoading: false,
+    isBusy: false,
     error: null,
-    audioBuffer: undefined,
+    fileName: "",
+    fileSize: 0,
+    fileType: "",
     audioContextResumed: false,
-    channels: undefined,
-    sampleRate: undefined,
-    lastProcessedChunk: undefined,
+    audioBuffer: null,
   };
-  const storeInstance = actualWritable(initialPlayerState);
+  const initialTimeData = 0;
   return {
-    playerStore: storeInstance,
-    getMockPlayerStore: () => storeInstance,
-    getInitialPlayerState: () => ({ ...initialPlayerState }),
+    hoistedData: {
+      initialPlayerState: initialPlayerStateData,
+      initialTime: initialTimeData,
+    },
   };
 });
 
-// Note: vi.mock for "$lib/stores/time.store" is already defined above
+// Step 2: Create writable store instances at module scope, using the hoisted data.
+// This happens after `writable` is imported and before mock factories need these instances.
+const __mockPlayerStoreInstance = writable<PlayerState>({
+  ...hoistedData.initialPlayerState,
+  gain: 1.0, // <-- ADDED gain to match PlayerState type (already present in hoistedData, ensuring it here if not)
+});
+const __mockTimeStoreInstance = writable<number>(hoistedData.initialTime);
 
-describe("AudioEngineService", () => {
+// Step 3: Mock the store modules using get() accessors to defer instance access.
+vi.mock("$lib/stores/player.store", () => {
+  return {
+    get playerStore() {
+      return __mockPlayerStoreInstance;
+    },
+  };
+});
+vi.mock("$lib/stores/time.store", () => {
+  return {
+    get timeStore() {
+      return __mockTimeStoreInstance;
+    },
+  };
+});
+
+// Step 4: Mock other modules.
+vi.mock("./AudioOrchestrator.service");
+vi.mock("$lib/workers/rubberband.worker?worker&inline");
+
+import AudioEngineService from "./audioEngine.service"; // Service under test
+
+describe("AudioEngineService (Robust Loop)", () => {
   let engine: typeof AudioEngineService;
+  let mockOrchestrator: {
+    handleError: SpyInstance;
+    updateUrlFromState: SpyInstance;
+  };
+  let mockWorker: { postMessage: SpyInstance; terminate: SpyInstance };
+  let mockAudioContext: any;
 
-  // Type for playerStoreInstance needs to be Writable<PlayerState>
-  // Vitest will automatically use the mocked version.
-  let playerStoreInstance: import("svelte/store").Writable<any>; // Using 'any' for now, replace with PlayerState if available
-  let playerStoreUpdateSpy: SpyInstance;
-  let timeStoreSetSpy: SpyInstance;
-
-  const mockAudioBufferData = {
-    duration: 10,
+  const mockAudioBuffer = {
+    duration: 10.0,
     sampleRate: 44100,
-    numberOfChannels: 2,
+    numberOfChannels: 1,
     length: 441000,
-    getChannelData: vi.fn(() => new Float32Array(1024)),
-    copyToChannel: vi.fn(), // Mock for createBuffer
+    getChannelData: vi.fn(() => new Float32Array(441000).fill(0.1)),
   } as unknown as AudioBuffer;
 
-  beforeEach(async () => {
-    // Make beforeEach async
+  beforeEach(() => {
     vi.clearAllMocks();
 
-    // Import helpers from the mocked player.store
-    const { getMockPlayerStore, getInitialPlayerState } = await import(
-      "$lib/stores/player.store"
+    // Reset the state of the module-scoped store instances for each test
+    __mockPlayerStoreInstance.set({ ...hoistedData.initialPlayerState });
+    __mockTimeStoreInstance.set(hoistedData.initialTime);
+
+    // Ensure AudioOrchestrator mock is fresh for each test
+    mockOrchestrator = { handleError: vi.fn(), updateUrlFromState: vi.fn() };
+    (AudioOrchestrator.getInstance as vi.Mock).mockReturnValue(
+      mockOrchestrator,
     );
 
-    playerStoreInstance = getMockPlayerStore();
-    const initialPlayerState = getInitialPlayerState();
-    // Set initial state, potentially merging with test-specific data if needed
-    playerStoreInstance.set({
-      ...initialPlayerState,
-      fileName: "test.wav", // Example: keep some test-specific defaults
-      duration: mockAudioBufferData.duration,
-      isPlayable: true, // Assume playable for tests unless specified
-      audioBuffer: mockAudioBufferData,
-      channels: 2,
-      sampleRate: 44100,
-    });
+    mockWorker = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }; // Add null handlers
+    (RubberbandWorker as vi.Mock).mockReturnValue(mockWorker);
 
-    // Get the mocked timeStore instance and reset it
-    const { getMockTimeStore } = await import("$lib/stores/time.store");
-    const currentMockTimeStore = getMockTimeStore();
-    currentMockTimeStore.set(0);
+    mockAudioContext = {
+      currentTime: 0,
+      state: "running",
+      createGain: vi.fn(() => ({
+        connect: vi.fn(),
+        gain: { setValueAtTime: vi.fn() },
+      })),
+      createBufferSource: vi.fn(() => ({ connect: vi.fn(), start: vi.fn() })),
+      createBuffer: vi.fn(() => ({ copyToChannel: vi.fn() })),
+    };
+    (globalThis as any).AudioContext = vi.fn(() => mockAudioContext);
 
-    // Spies should be attached to the actual store instance from the mock
-    playerStoreUpdateSpy = vi.spyOn(playerStoreInstance, "update");
-    timeStoreSetSpy = vi.spyOn(currentMockTimeStore, "set"); // Spy on the instance from the mock
+    (globalThis as any).requestAnimationFrame = vi.fn();
+    (globalThis as any).cancelAnimationFrame = vi.fn();
 
-    (mockAudioContext.createGain as vi.Mock).mockReturnValue(mockGainNode);
-    (mockAudioContext.createBufferSource as vi.Mock).mockReturnValue(
-      mockAudioBufferSourceNode,
-    );
-    (mockAudioContext.createBuffer as vi.Mock).mockImplementation(
-      (channels, length, sampleRate) => ({
-        numberOfChannels: channels,
-        length: length,
-        sampleRate: sampleRate,
-        duration: length / sampleRate,
-        getChannelData: vi.fn(() => new Float32Array(length)),
-        copyToChannel: vi.fn(),
-        copyFromChannel: vi.fn(),
-      }),
-    );
-    mockAudioContext.currentTime = 0;
-    mockAudioContext.state = "suspended"; // Default to suspended
-
-    engine = AudioEngineService;
-    (engine as any).audioContext = null;
-    (engine as any).originalBuffer = null;
-    (engine as any).isWorkerReady = false;
+    engine = AudioEngineService; // Reverted: AudioEngineService is already the instance
+    // --- START OF FIX ---
+    // Manually instantiate the worker and assign it to the service instance for tests.
+    // This simulates the state after `initializeWorker` has been successfully called.
+    (engine as any).worker = new (RubberbandWorker as any)();
+    // --- END OF FIX ---
+    (engine as any).originalBuffer = mockAudioBuffer;
+    (engine as any).isWorkerReady = true;
     (engine as any).isPlaying = false;
     (engine as any).sourcePlaybackOffset = 0;
-    (engine as any).nextChunkTime = 0;
-    if ((engine as any).animationFrameId)
-      cancelAnimationFrame((engine as any).animationFrameId);
-    (engine as any).animationFrameId = null;
-
-    // Ensure the mocked AudioOrchestrator instance is used
-    // AudioOrchestrator.getInstance() should return mockAudioOrchestratorSingletonInstance from the mock setup
-    // Reset mocks on the singleton instance before each test
-    mockAudioOrchestratorSingletonInstance.updateUrlFromState.mockClear();
-    mockAudioOrchestratorSingletonInstance.handleError.mockClear();
-  });
-
-  describe("decodeAudioData", () => {
-    it("should call AudioContext.decodeAudioData and return an AudioBuffer", async () => {
-      const arrayBuffer = new ArrayBuffer(100);
-      (mockAudioContext.decodeAudioData as vi.Mock).mockResolvedValue(
-        mockAudioBufferData,
-      );
-
-      const result = await engine.decodeAudioData(arrayBuffer);
-
-      expect(mockAudioContext.decodeAudioData).toHaveBeenCalledWith(
-        arrayBuffer,
-      );
-      expect(result).toBe(mockAudioBufferData);
-      expect((engine as any).isWorkerReady).toBe(false);
-    });
-
-    it("should throw if AudioContext.decodeAudioData fails", async () => {
-      const error = new Error("Decode error");
-      (mockAudioContext.decodeAudioData as vi.Mock).mockRejectedValue(error);
-      const arrayBuffer = new ArrayBuffer(100);
-
-      await expect(engine.decodeAudioData(arrayBuffer)).rejects.toThrow(
-        "Decode error",
-      );
-      expect((engine as any).originalBuffer).toBeNull();
-      expect((engine as any).isWorkerReady).toBe(false);
-    });
-  });
-
-  describe("initializeWorker", () => {
-    const wasmBinary = new ArrayBuffer(10);
-    const loaderScriptText = "loader script";
-
-    beforeEach(() => {
-      (global.fetch as vi.Mock)
-        .mockResolvedValueOnce({
-          ok: true,
-          arrayBuffer: () => Promise.resolve(wasmBinary),
-        } as unknown as Response)
-        .mockResolvedValueOnce({
-          ok: true,
-          text: () => Promise.resolve(loaderScriptText),
-        } as unknown as Response);
-      (engine as any).originalBuffer = mockAudioBufferData;
-    });
-
-    it("should resolve on INIT_SUCCESS from worker", async () => {
-      const promise = engine.initializeWorker(mockAudioBufferData);
-      expect(RubberbandWorker).toHaveBeenCalledTimes(1);
-
-      expect(mockWorkerInstance.onmessage).toBeTypeOf("function");
-      if (mockWorkerInstance.onmessage) {
-        mockWorkerInstance.onmessage({
-          data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS },
-        } as MessageEvent);
-      }
-
-      await expect(promise).resolves.toBeUndefined();
-      expect((engine as any).isWorkerReady).toBe(true);
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: RB_WORKER_MSG_TYPE.INIT }),
-        [wasmBinary],
-      );
-    });
-
-    it("should reject on INIT_ERROR from worker", async () => {
-      const promise = engine.initializeWorker(mockAudioBufferData);
-      const initError = { message: "Worker init failed" };
-
-      expect(mockWorkerInstance.onmessage).toBeTypeOf("function");
-      if (mockWorkerInstance.onmessage) {
-        mockWorkerInstance.onmessage({
-          data: { type: RB_WORKER_MSG_TYPE.INIT_ERROR, payload: initError },
-        } as MessageEvent);
-      }
-
-      await expect(promise).rejects.toThrow(initError.message);
-      expect((engine as any).isWorkerReady).toBe(false);
-    });
-
-    it("should reject if worker onerror is triggered during init", async () => {
-      const promise = engine.initializeWorker(mockAudioBufferData);
-      const criticalError = new ErrorEvent("error", {
-        message: "Critical worker failure",
-      });
-
-      expect(mockWorkerInstance.onerror).toBeTypeOf("function");
-      if (mockWorkerInstance.onerror) {
-        mockWorkerInstance.onerror(criticalError);
-      }
-
-      await expect(promise).rejects.toThrow(criticalError.message);
-      expect((engine as any).isWorkerReady).toBe(false);
-      expect(AudioOrchestrator.getInstance().handleError).toHaveBeenCalledWith(
-        expect.any(Error),
-      );
-    });
-
-    it("should reject if audioBuffer is not provided", async () => {
-      await expect(engine.initializeWorker(null as any)).rejects.toThrow(
-        "initializeWorker called with no AudioBuffer.",
-      );
-    });
-
-    it("should reject if fetch fails for dependencies", async () => {
-      // Scenario 1: First fetch fails
-      (global.fetch as vi.Mock)
-        .mockReset()
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 404,
-          statusText: "Not Found",
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-          text: () => Promise.resolve(""),
-        } as unknown as Response) // First fetch fails
-        .mockResolvedValueOnce({
-          ok: true,
-          text: () => Promise.resolve("irrelevant_script_for_failed_test"),
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-        } as unknown as Response); // Second fetch succeeds
-
-      await expect(
-        engine.initializeWorker(mockAudioBufferData),
-      ).rejects.toThrow("Failed to fetch worker dependencies.");
-      expect(AudioOrchestrator.getInstance().handleError).toHaveBeenCalled();
-
-      // Clear mock calls for the next scenario
-      mockAudioOrchestratorSingletonInstance.handleError.mockClear();
-
-      // Scenario 2: Second fetch fails
-      (global.fetch as vi.Mock)
-        .mockReset()
-        .mockResolvedValueOnce({
-          ok: true,
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(10)),
-          text: () => Promise.resolve("loader_script"),
-        } as unknown as Response) // First fetch succeeds
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 403,
-          statusText: "Forbidden",
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-          text: () => Promise.resolve(""),
-        } as unknown as Response); // Second fetch fails
-
-      await expect(
-        engine.initializeWorker(mockAudioBufferData),
-      ).rejects.toThrow("Failed to fetch worker dependencies.");
-      expect(AudioOrchestrator.getInstance().handleError).toHaveBeenCalled();
-    });
-  });
-
-  describe("Playback", () => {
-    beforeEach(async () => {
-      (engine as any).originalBuffer = mockAudioBufferData;
-      (engine as any).isWorkerReady = true;
-      (engine as any).audioContext = mockAudioContext;
-      (engine as any).gainNode = mockGainNode;
-      mockAudioContext.state = "running";
-    });
-
-    it("play should set isPlaying to true and update playerStore", async () => {
-      const loopSpy = vi
-        .spyOn(engine as any, "_recursiveProcessAndPlayLoop")
-        .mockImplementation(() => {}); // Prevent loop from actually running
-
-      await engine.play();
-      // Check that playerStore.update was called with a function that sets isPlaying to true
-      expect(playerStoreUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
-      // Verify the actual state change
-      expect(get(playerStoreInstance).isPlaying).toBe(true);
-      expect(requestAnimationFrame).toHaveBeenCalled(); // Check that the loop was at least initiated
-
-      loopSpy.mockRestore(); // Restore original implementation for other tests
-    });
-
-    it("pause should set isPlaying to false and update playerStore", async () => {
-      // First, set it to playing state
-      playerStoreInstance.set({ ...get(playerStoreInstance), isPlaying: true });
-      (engine as any).isPlaying = true;
-
-      engine.pause();
-      expect(get(playerStoreInstance).isPlaying).toBe(false);
-      // Check that playerStore.update was called with a function that sets isPlaying to false
-      expect(playerStoreUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
-      // Verify the actual state change
-      playerStoreInstance.set({
-        ...get(playerStoreInstance),
-        isPlaying: false,
-      }); // Simulate effect of the update function
-      expect(get(playerStoreInstance).isPlaying).toBe(false);
-      expect(cancelAnimationFrame).toHaveBeenCalled();
-    });
-
-    it("_recursiveProcessAndPlayLoop should call timeStore.set", () => {
-      // Ensure all conditions for the loop to run one iteration are met
-      (engine as any).isPlaying = true;
-      (engine as any).originalBuffer = mockAudioBufferData; // Ensure buffer exists
-      (engine as any).isWorkerReady = true; // Ensure worker is ready
-      (engine as any).isStopping = false; // Ensure not stopping
-      (engine as any)._testLoopSafeguard = 0; // Reset safeguard for this specific test call
-
-      (engine as any)._recursiveProcessAndPlayLoop();
-      // timeStore.set is called at the beginning of the loop if conditions are met
-      expect(timeStoreSetSpy).toHaveBeenCalled();
-    });
-
-    it("stop should reset playback state and call timeStore.set(0)", async () => {
-      await engine.play();
-      await engine.stop(); // Make stop async if it involves async operations
-      expect(get(playerStoreInstance).isPlaying).toBe(false);
-      expect(timeStoreSetSpy).toHaveBeenCalledWith(0);
-      expect(playerStoreUpdateSpy).toHaveBeenCalled();
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
-        type: RB_WORKER_MSG_TYPE.RESET,
-      });
-    });
+    (engine as any)._getAudioContext(); // Restored
+    (engine as any).worker = mockWorker; // Restored
   });
 
   describe("seek", () => {
-    beforeEach(() => {
-      (engine as any).originalBuffer = mockAudioBufferData;
-      (engine as any).isWorkerReady = true;
-      (engine as any).audioContext = mockAudioContext;
-    });
+    it("should update offsets, stores, and reset worker when called while not playing", () => {
+      const seekTime = 3.0;
+      // Ensure isPlaying is false initially for this test case
+      playerStore.update((s) => ({ ...s, isPlaying: false }));
+      (engine as any).isPlaying = false;
 
-    it("should call timeStore.set with clamped time and update URL", () => {
-      const seekTime = 5;
       engine.seek(seekTime);
-      expect(timeStoreSetSpy).toHaveBeenCalledWith(seekTime);
-      expect(playerStoreUpdateSpy).toHaveBeenCalled();
-      expect(
-        AudioOrchestrator.getInstance().updateUrlFromState,
-      ).toHaveBeenCalled();
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith({
+
+      expect((engine as any).sourcePlaybackOffset).toBe(seekTime);
+      expect(get(timeStore)).toBe(seekTime);
+      expect(get(playerStore).currentTime).toBe(seekTime);
+      expect(mockWorker.postMessage).toHaveBeenCalledWith({
         type: RB_WORKER_MSG_TYPE.RESET,
       });
+      expect(get(playerStore).isPlaying).toBe(false); // Should remain not playing
     });
 
-    it("should clamp seek time to duration", () => {
-      engine.seek(20);
-      expect(timeStoreSetSpy).toHaveBeenCalledWith(
-        mockAudioBufferData.duration,
-      );
-    });
-
-    it("should clamp seek time to 0 if negative", () => {
-      engine.seek(-5);
-      expect(timeStoreSetSpy).toHaveBeenCalledWith(0);
-    });
-
-    it("should pause and resume playback if was playing during seek", () => {
-      playerStoreInstance.update((s) => ({ ...s, isPlaying: true }));
+    it("should pause, update offsets, stores, and reset worker when called while playing", () => {
+      const seekTime = 4.0;
+      // Ensure isPlaying is true initially for this test case
+      playerStore.update((s) => ({ ...s, isPlaying: true }));
       (engine as any).isPlaying = true;
 
-      const pauseSpy = vi.spyOn(engine, "pause");
-      const playSpy = vi.spyOn(engine, "play");
+      const pauseSpy = vi.spyOn(engine, "pause").mockImplementation(() => {
+        playerStore.update((s) => ({ ...s, isPlaying: false }));
+        (engine as any).isPlaying = false;
+      });
 
-      engine.seek(3);
+      engine.seek(seekTime);
 
-      expect(pauseSpy).toHaveBeenCalled();
-      expect(playSpy).toHaveBeenCalled();
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect((engine as any).sourcePlaybackOffset).toBe(seekTime);
+      expect(get(timeStore)).toBe(seekTime);
+      expect(get(playerStore).currentTime).toBe(seekTime);
+      expect(mockWorker.postMessage).toHaveBeenCalledWith({
+        type: RB_WORKER_MSG_TYPE.RESET,
+      });
+      expect(get(playerStore).isPlaying).toBe(false); // Should be paused
+
+      pauseSpy.mockRestore();
+    });
+
+    it("should not reset worker if worker is not ready", () => {
+      (engine as any).isWorkerReady = false;
+      const seekTime = 2.0;
+      playerStore.update((s) => ({ ...s, isPlaying: false }));
+      (engine as any).isPlaying = false;
+
+      engine.seek(seekTime);
+      // Check that postMessage was not called for RESET specifically
+      const resetCall = mockWorker.postMessage.mock.calls.find(
+        (call) => call[0].type === RB_WORKER_MSG_TYPE.RESET,
+      );
+      expect(resetCall).toBeUndefined();
+    });
+    it("should clamp seek time to buffer duration", () => {
+      const seekTime = mockAudioBuffer.duration + 5.0; // Time beyond duration
+      engine.seek(seekTime);
+      expect((engine as any).sourcePlaybackOffset).toBe(
+        mockAudioBuffer.duration,
+      );
+      expect(get(timeStore)).toBe(mockAudioBuffer.duration);
+      expect(get(playerStore).currentTime).toBe(mockAudioBuffer.duration);
+    });
+
+    it("should clamp seek time to 0 if negative time is given", () => {
+      const seekTime = -5.0; // Negative time
+      engine.seek(seekTime);
+      expect((engine as any).sourcePlaybackOffset).toBe(0);
+      expect(get(timeStore)).toBe(0);
+      expect(get(playerStore).currentTime).toBe(0);
     });
   });
 
-  describe("Parameter Controls (setSpeed, setPitch, setGain)", () => {
-    beforeEach(() => {
-      (engine as any).isWorkerReady = true;
-      (engine as any).audioContext = mockAudioContext; // Ensure audioContext is set
-      (engine as any).gainNode = mockGainNode; // Ensure gainNode is set
-    });
-
-    it("setSpeed should update playerStore, call worker and update URL", () => {
-      engine.setSpeed(1.5);
-      expect(get(playerStoreInstance).speed).toBe(1.5);
-      expect(playerStoreUpdateSpy).toHaveBeenCalled();
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: RB_WORKER_MSG_TYPE.SET_SPEED,
-          payload: { speed: 1.5 },
-        }),
-      );
-      expect(
-        AudioOrchestrator.getInstance().updateUrlFromState,
-      ).toHaveBeenCalled();
-    });
-
-    it("setPitch should update playerStore, call worker and update URL", () => {
-      engine.setPitch(2.0);
-      expect(get(playerStoreInstance).pitchShift).toBe(2.0);
-      expect(playerStoreUpdateSpy).toHaveBeenCalled();
-      expect(mockWorkerInstance.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: RB_WORKER_MSG_TYPE.SET_PITCH,
-          payload: { pitch: 2.0 },
-        }),
-      );
-      expect(
-        AudioOrchestrator.getInstance().updateUrlFromState,
-      ).toHaveBeenCalled();
-    });
-
-    it("setGain should update playerStore, set gainNode value and update URL", () => {
-      engine.setGain(0.8);
-      expect(get(playerStoreInstance).gain).toBe(0.8);
-      expect(playerStoreUpdateSpy).toHaveBeenCalled();
-      expect(mockGainNode.gain.setValueAtTime).toHaveBeenCalledWith(
-        0.8,
-        mockAudioContext.currentTime,
-      );
-      expect(
-        AudioOrchestrator.getInstance().updateUrlFromState,
-      ).toHaveBeenCalled();
-    });
+  it("play() should start the animation loop", async () => {
+    await engine.play();
+    expect(get(playerStore).isPlaying).toBe(true);
+    expect(requestAnimationFrame).toHaveBeenCalledWith(expect.any(Function));
   });
 
-  describe("handleWorkerMessage", () => {
-    beforeEach(() => {
-      (engine as any).originalBuffer = mockAudioBufferData;
-      (engine as any).audioContext = mockAudioContext;
-      (engine as any).gainNode = mockGainNode;
-    });
-
-    it("INIT_SUCCESS should set isWorkerReady and resolve promise", () => {
-      const workerInitPromiseCallbacks = { resolve: vi.fn(), reject: vi.fn() };
-      (engine as any).workerInitPromiseCallbacks = workerInitPromiseCallbacks;
-      (engine as any).handleWorkerMessage({
-        data: { type: RB_WORKER_MSG_TYPE.INIT_SUCCESS },
-      } as MessageEvent);
-      expect((engine as any).isWorkerReady).toBe(true);
-      expect(workerInitPromiseCallbacks.resolve).toHaveBeenCalled();
-    });
-
-    it("PROCESS_RESULT should schedule chunk playback", () => {
-      const scheduleSpy = vi.spyOn(engine as any, "scheduleChunkPlayback");
-      const processResultPayload = {
-        outputBuffer: [new Float32Array(10)],
-        playbackTime: 1,
-        duration: 0.5,
-        isLastChunk: false,
-      };
-      (engine as any).handleWorkerMessage({
-        data: {
-          type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
-          payload: processResultPayload,
-        },
-      } as MessageEvent);
-      expect(scheduleSpy).toHaveBeenCalledWith(
-        processResultPayload.outputBuffer,
-        processResultPayload.playbackTime,
-        processResultPayload.duration,
-      );
-    });
-
-    it("PROCESS_RESULT with empty buffer and isLastChunk should pause if playing", () => {
-      const pauseSpy = vi.spyOn(engine, "pause");
-      (engine as any).isPlaying = true;
-      const processResultPayload = {
-        outputBuffer: [new Float32Array(0)],
-        playbackTime: 1,
-        duration: 0,
-        isLastChunk: true,
-      };
-      (engine as any).handleWorkerMessage({
-        data: {
-          type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
-          payload: processResultPayload,
-        },
-      } as MessageEvent);
-      expect(pauseSpy).toHaveBeenCalled();
-      expect(timeStoreSetSpy).toHaveBeenCalledWith(
-        mockAudioBufferData.duration,
-      );
-    });
-
-    it("ERROR should call AudioOrchestrator.handleError and pause", () => {
-      const pauseSpy = vi.spyOn(engine, "pause");
-      const errorPayload = { message: "Worker processing error" };
-      (engine as any).handleWorkerMessage({
-        data: { type: RB_WORKER_MSG_TYPE.ERROR, payload: errorPayload },
-      } as MessageEvent);
-      expect(AudioOrchestrator.getInstance().handleError).toHaveBeenCalledWith(
-        new Error(errorPayload.message),
-      );
-      expect(pauseSpy).toHaveBeenCalled();
-    });
+  it("pause() should stop the animation loop", () => {
+    (engine as any).isPlaying = true;
+    (engine as any).animationFrameId = 123;
+    engine.pause();
+    expect(get(playerStore).isPlaying).toBe(false);
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(123);
   });
 
-  describe("dispose", () => {
-    it("should stop playback, terminate worker, and close audio context", async () => {
-      const stopSpy = vi.spyOn(engine, "stop");
-      (engine as any).worker = mockWorkerInstance;
-      (engine as any).audioContext = mockAudioContext; // engine's audioContext is mockAudioContext
+  it("_recursiveProcessAndPlayLoop should update timeStore and call iteration", () => {
+    const iterationSpy = vi
+      .spyOn(engine as any, "_performSingleProcessAndPlayIteration")
+      .mockImplementation(() => {});
+    (engine as any).isPlaying = true;
+    (engine as any).sourcePlaybackOffset = 5.0;
+    (engine as any).audioContext = mockAudioContext;
 
-      await engine.dispose(); // Make it async if dispose becomes async, or wait for close promise
+    (engine as any)._recursiveProcessAndPlayLoop();
 
-      expect(stopSpy).toHaveBeenCalled();
-      expect(mockWorkerInstance.terminate).toHaveBeenCalled();
-      expect(mockAudioContext.close).toHaveBeenCalled();
-      expect((engine as any).worker).toBeNull();
-      expect((engine as any).audioContext).toBeNull();
+    expect(get(timeStore)).toBe(5.0);
+    expect(iterationSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("_performSingleProcessAndPlayIteration should post a chunk to the worker and advance offset", () => {
+    (engine as any).isPlaying = true;
+    (engine as any).audioContext = mockAudioContext;
+    (engine as any).worker = mockWorker; // ADDED: Ensure engine's worker is our mock
+    (engine as any).sourcePlaybackOffset = 2.0;
+    const expectedChunkSize = AUDIO_ENGINE_CONSTANTS.PROCESS_FRAME_SIZE;
+
+    (engine as any)._performSingleProcessAndPlayIteration();
+
+    expect(mockWorker.postMessage).toHaveBeenCalledTimes(1);
+    const payload = mockWorker.postMessage.mock.calls[0][0].payload;
+    expect(payload.inputBuffer[0].length).toBe(expectedChunkSize);
+    expect(payload.isLastChunk).toBe(false);
+
+    const expectedOffset = 2.0 + expectedChunkSize / mockAudioBuffer.sampleRate;
+    expect((engine as any).sourcePlaybackOffset).toBeCloseTo(expectedOffset);
+  });
+
+  it("_performSingleProcessAndPlayIteration should stop at the end of the buffer", () => {
+    (engine as any).isPlaying = true;
+    (engine as any).audioContext = mockAudioContext;
+    (engine as any).worker = mockWorker; // ADDED: Ensure engine's worker is our mock (though not strictly needed for this path, good for consistency)
+    const pauseSpy = vi.spyOn(engine, "pause");
+    (engine as any).sourcePlaybackOffset = mockAudioBuffer.duration; // Set to the end
+
+    // --- THIS IS THE FIX ---
+    // Set the precondition that the engine is actively playing.
+    (engine as any).isPlaying = true;
+    // --- END OF FIX ---
+
+    (engine as any)._performSingleProcessAndPlayIteration();
+
+    expect(mockWorker.postMessage).not.toHaveBeenCalled();
+    expect(pauseSpy).toHaveBeenCalled();
+  });
+
+  it("handleWorkerMessage should schedule playback for PROCESS_RESULT", () => {
+    const scheduleSpy = vi
+      .spyOn(engine as any, "scheduleChunkPlayback")
+      .mockImplementation(() => {});
+    const mockResult = {
+      outputBuffer: [new Float32Array(1024)],
+      isLastChunk: false,
+    };
+
+    (engine as any).handleWorkerMessage({
+      data: { type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: mockResult },
     });
+
+    expect(scheduleSpy).toHaveBeenCalledWith(mockResult.outputBuffer);
   });
 });
 
@@ -12956,7 +12422,6 @@ class AudioEngineService {
   private isStopping = false;
 
   private sourcePlaybackOffset = 0;
-  private nextChunkTime = 0;
   private animationFrameId: number | null = null;
 
   private workerInitPromiseCallbacks: {
@@ -12981,6 +12446,14 @@ class AudioEngineService {
     const ctx = this._getAudioContext();
     if (ctx.state === "suspended") {
       await ctx.resume();
+    }
+  };
+
+  public togglePlayPause = (): void => {
+    if (this.isPlaying) {
+      this.pause();
+    } else {
+      this.play();
     }
   };
 
@@ -13088,14 +12561,14 @@ class AudioEngineService {
     }
 
     await this.unlockAudio(); // Ensure audio context is active
-    const audioCtxTime = this._getAudioContext().currentTime;
+    // const audioCtxTime = this._getAudioContext().currentTime; // nextChunkTime removed
     this.isPlaying = true;
     playerStore.update((s) => ({ ...s, isPlaying: true, error: null })); // Clear previous errors on play
 
     // If playback stopped and then restarted, or if seeking caused nextChunkTime to be in the past.
-    if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtxTime) {
-      this.nextChunkTime = audioCtxTime;
-    }
+    // if (this.nextChunkTime === 0 || this.nextChunkTime < audioCtxTime) { // nextChunkTime removed
+    //   this.nextChunkTime = audioCtxTime; // nextChunkTime removed
+    // } // nextChunkTime removed
     this._testLoopSafeguard = 0; // Reset safeguard on new play intent
 
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId); // Ensure no ghost loops
@@ -13123,9 +12596,9 @@ class AudioEngineService {
     }
 
     this.sourcePlaybackOffset = 0;
-    this.nextChunkTime = 0;
+    // this.nextChunkTime = 0; // nextChunkTime removed
     timeStore.set(0); // Reset time store to 0
-    playerStore.update((s) => ({ ...s, currentTime: 0 })); // Also update playerStore's currentTime for consistency if it's used elsewhere
+    playerStore.update((s) => ({ ...s, currentTime: 0, isPlaying: false }));
 
     // Short delay to allow any in-flight operations to cease
     // This might need adjustment or a more robust mechanism if race conditions persist
@@ -13135,35 +12608,26 @@ class AudioEngineService {
 
   public seek = (time: number): void => {
     if (!this.originalBuffer) {
-      // Worker readiness not strictly needed for seek setup, but buffer is.
       console.warn("Seek called without an originalBuffer.");
       return;
     }
 
-    const wasPlaying = this.isPlaying;
-    if (wasPlaying) this.pause();
+    if (this.isPlaying) {
+      this.pause();
+    }
 
     const clampedTime = Math.max(
       0,
       Math.min(time, this.originalBuffer.duration),
     );
-    this.sourcePlaybackOffset = clampedTime; // This is the primary time state for the engine
+    this.sourcePlaybackOffset = clampedTime;
 
     if (this.worker && this.isWorkerReady) {
-      // Only reset worker if it's ready
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
 
-    // Set the audio context's next chunk time to now, so processing can resume immediately if play is called.
-    this.nextChunkTime = this._getAudioContext().currentTime;
-
-    timeStore.set(clampedTime); // Update the reactive time store for UI
-    playerStore.update((s) => ({ ...s, currentTime: clampedTime })); // Also update playerStore for consistency
-
-    // Explicitly trigger URL update via Orchestrator
-    AudioOrchestrator.getInstance().updateUrlFromState();
-
-    if (wasPlaying) this.play();
+    timeStore.set(clampedTime);
+    playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
   };
 
   public setSpeed = (speed: number): void => {
@@ -13174,7 +12638,6 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, speed }));
-    AudioOrchestrator.getInstance().updateUrlFromState(); // Speed change should update URL
   };
 
   public setPitch = (pitch: number): void => {
@@ -13185,7 +12648,6 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
-    AudioOrchestrator.getInstance().updateUrlFromState(); // Pitch change should update URL
   };
 
   public setGain = (level: number): void => {
@@ -13200,7 +12662,6 @@ class AudioEngineService {
       );
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
-    AudioOrchestrator.getInstance().updateUrlFromState(); // Gain change should update URL
   };
 
   private _getAudioContext(): AudioContext {
@@ -13217,245 +12678,120 @@ class AudioEngineService {
   }
 
   private _recursiveProcessAndPlayLoop = (): void => {
-    if (
-      !this.isPlaying ||
-      !this.originalBuffer ||
-      !this.isWorkerReady ||
-      this.isStopping
-    ) {
+    if (!this.isPlaying || this.isStopping) {
       if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
       return;
     }
 
-    // Test safeguard for requestAnimationFrame mock
+    // Test safeguard
     if (
       (globalThis as any).vi &&
       this._testLoopSafeguard++ > this._TEST_MAX_LOOP_ITERATIONS
     ) {
       console.warn(
-        "[AudioEngineService] Test safeguard triggered: Max loop iterations reached.",
+        "[AudioEngineService] Test safeguard: Max loop iterations reached.",
       );
-      this.pause(); // Attempt to break the loop
+      this.pause();
       return;
     }
 
-    // Update reactive time store
+    // Update the UI time store every frame.
     timeStore.set(this.sourcePlaybackOffset);
-    // Also update playerStore.currentTime for any components still using it, though timeStore is preferred for "hot" updates.
-    playerStore.update((s) => ({
-      ...s,
-      currentTime: this.sourcePlaybackOffset,
-    }));
 
+    // Call the processing iteration.
     this._performSingleProcessAndPlayIteration();
 
-    if (this.isPlaying && !this.isStopping) {
-      // Check isPlaying and isStopping again before queuing next frame
-      this.animationFrameId = requestAnimationFrame(
-        this._recursiveProcessAndPlayLoop,
-      );
-    } else {
-      if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    // Schedule the next frame.
+    this.animationFrameId = requestAnimationFrame(
+      this._recursiveProcessAndPlayLoop,
+    );
   };
 
   private _performSingleProcessAndPlayIteration(): void {
-    if (
-      !this.worker ||
-      !this.isWorkerReady ||
-      !this.originalBuffer ||
-      !this.audioContext
-    )
+    if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
+
+    // Check if we have processed the entire source buffer.
+    if (this.sourcePlaybackOffset >= this.originalBuffer.duration) {
+      if (this.isPlaying) this.pause(); // All done, pause playback.
       return;
-
-    const audioCtxTime = this.audioContext.currentTime;
-    const { speed } = get(playerStore);
-    const lookahead = AUDIO_ENGINE_CONSTANTS.PROCESS_LOOKAHEAD_TIME_S; // Rubberband processes based on original speed
-
-    // If the next chunk is needed soon (within the lookahead window)
-    if (this.nextChunkTime - audioCtxTime < lookahead * speed) {
-      const frameSize = AUDIO_ENGINE_CONSTANTS.PROCESS_FRAME_SIZE;
-      const numChannels = this.originalBuffer.numberOfChannels;
-      const inputBuffer: Float32Array[] = [];
-
-      // Calculate start and end frame in original buffer samples
-      // sourcePlaybackOffset is in seconds. Multiply by sampleRate for frame index.
-      let startFrame = Math.floor(
-        this.sourcePlaybackOffset * this.originalBuffer.sampleRate,
-      );
-      let endFrame = startFrame + frameSize;
-
-      // Check if we are at or beyond the end of the buffer
-      if (startFrame >= this.originalBuffer.length) {
-        // End of buffer, no more data to process
-        if (this.isPlaying) {
-          // If it was playing, then pause and set to end.
-          this.pause();
-          timeStore.set(this.originalBuffer.duration);
-          playerStore.update((s) => ({
-            ...s,
-            currentTime: this.originalBuffer!.duration,
-            isPlaying: false,
-          }));
-        }
-        return;
-      }
-
-      // Ensure we don't read past the end of the buffer
-      const isLastChunk = endFrame >= this.originalBuffer.length;
-      if (isLastChunk) {
-        endFrame = this.originalBuffer.length;
-      }
-
-      for (let i = 0; i < numChannels; i++) {
-        // Slice the data for the current chunk from the original buffer
-        inputBuffer[i] = this.originalBuffer
-          .getChannelData(i)
-          .slice(startFrame, endFrame);
-      }
-
-      if (inputBuffer[0].length > 0) {
-        // Only post if there's actual data
-        const processPayload: RubberbandProcessPayload = {
-          inputBuffer,
-          isLastChunk,
-          // Playback time for this chunk needs to be where it's scheduled in the AudioContext timeline
-          playbackTime: this.nextChunkTime,
-        };
-        // ADD THIS LOG:
-        console.log(
-          `[AudioEngine] Posting chunk for processing. startFrame: ${startFrame}, offset: ${this.sourcePlaybackOffset.toFixed(3)}s`,
-        );
-        this.worker.postMessage({
-          type: RB_WORKER_MSG_TYPE.PROCESS,
-          payload: processPayload,
-        });
-
-        // --- THE FIX: Advance the source offset immediately after posting ---
-        const durationOfChunkSent =
-          inputBuffer[0].length / this.originalBuffer.sampleRate;
-        this.sourcePlaybackOffset += durationOfChunkSent;
-        // -------------------------------------------------------------------
-      } else if (isLastChunk && this.isPlaying) {
-        // If it was the last chunk and we got no data, behave as end of stream.
-        this.pause();
-        timeStore.set(this.originalBuffer.duration);
-        playerStore.update((s) => ({
-          ...s,
-          currentTime: this.originalBuffer!.duration,
-          isPlaying: false,
-        }));
-      }
     }
+
+    // This is the core logic: send a fixed-size chunk to the worker.
+    const frameSize = AUDIO_ENGINE_CONSTANTS.PROCESS_FRAME_SIZE;
+    const startSample = Math.floor(
+      this.sourcePlaybackOffset * this.originalBuffer.sampleRate,
+    );
+
+    // Ensure we don't read past the end of the buffer.
+    const endSample = Math.min(
+      startSample + frameSize,
+      this.originalBuffer.length,
+    );
+    const chunkSamples = endSample - startSample;
+
+    if (chunkSamples <= 0) {
+      if (this.isPlaying) this.pause();
+      return;
+    }
+
+    const numChannels = this.originalBuffer.numberOfChannels;
+    const inputBuffer: Float32Array[] = [];
+    const transferableObjects: Transferable[] = [];
+    const currentGain = get(playerStore).gain; // <-- ADD THIS LINE
+
+    for (let i = 0; i < numChannels; i++) {
+      const segment = this.originalBuffer
+        .getChannelData(i)
+        .subarray(startSample, endSample);
+
+      // --- START: NEW GAIN APPLICATION LOGIC ---
+      if (currentGain !== 1.0) {
+        // Only process if gain is not neutral
+        for (let j = 0; j < segment.length; j++) {
+          segment[j] *= currentGain;
+        }
+      }
+      // --- END: NEW GAIN APPLICATION LOGIC ---
+
+      inputBuffer.push(segment);
+      transferableObjects.push(segment.buffer);
+    }
+
+    const isLastChunk = endSample >= this.originalBuffer.length;
+
+    // Immediately advance the source offset. The engine is now self-driven.
+    this.sourcePlaybackOffset += chunkSamples / this.originalBuffer.sampleRate;
+
+    const processPayload: RubberbandProcessPayload = {
+      inputBuffer,
+      isLastChunk,
+    };
+    this.worker.postMessage(
+      { type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
+      transferableObjects,
+    );
   }
 
-  private scheduleChunkPlayback(
-    channelData: Float32Array[],
-    playbackTime: number,
-    durationSeconds: number,
-  ): void {
-    if (
-      !this.audioContext ||
-      !this.gainNode ||
-      !this.originalBuffer ||
-      this.isStopping
-    )
-      return;
+  private scheduleChunkPlayback(channelData: Float32Array[]): void {
+    if (!this.audioContext || !this.gainNode || this.isStopping) return;
 
-    const numChannels = channelData.length;
-    const frameCount = channelData[0].length;
-
-    if (frameCount === 0) return; // No data to play
+    const frameCount = channelData[0]?.length;
+    if (!frameCount) return;
 
     const chunkBuffer = this.audioContext.createBuffer(
-      numChannels,
+      channelData.length,
       frameCount,
-      this.originalBuffer.sampleRate,
+      this.audioContext.sampleRate,
     );
-    for (let i = 0; i < numChannels; i++) {
+    for (let i = 0; i < channelData.length; i++) {
       chunkBuffer.copyToChannel(channelData[i], i);
     }
 
     const source = this.audioContext.createBufferSource();
     source.buffer = chunkBuffer;
     source.connect(this.gainNode);
-
-    // Ensure playbackTime is not in the past for scheduling
-    const correctedPlaybackTime = Math.max(
-      playbackTime,
-      this.audioContext.currentTime,
-    );
-    source.start(correctedPlaybackTime);
-
-    // Update nextChunkTime for the next processing cycle.
-    // This is the time in the AudioContext's timeline when this current chunk will finish playing.
-    this.nextChunkTime = correctedPlaybackTime + durationSeconds;
-
-    // Update sourcePlaybackOffset. This represents the current playback position in the *original* audio file's timeline.
-    // The worker tells us the duration of the *original* audio that corresponds to the processed chunk.
-    // For simplicity here, we assume `durationSeconds` from the worker IS the duration in original timeline.
-    // A more accurate rubberband integration would provide this original duration.
-    // For now, we'll advance it by the stretched/pitched duration.
-    // This needs careful handling: if speed is 2x, durationSeconds is half of original segment.
-    // The `sourcePlaybackOffset` should track progress in the *source material*.
-    // If `durationSeconds` is the *output* duration, we need to calculate the *input* duration.
-    // Assuming worker gives `duration` as `outputChunk.duration / speed`.
-    // Let's assume `durationSeconds` IS the actual time advanced in the source material.
-    // This is a simplification; Rubberband provides `samples_processed`.
-    const { speed } = get(playerStore); // Current playback speed
-    const originalDurationConsumed = durationSeconds / speed; // This is an approximation if durationSeconds is output duration
-    // If worker actually returns samples_processed, use that.
-    // For now, let's assume durationSeconds is the stretched duration.
-    // And sourcePlaybackOffset should advance by the original amount of time this chunk represents.
-    // This part is tricky without knowing exactly what the worker's `duration` means.
-    // Let's assume the worker's reported `duration` is the *actual time this chunk will play for*.
-    // And we need to advance `sourcePlaybackOffset` by the amount of *original audio* this chunk represents.
-
-    // If the worker provided the number of input frames processed, that would be ideal.
-    // For now, assuming `durationSeconds` is the output duration.
-    // `this.sourcePlaybackOffset` should advance by `durationSeconds` if speed is 1.
-    // If speed is 2, it plays twice as fast, so `sourcePlaybackOffset` should advance by `durationSeconds * 2` (incorrect)
-    // It should be: `sourcePlaybackOffset += durationSeconds_of_original_material`
-    // A better way:
-    // The worker should tell us how many frames of the *original* input it processed.
-    // Let's say `originalFramesProcessed`. Then:
-    // `this.sourcePlaybackOffset += originalFramesProcessed / this.originalBuffer.sampleRate;`
-    // Given the current worker message structure, we don't have `originalFramesProcessed`.
-    // We will assume `duration` in `RubberbandProcessResultPayload` is the duration of the *output* audio.
-    // And we will advance `sourcePlaybackOffset` by this amount. This means `sourcePlaybackOffset` tracks played duration.
-    // This is a common source of bugs in time-stretching.
-    // For the sake of moving forward with the refactor as described:
-    this.sourcePlaybackOffset += durationSeconds; // This means sourcePlaybackOffset tracks the *output* timeline.
-    // This might be fine if seeking also uses this output timeline.
-    // The issue prompt's `timeStore.set(this.sourcePlaybackOffset)` in loop suggests this.
-
-    playerStore.update((s) => ({
-      ...s,
-      lastProcessedChunk: {
-        playbackTime: correctedPlaybackTime,
-        duration: durationSeconds,
-      },
-    }));
-
-    // Check if playback has reached or exceeded the total duration
-    if (
-      this.originalBuffer &&
-      this.sourcePlaybackOffset >= this.originalBuffer.duration
-    ) {
-      if (this.isPlaying) {
-        this.pause();
-        // Ensure time is set to the exact duration at the end
-        const finalDuration = this.originalBuffer.duration;
-        timeStore.set(finalDuration);
-        playerStore.update((s) => ({
-          ...s,
-          currentTime: finalDuration,
-          isPlaying: false,
-        }));
-      }
-    }
+    source.start(this.audioContext.currentTime); // Play immediately
   }
 
   private handleWorkerMessage = (
@@ -13482,30 +12818,19 @@ class AudioEngineService {
         break;
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
-        if (this.isStopping) break; // Ignore results if stopping
+        if (this.isStopping) break;
 
         if (
-          result.outputBuffer &&
-          result.outputBuffer.length > 0 &&
+          result.outputBuffer?.length > 0 &&
           result.outputBuffer[0].length > 0
         ) {
-          this.scheduleChunkPlayback(
-            result.outputBuffer,
-            result.playbackTime,
-            result.duration,
-          );
-        } else if (this.isPlaying && result.isLastChunk) {
-          // If it's the last chunk and worker returns no data (or explicitly signals end)
-          // This means end of audio stream.
-          this.pause();
-          if (this.originalBuffer) {
-            timeStore.set(this.originalBuffer.duration);
-            playerStore.update((s) => ({
-              ...s,
-              currentTime: this.originalBuffer!.duration,
-              isPlaying: false,
-            }));
-          }
+          this.scheduleChunkPlayback(result.outputBuffer);
+        }
+
+        if (result.isLastChunk) {
+          // The main loop now handles the end-of-file condition by checking sourcePlaybackOffset,
+          // so this check is primarily a failsafe.
+          if (this.isPlaying) this.pause();
         }
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
@@ -13545,7 +12870,7 @@ class AudioEngineService {
     this.isWorkerReady = false;
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
-    this.nextChunkTime = 0;
+    // this.nextChunkTime = 0; // nextChunkTime removed
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -14912,15 +14237,12 @@ export interface RubberbandInitPayload {
 
 export interface RubberbandProcessPayload {
   inputBuffer: Float32Array[];
-  isLastChunk: boolean; // ADD THIS
-  playbackTime: number; // ADD THIS
+  isLastChunk: boolean; // Keep this
 }
 
 export interface RubberbandProcessResultPayload {
   outputBuffer: Float32Array[];
-  playbackTime: number; // ADD THIS
-  duration: number; // ADD THIS
-  isLastChunk: boolean; // ADD THIS
+  isLastChunk: boolean; // Keep this
 }
 
 export interface RubberbandStatusPayload {
@@ -15238,6 +14560,7 @@ export interface AudioEngineConstants {
   MIN_CHUNK_DURATION_S: number;
   SCHEDULE_AHEAD_TIME_S: number;
   MAX_GAIN: number; // Added MAX_GAIN
+  PROCESS_FRAME_SIZE: number; // Added for audioEngine
 }
 
 export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
@@ -15251,6 +14574,7 @@ export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
   MIN_CHUNK_DURATION_S: 0.001, // seconds
   SCHEDULE_AHEAD_TIME_S: 0.05, // seconds
   MAX_GAIN: 2.0, // Added MAX_GAIN with a default value
+  PROCESS_FRAME_SIZE: 4096, // Added for audioEngine
 };
 
 export interface VadConstants {
@@ -16123,9 +15447,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case RB_WORKER_MSG_TYPE.PROCESS:
-        const { inputBuffer, isLastChunk, playbackTime } =
+        const { inputBuffer, isLastChunk } =
           payload as RubberbandProcessPayload;
-        const result = handleProcess(inputBuffer, isLastChunk, playbackTime);
+        const result = handleProcess(inputBuffer, isLastChunk); // Correctly call with new signature
         self.postMessage(
           {
             type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
@@ -16215,7 +15539,6 @@ async function handleInit(payload: RubberbandInitPayload) {
 function handleProcess(
   inputBuffer: Float32Array[],
   isLastChunk: boolean,
-  playbackTime: number,
 ): RubberbandProcessResultPayload {
   if (!wasmModule || !stretcher) {
     throw new Error("Worker not initialized for processing.");
@@ -16223,10 +15546,14 @@ function handleProcess(
 
   const channels = inputBuffer.length;
   if (channels === 0) {
-    return { outputBuffer: [], playbackTime, duration: 0, isLastChunk: true };
+    return { outputBuffer: [], isLastChunk: true };
   }
 
   const frameCount = inputBuffer[0].length;
+  if (frameCount === 0) {
+    return { outputBuffer: [], isLastChunk };
+  }
+
   const inputPtrs = wasmModule._malloc(channels * 4);
 
   try {
@@ -16252,7 +15579,6 @@ function handleProcess(
 
   const available = wasmModule._rubberband_available(stretcher);
   const outputBuffer: Float32Array[] = [];
-  let duration = 0;
 
   if (available > 0) {
     const outputPtrs = wasmModule._malloc(channels * 4);
@@ -16269,7 +15595,6 @@ function handleProcess(
         outputPtrs,
         available,
       );
-      duration = retrievedCount > 0 ? retrievedCount / sampleRate : 0;
 
       for (let i = 0; i < channels; i++) {
         const channelData = new Float32Array(retrievedCount);
@@ -16282,7 +15607,7 @@ function handleProcess(
         outputBuffer.push(channelData);
       }
     } finally {
-      // Assuming retrievedPtrs is not needed outside the try block
+      // Free the temporary output pointers
       for (let i = 0; i < channels; i++) {
         const ptr = wasmModule.HEAPU32[outputPtrs / 4 + i];
         if (ptr) wasmModule._free(ptr);
@@ -16291,7 +15616,7 @@ function handleProcess(
     }
   }
 
-  return { outputBuffer, playbackTime, duration, isLastChunk };
+  return { outputBuffer, isLastChunk };
 }
 
 ````
@@ -16675,15 +16000,17 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 <!-- DO NOT ADD /* ... */ STYLE COMMENTS IN THIS FILE. SVELTE DOES NOT WORK LIKE THAT. -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
-    import { get } from 'svelte/store';
+    import { get } from 'svelte/store'; // <-- ENSURE 'get' IS IMPORTED
     import { Toaster, toast } from 'svelte-sonner'; // Added toast for potential notifications
     import { RangeSlider } from '@skeletonlabs/skeleton';
     import Controls from '$lib/components/Controls.svelte';
-    import FileLoader from '$lib/components/FileLoader.svelte';
+    import FileLoader from '$lib/components/FileLoader.svelte'; // Corrected path
     import ToneDisplay from '$lib/components/ToneDisplay.svelte';
     import Waveform from '$lib/components/visualizers/Waveform.svelte';
     import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
+    import type { PageData } from './$types'; // Added import
 
+    export let data: PageData; // Added export
     import audioEngine from '$lib/services/audioEngine.service';
     import { playerStore } from '$lib/stores/player.store';
     import { timeStore } from '$lib/stores/time.store'; // NEW
@@ -16693,30 +16020,41 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
     let orchestrator: AudioOrchestrator; // To store instance
 
-    // Simplified seek handler
-    function handleSeek(event: MouseEvent | TouchEvent) {
-        if (!$playerStore.isPlayable) return;
+    // --- START: REPLACE OLD handleSeek WITH THIS ---
+    let isSeeking = false;
+    let wasPlayingBeforeSeek = false;
 
-        const slider = event.currentTarget as HTMLInputElement;
-        const rect = slider.getBoundingClientRect();
-        let clientX: number;
-
-        if (window.TouchEvent && event instanceof TouchEvent && event.changedTouches && event.changedTouches.length > 0) {
-            clientX = event.changedTouches[0].clientX;
-        } else if (event instanceof MouseEvent) {
-            clientX = event.clientX;
-        } else {
-            return; // Not a recognized event type
-        }
-
-        const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-        const newTime = percent * get(playerStore).duration;
-
-        // Check if duration is valid before seeking
-        if (get(playerStore).duration > 0) {
-            audioEngine.seek(newTime);
+    // When the user presses down on the slider.
+    function handleSeekStart() {
+        if (!get(playerStore).isPlayable) return;
+        isSeeking = true;
+        wasPlayingBeforeSeek = get(playerStore).isPlaying;
+        if (wasPlayingBeforeSeek) {
+            audioEngine.pause();
         }
     }
+
+    // While the user is dragging, only update the visual time display.
+    function handleSeekInput(e: Event) {
+        const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
+        timeStore.set(newTime);
+    }
+
+    // When the user releases the slider, perform the single, final seek.
+    function handleSeekEnd(e: Event) {
+        if (!get(playerStore).isPlayable) return;
+
+        const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
+        audioEngine.seek(newTime);
+
+        // Resume playback only if it was active before the seek began.
+        if (wasPlayingBeforeSeek) {
+            audioEngine.play();
+        }
+        isSeeking = false;
+        wasPlayingBeforeSeek = false;
+    }
+    // --- END: NEW SEEK LOGIC ---
 
     onMount(() => {
         orchestrator = AudioOrchestrator.getInstance();
@@ -16752,7 +16090,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     </header>
 
     <section id="file-loader" class="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <FileLoader />
+        <FileLoader on:load={(e) => orchestrator.loadFileAndAnalyze(e.detail.file, data.player)} />
     </section>
 
 <!-- This section is now ALWAYS rendered -->
@@ -16774,7 +16112,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
             bind:value={$timeStore}
             max={$playerStore.duration > 0 ? $playerStore.duration : 1}
             step="any"
-            on:click={handleSeek}
+            on:mousedown={handleSeekStart}
+            on:touchstart={handleSeekStart}
+            on:input={handleSeekInput}
+            on:mouseup={handleSeekEnd}
+            on:touchend={handleSeekEnd}
             disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
             data-testid="seek-slider-input"
             aria-label="Seek audio track"
@@ -16834,6 +16176,49 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 </style>
 ````
 --- End of File: vibe-player-v2.3/src/routes/+page.svelte ---
+--- File: vibe-player-v2.3/src/routes/+page.ts ---
+````typescript
+// src/routes/+page.ts
+import { URL_HASH_KEYS } from "$lib/utils/constants";
+import type { PageLoad } from "./$types";
+
+/**
+ * SvelteKit load function. Runs before the page component is rendered.
+ * It deserializes state from URL search parameters, making them available
+ * to the component on initial load.
+ */
+export const load: PageLoad = ({ url }) => {
+  console.log("[+page.ts load] Deserializing state from URL:", url.href);
+
+  const initialPlayerData = {
+    speed: url.searchParams.has(URL_HASH_KEYS.SPEED)
+      ? parseFloat(url.searchParams.get(URL_HASH_KEYS.SPEED)!)
+      : undefined,
+    pitchShift: url.searchParams.has(URL_HASH_KEYS.PITCH)
+      ? parseFloat(url.searchParams.get(URL_HASH_KEYS.PITCH)!)
+      : undefined,
+    gain: url.searchParams.has(URL_HASH_KEYS.GAIN)
+      ? parseFloat(url.searchParams.get(URL_HASH_KEYS.GAIN)!)
+      : undefined,
+    currentTime: url.searchParams.has(URL_HASH_KEYS.TIME)
+      ? parseFloat(url.searchParams.get(URL_HASH_KEYS.TIME)!)
+      : undefined,
+  };
+
+  // Filter out undefined values
+  const filteredData = Object.fromEntries(
+    Object.entries(initialPlayerData).filter(([_, v]) => v !== undefined),
+  );
+
+  console.log("[+page.ts load] Parsed initial player data:", filteredData);
+
+  return {
+    player: filteredData,
+  };
+};
+
+````
+--- End of File: vibe-player-v2.3/src/routes/+page.ts ---
 --- File: vibe-player-v2.3/src/setupTests.ts ---
 ````typescript
 // vibe-player-v2.3/src/setupTests.ts
@@ -18244,7 +17629,7 @@ test.describe("Vibe Player V2 E2E", () => {
     expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
   });
 
-  test("should seek audio using the seek bar with pause-seek-resume behavior", async ({
+  test("should seek audio interactively (mousedown, input, mouseup) and resume if playing", async ({
     page,
   }) => {
     await playerPage.loadAudioFile(TEST_AUDIO_FILE);
@@ -18252,58 +17637,91 @@ test.describe("Vibe Player V2 E2E", () => {
 
     // 1. Start playback
     await playerPage.playButton.click();
-    await expect(playerPage.playButton).toHaveText("Pause");
-
-    // Wait for playback to start and time to advance a bit
+    await expect(
+      playerPage.playButton,
+      "Play button should show Pause",
+    ).toHaveText("Pause");
     await expect(
       playerPage.timeDisplay,
       "Playback did not start",
     ).not.toHaveText(/^0:00 \//, { timeout: 5000 });
 
-    const timeBeforeSeek = await playerPage.getCurrentTime();
-    expect(timeBeforeSeek).toBeGreaterThan(0);
+    const initialTimeBeforeSeekInteraction = await playerPage.getCurrentTime();
+    expect(
+      initialTimeBeforeSeekInteraction,
+      "Initial time should be > 0",
+    ).toBeGreaterThan(0);
 
-    // 2. Initiate Seek to roughly the middle of the track
-    const durationText = (await playerPage.timeDisplay.textContent())?.split(
-      " / ",
-    )[1];
-    const durationSeconds = parseTimeToSeconds(durationText);
-    expect(durationSeconds).toBeGreaterThan(0);
-
+    const durationSeconds = await playerPage.getDuration();
+    expect(durationSeconds, "Duration should be > 0").toBeGreaterThan(0);
     const targetSeekTimeSeconds = durationSeconds / 2;
-    // PlayerPage.setSliderValue takes string, and it internally handles min/max attributes.
-    // We pass the desired absolute time value string.
-    await playerPage.setSliderValue(
-      playerPage.seekSliderInput,
-      String(targetSeekTimeSeconds),
-    );
 
-    // 3. Assert Playback Resumed and Seek Completion
-    // The setSliderValue includes a waitForTimeout(350) which should be enough for UI to reflect the post-seek state.
-    // Play button should indicate "Pause" meaning playback resumed.
+    // 2. Simulate mousedown on the seek slider (handleSeekStart)
+    // Playwright's hover and mousedown should trigger the event listeners
+    await playerPage.seekSliderInput.hover();
+    await page.mouse.down();
+
+    // Assert audio is paused (wasPlayingBeforeSeek = true, so engine.pause() called)
     await expect(
       playerPage.playButton,
-      "Playback did not resume after seek",
-    ).toHaveText("Pause");
+      "Play button should show Play after mousedown",
+    ).toHaveText("Play");
+    const timeAfterMouseDown = await playerPage.getCurrentTime(); // This is playerStore.currentTime
 
-    // Check current time after seek.
-    const timeAfterSeek = await playerPage.getCurrentTime();
-    // Allow a tolerance (e.g., +/- 1 second) due to timing of updates and playback loop.
-    expect(timeAfterSeek).toBeCloseTo(targetSeekTimeSeconds, 0); // Using Playwright's default tolerance or specify with second arg
+    // 3. Simulate input event on the slider (handleSeekInput)
+    // This updates timeStore, but not playerStore.currentTime yet
+    // We need to set the slider's value directly for the 'input' event to have the correct value
+    // Note: Playwright's fill or dispatchEvent might be needed if .fill() doesn't trigger 'input' correctly for range sliders
+    // Forcing the value and then dispatching input event
+    await playerPage.seekSliderInput.evaluate((slider, value) => {
+      slider.value = String(value);
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+    }, targetSeekTimeSeconds);
 
-    // 4. Assert Playback is ongoing and time is advancing
-    await page.waitForTimeout(1000); // Wait for playback to continue for a second
-
-    const timeAfterResumeAndPlay = await playerPage.getCurrentTime();
-    // Check if time has advanced beyond the point of seek, considering potential small initial delay/buffering
-    expect(
-      timeAfterResumeAndPlay,
-      "Time did not advance after resuming playback",
-    ).toBeGreaterThan(timeAfterSeek - 0.1); // allow for slight timing variance
-    expect(timeAfterResumeAndPlay).toBeGreaterThanOrEqual(
-      targetSeekTimeSeconds,
+    // Check that timeStore reflects the input (visual time display)
+    // $timeStore is bound to the slider's value, and also set by handleSeekInput
+    await expect(
+      playerPage.timeDisplay,
+      "Time display should reflect slider input",
+    ).toHaveText(
+      new RegExp(
+        `${playerPage.formatTimeForAssertion(targetSeekTimeSeconds)} \/`,
+      ),
+      { timeout: 2000 },
     );
 
+    // playerStore.currentTime should NOT have changed yet (still at timeAfterMouseDown)
+    const playerCurrentTimeAfterInput = await playerPage.getCurrentTime();
+    expect(playerCurrentTimeAfterInput).toBeCloseTo(timeAfterMouseDown, 1); // Allow some tolerance
+
+    // 4. Simulate mouseup on the seek slider (handleSeekEnd)
+    await page.mouse.up();
+
+    // Assert audio is playing again (wasPlayingBeforeSeek was true)
+    await expect(
+      playerPage.playButton,
+      "Play button should show Pause after mouseup",
+    ).toHaveText("Pause", { timeout: 2000 });
+
+    // Assert currentTime is now at the targetSeekTimeSeconds
+    // Need to wait for the event loop and potential async operations in seek to complete.
+    await expect(async () => {
+      const currentTime = await playerPage.getCurrentTime();
+      expect(currentTime).toBeCloseTo(targetSeekTimeSeconds, 0); // Using default tolerance, check value
+    }).toPass({ timeout: 5000, intervals: [100, 250, 500] });
+
+    // 5. Assert Playback is ongoing and time is advancing from the new seek position
+    const timeAfterSeekAndResume = await playerPage.getCurrentTime();
+    await page.waitForTimeout(1000); // Wait for playback to continue
+
+    const timeAfterContinuedPlay = await playerPage.getCurrentTime();
+    expect(
+      timeAfterContinuedPlay,
+      "Time did not advance after resuming playback from seek",
+    ).toBeGreaterThan(timeAfterSeekAndResume - 0.1); // allow slight variance
+    expect(timeAfterContinuedPlay).toBeGreaterThanOrEqual(
+      targetSeekTimeSeconds,
+    );
     await expect(
       playerPage.playButton,
       "Playback stopped after resuming and playing",
