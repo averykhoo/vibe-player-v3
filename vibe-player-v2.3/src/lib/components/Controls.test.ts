@@ -1,6 +1,7 @@
 // vibe-player-v2.3/src/lib/components/Controls.test.ts
 import { act, fireEvent, render, screen } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 import Controls from "./Controls.svelte";
 import audioEngineService from "$lib/services/audioEngine.service";
 import { get, writable, type Writable } from "svelte/store";
@@ -83,6 +84,12 @@ describe("Controls.svelte (Unidirectional)", () => {
       mockPlayerStore.update((s) => ({ ...s, speed: 1.75 }));
     });
 
+    // --- THIS IS THE FIX ---
+    // Wait for Svelte to flush the DOM updates before asserting.
+    await tick();
+    // --- END OF FIX ---
+
+    // Now this assertion will pass because the DOM has been updated.
     expect(speedSlider.value).toBe("1.75");
     expect(screen.getByTestId("speed-value")).toHaveTextContent("Speed: 1.75x");
   });
