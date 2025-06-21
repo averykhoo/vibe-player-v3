@@ -41,7 +41,7 @@ jobs:
         run: npm run build
 
       - name: Restore Playwright cache
-        id: cache-playwright-restore # <-- Important ID
+        id: cache-playwright-restore
         uses: actions/cache/restore@v4
         with:
           path: /home/runner/.cache/ms-playwright
@@ -56,8 +56,11 @@ jobs:
         if: always() && steps.cache-playwright-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          # Use the exact key from the restore step to ensure consistency.
-          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key }}
+          # --- START OF FIX ---
+          # The key used for saving MUST be the same string as the key used for restoring.
+          # Do not use the `outputs.cache-primary-key` as it's empty on a miss.
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
+          # --- END OF FIX ---
           path: /home/runner/.cache/ms-playwright
 
       - name: Run Playwright E2E tests
@@ -69,5 +72,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: vibe-player-v2.3/playwright-report/ # Corrected path to be relative to workspace root
           retention-days: 7
