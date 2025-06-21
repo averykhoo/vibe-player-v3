@@ -395,14 +395,20 @@ class AudioEngineService {
           // Playback time for this chunk needs to be where it's scheduled in the AudioContext timeline
           playbackTime: this.nextChunkTime,
         };
+        // ADD THIS LOG:
+        console.log(
+          `[AudioEngine] Posting chunk for processing. startFrame: ${startFrame}, offset: ${this.sourcePlaybackOffset.toFixed(3)}s`,
+        );
         this.worker.postMessage({
           type: RB_WORKER_MSG_TYPE.PROCESS,
           payload: processPayload,
         });
 
-        // The actual this.sourcePlaybackOffset will be updated in scheduleChunkPlayback
-        // based on worker output duration to keep it accurate.
-        // For now, we can estimate it for the next iteration's check, or let scheduleChunkPlayback handle it.
+        // --- THE FIX: Advance the source offset immediately after posting ---
+        const durationOfChunkSent =
+          inputBuffer[0].length / this.originalBuffer.sampleRate;
+        this.sourcePlaybackOffset += durationOfChunkSent;
+        // -------------------------------------------------------------------
       } else if (isLastChunk && this.isPlaying) {
         // If it was the last chunk and we got no data, behave as end of stream.
         this.pause();
