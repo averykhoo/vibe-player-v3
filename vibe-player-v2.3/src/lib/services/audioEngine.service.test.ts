@@ -413,7 +413,10 @@ describe("AudioEngineService", () => {
       // Check that playerStore.update was called with a function that sets isPlaying to false
       expect(playerStoreUpdateSpy).toHaveBeenCalledWith(expect.any(Function));
       // Verify the actual state change
-      playerStoreInstance.set({ ...get(playerStoreInstance), isPlaying: false }); // Simulate effect of the update function
+      playerStoreInstance.set({
+        ...get(playerStoreInstance),
+        isPlaying: false,
+      }); // Simulate effect of the update function
       expect(get(playerStoreInstance).isPlaying).toBe(false);
       expect(cancelAnimationFrame).toHaveBeenCalled();
     });

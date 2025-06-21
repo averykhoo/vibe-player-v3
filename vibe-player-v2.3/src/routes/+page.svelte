@@ -82,13 +82,17 @@
         <FileLoader />
     </section>
 
-    {#if $playerStore.fileName}
+<!-- This section is now ALWAYS rendered -->
     <section id="player-main" class="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg space-y-4">
+    <!-- Only wrap the "Now Playing" text in the conditional block -->
+    {#if $playerStore.fileName}
         <div class="text-center">
             <p class="text-sm text-gray-500 dark:text-gray-400">Now Playing:</p>
             <h2 class="text-xl font-semibold text-gray-700 dark:text-gray-300" data-testid="file-name-display">{$playerStore.fileName}</h2>
         </div>
+    {/if}
 
+    <!-- The rest of the controls are always visible -->
         <div class="text-center font-mono text-lg text-gray-700 dark:text-gray-300" data-testid="time-display">
             {formatTime($timeStore)} / {formatTime($playerStore.duration)}
         </div>
@@ -107,7 +111,6 @@
             <Controls/>
         </div>
     </section>
-    {/if}
 
 
     {#if $playerStore.isPlayable && $playerStore.status !== 'loading'}
