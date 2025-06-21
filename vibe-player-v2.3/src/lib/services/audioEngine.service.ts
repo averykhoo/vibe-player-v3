@@ -1,6 +1,7 @@
 // vibe-player-v2.3/src/lib/services/audioEngine.service.ts
 import { get } from "svelte/store";
 import { playerStore } from "$lib/stores/player.store";
+import { timeStore } from "$lib/stores/time.store";
 import RubberbandWorker from "$lib/workers/rubberband.worker?worker&inline";
 import type {
   RubberbandInitPayload,
@@ -27,7 +28,11 @@ class AudioEngineService {
   private isStopping = false;
 
   private sourcePlaybackOffset = 0;
-  private animationFrameId: number | null = null;
+
+  // --- START: ADDED FOR DIAGNOSTICS ---
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private loopCounter = 0;
+  // --- END: ADDED FOR DIAGNOSTICS ---
 
   private workerInitPromiseCallbacks: {
     resolve: () => void;
@@ -85,7 +90,9 @@ class AudioEngineService {
 
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
+      
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      
       this.worker.onerror = (err: ErrorEvent) => {
         const errorMsg = "Worker crashed or encountered an unrecoverable error.";
         console.error("[AudioEngineService] Worker onerror:", err);
@@ -145,23 +152,34 @@ class AudioEngineService {
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
       return;
     }
+
     await this.unlockAudio();
     this.isPlaying = true;
     playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
 
-    this.animationFrameId = requestAnimationFrame(
-      this._recursiveProcessAndPlayLoop.bind(this),
-    );
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    this.loopCounter = 0;
+    this.heartbeatInterval = setInterval(() => {
+        console.log(`[HEARTBEAT] Main thread is alive. Timestamp: ${performance.now().toFixed(0)}`);
+    }, 250);
+    // --- END: ADDED FOR DIAGNOSTICS ---
+
+    this._performSingleProcessAndPlayIteration();
   }
 
   public pause(): void {
     if (!this.isPlaying) return;
+
     this.isPlaying = false;
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
     playerStore.update((s) => ({ ...s, isPlaying: false }));
+    
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    if(this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+        console.log("[HEARTBEAT] Heartbeat timer cleared.");
+    }
+    // --- END: ADDED FOR DIAGNOSTICS ---
   }
 
   public async stop(): Promise<void> {
@@ -173,6 +191,7 @@ class AudioEngineService {
     }
 
     this.sourcePlaybackOffset = 0;
+    timeStore.set(0);
     playerStore.update((s) => ({ ...s, currentTime: 0, isPlaying: false }));
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -187,48 +206,33 @@ class AudioEngineService {
     if (this.isPlaying) {
       this.pause();
     }
-    const clampedTime = Math.max(
-      0,
-      Math.min(time, this.originalBuffer.duration),
-    );
+    const clampedTime = Math.max(0, Math.min(time, this.originalBuffer.duration));
     this.sourcePlaybackOffset = clampedTime;
-
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
+    timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
   }
 
   public setSpeed(speed: number): void {
     if (this.worker && this.isWorkerReady) {
-      this.worker.postMessage({
-        type: RB_WORKER_MSG_TYPE.SET_SPEED,
-        payload: { speed },
-      });
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed } });
     }
     playerStore.update((s) => ({ ...s, speed }));
   }
 
   public setPitch(pitch: number): void {
     if (this.worker && this.isWorkerReady) {
-      this.worker.postMessage({
-        type: RB_WORKER_MSG_TYPE.SET_PITCH,
-        payload: { pitch },
-      });
+      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch } });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
   }
 
   public setGain(level: number): void {
-    const newGain = Math.max(
-      0,
-      Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level),
-    );
+    const newGain = Math.max(0, Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level));
     if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(
-        newGain,
-        this._getAudioContext().currentTime,
-      );
+      this.gainNode.gain.setValueAtTime(newGain, this._getAudioContext().currentTime);
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
   }
@@ -238,46 +242,26 @@ class AudioEngineService {
       this.audioContext = new AudioContext();
       this.gainNode = this.audioContext.createGain();
       this.gainNode.connect(this.audioContext.destination);
-      playerStore.update((s) => ({
-        ...s,
-        audioContextResumed: this.audioContext!.state === "running",
-      }));
+      playerStore.update((s) => ({ ...s, audioContextResumed: this.audioContext!.state === "running" }));
     }
     return this.audioContext;
   }
 
-  private _recursiveProcessAndPlayLoop(): void {
-    if (!this.isPlaying) {
-        this.animationFrameId = null;
-        return;
-    }
-
-    playerStore.update((s) => ({ ...s, currentTime: this.sourcePlaybackOffset }));
-    this._performSingleProcessAndPlayIteration();
-
-    if (this.isPlaying) {
-        this.animationFrameId = requestAnimationFrame(this._recursiveProcessAndPlayLoop.bind(this));
-    } else {
-        this.animationFrameId = null;
-    }
-  }
-
   private _performSingleProcessAndPlayIteration(): void {
-    if (!this.worker || !this.isWorkerReady || !this.originalBuffer || this.isStopping) return;
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    this.loopCounter++;
+    console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Posting chunk. Offset: ${this.sourcePlaybackOffset.toFixed(3)}s`);
+    // --- END: ADDED FOR DIAGNOSTICS ---
 
+    if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
     if (this.sourcePlaybackOffset >= this.originalBuffer.duration) {
       if (this.isPlaying) this.pause();
       return;
     }
 
     const frameSize = AUDIO_ENGINE_CONSTANTS.PROCESS_FRAME_SIZE;
-    const startSample = Math.floor(
-      this.sourcePlaybackOffset * this.originalBuffer.sampleRate,
-    );
-    const endSample = Math.min(
-      startSample + frameSize,
-      this.originalBuffer.length,
-    );
+    const startSample = Math.floor(this.sourcePlaybackOffset * this.originalBuffer.sampleRate);
+    const endSample = Math.min(startSample + frameSize, this.originalBuffer.length);
     const chunkSamples = endSample - startSample;
 
     if (chunkSamples <= 0) {
@@ -291,9 +275,7 @@ class AudioEngineService {
     const currentGain = get(playerStore).gain;
 
     for (let i = 0; i < numChannels; i++) {
-      const segment = this.originalBuffer
-        .getChannelData(i)
-        .subarray(startSample, endSample);
+      const segment = this.originalBuffer.getChannelData(i).subarray(startSample, endSample);
       if (currentGain !== 1.0) {
         for (let j = 0; j < segment.length; j++) {
           segment[j] *= currentGain;
@@ -305,42 +287,31 @@ class AudioEngineService {
 
     const isLastChunk = endSample >= this.originalBuffer.length;
     this.sourcePlaybackOffset += chunkSamples / this.originalBuffer.sampleRate;
-
-    const processPayload: RubberbandProcessPayload = {
-      inputBuffer,
-      isLastChunk,
-    };
-    this.worker.postMessage(
-      { type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
-      transferableObjects,
-    );
+    const processPayload: RubberbandProcessPayload = { inputBuffer, isLastChunk };
+    this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload }, transferableObjects);
   }
 
   private scheduleChunkPlayback(channelData: Float32Array[]): void {
     if (!this.audioContext || !this.gainNode || this.isStopping) return;
-
     const frameCount = channelData[0]?.length;
     if (!frameCount) return;
-
-    const chunkBuffer = this.audioContext.createBuffer(
-      channelData.length,
-      frameCount,
-      this.audioContext.sampleRate,
-    );
+    const chunkBuffer = this.audioContext.createBuffer(channelData.length, frameCount, this.audioContext.sampleRate);
     for (let i = 0; i < channelData.length; i++) {
       chunkBuffer.copyToChannel(channelData[i], i);
     }
-
     const source = this.audioContext.createBufferSource();
     source.buffer = chunkBuffer;
     source.connect(this.gainNode);
     source.start(this.audioContext.currentTime);
   }
 
-  private handleWorkerMessage = (
-    event: MessageEvent<WorkerMessage<any>>,
-  ): void => {
+  private handleWorkerMessage = (event: MessageEvent<WorkerMessage<any>>): void => {
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`);
+    // --- END: ADDED FOR DIAGNOSTICS ---
+    
     const { type, payload } = event.data;
+
     switch (type) {
       case RB_WORKER_MSG_TYPE.INIT_SUCCESS:
         this.isWorkerReady = true;
@@ -361,16 +332,14 @@ class AudioEngineService {
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
         if (this.isStopping || !this.isPlaying) break;
-        if (
-          result.outputBuffer?.length > 0 &&
-          result.outputBuffer[0].length > 0
-        ) {
+        if (result.outputBuffer?.length > 0 && result.outputBuffer[0].length > 0) {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
+        timeStore.set(this.sourcePlaybackOffset);
+        this._performSingleProcessAndPlayIteration();
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
-        const workerErrorMsg =
-          (payload as WorkerErrorPayload)?.message || "Unknown worker error";
+        const workerErrorMsg = (payload as WorkerErrorPayload)?.message || "Unknown worker error";
         console.error("[AudioEngineService] Worker error:", workerErrorMsg);
         AudioOrchestrator.getInstance().handleError(new Error(workerErrorMsg));
         this.pause();
@@ -403,10 +372,14 @@ class AudioEngineService {
     this.isWorkerReady = false;
     this.isPlaying = false;
     this.sourcePlaybackOffset = 0;
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
+    
+    // --- START: ADDED FOR DIAGNOSTICS ---
+    if(this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
     }
+    // --- END: ADDED FOR DIAGNOSTICS ---
+    
     console.log("[AudioEngineService] Disposed");
   }
 }
