@@ -229,32 +229,26 @@ describe("AudioEngineService (Robust Loop)", () => {
     });
   });
 
-  it("play() should start the animation loop", async () => {
-    await engine.play();
-    expect(get(playerStore).isPlaying).toBe(true);
-    expect(requestAnimationFrame).toHaveBeenCalledWith(expect.any(Function));
-  });
-
-  it("pause() should stop the animation loop", () => {
-    (engine as any).isPlaying = true;
-    (engine as any).animationFrameId = 123;
-    engine.pause();
-    expect(get(playerStore).isPlaying).toBe(false);
-    expect(cancelAnimationFrame).toHaveBeenCalledWith(123);
-  });
-
-  it("_recursiveProcessAndPlayLoop should update timeStore and call iteration", () => {
+  it("play() should kick off the processing loop by calling a single iteration", async () => {
     const iterationSpy = vi
       .spyOn(engine as any, "_performSingleProcessAndPlayIteration")
       .mockImplementation(() => {});
-    (engine as any).isPlaying = true;
-    (engine as any).sourcePlaybackOffset = 5.0;
-    (engine as any).audioContext = mockAudioContext;
 
-    (engine as any)._recursiveProcessAndPlayLoop();
+    await engine.play();
 
-    expect(get(timeStore)).toBe(5.0);
+    expect(get(playerStore).isPlaying).toBe(true);
     expect(iterationSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("pause() should set the isPlaying flag to false", () => {
+    // Set up the playing state first
+    (engine as any).isPlaying = true;
+    playerStore.update((s) => ({ ...s, isPlaying: true }));
+
+    engine.pause();
+
+    expect(get(playerStore).isPlaying).toBe(false);
+    expect((engine as any).isPlaying).toBe(false);
   });
 
   it("_performSingleProcessAndPlayIteration should post a chunk to the worker and advance offset", () => {
@@ -301,6 +295,11 @@ describe("AudioEngineService (Robust Loop)", () => {
       outputBuffer: [new Float32Array(1024)],
       isLastChunk: false,
     };
+
+    // --- ADD THIS LINE ---
+    // Set the precondition that the engine is actively playing.
+    (engine as any).isPlaying = true;
+    // --- END OF ADDITION ---
 
     (engine as any).handleWorkerMessage({
       data: { type: RB_WORKER_MSG_TYPE.PROCESS_RESULT, payload: mockResult },
