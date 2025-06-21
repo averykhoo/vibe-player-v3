@@ -295,8 +295,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
     │   ├── player.e2e.spec.js
     │   └── player.e2e.spec.js.bak
     ├── tsconfig.json
-    ├── vibe-player-v2.3
-    │   └── package-lock.json
     └── vite.config.ts
 ````
 
