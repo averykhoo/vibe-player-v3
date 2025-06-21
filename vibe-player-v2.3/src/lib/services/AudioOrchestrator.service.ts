@@ -35,6 +35,13 @@ export class AudioOrchestrator {
       return;
     }
     this.isBusy = true;
+
+    // --- ADD THIS LOG ---
+    console.log(
+      `[VIBE-346-TRACE] Orchestrator starting file load. It will use audioEngine instance ID: ${audioEngine.instanceId}`,
+    );
+    // --- END LOG ---
+
     statusStore.set({
       message: `Loading ${file.name}...`,
       type: "info",

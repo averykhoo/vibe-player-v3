@@ -9,15 +9,18 @@
 
 	const engine = audioEngine; // Cache instance
 
-    // ADD THIS LOG
-    console.log(`[LOG-VIBE-341] Controls.svelte: 'engine' variable set. Is it defined? ${!!engine}`);
+    // --- ADD THIS LOG ---
+    console.log(`[VIBE-346-TRACE] Controls.svelte has cached 'engine' instance with ID: ${engine.instanceId}`);
+    // --- END LOG ---
 
 	// Reactive variable to unify disabled logic
 	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
 	// CORRECTED: The component simply reports the user's INTENT to toggle playback.
 	function handlePlayPause() {
-        console.log('[LOG-VIBE-341] Controls.svelte handlePlayPause triggered. Calling engine.togglePlayPause().');
+        // --- ADD THIS LOG ---
+        console.log(`[VIBE-346-TRACE] Controls.svelte handlePlayPause called on engine instance ID: ${engine.instanceId}`);
+        // --- END LOG ---
 		engine.togglePlayPause();
 	}
 

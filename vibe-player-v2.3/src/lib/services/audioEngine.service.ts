@@ -16,6 +16,7 @@ import { AudioOrchestrator } from "./AudioOrchestrator.service"; // NEW
 
 class AudioEngineService {
   private static instance: AudioEngineService;
+  public readonly instanceId: number; // <-- ADD THIS PUBLIC, READONLY PROPERTY
 
   private worker: Worker | null = null;
   private audioContext: AudioContext | null = null;
@@ -34,9 +35,9 @@ class AudioEngineService {
   } | null = null;
 
   private constructor() {
-    // ADD THIS LOG
+    this.instanceId = Math.floor(Math.random() * 10000); // <-- ADD THIS LINE
     console.log(
-      `[LOG-VIBE-341] AudioEngineService CONSTRUCTOR called. A new instance is being created.`,
+      `[VIBE-346-TRACE] AudioEngineService CONSTRUCTOR called. NEW instance created with ID: ${this.instanceId}`,
     );
   }
 
@@ -57,9 +58,8 @@ class AudioEngineService {
   }
 
   public togglePlayPause(): void {
-    // ADD THIS LOG
     console.log(
-      `[LOG-VIBE-341] audioEngine.togglePlayPause() entered. isPlaying=${this.isPlaying}`,
+      `[VIBE-346-TRACE] audioEngine.togglePlayPause() entered on instance ID: ${this.instanceId}. isPlaying=${this.isPlaying}`,
     );
     if (this.isPlaying) {
       this.pause();
