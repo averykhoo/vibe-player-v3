@@ -238,9 +238,6 @@ class AudioEngineService {
     timeStore.set(clampedTime); // Update the reactive time store for UI
     playerStore.update((s) => ({ ...s, currentTime: clampedTime })); // Also update playerStore for consistency
 
-    // Explicitly trigger URL update via Orchestrator
-    AudioOrchestrator.getInstance().updateUrlFromState();
-
     if (wasPlaying) this.play();
   };
 
@@ -252,7 +249,6 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, speed }));
-    AudioOrchestrator.getInstance().updateUrlFromState(); // Speed change should update URL
   };
 
   public setPitch = (pitch: number): void => {
@@ -263,7 +259,6 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
-    AudioOrchestrator.getInstance().updateUrlFromState(); // Pitch change should update URL
   };
 
   public setGain = (level: number): void => {
@@ -278,7 +273,6 @@ class AudioEngineService {
       );
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
-    AudioOrchestrator.getInstance().updateUrlFromState(); // Gain change should update URL
   };
 
   private _getAudioContext(): AudioContext {

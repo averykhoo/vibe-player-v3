@@ -20,15 +20,60 @@ import { RB_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 import { AUDIO_ENGINE_CONSTANTS } from "$lib/utils";
 
 // --- Mocks ---
-vi.mock("$lib/stores/player.store");
-vi.mock("$lib/stores/time.store");
+
+// Step 1: Hoist the raw initial state data.
+const { hoistedData } = vi.hoisted(() => {
+  const initialPlayerStateData: PlayerState = {
+    isPlayable: true,
+    isPlaying: false,
+    currentTime: 0,
+    duration: 10.0,
+    speed: 1.0,
+    pitchShift: 0.0,
+    gain: 1.0,
+    isLoading: false,
+    isBusy: false,
+    error: null,
+    fileName: "",
+    fileSize: 0,
+    fileType: "",
+    audioContextResumed: false,
+    audioBuffer: null,
+  };
+  const initialTimeData = 0;
+  return {
+    hoistedData: {
+      initialPlayerState: initialPlayerStateData,
+      initialTime: initialTimeData,
+    }
+  };
+});
+
+// Step 2: Create writable store instances at module scope, using the hoisted data.
+// This happens after `writable` is imported and before mock factories need these instances.
+const __mockPlayerStoreInstance = writable<PlayerState>({ ...hoistedData.initialPlayerState });
+const __mockTimeStoreInstance = writable<number>(hoistedData.initialTime);
+
+// Step 3: Mock the store modules using get() accessors to defer instance access.
+vi.mock("$lib/stores/player.store", () => {
+  return {
+    get playerStore() { return __mockPlayerStoreInstance; }
+  };
+});
+vi.mock("$lib/stores/time.store", () => {
+  return {
+    get timeStore() { return __mockTimeStoreInstance; }
+  };
+});
+
+// Step 4: Mock other modules.
 vi.mock("./AudioOrchestrator.service");
 vi.mock("$lib/workers/rubberband.worker?worker&inline");
 
+import AudioEngineService from "./audioEngine.service"; // Service under test
+
 describe("AudioEngineService (Robust Loop)", () => {
   let engine: typeof AudioEngineService;
-  let mockPlayerStore: ReturnType<typeof writable<PlayerState>>;
-  let mockTimeStore: ReturnType<typeof writable<number>>;
   let mockOrchestrator: {
     handleError: SpyInstance;
     updateUrlFromState: SpyInstance;
@@ -47,19 +92,11 @@ describe("AudioEngineService (Robust Loop)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockPlayerStore = writable({
-      isPlayable: true,
-      isPlaying: false,
-      duration: 10.0,
-      speed: 1.0,
-      pitchShift: 0.0,
-      // ... other initial state properties
-    } as PlayerState);
-    (playerStore as any) = mockPlayerStore;
+    // Reset the state of the module-scoped store instances for each test
+    __mockPlayerStoreInstance.set({ ...hoistedData.initialPlayerState });
+    __mockTimeStoreInstance.set(hoistedData.initialTime);
 
-    mockTimeStore = writable(0);
-    (timeStore as any) = mockTimeStore;
-
+    // Ensure AudioOrchestrator mock is fresh for each test
     mockOrchestrator = { handleError: vi.fn(), updateUrlFromState: vi.fn() };
     (AudioOrchestrator.getInstance as vi.Mock).mockReturnValue(
       mockOrchestrator,
@@ -88,22 +125,20 @@ describe("AudioEngineService (Robust Loop)", () => {
     (engine as any).isWorkerReady = true;
     (engine as any).isPlaying = false;
     (engine as any).sourcePlaybackOffset = 0;
-    // (engine as any).audioContext = null; // Let _getAudioContext create it
-    (engine as any)._getAudioContext(); // Call it to ensure context and gainNode are created on the instance
-    // We will still override engine.audioContext with mockAudioContext in specific tests if needed for timing control etc.
+    (engine as any)._getAudioContext();
   });
 
   it("play() should start the animation loop", async () => {
     await engine.play();
-    expect(get(mockPlayerStore).isPlaying).toBe(true);
+    expect(get(playerStore).isPlaying).toBe(true);
     expect(requestAnimationFrame).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it("pause() should stop the animation loop", () => {
-    (engine as any).isPlaying = true; // ADDED: Set isPlaying to true
+    (engine as any).isPlaying = true;
     (engine as any).animationFrameId = 123;
     engine.pause();
-    expect(get(mockPlayerStore).isPlaying).toBe(false);
+    expect(get(playerStore).isPlaying).toBe(false);
     expect(cancelAnimationFrame).toHaveBeenCalledWith(123);
   });
 
@@ -113,12 +148,11 @@ describe("AudioEngineService (Robust Loop)", () => {
       .mockImplementation(() => {});
     (engine as any).isPlaying = true;
     (engine as any).sourcePlaybackOffset = 5.0;
-    (engine as any).audioContext = mockAudioContext; // ADDED: Ensure audioContext is set for potential deeper calls
+    (engine as any).audioContext = mockAudioContext;
 
-    // Manually trigger one frame
     (engine as any)._recursiveProcessAndPlayLoop();
 
-    expect(get(mockTimeStore)).toBe(5.0);
+    expect(get(timeStore)).toBe(5.0);
     expect(iterationSpy).toHaveBeenCalledTimes(1);
   });
 
