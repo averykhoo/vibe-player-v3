@@ -207,7 +207,10 @@ class AnalysisService {
     // --- ROBUSTNESS FIX ---
     // Create a copy of the audio frame to ensure the original buffer is not detached.
     const audioFrameCopy = new Float32Array(audioFrame);
-    const payload: SileroVadProcessPayload = { audioFrame: audioFrameCopy, timestamp };
+    const payload: SileroVadProcessPayload = {
+      audioFrame: audioFrameCopy,
+      timestamp,
+    };
     // --- END OF FIX ---
 
     try {

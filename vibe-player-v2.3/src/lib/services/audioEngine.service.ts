@@ -94,7 +94,8 @@ class AudioEngineService {
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
 
       this.worker.onerror = (err: ErrorEvent) => {
-        const errorMsg = "Worker crashed or encountered an unrecoverable error.";
+        const errorMsg =
+          "Worker crashed or encountered an unrecoverable error.";
         console.error("[AudioEngineService] Worker onerror:", err);
         if (this.workerInitPromiseCallbacks) {
           this.workerInitPromiseCallbacks.reject(
@@ -160,7 +161,9 @@ class AudioEngineService {
     // --- START: ADDED FOR DIAGNOSTICS ---
     this.loopCounter = 0;
     this.heartbeatInterval = setInterval(() => {
-        console.log(`[HEARTBEAT] Main thread is alive. Timestamp: ${performance.now().toFixed(0)}`);
+      console.log(
+        `[HEARTBEAT] Main thread is alive. Timestamp: ${performance.now().toFixed(0)}`,
+      );
     }, 250);
     // --- END: ADDED FOR DIAGNOSTICS ---
 
@@ -174,10 +177,10 @@ class AudioEngineService {
     playerStore.update((s) => ({ ...s, isPlaying: false }));
 
     // --- START: ADDED FOR DIAGNOSTICS ---
-    if(this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-        this.heartbeatInterval = null;
-        console.log("[HEARTBEAT] Heartbeat timer cleared.");
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+      console.log("[HEARTBEAT] Heartbeat timer cleared.");
     }
     // --- END: ADDED FOR DIAGNOSTICS ---
   }
@@ -206,7 +209,10 @@ class AudioEngineService {
     if (this.isPlaying) {
       this.pause();
     }
-    const clampedTime = Math.max(0, Math.min(time, this.originalBuffer.duration));
+    const clampedTime = Math.max(
+      0,
+      Math.min(time, this.originalBuffer.duration),
+    );
     this.sourcePlaybackOffset = clampedTime;
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
@@ -217,22 +223,34 @@ class AudioEngineService {
 
   public setSpeed(speed: number): void {
     if (this.worker && this.isWorkerReady) {
-      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_SPEED, payload: { speed } });
+      this.worker.postMessage({
+        type: RB_WORKER_MSG_TYPE.SET_SPEED,
+        payload: { speed },
+      });
     }
     playerStore.update((s) => ({ ...s, speed }));
   }
 
   public setPitch(pitch: number): void {
     if (this.worker && this.isWorkerReady) {
-      this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.SET_PITCH, payload: { pitch } });
+      this.worker.postMessage({
+        type: RB_WORKER_MSG_TYPE.SET_PITCH,
+        payload: { pitch },
+      });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
   }
 
   public setGain(level: number): void {
-    const newGain = Math.max(0, Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level));
+    const newGain = Math.max(
+      0,
+      Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level),
+    );
     if (this.gainNode) {
-      this.gainNode.gain.setValueAtTime(newGain, this._getAudioContext().currentTime);
+      this.gainNode.gain.setValueAtTime(
+        newGain,
+        this._getAudioContext().currentTime,
+      );
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
   }
@@ -242,7 +260,10 @@ class AudioEngineService {
       this.audioContext = new AudioContext();
       this.gainNode = this.audioContext.createGain();
       this.gainNode.connect(this.audioContext.destination);
-      playerStore.update((s) => ({ ...s, audioContextResumed: this.audioContext!.state === "running" }));
+      playerStore.update((s) => ({
+        ...s,
+        audioContextResumed: this.audioContext!.state === "running",
+      }));
     }
     return this.audioContext;
   }
@@ -250,7 +271,9 @@ class AudioEngineService {
   private _performSingleProcessAndPlayIteration(): void {
     // --- START: ADDED FOR DIAGNOSTICS ---
     this.loopCounter++;
-    console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Posting chunk. Offset: ${this.sourcePlaybackOffset.toFixed(3)}s`);
+    console.log(
+      `[LOOP-TRACE] Iteration #${this.loopCounter}: Posting chunk. Offset: ${this.sourcePlaybackOffset.toFixed(3)}s`,
+    );
     // --- END: ADDED FOR DIAGNOSTICS ---
 
     if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
@@ -260,8 +283,13 @@ class AudioEngineService {
     }
 
     const frameSize = AUDIO_ENGINE_CONSTANTS.PROCESS_FRAME_SIZE;
-    const startSample = Math.floor(this.sourcePlaybackOffset * this.originalBuffer.sampleRate);
-    const endSample = Math.min(startSample + frameSize, this.originalBuffer.length);
+    const startSample = Math.floor(
+      this.sourcePlaybackOffset * this.originalBuffer.sampleRate,
+    );
+    const endSample = Math.min(
+      startSample + frameSize,
+      this.originalBuffer.length,
+    );
     const chunkSamples = endSample - startSample;
 
     if (chunkSamples <= 0) {
@@ -279,7 +307,9 @@ class AudioEngineService {
       // .slice() creates a true copy of the data with its own underlying ArrayBuffer.
       // .subarray() created a "view" on the same original buffer, which caused the
       // original buffer to be detached and made inaccessible after the first transfer.
-      const segment = this.originalBuffer.getChannelData(i).slice(startSample, endSample);
+      const segment = this.originalBuffer
+        .getChannelData(i)
+        .slice(startSample, endSample);
       // --- END OF FIX ---
 
       if (currentGain !== 1.0) {
@@ -293,15 +323,25 @@ class AudioEngineService {
 
     const isLastChunk = endSample >= this.originalBuffer.length;
     this.sourcePlaybackOffset += chunkSamples / this.originalBuffer.sampleRate;
-    const processPayload: RubberbandProcessPayload = { inputBuffer, isLastChunk };
-    this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload }, transferableObjects);
+    const processPayload: RubberbandProcessPayload = {
+      inputBuffer,
+      isLastChunk,
+    };
+    this.worker.postMessage(
+      { type: RB_WORKER_MSG_TYPE.PROCESS, payload: processPayload },
+      transferableObjects,
+    );
   }
 
   private scheduleChunkPlayback(channelData: Float32Array[]): void {
     if (!this.audioContext || !this.gainNode || this.isStopping) return;
     const frameCount = channelData[0]?.length;
     if (!frameCount) return;
-    const chunkBuffer = this.audioContext.createBuffer(channelData.length, frameCount, this.audioContext.sampleRate);
+    const chunkBuffer = this.audioContext.createBuffer(
+      channelData.length,
+      frameCount,
+      this.audioContext.sampleRate,
+    );
     for (let i = 0; i < channelData.length; i++) {
       chunkBuffer.copyToChannel(channelData[i], i);
     }
@@ -311,9 +351,13 @@ class AudioEngineService {
     source.start(this.audioContext.currentTime);
   }
 
-  private handleWorkerMessage = (event: MessageEvent<WorkerMessage<any>>): void => {
+  private handleWorkerMessage = (
+    event: MessageEvent<WorkerMessage<any>>,
+  ): void => {
     // --- START: ADDED FOR DIAGNOSTICS ---
-    console.log(`[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`);
+    console.log(
+      `[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`,
+    );
     // --- END: ADDED FOR DIAGNOSTICS ---
 
     const { type, payload } = event.data;
@@ -338,14 +382,18 @@ class AudioEngineService {
       case RB_WORKER_MSG_TYPE.PROCESS_RESULT:
         const result = payload as RubberbandProcessResultPayload;
         if (this.isStopping || !this.isPlaying) break;
-        if (result.outputBuffer?.length > 0 && result.outputBuffer[0].length > 0) {
+        if (
+          result.outputBuffer?.length > 0 &&
+          result.outputBuffer[0].length > 0
+        ) {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
         timeStore.set(this.sourcePlaybackOffset);
         this._performSingleProcessAndPlayIteration();
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
-        const workerErrorMsg = (payload as WorkerErrorPayload)?.message || "Unknown worker error";
+        const workerErrorMsg =
+          (payload as WorkerErrorPayload)?.message || "Unknown worker error";
         console.error("[AudioEngineService] Worker error:", workerErrorMsg);
         AudioOrchestrator.getInstance().handleError(new Error(workerErrorMsg));
         this.pause();
@@ -380,9 +428,9 @@ class AudioEngineService {
     this.sourcePlaybackOffset = 0;
 
     // --- START: ADDED FOR DIAGNOSTICS ---
-    if(this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-        this.heartbeatInterval = null;
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
     }
     // --- END: ADDED FOR DIAGNOSTICS ---
 

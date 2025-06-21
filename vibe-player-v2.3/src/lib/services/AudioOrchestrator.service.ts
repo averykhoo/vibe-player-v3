@@ -9,7 +9,11 @@ import dtmfService from "./dtmf.service";
 import spectrogramService from "./spectrogram.service";
 import { debounce } from "$lib/utils/async";
 import { updateUrlWithParams } from "$lib/utils/urlState";
-import { UI_CONSTANTS, URL_HASH_KEYS, VISUALIZER_CONSTANTS } from "$lib/utils/constants";
+import {
+  UI_CONSTANTS,
+  URL_HASH_KEYS,
+  VISUALIZER_CONSTANTS,
+} from "$lib/utils/constants";
 import type { PlayerState } from "$lib/types/player.types";
 import { createWaveformData } from "$lib/utils/waveform";
 
@@ -35,7 +39,9 @@ export class AudioOrchestrator {
       return;
     }
     this.isBusy = true;
-    console.log(`[Orchestrator] Orchestrator is now BUSY. Loading file: ${file.name}`);
+    console.log(
+      `[Orchestrator] Orchestrator is now BUSY. Loading file: ${file.name}`,
+    );
 
     statusStore.set({
       message: `Loading ${file.name}...`,
@@ -45,7 +51,9 @@ export class AudioOrchestrator {
 
     try {
       // --- STAGE 1: PRE-PROCESSING & STATE RESET ---
-      console.log("[Orchestrator|S1] Resetting state and stopping previous audio.");
+      console.log(
+        "[Orchestrator|S1] Resetting state and stopping previous audio.",
+      );
       await audioEngine.stop();
       playerStore.update((s) => ({
         ...initialPlayerState,
@@ -71,11 +79,18 @@ export class AudioOrchestrator {
       });
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await audioEngine.decodeAudioData(arrayBuffer);
-      console.log(`[Orchestrator|S2] Audio decoded. Duration: ${audioBuffer.duration.toFixed(2)}s`);
-      
+      console.log(
+        `[Orchestrator|S2] Audio decoded. Duration: ${audioBuffer.duration.toFixed(2)}s`,
+      );
+
       console.log("[Orchestrator|S2] Generating waveform data...");
-      const waveformData = createWaveformData(audioBuffer, VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH);
-      console.log(`[Orchestrator|S2] Waveform data generated with ${waveformData[0]?.length || 0} points.`);
+      const waveformData = createWaveformData(
+        audioBuffer,
+        VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH,
+      );
+      console.log(
+        `[Orchestrator|S2] Waveform data generated with ${waveformData[0]?.length || 0} points.`,
+      );
 
       // --- STAGE 3: INITIALIZE ALL SERVICES IN PARALLEL ---
       console.log("[Orchestrator|S3] Initializing all services in parallel...");
@@ -84,25 +99,40 @@ export class AudioOrchestrator {
         dtmfService.initialize(16000),
         spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }),
       ]);
-      console.log("[Orchestrator|S3] All service initializations have settled.");
+      console.log(
+        "[Orchestrator|S3] All service initializations have settled.",
+      );
 
       if (initResults[0].status === "rejected") {
-        console.error("[Orchestrator|S3] CRITICAL FAILURE: AudioEngine worker could not initialize.", initResults[0].reason);
+        console.error(
+          "[Orchestrator|S3] CRITICAL FAILURE: AudioEngine worker could not initialize.",
+          initResults[0].reason,
+        );
         throw new Error("Failed to initialize core audio engine.");
       } else {
-        console.log("[Orchestrator|S3] SUCCESS: AudioEngine worker initialized.");
+        console.log(
+          "[Orchestrator|S3] SUCCESS: AudioEngine worker initialized.",
+        );
       }
 
       if (initResults[1].status === "rejected") {
-        console.warn("[Orchestrator|S3] NON-CRITICAL FAILURE: DTMF service could not initialize.", initResults[1].reason);
+        console.warn(
+          "[Orchestrator|S3] NON-CRITICAL FAILURE: DTMF service could not initialize.",
+          initResults[1].reason,
+        );
       } else {
         console.log("[Orchestrator|S3] SUCCESS: DTMF service initialized.");
       }
-      
+
       if (initResults[2].status === "rejected") {
-        console.warn("[Orchestrator|S3] NON-CRITICAL FAILURE: Spectrogram service could not initialize.", initResults[2].reason);
+        console.warn(
+          "[Orchestrator|S3] NON-CRITICAL FAILURE: Spectrogram service could not initialize.",
+          initResults[2].reason,
+        );
       } else {
-        console.log("[Orchestrator|S3] SUCCESS: Spectrogram service initialized.");
+        console.log(
+          "[Orchestrator|S3] SUCCESS: Spectrogram service initialized.",
+        );
       }
 
       // --- STAGE 4: FINALIZE PLAYER STATE & APPLY URL PARAMS ---
@@ -120,10 +150,15 @@ export class AudioOrchestrator {
       }));
 
       if (initialState) {
-        console.log("[Orchestrator|S4] Applying initial state from URL:", initialState);
+        console.log(
+          "[Orchestrator|S4] Applying initial state from URL:",
+          initialState,
+        );
         playerStore.update((s) => ({ ...s, ...initialState }));
         if (initialState.currentTime) {
-          console.log(`[Orchestrator|S4] Seeking to initial time: ${initialState.currentTime.toFixed(2)}s`);
+          console.log(
+            `[Orchestrator|S4] Seeking to initial time: ${initialState.currentTime.toFixed(2)}s`,
+          );
           audioEngine.seek(initialState.currentTime);
         }
       }
@@ -149,7 +184,6 @@ export class AudioOrchestrator {
       }
       this._runBackgroundAnalysis(analysisPromises);
       console.log("[Orchestrator|S5] Background analysis tasks dispatched.");
-
     } catch (e: any) {
       this.handleError(e);
     } finally {
@@ -171,7 +205,10 @@ export class AudioOrchestrator {
       results.forEach((result, index) => {
         if (result.status === "rejected") {
           const serviceName = index === 0 ? "DTMF" : "Spectrogram";
-          console.error(`[Orchestrator] ${serviceName} analysis failed:`, result.reason);
+          console.error(
+            `[Orchestrator] ${serviceName} analysis failed:`,
+            result.reason,
+          );
         }
       });
     });

@@ -73,78 +73,87 @@ describe("SpectrogramService", () => {
 
   describe("initialize", () => {
     it("should create Spectrogram worker, post INIT message, and update store", async () => {
-        const initializePromise = spectrogramService.initialize({
-            sampleRate: 16000,
-        });
+      const initializePromise = spectrogramService.initialize({
+        sampleRate: 16000,
+      });
 
-        expect(SpectrogramWorker).toHaveBeenCalledTimes(1);
-        expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
-        await vi.runAllTimersAsync();
-        
-        // --- FIX: Check the INIT call without the transfer list ---
-        expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.INIT })
+      expect(SpectrogramWorker).toHaveBeenCalledTimes(1);
+      expect(analysisStore.update).toHaveBeenCalledWith(expect.any(Function));
+      await vi.runAllTimersAsync();
+
+      // --- FIX: Check the INIT call without the transfer list ---
+      expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: SPEC_WORKER_MSG_TYPE.INIT }),
+        expect.any(Array), // This is the fix
+      );
+      // --- END OF FIX ---
+
+      if (mockSpecWorkerInstance.postMessage.mock.calls.length === 0) {
+        throw new Error(
+          "mockSpecWorkerInstance.postMessage was not called by initialize().",
         );
-        // --- END OF FIX ---
+      }
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
-        if (mockSpecWorkerInstance.postMessage.mock.calls.length === 0) {
-            throw new Error("mockSpecWorkerInstance.postMessage was not called by initialize().");
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+            payload: {},
+            messageId: initMessageId,
+          },
+        } as MessageEvent);
+      } else {
+        throw new Error(
+          "mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation.",
+        );
+      }
+
+      await initializePromise;
+      await Promise.resolve();
+
+      const updateCalls = (analysisStore.update as Mocked<any>).mock.calls;
+      let initializedUpdateCall = null;
+      for (let i = updateCalls.length - 1; i >= 0; i--) {
+        const mockStatePreview = {
+          spectrogramStatus: "",
+          spectrogramInitialized: false,
+          spectrogramError: "previous error",
+        };
+        const resultingState = updateCalls[i][0](mockStatePreview);
+        if (
+          resultingState.spectrogramStatus === "Initialized" &&
+          resultingState.spectrogramInitialized === true
+        ) {
+          initializedUpdateCall = updateCalls[i][0];
+          break;
         }
-        const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      }
 
-        if (mockSpecWorkerInstance.onmessage) {
-            mockSpecWorkerInstance.onmessage({
-                data: {
-                    type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
-                    payload: {},
-                    messageId: initMessageId,
-                },
-            } as MessageEvent);
-        } else {
-            throw new Error("mockSpecWorkerInstance.onmessage is not set up for INIT_SUCCESS simulation.");
-        }
+      expect(initializedUpdateCall).not.toBeNull(
+        "Could not find store update setting status to 'Initialized'.",
+      );
 
-        await initializePromise;
-        await Promise.resolve();
-
-        const updateCalls = (analysisStore.update as Mocked<any>).mock.calls;
-        let initializedUpdateCall = null;
-        for (let i = updateCalls.length - 1; i >= 0; i--) {
-            const mockStatePreview = {
-                spectrogramStatus: "",
-                spectrogramInitialized: false,
-                spectrogramError: "previous error",
-            };
-            const resultingState = updateCalls[i][0](mockStatePreview);
-            if (
-                resultingState.spectrogramStatus === "Initialized" &&
-                resultingState.spectrogramInitialized === true
-            ) {
-                initializedUpdateCall = updateCalls[i][0];
-                break;
-            }
-        }
-
-        expect(initializedUpdateCall).not.toBeNull("Could not find store update setting status to 'Initialized'.");
-
-        if (initializedUpdateCall) {
-            const mockState = {
-                spectrogramStatus: "Initializing",
-                spectrogramInitialized: false,
-                spectrogramError: "some error",
-            };
-            const newState = initializedUpdateCall(mockState);
-            expect(newState.spectrogramStatus).toBe("Initialized");
-            expect(newState.spectrogramInitialized).toBe(true);
-            expect(newState.spectrogramError).toBeNull();
-        }
+      if (initializedUpdateCall) {
+        const mockState = {
+          spectrogramStatus: "Initializing",
+          spectrogramInitialized: false,
+          spectrogramError: "some error",
+        };
+        const newState = initializedUpdateCall(mockState);
+        expect(newState.spectrogramStatus).toBe("Initialized");
+        expect(newState.spectrogramInitialized).toBe(true);
+        expect(newState.spectrogramError).toBeNull();
+      }
     });
 
     // ... other initialize tests remain the same ...
     it("should update analysisStore on INIT_ERROR from worker message", async () => {
       const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
       await vi.runAllTimersAsync();
-      const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
           data: {
@@ -155,8 +164,13 @@ describe("SpectrogramService", () => {
         } as MessageEvent);
       }
       await expect(initPromise).rejects.toMatch("Init failed in worker");
-      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
-      const newState = lastUpdateCall[0]({ spectrogramError: null, spectrogramInitialized: true });
+      const lastUpdateCall = (
+        analysisStore.update as Mocked<any>
+      ).mock.calls.pop();
+      const newState = lastUpdateCall[0]({
+        spectrogramError: null,
+        spectrogramInitialized: true,
+      });
       expect(newState.spectrogramError).toContain("Init failed in worker");
       expect(newState.spectrogramInitialized).toBe(false);
     });
@@ -164,64 +178,82 @@ describe("SpectrogramService", () => {
 
   describe("process", () => {
     beforeEach(async () => {
-        const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
-        await vi.runAllTimersAsync();
-        const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
-        if (mockSpecWorkerInstance.onmessage) {
-            mockSpecWorkerInstance.onmessage({
-                data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
-            } as MessageEvent);
-        }
-        await initPromise;
-        (analysisStore.update as Mocked<any>).mockClear();
+      const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
+      await vi.runAllTimersAsync();
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+            payload: {},
+            messageId: initMessageId,
+          },
+        } as MessageEvent);
+      }
+      await initPromise;
+      (analysisStore.update as Mocked<any>).mockClear();
     });
 
     it("should post PROCESS message and update store on success", async () => {
-        const processPromise = spectrogramService.process(mockAudioData);
-        await vi.runAllTimersAsync();
+      const processPromise = spectrogramService.process(mockAudioData);
+      await vi.runAllTimersAsync();
 
-        // --- FIX: This is the key change to fix the giant log ---
-        // We verify the structure of the payload without comparing the huge array by reference.
-        expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({
-                type: SPEC_WORKER_MSG_TYPE.PROCESS,
-                payload: expect.objectContaining({
-                    audioData: expect.any(Float32Array),
-                }),
-            }),
-            // Also check that the transfer list is being used correctly.
-            [expect.any(ArrayBuffer)]
-        );
-        // --- END OF FIX ---
+      // --- FIX: This is the key change to fix the giant log ---
+      // We verify the structure of the payload without comparing the huge array by reference.
+      expect(mockSpecWorkerInstance.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: SPEC_WORKER_MSG_TYPE.PROCESS,
+          payload: expect.objectContaining({
+            audioData: expect.any(Float32Array),
+          }),
+        }),
+        // Also check that the transfer list is being used correctly.
+        [expect.any(ArrayBuffer)],
+      );
+      // --- END OF FIX ---
 
-        const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(call => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS);
-        if (!processCall) throw new Error("PROCESS message not found in postMessage calls");
-        const processMessageId = processCall[0].messageId;
-        
-        const mockResultPayload = { magnitudes: [new Float32Array([1, 2, 3])] };
-        if (mockSpecWorkerInstance.onmessage) {
-            mockSpecWorkerInstance.onmessage({
-                data: { type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT, payload: mockResultPayload, messageId: processMessageId },
-            } as MessageEvent);
-        }
-        await processPromise;
-        await Promise.resolve();
+      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(
+        (call) => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS,
+      );
+      if (!processCall)
+        throw new Error("PROCESS message not found in postMessage calls");
+      const processMessageId = processCall[0].messageId;
 
-        const updateCalls = (analysisStore.update as Mocked<any>).mock.calls;
-        expect(updateCalls.length).toBeGreaterThanOrEqual(2);
-        
-        const dataUpdateState = updateCalls[updateCalls.length - 2][0]({ spectrogramData: null });
-        expect(dataUpdateState.spectrogramData).toEqual(mockResultPayload.magnitudes);
+      const mockResultPayload = { magnitudes: [new Float32Array([1, 2, 3])] };
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.PROCESS_RESULT,
+            payload: mockResultPayload,
+            messageId: processMessageId,
+          },
+        } as MessageEvent);
+      }
+      await processPromise;
+      await Promise.resolve();
 
-        const statusUpdateState = updateCalls[updateCalls.length - 1][0]({});
-        expect(statusUpdateState.spectrogramStatus).toBe("Processing complete.");
+      const updateCalls = (analysisStore.update as Mocked<any>).mock.calls;
+      expect(updateCalls.length).toBeGreaterThanOrEqual(2);
+
+      const dataUpdateState = updateCalls[updateCalls.length - 2][0]({
+        spectrogramData: null,
+      });
+      expect(dataUpdateState.spectrogramData).toEqual(
+        mockResultPayload.magnitudes,
+      );
+
+      const statusUpdateState = updateCalls[updateCalls.length - 1][0]({});
+      expect(statusUpdateState.spectrogramStatus).toBe("Processing complete.");
     });
 
-     // ... other process tests remain the same ...
+    // ... other process tests remain the same ...
     it("should update store on PROCESS_ERROR from worker", async () => {
       const processPromise = spectrogramService.process(mockAudioData);
       await vi.runAllTimersAsync();
-      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(call => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS);
+      const processCall = mockSpecWorkerInstance.postMessage.mock.calls.find(
+        (call) => call[0].type === SPEC_WORKER_MSG_TYPE.PROCESS,
+      );
       const processMessageId = processCall[0].messageId;
       if (mockSpecWorkerInstance.onmessage) {
         mockSpecWorkerInstance.onmessage({
@@ -232,34 +264,50 @@ describe("SpectrogramService", () => {
           },
         } as MessageEvent);
       }
-      await expect(processPromise).rejects.toMatch("Processing failed in worker");
-      const lastUpdateCall = (analysisStore.update as Mocked<any>).mock.calls.pop();
-      const newState = lastUpdateCall[0]({ spectrogramStatus: "", spectrogramError: null });
+      await expect(processPromise).rejects.toMatch(
+        "Processing failed in worker",
+      );
+      const lastUpdateCall = (
+        analysisStore.update as Mocked<any>
+      ).mock.calls.pop();
+      const newState = lastUpdateCall[0]({
+        spectrogramStatus: "",
+        spectrogramError: null,
+      });
       expect(newState.spectrogramStatus).toBe("Processing failed.");
-      expect(newState.spectrogramError).toContain("Processing failed in worker");
+      expect(newState.spectrogramError).toContain(
+        "Processing failed in worker",
+      );
     });
   });
 
   // ... dispose tests remain the same ...
   describe("dispose", () => {
     it("should terminate worker and update store", async () => {
-        const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
-        await vi.runAllTimersAsync();
-        const initMessageId = mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
-        if (mockSpecWorkerInstance.onmessage) {
-            mockSpecWorkerInstance.onmessage({
-                data: { type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS, payload: {}, messageId: initMessageId },
-            } as MessageEvent);
-        }
-        await initPromise;
-        (analysisStore.update as Mocked<any>).mockClear();
+      const initPromise = spectrogramService.initialize({ sampleRate: 16000 });
+      await vi.runAllTimersAsync();
+      const initMessageId =
+        mockSpecWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      if (mockSpecWorkerInstance.onmessage) {
+        mockSpecWorkerInstance.onmessage({
+          data: {
+            type: SPEC_WORKER_MSG_TYPE.INIT_SUCCESS,
+            payload: {},
+            messageId: initMessageId,
+          },
+        } as MessageEvent);
+      }
+      await initPromise;
+      (analysisStore.update as Mocked<any>).mockClear();
 
-        spectrogramService.dispose();
+      spectrogramService.dispose();
 
-        expect(mockSpecWorkerInstance.terminate).toHaveBeenCalledTimes(1);
-        expect(analysisStore.update).toHaveBeenCalledTimes(1);
-        const newState = (analysisStore.update as Mocked<any>).mock.calls[0][0]({});
-        expect(newState.spectrogramStatus).toBe("Disposed");
+      expect(mockSpecWorkerInstance.terminate).toHaveBeenCalledTimes(1);
+      expect(analysisStore.update).toHaveBeenCalledTimes(1);
+      const newState = (analysisStore.update as Mocked<any>).mock.calls[0][0](
+        {},
+      );
+      expect(newState.spectrogramStatus).toBe("Disposed");
     });
   });
 });

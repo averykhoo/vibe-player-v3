@@ -35,7 +35,10 @@ class SpectrogramService {
   }
 
   // --- MODIFICATION: Added transferList parameter ---
-  private postMessageToWorker<T>(message: WorkerMessage<T>, transferList?: Transferable[]): Promise<unknown> {
+  private postMessageToWorker<T>(
+    message: WorkerMessage<T>,
+    transferList?: Transferable[],
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
         return reject(new Error("Spectrogram Worker not initialized."));
@@ -123,6 +126,7 @@ class SpectrogramService {
       );
       this.pendingRequests.clear();
       this.isInitialized = false;
+      throw e; // <-- ADD THIS LINE
     };
 
     let fftScriptText: string;
@@ -155,12 +159,13 @@ class SpectrogramService {
       hopLength: Math.floor(VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE / 4),
     };
 
-    try {
-      await this.postMessageToWorker({
-        type: SPEC_WORKER_MSG_TYPE.INIT,
-        payload: initPayload,
-      });
-    } catch (e) {
+    // The promise returned by postMessageToWorker will handle success (INIT_SUCCESS)
+    // or failure (worker error, INIT_ERROR) via the onmessage handler.
+    return this.postMessageToWorker({
+      type: SPEC_WORKER_MSG_TYPE.INIT,
+      payload: initPayload,
+    }).catch(e => {
+      // This catch is for network errors or if postMessageToWorker itself fails immediately.
       const errorMessage = e instanceof Error ? e.message : String(e);
       analysisStore.update((s) => ({
         ...s,
@@ -168,7 +173,8 @@ class SpectrogramService {
         spectrogramInitialized: false,
       }));
       this.isInitialized = false;
-    }
+      throw e; // Re-throw to ensure initialize() promise is rejected.
+    }) as Promise<void>; // Cast to Promise<void> as the actual payload type is handled internally.
   }
 
   public async process(audioData: Float32Array): Promise<void> {
@@ -206,6 +212,7 @@ class SpectrogramService {
         spectrogramStatus: "Processing failed.",
         spectrogramError: errorMessage,
       }));
+      throw e; // <-- ADD THIS LINE
     }
   }
 
