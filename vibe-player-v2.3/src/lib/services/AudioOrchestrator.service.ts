@@ -9,8 +9,9 @@ import dtmfService from "./dtmf.service";
 import spectrogramService from "./spectrogram.service";
 import { debounce } from "$lib/utils/async";
 import { updateUrlWithParams } from "$lib/utils/urlState";
-import { UI_CONSTANTS, URL_HASH_KEYS } from "$lib/utils/constants";
+import { UI_CONSTANTS, URL_HASH_KEYS, VISUALIZER_CONSTANTS } from "$lib/utils/constants";
 import type { PlayerState } from "$lib/types/player.types";
+import { createWaveformData } from "$lib/utils/waveform";
 
 export class AudioOrchestrator {
   private static instance: AudioOrchestrator;
@@ -25,22 +26,16 @@ export class AudioOrchestrator {
     return AudioOrchestrator.instance;
   }
 
-  // Add the new parameter to the method signature
   public async loadFileAndAnalyze(
     file: File,
     initialState?: Partial<PlayerState>,
   ): Promise<void> {
     if (this.isBusy) {
-      console.warn("Orchestrator is busy, skipping file load.");
+      console.warn("[Orchestrator] Orchestrator is busy, skipping file load.");
       return;
     }
     this.isBusy = true;
-
-    // --- ADD THIS LOG ---
-    console.log(
-      `[VIBE-346-TRACE] Orchestrator starting file load. It will use audioEngine instance ID: ${audioEngine.instanceId}`,
-    );
-    // --- END LOG ---
+    console.log(`[Orchestrator] Orchestrator is now BUSY. Loading file: ${file.name}`);
 
     statusStore.set({
       message: `Loading ${file.name}...`,
@@ -50,11 +45,13 @@ export class AudioOrchestrator {
 
     try {
       // --- STAGE 1: PRE-PROCESSING & STATE RESET ---
+      console.log("[Orchestrator|S1] Resetting state and stopping previous audio.");
       await audioEngine.stop();
       playerStore.update((s) => ({
         ...initialPlayerState,
         fileName: file.name,
         status: "loading",
+        waveformData: undefined,
       }));
       analysisStore.update((s) => ({
         ...s,
@@ -63,8 +60,10 @@ export class AudioOrchestrator {
       }));
       timeStore.set(0);
       await audioEngine.unlockAudio();
+      console.log("[Orchestrator|S1] State reset complete.");
 
-      // --- STAGE 2: CORE AUDIO SETUP (with Promise.allSettled) ---
+      // --- STAGE 2: CORE AUDIO DECODING & VISUALS ---
+      console.log("[Orchestrator|S2] Decoding audio data...");
       statusStore.set({
         message: `Processing ${file.name}...`,
         type: "info",
@@ -72,40 +71,42 @@ export class AudioOrchestrator {
       });
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await audioEngine.decodeAudioData(arrayBuffer);
+      console.log(`[Orchestrator|S2] Audio decoded. Duration: ${audioBuffer.duration.toFixed(2)}s`);
+      
+      console.log("[Orchestrator|S2] Generating waveform data...");
+      const waveformData = createWaveformData(audioBuffer, VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH);
+      console.log(`[Orchestrator|S2] Waveform data generated with ${waveformData[0]?.length || 0} points.`);
 
-      // Use Promise.allSettled to allow for partial failures.
+      // --- STAGE 3: INITIALIZE ALL SERVICES IN PARALLEL ---
+      console.log("[Orchestrator|S3] Initializing all services in parallel...");
       const initResults = await Promise.allSettled([
-        audioEngine.initializeWorker(audioBuffer), // Critical for playback
-        dtmfService.initialize(16000), // Non-critical
-        spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }), // Non-critical
+        audioEngine.initializeWorker(audioBuffer),
+        dtmfService.initialize(16000),
+        spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }),
       ]);
+      console.log("[Orchestrator|S3] All service initializations have settled.");
 
-      // Check if the CRITICAL service (AudioEngine) failed.
       if (initResults[0].status === "rejected") {
-        // If the audio engine itself fails, we cannot proceed. This is a critical error.
-        console.error(
-          "Critical failure: AudioEngine worker could not initialize.",
-          initResults[0].reason,
-        );
-        throw new Error("Failed to initialize core audio engine."); // This will be caught by the outer catch block.
+        console.error("[Orchestrator|S3] CRITICAL FAILURE: AudioEngine worker could not initialize.", initResults[0].reason);
+        throw new Error("Failed to initialize core audio engine.");
+      } else {
+        console.log("[Orchestrator|S3] SUCCESS: AudioEngine worker initialized.");
       }
 
-      // Log non-critical failures but continue.
       if (initResults[1].status === "rejected") {
-        console.warn(
-          "Non-critical failure: DTMF service could not initialize.",
-          initResults[1].reason,
-        );
+        console.warn("[Orchestrator|S3] NON-CRITICAL FAILURE: DTMF service could not initialize.", initResults[1].reason);
+      } else {
+        console.log("[Orchestrator|S3] SUCCESS: DTMF service initialized.");
       }
+      
       if (initResults[2].status === "rejected") {
-        console.warn(
-          "Non-critical failure: Spectrogram service could not initialize.",
-          initResults[2].reason,
-        );
+        console.warn("[Orchestrator|S3] NON-CRITICAL FAILURE: Spectrogram service could not initialize.", initResults[2].reason);
+      } else {
+        console.log("[Orchestrator|S3] SUCCESS: Spectrogram service initialized.");
       }
 
-      // --- STAGE 3: FINALIZE PLAYER STATE ---
-      // Since the critical AudioEngine is ready, the player is playable.
+      // --- STAGE 4: FINALIZE PLAYER STATE & APPLY URL PARAMS ---
+      console.log("[Orchestrator|S4] Finalizing player state.");
       playerStore.update((s) => ({
         ...s,
         duration: audioBuffer.duration,
@@ -114,19 +115,18 @@ export class AudioOrchestrator {
         isPlayable: true,
         audioBuffer: audioBuffer,
         error: null,
-        status: "ready", // <-- THE FIX: Update the status to a non-loading state.
+        status: "ready",
+        waveformData: waveformData,
       }));
 
-      // --- START: NEW INITIAL STATE LOGIC ---
-      // Apply initial state from URL after buffer is loaded but before analysis
       if (initialState) {
+        console.log("[Orchestrator|S4] Applying initial state from URL:", initialState);
         playerStore.update((s) => ({ ...s, ...initialState }));
         if (initialState.currentTime) {
-          // Must call seek to correctly set the engine's internal offset
+          console.log(`[Orchestrator|S4] Seeking to initial time: ${initialState.currentTime.toFixed(2)}s`);
           audioEngine.seek(initialState.currentTime);
         }
       }
-      // --- END: NEW INITIAL STATE LOGIC ---
 
       statusStore.set({
         isLoading: false,
@@ -134,9 +134,10 @@ export class AudioOrchestrator {
         type: "success",
       });
       this.updateUrlFromState();
+      console.log("[Orchestrator|S4] Player is ready.");
 
-      // --- STAGE 4: BACKGROUND ANALYSIS (with checks) ---
-      // Now, only run analysis for services that initialized successfully.
+      // --- STAGE 5: KICK OFF BACKGROUND ANALYSIS ---
+      console.log("[Orchestrator|S5] Starting background analysis tasks.");
       const analysisPromises = [];
       if (initResults[1].status === "fulfilled") {
         analysisPromises.push(dtmfService.process(audioBuffer));
@@ -147,32 +148,30 @@ export class AudioOrchestrator {
         );
       }
       this._runBackgroundAnalysis(analysisPromises);
+      console.log("[Orchestrator|S5] Background analysis tasks dispatched.");
+
     } catch (e: any) {
       this.handleError(e);
     } finally {
       this.isBusy = false;
+      console.log("[Orchestrator] Orchestrator is no longer busy.");
     }
   }
 
   private _runBackgroundAnalysis(analysisPromises: Promise<any>[]) {
     if (analysisPromises.length === 0) {
       console.log(
-        "No analysis services were successfully initialized. Skipping background analysis.",
+        "[Orchestrator] No analysis services were successfully initialized. Skipping background analysis.",
       );
       return;
     }
 
-    console.log(
-      `Starting background analysis for ${analysisPromises.length} service(s)...`,
-    );
     Promise.allSettled(analysisPromises).then((results) => {
-      console.log(`Background analysis finished.`);
+      console.log(`[Orchestrator] Background analysis finished.`);
       results.forEach((result, index) => {
         if (result.status === "rejected") {
-          // This mapping is fragile, but sufficient for this example.
-          // A better implementation might pass service names along with promises.
           const serviceName = index === 0 ? "DTMF" : "Spectrogram";
-          console.error(`${serviceName} analysis failed:`, result.reason);
+          console.error(`[Orchestrator] ${serviceName} analysis failed:`, result.reason);
         }
       });
     });
@@ -180,7 +179,7 @@ export class AudioOrchestrator {
 
   public handleError(error: Error | string): void {
     const errorMessage = typeof error === "string" ? error : error.message;
-    console.error("[AudioOrchestrator] Handling error:", errorMessage, error);
+    console.error("[Orchestrator] Handling error:", errorMessage, error);
 
     statusStore.set({
       message: `Error: ${errorMessage}`,
