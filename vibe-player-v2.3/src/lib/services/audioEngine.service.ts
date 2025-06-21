@@ -203,7 +203,7 @@ class AudioEngineService {
     this.sourcePlaybackOffset = 0;
     // this.nextChunkTime = 0; // nextChunkTime removed
     timeStore.set(0); // Reset time store to 0
-    playerStore.update((s) => ({ ...s, currentTime: 0 })); // Also update playerStore's currentTime for consistency if it's used elsewhere
+    playerStore.update((s) => ({ ...s, currentTime: 0, isPlaying: false }));
 
     // Short delay to allow any in-flight operations to cease
     // This might need adjustment or a more robust mechanism if race conditions persist
@@ -213,32 +213,26 @@ class AudioEngineService {
 
   public seek = (time: number): void => {
     if (!this.originalBuffer) {
-      // Worker readiness not strictly needed for seek setup, but buffer is.
       console.warn("Seek called without an originalBuffer.");
       return;
     }
 
-    const wasPlaying = this.isPlaying;
-    if (wasPlaying) this.pause();
+    if (this.isPlaying) {
+      this.pause();
+    }
 
     const clampedTime = Math.max(
       0,
       Math.min(time, this.originalBuffer.duration),
     );
-    this.sourcePlaybackOffset = clampedTime; // This is the primary time state for the engine
+    this.sourcePlaybackOffset = clampedTime;
 
     if (this.worker && this.isWorkerReady) {
-      // Only reset worker if it's ready
       this.worker.postMessage({ type: RB_WORKER_MSG_TYPE.RESET });
     }
 
-    // Set the audio context's next chunk time to now, so processing can resume immediately if play is called.
-    // this.nextChunkTime = this._getAudioContext().currentTime; // nextChunkTime removed
-
-    timeStore.set(clampedTime); // Update the reactive time store for UI
-    playerStore.update((s) => ({ ...s, currentTime: clampedTime })); // Also update playerStore for consistency
-
-    if (wasPlaying) this.play();
+    timeStore.set(clampedTime);
+    playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
   };
 
   public setSpeed = (speed: number): void => {
@@ -349,11 +343,22 @@ class AudioEngineService {
     const numChannels = this.originalBuffer.numberOfChannels;
     const inputBuffer: Float32Array[] = [];
     const transferableObjects: Transferable[] = [];
+    const currentGain = get(playerStore).gain; // <-- ADD THIS LINE
 
     for (let i = 0; i < numChannels; i++) {
       const segment = this.originalBuffer
         .getChannelData(i)
         .subarray(startSample, endSample);
+
+      // --- START: NEW GAIN APPLICATION LOGIC ---
+      if (currentGain !== 1.0) {
+        // Only process if gain is not neutral
+        for (let j = 0; j < segment.length; j++) {
+          segment[j] *= currentGain;
+        }
+      }
+      // --- END: NEW GAIN APPLICATION LOGIC ---
+
       inputBuffer.push(segment);
       transferableObjects.push(segment.buffer);
     }

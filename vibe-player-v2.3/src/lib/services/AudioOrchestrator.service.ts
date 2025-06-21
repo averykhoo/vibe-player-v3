@@ -25,7 +25,11 @@ export class AudioOrchestrator {
     return AudioOrchestrator.instance;
   }
 
-  public async loadFileAndAnalyze(file: File): Promise<void> {
+  // Add the new parameter to the method signature
+  public async loadFileAndAnalyze(
+    file: File,
+    initialState?: Partial<PlayerState>,
+  ): Promise<void> {
     if (this.isBusy) {
       console.warn("Orchestrator is busy, skipping file load.");
       return;
@@ -105,6 +109,18 @@ export class AudioOrchestrator {
         error: null,
         status: "ready", // <-- THE FIX: Update the status to a non-loading state.
       }));
+
+      // --- START: NEW INITIAL STATE LOGIC ---
+      // Apply initial state from URL after buffer is loaded but before analysis
+      if (initialState) {
+        playerStore.update((s) => ({ ...s, ...initialState }));
+        if (initialState.currentTime) {
+          // Must call seek to correctly set the engine's internal offset
+          audioEngine.seek(initialState.currentTime);
+        }
+      }
+      // --- END: NEW INITIAL STATE LOGIC ---
+
       statusStore.set({
         isLoading: false,
         message: `Ready: ${file.name}`,

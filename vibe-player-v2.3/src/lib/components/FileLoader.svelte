@@ -1,26 +1,23 @@
 <!-- vibe-player-v2.3/src/lib/components/FileLoader.svelte -->
 <script lang="ts">
-    import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
+    import { createEventDispatcher } from 'svelte';
     import { statusStore } from '$lib/stores/status.store';
 
+    const dispatch = createEventDispatcher<{ load: { file: File } }>();
     let selectedFileDisplay: { name: string; size: number } | null = null;
-    let orchestrator = AudioOrchestrator.getInstance(); // Instance can be cached
 
     async function handleFileSelect(event: Event) {
         const input = event.target as HTMLInputElement;
         if (input.files?.[0]) {
             const file = input.files[0];
             selectedFileDisplay = { name: file.name, size: file.size };
-
-            // The component's only job is to dispatch the action to the orchestrator.
-            orchestrator.loadFileAndAnalyze(file);
-
-            // Clear the input value to allow selecting the same file again if needed.
+            dispatch('load', { file });
             input.value = '';
         }
     }
 </script>
 
+<!-- The HTML remains largely the same, just ensure it uses `handleFileSelect` -->
 <div class="card p-4 space-y-2">
     <label for="fileInput" class="h3 cursor-pointer hover:text-primary-500 transition-colors">Load Audio File</label>
     <input

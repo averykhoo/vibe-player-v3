@@ -8,22 +8,15 @@ import {
   act,
 } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { writable } from "svelte/store";
-import FileLoader from "../FileLoader.svelte"; // Adjusted path
-import { AudioOrchestrator } from "$lib/services/AudioOrchestrator.service";
-// import { statusStore as actualStatusStore } from '$lib/stores/status.store'; // Import actual for type if needed, but mock below
+import FileLoader from "../FileLoader.svelte";
 
-// Mock AudioOrchestrator
-// Export the mock itself if needed by tests directly
-export const mockLoadFileAndAnalyze = vi.fn();
-
-vi.mock("$lib/services/AudioOrchestrator.service", () => {
+// Mock svelte's createEventDispatcher
+const mockDispatch = vi.fn();
+vi.mock('svelte', async (importOriginal) => {
+  const actualSvelte = await importOriginal<typeof import('svelte')>();
   return {
-    AudioOrchestrator: {
-      getInstance: vi.fn(() => ({
-        loadFileAndAnalyze: mockLoadFileAndAnalyze,
-      })),
-    },
+    ...actualSvelte,
+    createEventDispatcher: vi.fn(() => mockDispatch), // Return the mockDispatch
   };
 });
 
@@ -34,7 +27,6 @@ vi.mock("$lib/stores/status.store", async () => {
   const actualWritable = svelteStore.writable;
 
   if (typeof actualWritable !== "function") {
-    // This should ideally not happen if svelte/store is correctly imported.
     console.error(
       "Failed to obtain writable function from actual svelte/store for status.store.",
       svelteStore,
@@ -55,12 +47,8 @@ vi.mock("$lib/stores/status.store", async () => {
 });
 
 describe("FileLoader.svelte", () => {
-  // let orchestratorInstanceMock: { loadFileAndAnalyze: vi.Mock<any[], any> ; };
-
   beforeEach(async () => {
-    // Make beforeEach async
-    vi.clearAllMocks();
-    // Import helper and reset store
+    vi.clearAllMocks(); // Clears mockDispatch calls too
     const { getMockStatusStore } = await import("$lib/stores/status.store");
     const mockStatusStoreWritable = getMockStatusStore();
     mockStatusStoreWritable.set({
@@ -68,18 +56,14 @@ describe("FileLoader.svelte", () => {
       type: "idle",
       isLoading: false,
     });
-
-    // orchestratorInstanceMock = AudioOrchestrator.getInstance() as any;
   });
 
   afterEach(() => {
-    cleanup(); // Cleans up the DOM after each test
+    cleanup();
   });
 
   it("renders the file input and label", () => {
     render(FileLoader);
-    // The label text is "Load Audio File"
-    // The input is associated by for/id attributes.
     expect(screen.getByText("Load Audio File")).toBeInTheDocument();
     const fileInput = screen.getByLabelText(
       "Load Audio File",
@@ -87,8 +71,10 @@ describe("FileLoader.svelte", () => {
     expect(fileInput.type).toBe("file");
   });
 
-  it("calls AudioOrchestrator.loadFileAndAnalyze when a file is selected", async () => {
+  // MODIFIED TEST to check for dispatch call
+  it('dispatches a "load" event with the file when a file is selected', async () => {
     render(FileLoader);
+
     const fileInput = screen.getByLabelText(
       "Load Audio File",
     ) as HTMLInputElement;
@@ -96,9 +82,9 @@ describe("FileLoader.svelte", () => {
 
     await fireEvent.change(fileInput, { target: { files: [testFile] } });
 
-    expect(mockLoadFileAndAnalyze).toHaveBeenCalledTimes(1);
-    expect(mockLoadFileAndAnalyze).toHaveBeenCalledWith(testFile);
-    expect(fileInput.value).toBe(""); // Input value should be cleared
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(mockDispatch).toHaveBeenCalledWith('load', { file: testFile });
+    expect(fileInput.value).toBe("");
   });
 
   it("disables the file input when $statusStore.isLoading is true", async () => {
@@ -166,7 +152,7 @@ describe("FileLoader.svelte", () => {
 
     const selectedInfo = screen.getByText(/Selected: test.mp3/);
     expect(selectedInfo).toBeInTheDocument();
-    expect(selectedInfo.textContent).toContain("MB");
+    expect(selectedInfo.textContent).toContain("MB)");
   });
 
   it("does not show selected file info if isLoading is true", async () => {
@@ -225,6 +211,6 @@ describe("FileLoader.svelte", () => {
     });
 
     expect(screen.queryByTestId("file-error-message")).not.toBeInTheDocument();
-    expect(screen.getByTestId("file-loading-message")).toBeInTheDocument(); // Loading message should be visible
+    expect(screen.getByTestId("file-loading-message")).toBeInTheDocument();
   });
 });

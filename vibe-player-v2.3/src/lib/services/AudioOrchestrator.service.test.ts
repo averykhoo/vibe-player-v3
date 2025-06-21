@@ -26,8 +26,8 @@ vi.mock("./audioEngine.service", () => ({
     decodeAudioData: vi.fn(),
     initializeWorker: vi.fn(),
     stop: vi.fn(),
-    unlockAudio: vi.fn().mockResolvedValue(undefined), // Mock unlockAudio
-    // Add any other methods called by AudioOrchestrator if necessary
+    unlockAudio: vi.fn().mockResolvedValue(undefined),
+    seek: vi.fn(), // Mock seek as it's called by loadFileAndAnalyze
   },
 }));
 
@@ -159,12 +159,12 @@ describe("AudioOrchestratorService", () => {
       getChannelData: vi.fn(() => new Float32Array(0)),
     } as unknown as AudioBuffer;
 
-    it("should follow the full sequence for successful file loading and analysis", async () => {
+    it("should follow the full sequence for successful file loading and analysis (no initial state)", async () => {
       (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue(
         mockAudioBuffer,
       );
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       // 1. audioEngine.stop is called
       expect(audioEngine.stop).toHaveBeenCalledTimes(1);
@@ -261,7 +261,7 @@ describe("AudioOrchestratorService", () => {
 
       (orchestrator as any).isBusy = true; // Forcefully set isBusy for testing this scenario
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       expect(audioEngine.stop).not.toHaveBeenCalled();
       // The new code sets a different busy message
@@ -276,7 +276,7 @@ describe("AudioOrchestratorService", () => {
       const consoleWarnSpy = vi
         .spyOn(console, "warn")
         .mockImplementation(() => {});
-      await orchestrator.loadFileAndAnalyze(mockFile); // Call again now that spy is set up
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         "Orchestrator is busy, skipping file load.",
       );
@@ -301,7 +301,7 @@ describe("AudioOrchestratorService", () => {
       // The current setup `orchestrator = AudioOrchestratorService;` gets the singleton.
       const handleErrorSpy = vi.spyOn(orchestrator, "handleError");
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       // Assert that the final state is an error state
       const finalPlayerState = get(playerStore);
@@ -336,7 +336,7 @@ describe("AudioOrchestratorService", () => {
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
-      await orchestrator.loadFileAndAnalyze(mockFile);
+      await orchestrator.loadFileAndAnalyze(mockFile, undefined); // Pass undefined for initialState
 
       // Assert that the final state is a SUCCESS state for the player
       const finalPlayerState = get(playerStore);
@@ -368,6 +368,49 @@ describe("AudioOrchestratorService", () => {
       expect(spectrogramService.process).not.toHaveBeenCalled();
 
       consoleWarnSpy.mockRestore();
+    });
+
+    it("should apply initialState and call seek if currentTime is provided", async () => {
+      const seekTime = 5.5;
+      const initialState = {
+        speed: 1.5,
+        pitchShift: -2,
+        gain: 0.75,
+        currentTime: seekTime,
+      };
+      (audioEngine.decodeAudioData as vi.Mock).mockResolvedValue(
+        mockAudioBuffer,
+      );
+      (audioEngine.seek as vi.Mock).mockClear(); // Clear previous calls if any
+
+      await orchestrator.loadFileAndAnalyze(mockFile, initialState);
+
+      const finalPlayerState = get(playerStore);
+      expect(finalPlayerState.speed).toBe(initialState.speed);
+      expect(finalPlayerState.pitchShift).toBe(initialState.pitchShift);
+      expect(finalPlayerState.gain).toBe(initialState.gain);
+      // currentTime in playerStore is updated by the seek method itself,
+      // so we primarily check that audioEngine.seek was called correctly.
+
+      expect(audioEngine.seek).toHaveBeenCalledTimes(1);
+      expect(audioEngine.seek).toHaveBeenCalledWith(seekTime);
+
+      // Verify playerStore was updated with initialState (could be multiple updates)
+      // This specific check ensures the initial state values (excluding currentTime) were applied.
+      expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function)); // For initial reset
+      expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function)); // For playable state
+      expect(playerStoreSpy).toHaveBeenCalledWith(expect.any(Function)); // For applying initialState
+
+      // Check that the properties from initialState are in the playerStore
+      const storeAfterInitialState = get(playerStore);
+      expect(storeAfterInitialState.speed).toEqual(initialState.speed);
+      expect(storeAfterInitialState.pitchShift).toEqual(
+        initialState.pitchShift,
+      );
+      expect(storeAfterInitialState.gain).toEqual(initialState.gain);
+      // currentTime is set via seek, so its direct application from initialState might be overwritten
+      // by the seek call's own update to playerStore.currentTime.
+      // The important part is that audioEngine.seek was called with the correct time.
     });
   });
 

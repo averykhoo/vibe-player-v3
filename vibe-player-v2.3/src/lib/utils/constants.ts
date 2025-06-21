@@ -10,6 +10,7 @@ export interface AudioEngineConstants {
   MIN_CHUNK_DURATION_S: number;
   SCHEDULE_AHEAD_TIME_S: number;
   MAX_GAIN: number; // Added MAX_GAIN
+  PROCESS_FRAME_SIZE: number; // Added for audioEngine
 }
 
 export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
@@ -23,6 +24,7 @@ export const AUDIO_ENGINE_CONSTANTS: AudioEngineConstants = {
   MIN_CHUNK_DURATION_S: 0.001, // seconds
   SCHEDULE_AHEAD_TIME_S: 0.05, // seconds
   MAX_GAIN: 2.0, // Added MAX_GAIN with a default value
+  PROCESS_FRAME_SIZE: 4096, // Added for audioEngine
 };
 
 export interface VadConstants {

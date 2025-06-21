@@ -2,15 +2,17 @@
 <!-- DO NOT ADD /* ... */ STYLE COMMENTS IN THIS FILE. SVELTE DOES NOT WORK LIKE THAT. -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
-    import { get } from 'svelte/store';
+    import { get } from 'svelte/store'; // <-- ENSURE 'get' IS IMPORTED
     import { Toaster, toast } from 'svelte-sonner'; // Added toast for potential notifications
     import { RangeSlider } from '@skeletonlabs/skeleton';
     import Controls from '$lib/components/Controls.svelte';
-    import FileLoader from '$lib/components/FileLoader.svelte';
+    import FileLoader from '$lib/components/FileLoader.svelte'; // Corrected path
     import ToneDisplay from '$lib/components/ToneDisplay.svelte';
     import Waveform from '$lib/components/visualizers/Waveform.svelte';
     import Spectrogram from '$lib/components/visualizers/Spectrogram.svelte';
+    import type { PageData } from './$types'; // Added import
 
+    export let data: PageData; // Added export
     import audioEngine from '$lib/services/audioEngine.service';
     import { playerStore } from '$lib/stores/player.store';
     import { timeStore } from '$lib/stores/time.store'; // NEW
@@ -20,30 +22,41 @@
 
     let orchestrator: AudioOrchestrator; // To store instance
 
-    // Simplified seek handler
-    function handleSeek(event: MouseEvent | TouchEvent) {
-        if (!$playerStore.isPlayable) return;
+    // --- START: REPLACE OLD handleSeek WITH THIS ---
+    let isSeeking = false;
+    let wasPlayingBeforeSeek = false;
 
-        const slider = event.currentTarget as HTMLInputElement;
-        const rect = slider.getBoundingClientRect();
-        let clientX: number;
-
-        if (window.TouchEvent && event instanceof TouchEvent && event.changedTouches && event.changedTouches.length > 0) {
-            clientX = event.changedTouches[0].clientX;
-        } else if (event instanceof MouseEvent) {
-            clientX = event.clientX;
-        } else {
-            return; // Not a recognized event type
-        }
-
-        const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-        const newTime = percent * get(playerStore).duration;
-
-        // Check if duration is valid before seeking
-        if (get(playerStore).duration > 0) {
-            audioEngine.seek(newTime);
+    // When the user presses down on the slider.
+    function handleSeekStart() {
+        if (!get(playerStore).isPlayable) return;
+        isSeeking = true;
+        wasPlayingBeforeSeek = get(playerStore).isPlaying;
+        if (wasPlayingBeforeSeek) {
+            audioEngine.pause();
         }
     }
+
+    // While the user is dragging, only update the visual time display.
+    function handleSeekInput(e: Event) {
+        const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
+        timeStore.set(newTime);
+    }
+
+    // When the user releases the slider, perform the single, final seek.
+    function handleSeekEnd(e: Event) {
+        if (!get(playerStore).isPlayable) return;
+
+        const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
+        audioEngine.seek(newTime);
+
+        // Resume playback only if it was active before the seek began.
+        if (wasPlayingBeforeSeek) {
+            audioEngine.play();
+        }
+        isSeeking = false;
+        wasPlayingBeforeSeek = false;
+    }
+    // --- END: NEW SEEK LOGIC ---
 
     onMount(() => {
         orchestrator = AudioOrchestrator.getInstance();
@@ -79,7 +92,7 @@
     </header>
 
     <section id="file-loader" class="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <FileLoader />
+        <FileLoader on:load={(e) => orchestrator.loadFileAndAnalyze(e.detail.file, data.player)} />
     </section>
 
 <!-- This section is now ALWAYS rendered -->
@@ -101,7 +114,11 @@
             bind:value={$timeStore}
             max={$playerStore.duration > 0 ? $playerStore.duration : 1}
             step="any"
-            on:click={handleSeek}
+            on:mousedown={handleSeekStart}
+            on:touchstart={handleSeekStart}
+            on:input={handleSeekInput}
+            on:mouseup={handleSeekEnd}
+            on:touchend={handleSeekEnd}
             disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
             data-testid="seek-slider-input"
             aria-label="Seek audio track"

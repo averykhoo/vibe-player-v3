@@ -45,24 +45,30 @@ const { hoistedData } = vi.hoisted(() => {
     hoistedData: {
       initialPlayerState: initialPlayerStateData,
       initialTime: initialTimeData,
-    }
+    },
   };
 });
 
 // Step 2: Create writable store instances at module scope, using the hoisted data.
 // This happens after `writable` is imported and before mock factories need these instances.
-const __mockPlayerStoreInstance = writable<PlayerState>({ ...hoistedData.initialPlayerState });
+const __mockPlayerStoreInstance = writable<PlayerState>({
+  ...hoistedData.initialPlayerState,
+});
 const __mockTimeStoreInstance = writable<number>(hoistedData.initialTime);
 
 // Step 3: Mock the store modules using get() accessors to defer instance access.
 vi.mock("$lib/stores/player.store", () => {
   return {
-    get playerStore() { return __mockPlayerStoreInstance; }
+    get playerStore() {
+      return __mockPlayerStoreInstance;
+    },
   };
 });
 vi.mock("$lib/stores/time.store", () => {
   return {
-    get timeStore() { return __mockTimeStoreInstance; }
+    get timeStore() {
+      return __mockTimeStoreInstance;
+    },
   };
 });
 
@@ -126,6 +132,82 @@ describe("AudioEngineService (Robust Loop)", () => {
     (engine as any).isPlaying = false;
     (engine as any).sourcePlaybackOffset = 0;
     (engine as any)._getAudioContext();
+    (engine as any).worker = mockWorker; // Ensure mock worker is assigned
+  });
+
+  describe("seek", () => {
+    it("should update offsets, stores, and reset worker when called while not playing", () => {
+      const seekTime = 3.0;
+      // Ensure isPlaying is false initially for this test case
+      playerStore.update((s) => ({ ...s, isPlaying: false }));
+      (engine as any).isPlaying = false;
+
+      engine.seek(seekTime);
+
+      expect((engine as any).sourcePlaybackOffset).toBe(seekTime);
+      expect(get(timeStore)).toBe(seekTime);
+      expect(get(playerStore).currentTime).toBe(seekTime);
+      expect(mockWorker.postMessage).toHaveBeenCalledWith({
+        type: RB_WORKER_MSG_TYPE.RESET,
+      });
+      expect(get(playerStore).isPlaying).toBe(false); // Should remain not playing
+    });
+
+    it("should pause, update offsets, stores, and reset worker when called while playing", () => {
+      const seekTime = 4.0;
+      // Ensure isPlaying is true initially for this test case
+      playerStore.update((s) => ({ ...s, isPlaying: true }));
+      (engine as any).isPlaying = true;
+
+      const pauseSpy = vi.spyOn(engine, "pause").mockImplementation(() => {
+        playerStore.update((s) => ({ ...s, isPlaying: false }));
+        (engine as any).isPlaying = false;
+      });
+
+      engine.seek(seekTime);
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect((engine as any).sourcePlaybackOffset).toBe(seekTime);
+      expect(get(timeStore)).toBe(seekTime);
+      expect(get(playerStore).currentTime).toBe(seekTime);
+      expect(mockWorker.postMessage).toHaveBeenCalledWith({
+        type: RB_WORKER_MSG_TYPE.RESET,
+      });
+      expect(get(playerStore).isPlaying).toBe(false); // Should be paused
+
+      pauseSpy.mockRestore();
+    });
+
+    it("should not reset worker if worker is not ready", () => {
+      (engine as any).isWorkerReady = false;
+      const seekTime = 2.0;
+      playerStore.update((s) => ({ ...s, isPlaying: false }));
+      (engine as any).isPlaying = false;
+
+      engine.seek(seekTime);
+      // Check that postMessage was not called for RESET specifically
+      const resetCall = mockWorker.postMessage.mock.calls.find(
+        (call) => call[0].type === RB_WORKER_MSG_TYPE.RESET,
+      );
+      expect(resetCall).toBeUndefined();
+    });
+    it("should clamp seek time to buffer duration", () => {
+      const seekTime = mockAudioBuffer.duration + 5.0; // Time beyond duration
+      engine.seek(seekTime);
+      expect((engine as any).sourcePlaybackOffset).toBe(
+        mockAudioBuffer.duration,
+      );
+      expect(get(timeStore)).toBe(mockAudioBuffer.duration);
+      expect(get(playerStore).currentTime).toBe(mockAudioBuffer.duration);
+    });
+
+    it("should clamp seek time to 0 if negative time is given", () => {
+      const seekTime = -5.0; // Negative time
+      engine.seek(seekTime);
+      expect((engine as any).sourcePlaybackOffset).toBe(0);
+      expect(get(timeStore)).toBe(0);
+      expect(get(playerStore).currentTime).toBe(0);
+    });
   });
 
   it("play() should start the animation loop", async () => {
