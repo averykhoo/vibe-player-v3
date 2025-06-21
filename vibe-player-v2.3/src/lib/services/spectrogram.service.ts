@@ -1,5 +1,5 @@
 // vibe-player-v2.3/src/lib/services/spectrogram.service.ts
-import { browser } from "$app/environment"; // <-- ADD THIS IMPORT
+import { browser } from "$app/environment";
 import type {
   SpectrogramInitPayload,
   SpectrogramProcessPayload,
@@ -34,19 +34,20 @@ class SpectrogramService {
     return `spec_msg_${this.nextMessageId++}`;
   }
 
-  private postMessageToWorker<T>(message: WorkerMessage<T>): Promise<unknown> {
+  // --- MODIFICATION: Added transferList parameter ---
+  private postMessageToWorker<T>(message: WorkerMessage<T>, transferList?: Transferable[]): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.worker) {
         return reject(new Error("Spectrogram Worker not initialized."));
       }
       const messageId = this.generateMessageId();
       this.pendingRequests.set(messageId, { resolve, reject });
-      this.worker.postMessage({ ...message, messageId });
+      this.worker.postMessage({ ...message, messageId }, transferList || []);
     });
   }
 
   public async initialize(options: { sampleRate: number }): Promise<void> {
-    if (!browser) return; // <-- ADD THIS GUARD
+    if (!browser) return;
 
     if (this.isInitialized) {
       console.log(
@@ -124,7 +125,6 @@ class SpectrogramService {
       this.isInitialized = false;
     };
 
-    // Fetch the FFT script text
     let fftScriptText: string;
     try {
       const fftResponse = await fetch(
@@ -144,12 +144,12 @@ class SpectrogramService {
         spectrogramInitialized: false,
       }));
       this.isInitialized = false;
-      return; // Stop initialization if script fetch fails
+      return;
     }
 
     const initPayload: SpectrogramInitPayload = {
       origin: location.origin,
-      fftScriptText, // Pass the fetched script content
+      fftScriptText,
       sampleRate: options.sampleRate,
       fftSize: VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE,
       hopLength: Math.floor(VISUALIZER_CONSTANTS.SPEC_NORMAL_FFT_SIZE / 4),
@@ -179,11 +179,22 @@ class SpectrogramService {
       ...s,
       spectrogramStatus: "Processing audio for spectrogram...",
     }));
+
+    // --- THE FIX IS HERE ---
+    // Create a copy of the audio data to ensure the original buffer is not detached.
+    // This enforces the "always copy" policy for robustness.
+    const audioDataCopy = new Float32Array(audioData);
+    const payload: SpectrogramProcessPayload = { audioData: audioDataCopy };
+
     try {
-      await this.postMessageToWorker<SpectrogramProcessPayload>({
-        type: SPEC_WORKER_MSG_TYPE.PROCESS,
-        payload: { audioData },
-      });
+      await this.postMessageToWorker<SpectrogramProcessPayload>(
+        {
+          type: SPEC_WORKER_MSG_TYPE.PROCESS,
+          payload: payload,
+        },
+        [payload.audioData.buffer], // Transfer the copy's buffer
+      );
+      // --- END OF FIX ---
       analysisStore.update((s) => ({
         ...s,
         spectrogramStatus: "Processing complete.",
