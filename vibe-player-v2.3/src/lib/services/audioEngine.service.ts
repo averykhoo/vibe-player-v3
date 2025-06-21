@@ -49,14 +49,14 @@ class AudioEngineService {
     return AudioEngineService.instance;
   }
 
-  public unlockAudio = async (): Promise<void> => {
+  public async unlockAudio(): Promise<void> {
     const ctx = this._getAudioContext();
     if (ctx.state === "suspended") {
       await ctx.resume();
     }
-  };
+  }
 
-  public togglePlayPause = (): void => {
+  public togglePlayPause(): void {
     // ADD THIS LOG
     console.log(
       `[LOG-VIBE-341] audioEngine.togglePlayPause() entered. isPlaying=${this.isPlaying}`,
@@ -66,7 +66,7 @@ class AudioEngineService {
     } else {
       this.play();
     }
-  };
+  }
 
   /**
    * Decodes an ArrayBuffer into an AudioBuffer. This is its only responsibility.
@@ -91,7 +91,7 @@ class AudioEngineService {
    * @param audioBuffer The AudioBuffer to initialize the worker with.
    * @returns A promise that resolves on successful worker initialization.
    */
-  public initializeWorker = (audioBuffer: AudioBuffer): Promise<void> => {
+  public initializeWorker(audioBuffer: AudioBuffer): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!audioBuffer) {
         // It's important to clear callbacks if an early error occurs.
@@ -104,7 +104,11 @@ class AudioEngineService {
 
       if (this.worker) this.worker.terminate();
       this.worker = new RubberbandWorker();
+
+      // --- FIND THIS LINE:
       this.worker.onmessage = this.handleWorkerMessage;
+      // --- REPLACE WITH:
+      this.worker.onmessage = this.handleWorkerMessage.bind(this);
       this.worker.onerror = (err: ErrorEvent) => {
         const errorMsg =
           "Worker crashed or encountered an unrecoverable error.";
@@ -161,9 +165,9 @@ class AudioEngineService {
           AudioOrchestrator.getInstance().handleError(e);
         });
     });
-  };
+  }
 
-  public play = async (): Promise<void> => {
+  public async play(): Promise<void> {
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
       return;
     }
@@ -175,18 +179,18 @@ class AudioEngineService {
     // Kick off the deterministic loop by processing the FIRST chunk.
     // The loop will perpetuate itself from here.
     this._performSingleProcessAndPlayIteration();
-  };
+  }
 
-  public pause = (): void => {
+  public pause(): void {
     if (!this.isPlaying) return;
 
     // Simply flipping this flag will break the loop when the next
     // result comes back from the worker. No timers to clear.
     this.isPlaying = false;
     playerStore.update((s) => ({ ...s, isPlaying: false }));
-  };
+  }
 
-  public stop = async (): Promise<void> => {
+  public async stop(): Promise<void> {
     this.isStopping = true; // Signal that a stop operation is in progress
     this.pause(); // This will cancel animationFrame and set isPlaying to false
 
@@ -203,9 +207,9 @@ class AudioEngineService {
     // This might need adjustment or a more robust mechanism if race conditions persist
     await new Promise((resolve) => setTimeout(resolve, 50));
     this.isStopping = false;
-  };
+  }
 
-  public seek = (time: number): void => {
+  public seek(time: number): void {
     if (!this.originalBuffer) {
       console.warn("Seek called without an originalBuffer.");
       return;
@@ -227,9 +231,9 @@ class AudioEngineService {
 
     timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
-  };
+  }
 
-  public setSpeed = (speed: number): void => {
+  public setSpeed(speed: number): void {
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({
         type: RB_WORKER_MSG_TYPE.SET_SPEED,
@@ -237,9 +241,9 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, speed }));
-  };
+  }
 
-  public setPitch = (pitch: number): void => {
+  public setPitch(pitch: number): void {
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({
         type: RB_WORKER_MSG_TYPE.SET_PITCH,
@@ -247,9 +251,9 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
-  };
+  }
 
-  public setGain = (level: number): void => {
+  public setGain(level: number): void {
     const newGain = Math.max(
       0,
       Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level),
@@ -261,7 +265,7 @@ class AudioEngineService {
       );
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
-  };
+  }
 
   private _getAudioContext(): AudioContext {
     if (!this.audioContext || this.audioContext.state === "closed") {
@@ -423,7 +427,6 @@ class AudioEngineService {
   };
 
   public async dispose(): Promise<void> {
-    // Made async
     await this.stop(); // Ensure playback is stopped and resources are potentially released by stop()
     if (this.worker) {
       this.worker.terminate();
