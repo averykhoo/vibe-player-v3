@@ -30,8 +30,8 @@ class AudioEngineService {
   private sourcePlaybackOffset = 0;
 
   // --- START: ADDED FOR DIAGNOSTICS ---
-  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private loopCounter = 0;
+  // private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  // private loopCounter = 0;
   // --- END: ADDED FOR DIAGNOSTICS ---
 
   private workerInitPromiseCallbacks: {
@@ -159,12 +159,12 @@ class AudioEngineService {
     playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
 
     // --- START: ADDED FOR DIAGNOSTICS ---
-    this.loopCounter = 0;
-    this.heartbeatInterval = setInterval(() => {
-      console.log(
-        `[HEARTBEAT] Main thread is alive. Timestamp: ${performance.now().toFixed(0)}`,
-      );
-    }, 250);
+    // this.loopCounter = 0;
+    // this.heartbeatInterval = setInterval(() => {
+    //   console.log(
+    //     `[HEARTBEAT] Main thread is alive. Timestamp: ${performance.now().toFixed(0)}`,
+    //   );
+    // }, 250);
     // --- END: ADDED FOR DIAGNOSTICS ---
 
     this._performSingleProcessAndPlayIteration();
@@ -177,11 +177,11 @@ class AudioEngineService {
     playerStore.update((s) => ({ ...s, isPlaying: false }));
 
     // --- START: ADDED FOR DIAGNOSTICS ---
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-      console.log("[HEARTBEAT] Heartbeat timer cleared.");
-    }
+    // if (this.heartbeatInterval) {
+    //   clearInterval(this.heartbeatInterval);
+    //   this.heartbeatInterval = null;
+    //   console.log("[HEARTBEAT] Heartbeat timer cleared.");
+    // }
     // --- END: ADDED FOR DIAGNOSTICS ---
   }
 
@@ -270,10 +270,10 @@ class AudioEngineService {
 
   private _performSingleProcessAndPlayIteration(): void {
     // --- START: ADDED FOR DIAGNOSTICS ---
-    this.loopCounter++;
-    console.log(
-      `[LOOP-TRACE] Iteration #${this.loopCounter}: Posting chunk. Offset: ${this.sourcePlaybackOffset.toFixed(3)}s`,
-    );
+    // this.loopCounter++;
+    // console.log(
+    //   `[LOOP-TRACE] Iteration #${this.loopCounter}: Posting chunk. Offset: ${this.sourcePlaybackOffset.toFixed(3)}s`,
+    // );
     // --- END: ADDED FOR DIAGNOSTICS ---
 
     if (!this.worker || !this.isWorkerReady || !this.originalBuffer) return;
@@ -355,9 +355,9 @@ class AudioEngineService {
     event: MessageEvent<WorkerMessage<any>>,
   ): void => {
     // --- START: ADDED FOR DIAGNOSTICS ---
-    console.log(
-      `[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`,
-    );
+    // console.log(
+    //   `[LOOP-TRACE] Iteration #${this.loopCounter}: Message received from worker. Type: ${event.data.type}`,
+    // );
     // --- END: ADDED FOR DIAGNOSTICS ---
 
     const { type, payload } = event.data;
@@ -428,10 +428,10 @@ class AudioEngineService {
     this.sourcePlaybackOffset = 0;
 
     // --- START: ADDED FOR DIAGNOSTICS ---
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
+    // if (this.heartbeatInterval) {
+    //   clearInterval(this.heartbeatInterval);
+    //   this.heartbeatInterval = null;
+    // }
     // --- END: ADDED FOR DIAGNOSTICS ---
 
     console.log("[AudioEngineService] Disposed");

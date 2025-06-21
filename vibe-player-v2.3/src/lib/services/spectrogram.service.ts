@@ -164,7 +164,7 @@ class SpectrogramService {
     return this.postMessageToWorker({
       type: SPEC_WORKER_MSG_TYPE.INIT,
       payload: initPayload,
-    }).catch(e => {
+    }).catch((e) => {
       // This catch is for network errors or if postMessageToWorker itself fails immediately.
       const errorMessage = e instanceof Error ? e.message : String(e);
       analysisStore.update((s) => ({

@@ -51,14 +51,14 @@ let sampleRate: number = 44100; // ADD THIS with a default
 // --- Main Worker Logic ---
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const { type, payload, messageId } = event.data;
-  console.log(
-    `[RubberbandWorker] Message received. Type: ${type}, MessageID: ${messageId}`,
-  );
+  // console.log(
+  //   `[RubberbandWorker] Message received. Type: ${type}, MessageID: ${messageId}`,
+  // );
 
   try {
     switch (type) {
       case RB_WORKER_MSG_TYPE.INIT:
-        console.log(`[RubberbandWorker] Initializing with payload...`);
+        // console.log(`[RubberbandWorker] Initializing with payload...`);
         await handleInit(payload as RubberbandInitPayload);
         self.postMessage({ type: RB_WORKER_MSG_TYPE.INIT_SUCCESS, messageId });
         break;
@@ -83,7 +83,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case RB_WORKER_MSG_TYPE.PROCESS:
-        console.log(`[RubberbandWorker] Entering PROCESS case.`);
+        // console.log(`[RubberbandWorker] Entering PROCESS case.`);
         const { inputBuffer, isLastChunk } =
           payload as RubberbandProcessPayload;
 
@@ -93,18 +93,18 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           !Array.isArray(inputBuffer) ||
           inputBuffer.length === 0
         ) {
-          console.error(
-            `[RubberbandWorker] PROCESS received invalid inputBuffer: not an array or is empty.`,
-            inputBuffer,
-          );
+          // console.error(
+          //   `[RubberbandWorker] PROCESS received invalid inputBuffer: not an array or is empty.`,
+          //   inputBuffer,
+          // );
           throw new Error(
             "PROCESS received invalid inputBuffer: not an array or is empty.",
           );
         }
         if (inputBuffer[0].length === 0) {
-          console.warn(
-            `[RubberbandWorker] PROCESS received a chunk with 0 samples. Skipping.`,
-          );
+          // console.warn(
+          //   `[RubberbandWorker] PROCESS received a chunk with 0 samples. Skipping.`,
+          // );
           // Send back an empty result to keep the loop going.
           self.postMessage({
             type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
@@ -113,20 +113,20 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           });
           break; // Exit this case
         }
-        console.log(
-          `[RubberbandWorker] Processing chunk. Channels: ${inputBuffer.length}, Samples: ${inputBuffer[0].length}, isLastChunk: ${isLastChunk}`,
-        );
-        console.log(
-          `[RubberbandWorker] First 3 samples of channel 0:`,
-          inputBuffer[0].slice(0, 3),
-        );
+        // console.log(
+        //   `[RubberbandWorker] Processing chunk. Channels: ${inputBuffer.length}, Samples: ${inputBuffer[0].length}, isLastChunk: ${isLastChunk}`,
+        // );
+        // console.log(
+        //   `[RubberbandWorker] First 3 samples of channel 0:`,
+        //   inputBuffer[0].slice(0, 3),
+        // );
         // --- END: ADDED LOGGING FOR CHUNK VALIDATION ---
 
         const result = handleProcess(inputBuffer, isLastChunk); // Correctly call with new signature
 
-        console.log(
-          `[RubberbandWorker] Processing complete. Output buffer has ${result.outputBuffer[0]?.length || 0} samples. Posting result to main thread.`,
-        );
+        // console.log(
+        //   `[RubberbandWorker] Processing complete. Output buffer has ${result.outputBuffer[0]?.length || 0} samples. Posting result to main thread.`,
+        // );
         self.postMessage(
           {
             type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
@@ -138,7 +138,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       case RB_WORKER_MSG_TYPE.FLUSH:
-        console.log(`[RubberbandWorker] FLUSH command received.`);
+        // console.log(`[RubberbandWorker] FLUSH command received.`);
         self.postMessage({
           type: RB_WORKER_MSG_TYPE.PROCESS_RESULT,
           payload: { outputBuffer: [] },
@@ -203,7 +203,7 @@ async function handleInit(payload: RubberbandInitPayload) {
   if (!stretcher)
     throw new Error("Failed to create Rubberband stretcher instance.");
 
-  console.log(`[RubberbandWorker] Stretcher instance created successfully.`);
+  // console.log(`[RubberbandWorker] Stretcher instance created successfully.`);
   sampleRate = payload.sampleRate;
 }
 
@@ -251,9 +251,9 @@ function handleProcess(
   const available = wasmModule._rubberband_available(stretcher);
   const outputBuffer: Float32Array[] = [];
 
-  console.log(
-    `[RubberbandWorker/handleProcess] Samples available after processing: ${available}`,
-  );
+  // console.log(
+  //   `[RubberbandWorker/handleProcess] Samples available after processing: ${available}`,
+  // );
 
   if (available > 0) {
     const outputPtrs = wasmModule._malloc(channels * 4);
@@ -270,9 +270,9 @@ function handleProcess(
         outputPtrs,
         available,
       );
-      console.log(
-        `[RubberbandWorker/handleProcess] Retrieved ${retrievedCount} samples.`,
-      );
+      // console.log(
+      //   `[RubberbandWorker/handleProcess] Retrieved ${retrievedCount} samples.`,
+      // );
 
       for (let i = 0; i < channels; i++) {
         const channelData = new Float32Array(retrievedCount);
