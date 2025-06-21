@@ -142,4 +142,45 @@ export class PlayerPage {
     }
     return currentTimeInSeconds;
   }
+
+  /**
+   * --- ADD THIS NEW METHOD ---
+   * Gets the total duration from the time display element.
+   * @returns {Promise<number>} The total duration in seconds.
+   */
+  async getDuration() {
+    const timeDisplayText = await this.timeDisplay.textContent();
+    if (!timeDisplayText) throw new Error("Time display text is empty.");
+
+    const timeParts = timeDisplayText.split(" / ");
+    if (timeParts.length < 2)
+      throw new Error(`Unexpected time display format: ${timeDisplayText}`);
+
+    const durationStr = timeParts[1].trim();
+    const segments = durationStr.split(":").map(Number);
+    let durationInSeconds = 0;
+    if (segments.length === 2) {
+      // M:SS
+      durationInSeconds = segments[0] * 60 + segments[1];
+    } else if (segments.length === 3) {
+      // H:MM:SS
+      durationInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
+    } else {
+      throw new Error(`Unexpected duration segment format: ${durationStr}`);
+    }
+    return durationInSeconds;
+  }
+
+  /**
+   * --- ADD THIS NEW METHOD ---
+   * Formats seconds into a "M:SS" string for exact text matching in assertions.
+   * @param {number} sec - Time in seconds.
+   * @returns {string} The formatted time string.
+   */
+  formatTimeForAssertion(sec) {
+    if (isNaN(sec) || sec < 0) sec = 0;
+    const minutes = Math.floor(sec / 60);
+    const seconds = Math.floor(sec % 60);
+    return `${minutes}:${seconds < 10 ? "0" + seconds : seconds}`;
+  }
 }

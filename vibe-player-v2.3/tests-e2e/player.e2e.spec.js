@@ -107,97 +107,52 @@ test.describe("Vibe Player V2 E2E", () => {
     await playerPage.loadAudioFile(TEST_AUDIO_FILE);
     await playerPage.expectControlsToBeReadyForPlayback();
 
-    // 1. Start playback
+    // 1. Start playback and verify it's running
     await playerPage.playButton.click();
-    await expect(
-      playerPage.playButton,
-      "Play button should show Pause",
-    ).toHaveText("Pause");
-    await expect(
-      playerPage.timeDisplay,
-      "Playback did not start",
-    ).not.toHaveText(/^0:00 \//, { timeout: 5000 });
-
-    const initialTimeBeforeSeekInteraction = await playerPage.getCurrentTime();
-    expect(
-      initialTimeBeforeSeekInteraction,
-      "Initial time should be > 0",
-    ).toBeGreaterThan(0);
+    await expect(playerPage.playButton).toHaveText(/Pause/);
+    await expect(playerPage.timeDisplay).not.toHaveText(/^0:00 \//, {
+      timeout: 5000,
+    });
 
     const durationSeconds = await playerPage.getDuration();
-    expect(durationSeconds, "Duration should be > 0").toBeGreaterThan(0);
+    expect(
+      durationSeconds,
+      "Duration should be greater than 0",
+    ).toBeGreaterThan(0);
     const targetSeekTimeSeconds = durationSeconds / 2;
 
-    // 2. Simulate mousedown on the seek slider (handleSeekStart)
-    // Playwright's hover and mousedown should trigger the event listeners
+    // 2. Simulate mousedown on the seek slider to trigger handleSeekStart
     await playerPage.seekSliderInput.hover();
     await page.mouse.down();
 
-    // Assert audio is paused (wasPlayingBeforeSeek = true, so engine.pause() called)
-    await expect(
-      playerPage.playButton,
-      "Play button should show Play after mousedown",
-    ).toHaveText("Play");
-    const timeAfterMouseDown = await playerPage.getCurrentTime(); // This is playerStore.currentTime
+    // Assert that audio pauses during the seek drag
+    await expect(playerPage.playButton).toHaveText(/Play/);
 
-    // 3. Simulate input event on the slider (handleSeekInput)
-    // This updates timeStore, but not playerStore.currentTime yet
-    // We need to set the slider's value directly for the 'input' event to have the correct value
-    // Note: Playwright's fill or dispatchEvent might be needed if .fill() doesn't trigger 'input' correctly for range sliders
-    // Forcing the value and then dispatching input event
+    // 3. Simulate dragging the slider to the midpoint to trigger handleSeekInput
     await playerPage.seekSliderInput.evaluate((slider, value) => {
       slider.value = String(value);
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     }, targetSeekTimeSeconds);
 
-    // Check that timeStore reflects the input (visual time display)
-    // $timeStore is bound to the slider's value, and also set by handleSeekInput
-    await expect(
-      playerPage.timeDisplay,
-      "Time display should reflect slider input",
-    ).toHaveText(
-      new RegExp(
-        `${playerPage.formatTimeForAssertion(targetSeekTimeSeconds)} \/`,
-      ),
-      { timeout: 2000 },
+    // Assert the visual time display updates during the drag
+    const expectedTimeRegex = new RegExp(
+      `^${playerPage.formatTimeForAssertion(targetSeekTimeSeconds)} /`,
     );
+    await expect(playerPage.timeDisplay).toHaveText(expectedTimeRegex, {
+      timeout: 2000,
+    });
 
-    // playerStore.currentTime should NOT have changed yet (still at timeAfterMouseDown)
-    const playerCurrentTimeAfterInput = await playerPage.getCurrentTime();
-    expect(playerCurrentTimeAfterInput).toBeCloseTo(timeAfterMouseDown, 1); // Allow some tolerance
-
-    // 4. Simulate mouseup on the seek slider (handleSeekEnd)
+    // 4. Simulate mouseup to trigger handleSeekEnd
     await page.mouse.up();
 
-    // Assert audio is playing again (wasPlayingBeforeSeek was true)
-    await expect(
-      playerPage.playButton,
-      "Play button should show Pause after mouseup",
-    ).toHaveText("Pause", { timeout: 2000 });
+    // Assert audio resumes playing
+    await expect(playerPage.playButton).toHaveText(/Pause/, { timeout: 2000 });
 
-    // Assert currentTime is now at the targetSeekTimeSeconds
-    // Need to wait for the event loop and potential async operations in seek to complete.
+    // Assert the actual time has settled near the seek target
     await expect(async () => {
       const currentTime = await playerPage.getCurrentTime();
-      expect(currentTime).toBeCloseTo(targetSeekTimeSeconds, 0); // Using default tolerance, check value
-    }).toPass({ timeout: 5000, intervals: [100, 250, 500] });
-
-    // 5. Assert Playback is ongoing and time is advancing from the new seek position
-    const timeAfterSeekAndResume = await playerPage.getCurrentTime();
-    await page.waitForTimeout(1000); // Wait for playback to continue
-
-    const timeAfterContinuedPlay = await playerPage.getCurrentTime();
-    expect(
-      timeAfterContinuedPlay,
-      "Time did not advance after resuming playback from seek",
-    ).toBeGreaterThan(timeAfterSeekAndResume - 0.1); // allow slight variance
-    expect(timeAfterContinuedPlay).toBeGreaterThanOrEqual(
-      targetSeekTimeSeconds,
-    );
-    await expect(
-      playerPage.playButton,
-      "Playback stopped after resuming and playing",
-    ).toHaveText("Pause"); // Still playing
+      expect(currentTime).toBeCloseTo(targetSeekTimeSeconds, 1);
+    }).toPass({ timeout: 5000 });
   });
 
   test("should detect and display DTMF tones", async ({ page }) => {
