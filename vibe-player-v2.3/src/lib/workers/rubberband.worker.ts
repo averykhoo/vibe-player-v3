@@ -46,6 +46,7 @@ declare function Rubberband(moduleArg: {
 // --- Worker State ---
 let wasmModule: RubberbandModule | null = null;
 let stretcher: number = 0; // Opaque pointer to the C++ RubberbandStretcher object
+let sampleRate: number = 44100; // ADD THIS with a default
 
 // --- Main Worker Logic ---
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
@@ -104,8 +105,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     }
   } catch (e) {
     const error = e as Error;
+    console.error(
+      `[RubberbandWorker] Error during operation '${type}':`,
+      error,
+    ); // Add explicit worker-side log
     self.postMessage({
-      type: `${type}_ERROR`,
+      type: RB_WORKER_MSG_TYPE.ERROR, // THE FIX
       error: error.message,
       messageId,
     });
@@ -159,6 +164,8 @@ async function handleInit(payload: RubberbandInitPayload) {
   );
   if (!stretcher)
     throw new Error("Failed to create Rubberband stretcher instance.");
+
+  sampleRate = payload.sampleRate; // ADD THIS LINE
 }
 
 function handleProcess(
@@ -213,9 +220,6 @@ function handleProcess(
         retrievedPtrs.push(bufferPtr);
       }
 
-      // TODO: VIBE-328 This needs to come from playerStore, but workers can't access Svelte stores.
-      // This needs to be passed in during INIT or PROCESS. For now, hardcoding to 48000 as a temporary measure.
-      const sampleRate = 48000;
       const retrievedCount = wasmModule._rubberband_retrieve(
         stretcher,
         outputPtrs,
