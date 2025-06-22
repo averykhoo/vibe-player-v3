@@ -22,7 +22,7 @@
     let orchestrator: AudioOrchestrator;
 
     // --- REFACTORED SEEK LOGIC (v2.0 Pattern) ---
-    let seekTime = $timeStore; // Bind slider to this local variable.
+    let seekTime = $timeStore; // Bound to the slider's visual position.
     let isSeeking = false;
     let wasPlayingBeforeSeek = false;
 
@@ -34,33 +34,37 @@
     });
 
     function handleSeekStart() {
-        console.log('[App Log] handleSeekStart fired.');
+        console.log('[App Log] handleSeekStart fired.'); // Keep for debugging
         if (!get(playerStore).isPlayable) return;
         isSeeking = true;
         wasPlayingBeforeSeek = get(playerStore).isPlaying;
         if (wasPlayingBeforeSeek) {
-            audioEngine.pause();
+            audioEngine.pause(); // Direct call
         }
     }
 
     // While dragging, update the store from our local variable.
     function handleSeekInput() {
-        console.log('[App Log] handleSeekInput fired.');
-        timeStore.set(seekTime);
+        // console.log('[App Log] handleSeekInput fired.'); // Keep for debugging
+        if (!isSeeking) return; // Only update if actively seeking
+        timeStore.set(seekTime); // Update timeStore for immediate visual feedback
     }
 
     function handleSeekEnd() {
-        console.log('[App Log] handleSeekEnd fired.');
-        if (!get(playerStore).isPlayable) return;
-        
+        console.log('[App Log] handleSeekEnd fired.'); // Keep for debugging
+        if (!get(playerStore).isPlayable) {
+            isSeeking = false; // Ensure flag is reset
+            return;
+        }
+
         // Finalize the seek with the value from our local variable.
         audioEngine.seek(seekTime);
         isSeeking = false; // Reset seeking flag FIRST.
 
         if (wasPlayingBeforeSeek) {
-            audioEngine.play();
+            audioEngine.play(); // Direct call
         }
-        wasPlayingBeforeSeek = false;
+        wasPlayingBeforeSeek = false; // Reset flag
     }
     // --- END: REFACTORED SEEK LOGIC ---
 

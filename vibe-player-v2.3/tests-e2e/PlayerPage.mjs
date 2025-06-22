@@ -27,6 +27,13 @@ export class PlayerPage {
     this.gainSliderInput = page.getByTestId("gain-slider-input");
     this.gainValueDisplay = page.getByTestId("gain-value");
     this.dtmfDisplay = page.getByTestId("dtmf-display");
+
+    // VAD Controls
+    this.vadPositiveSliderInput = page.getByTestId("vad-positive-slider-input");
+    this.vadPositiveValueDisplay = page.getByTestId("vad-positive-value");
+    this.vadNegativeSliderInput = page.getByTestId("vad-negative-slider-input");
+    this.vadNegativeValueDisplay = page.getByTestId("vad-negative-value");
+
     console.log("[Test Runner Log] PlayerPage locators initialized.");
   }
 
@@ -116,7 +123,9 @@ export class PlayerPage {
             `[Browser-Side Log for Slider (TestID: ${testId_b}, Name: ${name_b}, ID: ${id_b})] ${message}`,
           );
 
-        if (!(element instanceof HTMLInputElement && element.type === "range")) {
+        if (
+          !(element instanceof HTMLInputElement && element.type === "range")
+        ) {
           browserLog(
             `ERROR: Target element is not an HTMLInputElement of type 'range'. TagName: ${element.tagName}, Type: ${element.getAttribute("type")}`,
           );
@@ -229,9 +238,7 @@ export class PlayerPage {
           `Wrapper element identified. TagName: ${wrapper.tagName}, ID: ${wrapper.id}, Class: ${wrapper.className}`,
         );
 
-        const sliderInput = wrapper.querySelector(
-          'input[type="range"]',
-        );
+        const sliderInput = wrapper.querySelector('input[type="range"]');
         if (!sliderInput) {
           browserLog(
             `ERROR: Could not find slider input <input type="range"> inside wrapper.`,
@@ -307,8 +314,7 @@ export class PlayerPage {
       durationInSeconds = segments[0] * 60 + segments[1];
     } else if (segments.length === 3) {
       // H:MM:SS
-      durationInSeconds =
-        segments[0] * 3600 + segments[1] * 60 + segments[2];
+      durationInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
     } else {
       throw new Error(`Unexpected duration segment format: ${durationStr}`);
     }
