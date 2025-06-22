@@ -1,29 +1,36 @@
-<!-- vibe-player-v2.3/src/lib/components/Controls.svelte -->
 <script lang="ts">
 	import { RangeSlider } from '@skeletonlabs/skeleton';
 	import audioEngine from '$lib/services/audioEngine.service';
 	import { playerStore } from '$lib/stores/player.store';
+    import { debounce } from '$lib/utils/async';
 
-    // ADD THIS LOG
-    console.log(`[LOG-VIBE-341] Controls.svelte script block executed. Importing audioEngine service.`);
-
-	const engine = audioEngine; // Cache instance
-
-    // --- ADD THIS LOG ---
-    console.log(`[VIBE-346-TRACE] Controls.svelte has cached 'engine' instance with ID: ${engine.instanceId}`);
-    // --- END LOG ---
-
-	// Reactive variable to unify disabled logic
+	const engine = audioEngine;
 	$: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
 
-	// CORRECTED: The component simply reports the user's INTENT to toggle playback.
+    // --- Debounced Logic ---
+    let localSpeed = $playerStore.speed;
+    let localPitch = $playerStore.pitchShift;
+    let localGain = $playerStore.gain;
+    let jumpSeconds = 10;
+
+    const debouncedSetSpeed = debounce((val: number) => engine.setSpeed(val), 150);
+    const debouncedSetPitch = debounce((val: number) => engine.setPitch(val), 150);
+    const debouncedSetGain = debounce((val: number) => engine.setGain(val), 150);
+
+    // Prevent initial call if the local value already matches the store
+    $: if (localSpeed !== undefined && localSpeed !== $playerStore.speed) debouncedSetSpeed(localSpeed);
+    $: if (localPitch !== undefined && localPitch !== $playerStore.pitchShift) debouncedSetPitch(localPitch);
+    $: if (localGain !== undefined && localGain !== $playerStore.gain) debouncedSetGain(localGain);
+
+    playerStore.subscribe(val => {
+        if (val.speed !== localSpeed) localSpeed = val.speed;
+        if (val.pitchShift !== localPitch) localPitch = val.pitchShift;
+        if (val.gain !== localGain) localGain = val.gain;
+    });
+
 	function handlePlayPause() {
-        // --- ADD THIS LOG ---
-        console.log(`[VIBE-346-TRACE] Controls.svelte handlePlayPause called on engine instance ID: ${engine.instanceId}`);
-        // --- END LOG ---
 		engine.togglePlayPause();
 	}
-
 	function handleStop() {
 		engine.stop();
 	}
@@ -60,17 +67,21 @@
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M5.25 6.375a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zM4.125 7.5A2.25 2.25 0 108.625 7.5 2.25 2.25 0 004.125 7.5zM15.375 5.25a1.125 1.125 0 110 2.25 1.125 1.125 0 010-2.25zM16.5 4.125a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5zM4.5 10.875a.75.75 0 000 1.5h15a.75.75 0 000-1.5H4.5z"></path></svg>
 			<span>Stop</span>
 		</button>
+        <div class="flex items-center space-x-1 pl-4">
+            <button on:click={() => engine.jump(-jumpSeconds)} disabled={controlsDisabled} class="btn btn-sm btn-ghost" aria-label="Jump backward by {jumpSeconds} seconds">«</button>
+            <input type="number" bind:value={jumpSeconds} class="input input-sm w-16 text-center" />
+            <button on:click={() => engine.jump(jumpSeconds)} disabled={controlsDisabled} class="btn btn-sm btn-ghost" aria-label="Jump forward by {jumpSeconds} seconds">»</button>
+        </div>
 	</div>
 
 	<div class="space-y-1">
 		<label for="speedSlider" class="label text-sm font-medium text-gray-700 dark:text-gray-300" data-testid="speed-value"
-			>Speed: {$playerStore.speed.toFixed(2)}x</label
+			>Speed: {localSpeed.toFixed(2)}x</label
 		>
 		<RangeSlider
 			data-testid="speed-slider-input"
 			name="speedSlider"
-			value={$playerStore.speed}
-			on:input={(e) => engine.setSpeed(e.currentTarget.valueAsNumber)}
+			bind:value={localSpeed}
 			min={0.5} max={2.0} step={0.01}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -79,13 +90,12 @@
 
 	<div class="space-y-1">
 		<label for="pitchSlider" class="label text-sm font-medium text-gray-700 dark:text-gray-300" data-testid="pitch-value"
-			>Pitch: {$playerStore.pitchShift.toFixed(1)} semitones</label
+			>Pitch: {localPitch.toFixed(1)} semitones</label
 		>
 		<RangeSlider
 			data-testid="pitch-slider-input"
 			name="pitchSlider"
-			value={$playerStore.pitchShift}
-			on:input={(e) => engine.setPitch(e.currentTarget.valueAsNumber)}
+			bind:value={localPitch}
 			min={-12} max={12} step={0.1}
 			disabled={controlsDisabled}
 			class="w-full"
@@ -94,13 +104,12 @@
 
 	<div class="space-y-1">
 		<label for="gainSlider" class="label text-sm font-medium text-gray-700 dark:text-gray-300" data-testid="gain-value"
-			>Gain: {$playerStore.gain.toFixed(2)}</label
+			>Gain: {localGain.toFixed(2)}</label
 		>
 		<RangeSlider
 			data-testid="gain-slider-input"
 			name="gainSlider"
-			value={$playerStore.gain}
-			on:input={(e) => engine.setGain(e.currentTarget.valueAsNumber)}
+			bind:value={localGain}
 			min={0} max={2.0} step={0.01}
 			disabled={controlsDisabled}
 			class="w-full"

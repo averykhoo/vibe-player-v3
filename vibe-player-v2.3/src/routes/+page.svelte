@@ -49,12 +49,21 @@
         const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
         audioEngine.seek(newTime);
 
-        // Resume playback only if it was active before the seek began.
         if (wasPlayingBeforeSeek) {
             audioEngine.play();
         }
         isSeeking = false;
         wasPlayingBeforeSeek = false;
+    }
+
+    function handleClickToSeek(e: MouseEvent & { currentTarget: EventTarget & HTMLInputElement }) {
+        if (isSeeking) return; // Don't fire during a drag
+        const wasPlaying = get(playerStore).isPlaying;
+        const newTime = e.currentTarget.valueAsNumber;
+        audioEngine.seek(newTime);
+        if (wasPlaying) {
+            audioEngine.play();
+        }
     }
     // --- END: NEW SEEK LOGIC ---
 
@@ -119,6 +128,7 @@
             on:input={handleSeekInput}
             on:mouseup={handleSeekEnd}
             on:touchend={handleSeekEnd}
+            on:click={handleClickToSeek}
             disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
             data-testid="seek-slider-input"
             aria-label="Seek audio track"

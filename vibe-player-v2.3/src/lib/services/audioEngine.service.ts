@@ -206,9 +206,6 @@ class AudioEngineService {
       console.warn("Seek called without an originalBuffer.");
       return;
     }
-    if (this.isPlaying) {
-      this.pause();
-    }
     const clampedTime = Math.max(
       0,
       Math.min(time, this.originalBuffer.duration),
@@ -219,6 +216,17 @@ class AudioEngineService {
     }
     timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
+  }
+
+  public jump(seconds: number): void {
+    if (!this.originalBuffer) return;
+    const wasPlaying = this.isPlaying;
+    const currentTime = get(timeStore);
+    const newTime = currentTime + seconds;
+    this.seek(newTime);
+    if (wasPlaying) {
+      this.play();
+    }
   }
 
   public setSpeed(speed: number): void {

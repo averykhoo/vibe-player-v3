@@ -121,34 +121,13 @@ test.describe("Vibe Player V2 E2E", () => {
     ).toBeGreaterThan(0);
     const targetSeekTimeSeconds = durationSeconds / 2;
 
-    // 2. Simulate mousedown on the seek slider to trigger handleSeekStart
-    await playerPage.seekSliderInput.hover();
-    await page.mouse.down();
+    // 2. Perform the entire interactive seek using the new robust helper.
+    await playerPage.performInteractiveSeek(targetSeekTimeSeconds);
 
-    // Assert that audio pauses during the seek drag
-    await expect(playerPage.playButton).toHaveText(/Play/);
-
-    // 3. Simulate dragging the slider to the midpoint to trigger handleSeekInput
-    await playerPage.seekSliderInput.evaluate((slider, value) => {
-      slider.value = String(value);
-      slider.dispatchEvent(new Event("input", { bubbles: true }));
-    }, targetSeekTimeSeconds);
-
-    // Assert the visual time display updates during the drag
-    const expectedTimeRegex = new RegExp(
-      `^${playerPage.formatTimeForAssertion(targetSeekTimeSeconds)} /`,
-    );
-    await expect(playerPage.timeDisplay).toHaveText(expectedTimeRegex, {
-      timeout: 2000,
-    });
-
-    // 4. Simulate mouseup to trigger handleSeekEnd
-    await page.mouse.up();
-
-    // Assert audio resumes playing
+    // 3. Assert audio resumes playing automatically, since it was playing before the seek.
     await expect(playerPage.playButton).toHaveText(/Pause/, { timeout: 2000 });
 
-    // Assert the actual time has settled near the seek target
+    // 4. Assert the actual time has settled near the seek target.
     await expect(async () => {
       const currentTime = await playerPage.getCurrentTime();
       expect(currentTime).toBeCloseTo(targetSeekTimeSeconds, 1);

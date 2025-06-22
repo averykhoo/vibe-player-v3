@@ -172,29 +172,25 @@ describe("AudioEngineService (Robust Loop)", () => {
       expect(get(playerStore).isPlaying).toBe(false); // Should remain not playing
     });
 
-    it("should pause, update offsets, stores, and reset worker when called while playing", () => {
+    it("should update offsets, stores, and reset worker when called (playback state managed by UI)", () => {
       const seekTime = 4.0;
-      // Ensure isPlaying is true initially for this test case
-      playerStore.update((s) => ({ ...s, isPlaying: true }));
+      // Simulate playing state if needed for other logic within seek, though seek itself won't change it.
+      playerStore.update((s) => ({ ...s, isPlaying: true, currentTime: 0 })); // Set a distinct currentTime before seek
       (engine as any).isPlaying = true;
-
-      const pauseSpy = vi.spyOn(engine, "pause").mockImplementation(() => {
-        playerStore.update((s) => ({ ...s, isPlaying: false }));
-        (engine as any).isPlaying = false;
-      });
+      const initialIsPlaying = get(playerStore).isPlaying;
 
       engine.seek(seekTime);
 
-      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      // audioEngine.seek no longer calls pause itself. UI layer handles it.
+      // The isPlaying state in the store should remain as it was before seek was called,
+      // as the UI is responsible for managing pause/play around seek.
+      expect(get(playerStore).isPlaying).toBe(initialIsPlaying);
       expect((engine as any).sourcePlaybackOffset).toBe(seekTime);
       expect(get(timeStore)).toBe(seekTime);
-      expect(get(playerStore).currentTime).toBe(seekTime);
+      expect(get(playerStore).currentTime).toBe(seekTime); // This is updated by seek
       expect(mockWorker.postMessage).toHaveBeenCalledWith({
         type: RB_WORKER_MSG_TYPE.RESET,
       });
-      expect(get(playerStore).isPlaying).toBe(false); // Should be paused
-
-      pauseSpy.mockRestore();
     });
 
     it("should not reset worker if worker is not ready", () => {

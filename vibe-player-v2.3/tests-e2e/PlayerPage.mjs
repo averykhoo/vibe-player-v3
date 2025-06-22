@@ -145,6 +145,28 @@ export class PlayerPage {
 
   /**
    * --- ADD THIS NEW METHOD ---
+   * Performs a robust, multi-stage interactive seek on the main seek slider.
+   * Simulates a user pressing down, dragging, and releasing the mouse.
+   * @param {number} targetTime The time in seconds to seek to.
+   */
+  async performInteractiveSeek(targetTime) {
+    // Stage 1: Hover over the element and press the mouse down to trigger 'on:mousedown'.
+    await this.seekSliderInput.hover();
+    await this.page.mouse.down();
+
+    // Stage 2: Programmatically set the slider's value and dispatch an 'input' event
+    // to simulate the drag and trigger 'on:input'.
+    await this.seekSliderInput.evaluate((slider, value) => {
+      slider.value = String(value);
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+    }, targetTime);
+
+    // Stage 3: Release the mouse to trigger 'on:mouseup'.
+    await this.page.mouse.up();
+  }
+
+  /**
+   * --- ADD THIS NEW METHOD ---
    * Gets the total duration from the time display element.
    * @returns {Promise<number>} The total duration in seconds.
    */

@@ -29,11 +29,16 @@ vi.mock("$lib/services/audioEngine.service", () => ({
     setSpeed: vi.fn(),
     setPitch: vi.fn(),
     setGain: vi.fn(),
+    jump: vi.fn(), // Added for the new jump functionality
   },
 }));
 
 describe("Controls.svelte (Unidirectional)", () => {
   let mockPlayerStore: Writable<PlayerState>;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -94,7 +99,8 @@ describe("Controls.svelte (Unidirectional)", () => {
     expect(screen.getByTestId("speed-value")).toHaveTextContent("Speed: 1.75x");
   });
 
-  it("calls audioEngine.setSpeed when speed slider is moved", async () => {
+  it("calls audioEngine.setSpeed with debounce when speed slider is moved", async () => {
+    vi.useFakeTimers(); // Enable fake timers for this test
     render(Controls);
     act(() => {
       mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
@@ -102,9 +108,56 @@ describe("Controls.svelte (Unidirectional)", () => {
 
     const speedSlider =
       screen.getByTestId<HTMLInputElement>("speed-slider-input");
-    await fireEvent.input(speedSlider, { target: { value: "0.8" } });
 
-    expect(audioEngineService.setSpeed).toHaveBeenCalledWith(0.8);
+    // Simulate multiple rapid inputs
+    await fireEvent.input(speedSlider, { target: { value: "0.8" } });
+    await fireEvent.input(speedSlider, { target: { value: "0.9" } });
+
+    // Assert service has not been called yet
+    expect(audioEngineService.setSpeed).not.toHaveBeenCalled();
+
+    // Advance timers past the debounce delay
+    await vi.advanceTimersByTimeAsync(150);
+
+    // Assert the service was called once with the latest value
+    expect(audioEngineService.setSpeed).toHaveBeenCalledTimes(1);
+    expect(audioEngineService.setSpeed).toHaveBeenCalledWith(0.9);
+  });
+
+  it("calls audioEngine.setPitch with debounce when pitch slider is moved", async () => {
+    vi.useFakeTimers();
+    render(Controls);
+    act(() => {
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
+    });
+
+    const pitchSlider =
+      screen.getByTestId<HTMLInputElement>("pitch-slider-input");
+    await fireEvent.input(pitchSlider, { target: { value: "-5" } });
+    await fireEvent.input(pitchSlider, { target: { value: "-6" } });
+
+    expect(audioEngineService.setPitch).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(audioEngineService.setPitch).toHaveBeenCalledTimes(1);
+    expect(audioEngineService.setPitch).toHaveBeenCalledWith(-6);
+  });
+
+  it("calls audioEngine.setGain with debounce when gain slider is moved", async () => {
+    vi.useFakeTimers();
+    render(Controls);
+    act(() => {
+      mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
+    });
+
+    const gainSlider =
+      screen.getByTestId<HTMLInputElement>("gain-slider-input");
+    await fireEvent.input(gainSlider, { target: { value: "1.2" } });
+    await fireEvent.input(gainSlider, { target: { value: "1.3" } });
+
+    expect(audioEngineService.setGain).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(audioEngineService.setGain).toHaveBeenCalledTimes(1);
+    expect(audioEngineService.setGain).toHaveBeenCalledWith(1.3);
   });
 
   it("disables all controls when not playable", () => {
