@@ -162,7 +162,11 @@ describe("AudioEngineService (Robust Loop)", () => {
         mockAudioContext.state = "running";
         return Promise.resolve(undefined);
       });
-      playerStore.update(s => ({ ...s, audioContextResumed: false, error: "some previous error" })); // Also test that error is cleared
+      playerStore.update((s) => ({
+        ...s,
+        audioContextResumed: false,
+        error: "some previous error",
+      })); // Also test that error is cleared
 
       await engine.unlockAudio();
 

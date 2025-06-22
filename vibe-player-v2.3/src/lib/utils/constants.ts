@@ -54,7 +54,7 @@ export interface UiConstants {
 }
 
 export const UI_CONSTANTS: UiConstants = {
-  DEBOUNCE_HASH_UPDATE_MS: 500,
+  DEBOUNCE_HASH_UPDATE_MS: 400,
   SYNC_DEBOUNCE_WAIT_MS: 300,
   URL_TIME_PRECISION: 2, // Added
 };

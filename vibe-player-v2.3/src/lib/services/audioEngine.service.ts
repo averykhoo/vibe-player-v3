@@ -84,7 +84,11 @@ class AudioEngineService {
     // If we've reached here, it means resume() either succeeded or wasn't needed (already running).
     // In either successful case, we clear any pre-existing error.
     const isNowRunning = ctx.state === "running";
-    playerStore.update((s) => ({ ...s, audioContextResumed: isNowRunning, error: null }));
+    playerStore.update((s) => ({
+      ...s,
+      audioContextResumed: isNowRunning,
+      error: null,
+    }));
 
     if (
       isNowRunning &&

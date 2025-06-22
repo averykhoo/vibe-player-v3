@@ -25,7 +25,7 @@ describe("Constants", () => {
 
   it("UI_CONSTANTS should be defined and have expected properties", () => {
     expect(AllConstants.UI_CONSTANTS).toBeDefined();
-    expect(AllConstants.UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS).toBe(500);
+    expect(AllConstants.UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS).toBe(400);
   });
 
   it("VISUALIZER_CONSTANTS should be defined and have expected properties", () => {

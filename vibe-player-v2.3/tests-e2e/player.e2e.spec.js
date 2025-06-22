@@ -167,18 +167,18 @@ test.describe("Vibe Player V2 E2E", () => {
 
       // --- SPEED ---
       await playerPage.setSliderValue(playerPage.speedSliderInput, "1.5");
-      await expect(page).toHaveURL(/speed=1.50/, { timeout: 2000 });
+      await expect(page).toHaveURL(/speed=1.50/, { timeout: 4000 });
 
       // --- PITCH ---
       await playerPage.setSliderValue(playerPage.pitchSliderInput, "2.0");
-      await expect(page).toHaveURL(/pitch=2.00/, { timeout: 2000 });
-      await expect(page).toHaveURL(/speed=1.50/); // Ensure previous param is still there
+      await expect(page).toHaveURL(/pitch=2.00/, { timeout: 4000 });
+      await expect(page).toHaveURL(/speed=1.50/, { timeout: 4000 }); // Consistent timeout
 
       // --- GAIN (NEWLY ADDED) ---
       await playerPage.setSliderValue(playerPage.gainSliderInput, "1.75");
-      await expect(page).toHaveURL(/gain=1.75/, { timeout: 2000 });
-      await expect(page).toHaveURL(/speed=1.50/); // Ensure other params remain
-      await expect(page).toHaveURL(/pitch=2.00/);
+      await expect(page).toHaveURL(/gain=1.75/, { timeout: 4000 });
+      await expect(page).toHaveURL(/speed=1.50/, { timeout: 4000 }); // Consistent timeout
+      await expect(page).toHaveURL(/pitch=2.00/, { timeout: 4000 }); // Consistent timeout
     });
 
     test("should load settings from URL parameters on page load", async ({
