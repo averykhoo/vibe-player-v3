@@ -95,37 +95,79 @@ export class PlayerPage {
   }
 
   /**
-   * [CORRECTED METHOD] Programmatically sets the value on a slider input
-   * and dispatches the necessary events that Svelte handlers are listening for.
+   * Sets the value of a slider input by dispatching mousedown, input, and mouseup events.
+   * This method is designed to simulate user interaction more closely for Svelte components.
    * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
-   * @param {string} valueStr - The target value as a string.
+   * @param {string} valueStr - The target value as a string (e.g., "1.5").
    */
   async setSliderValue(sliderInputLocator, valueStr) {
     const testId = await sliderInputLocator.getAttribute("data-testid");
+    const inputName = await sliderInputLocator.getAttribute("name");
+    const inputId = await sliderInputLocator.getAttribute("id");
+
     console.log(
-      `[TEST RUNNER] Forcing events on slider '${testId}' to value: ${valueStr}`,
+      `[TEST RUNNER] Simulating events on slider (Test ID: '${testId}', Name: '${inputName}', ID: '${inputId}') to set value: ${valueStr}`,
     );
 
-    // Use page.evaluate to run code in the browser context, dispatching events on the element.
-    await sliderInputLocator.evaluate((element, value) => {
-      const inputElement = element;
+    await sliderInputLocator.evaluate(
+      (element, { value, testId_b, name_b, id_b }) => {
+        const browserLog = (message) =>
+          console.log(
+            `[Browser-Side Log for Slider (TestID: ${testId_b}, Name: ${name_b}, ID: ${id_b})] ${message}`,
+          );
 
-      console.log(
-        `[BROWSER-SIDE LOG] Firing 'mousedown' on slider with id: '${inputElement.id}'`,
-      );
-      inputElement.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true }),
-      );
+        if (!(element instanceof HTMLInputElement && element.type === "range")) {
+          browserLog(
+            `ERROR: Target element is not an HTMLInputElement of type 'range'. TagName: ${element.tagName}, Type: ${element.getAttribute("type")}`,
+          );
+          throw new Error(
+            "Target element for setSliderValue is not an input[type=range]",
+          );
+        }
+        const inputElement = element;
+        browserLog(
+          `Target input element identified. Current value: '${inputElement.value}'. Attempting to set to '${value}'.`,
+        );
 
-      console.log(
-        `[BROWSER-SIDE LOG] Setting value to ${value} and firing 'input'`,
-      );
-      inputElement.value = value;
-      inputElement.dispatchEvent(new Event("input", { bubbles: true }));
+        browserLog("Dispatching 'mousedown' event on the input element.");
+        inputElement.dispatchEvent(
+          new MouseEvent("mousedown", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
 
-      console.log(`[BROWSER-SIDE LOG] Firing 'mouseup'`);
-      inputElement.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-    }, valueStr);
+        browserLog(
+          `Setting input element value to '${value}' and then dispatching 'input' event.`,
+        );
+        inputElement.value = value; // value is valueStr from the outer scope
+        inputElement.dispatchEvent(
+          new Event("input", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+        browserLog(
+          `Input element value is now '${inputElement.value}' post-dispatch.`,
+        );
+
+        browserLog("Dispatching 'mouseup' event on the input element.");
+        inputElement.dispatchEvent(
+          new MouseEvent("mouseup", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+        browserLog("All events dispatched for slider interaction.");
+      },
+      { value: valueStr, testId_b: testId, name_b: inputName, id_b: inputId }, // Pass valueStr and identifiers for logging
+    );
+    console.log(
+      `[TEST RUNNER] Event simulation complete for slider (Test ID: '${testId}') with value: ${valueStr}`,
+    );
   }
 
   /**
@@ -161,6 +203,93 @@ export class PlayerPage {
   }
 
   /**
+   * Performs a robust, multi-stage interactive seek on the main seek slider's wrapper div.
+   * This method is distinct from setSliderValue and is tailored for the main seek bar if it
+   * requires events on its wrapper.
+   * @param {number} targetTime The time in seconds to seek to.
+   */
+  async performInteractiveSeek(targetTime) {
+    const testId = await this.seekSliderInput.getAttribute("data-testid");
+    const inputName = await this.seekSliderInput.getAttribute("name");
+    const inputId = await this.seekSliderInput.getAttribute("id");
+
+    console.log(
+      `[Test Runner Log] Starting interactive seek via wrapper (Test ID: '${testId}', Name: '${inputName}', ID: '${inputId}') to value: ${targetTime}`,
+    );
+
+    const sliderWrapper = this.seekSliderInput.locator("..");
+
+    await sliderWrapper.evaluate(
+      (wrapper, { value, testId_b, name_b, id_b }) => {
+        const browserLog = (message) =>
+          console.log(
+            `[Browser-Side Log for Seek Wrapper (Input TestID: ${testId_b}, Name: ${name_b}, ID: ${id_b})] ${message}`,
+          );
+        browserLog(
+          `Wrapper element identified. TagName: ${wrapper.tagName}, ID: ${wrapper.id}, Class: ${wrapper.className}`,
+        );
+
+        const sliderInput = wrapper.querySelector(
+          'input[type="range"]',
+        ) as HTMLInputElement | null;
+        if (!sliderInput) {
+          browserLog(
+            `ERROR: Could not find slider input <input type="range"> inside wrapper.`,
+          );
+          throw new Error("Could not find slider input inside wrapper");
+        }
+        browserLog(
+          `Found input element (id: ${sliderInput.id}, name: ${sliderInput.name}, testId: ${sliderInput.getAttribute("data-testid")}) inside wrapper.`,
+        );
+
+        browserLog(`Dispatching 'mousedown' event on wrapper.`);
+        wrapper.dispatchEvent(
+          new MouseEvent("mousedown", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+
+        browserLog(
+          `Setting slider input value to '${value}' (id: ${sliderInput.id}) and dispatching 'input' event.`,
+        );
+        sliderInput.value = String(value); // value is targetTime
+        sliderInput.dispatchEvent(
+          new Event("input", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+        browserLog(
+          `Input element value is now '${sliderInput.value}' post-dispatch.`,
+        );
+
+        browserLog(`Dispatching 'mouseup' event on wrapper.`);
+        wrapper.dispatchEvent(
+          new MouseEvent("mouseup", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+        browserLog("All events dispatched for interactive seek.");
+      },
+      {
+        value: targetTime,
+        testId_b: testId,
+        name_b: inputName,
+        id_b: inputId,
+      },
+    );
+
+    console.log(
+      `[Test Runner Log] Finished interactive seek via wrapper for slider (Test ID: '${testId}').`,
+    );
+  }
+
+  /**
    * Gets the total duration from the time display element.
    * @returns {Promise<number>} The total duration in seconds.
    */
@@ -178,7 +307,8 @@ export class PlayerPage {
       durationInSeconds = segments[0] * 60 + segments[1];
     } else if (segments.length === 3) {
       // H:MM:SS
-      durationInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
+      durationInSeconds =
+        segments[0] * 3600 + segments[1] * 60 + segments[2];
     } else {
       throw new Error(`Unexpected duration segment format: ${durationStr}`);
     }
@@ -186,5 +316,21 @@ export class PlayerPage {
       `[Test Runner Log] Parsed duration as: ${durationInSeconds} seconds.`,
     );
     return durationInSeconds;
+  }
+
+  /**
+   * Formats seconds into a "M:SS" string for exact text matching in assertions.
+   * @param {number} sec - Time in seconds.
+   * @returns {string} The formatted time string.
+   */
+  formatTimeForAssertion(sec) {
+    if (isNaN(sec) || sec < 0) sec = 0;
+    const minutes = Math.floor(sec / 60);
+    const seconds = Math.floor(sec % 60);
+    const formatted = `${minutes}:${seconds < 10 ? "0" + seconds : seconds}`;
+    console.log(
+      `[Test Runner Log] Formatted time for assertion: ${sec}s -> "${formatted}"`,
+    );
+    return formatted;
   }
 }
