@@ -10154,15 +10154,15 @@ export function sparkles(
 
     // --- Reactive Statements to Call Services ---
     // MODIFIED: Simpler reactive triggers for speed, pitch, gain
-    $: if (speed !== undefined && speed !== get(playerStore).speed) {
+    $: if (speed !== undefined) {
         console.log(`[Controls.svelte] UI 'speed' changed to: ${speed}. Queuing debouncedSetSpeed.`);
         debouncedSetSpeed(speed);
     }
-    $: if (pitchShift !== undefined && pitchShift !== get(playerStore).pitchShift) {
+    $: if (pitchShift !== undefined) {
         console.log(`[Controls.svelte] UI 'pitchShift' changed to: ${pitchShift}. Queuing debouncedSetPitch.`);
         debouncedSetPitch(pitchShift);
     }
-    $: if (gain !== undefined && gain !== get(playerStore).gain) {
+    $: if (gain !== undefined) {
         console.log(`[Controls.svelte] UI 'gain' changed to: ${gain}. Queuing debouncedSetGain.`);
         debouncedSetGain(gain);
     }
