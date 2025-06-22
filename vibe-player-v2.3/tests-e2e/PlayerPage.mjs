@@ -231,7 +231,7 @@ export class PlayerPage {
 
         const sliderInput = wrapper.querySelector(
           'input[type="range"]',
-        ) as HTMLInputElement | null;
+        );
         if (!sliderInput) {
           browserLog(
             `ERROR: Could not find slider input <input type="range"> inside wrapper.`,
