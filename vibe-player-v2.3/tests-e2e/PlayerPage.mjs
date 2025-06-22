@@ -102,38 +102,81 @@ export class PlayerPage {
   }
 
   /**
-   * [RE-RE-FIXED] The most robust method. Programmatically sets the value on the native input
-   * element and then dispatches the events that the Svelte component handlers are listening for.
+   * Sets the value of a slider input by dispatching mousedown, input, and mouseup events.
+   * This method is designed to simulate user interaction more closely for Svelte components.
    * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
-   * @param {string} valueStr - The target value as a string.
+   * @param {string} valueStr - The target value as a string (e.g., "1.5").
    */
   async setSliderValue(sliderInputLocator, valueStr) {
     const testId = await sliderInputLocator.getAttribute("data-testid");
+    const inputName = await sliderInputLocator.getAttribute("name");
+    const inputId = await sliderInputLocator.getAttribute("id");
+
     console.log(
-        `[TEST RUNNER] Forcing events on slider '${testId}' to value: ${valueStr}`,
+      `[TEST RUNNER] Simulating events on slider (Test ID: '${testId}', Name: '${inputName}', ID: '${inputId}') to set value: ${valueStr}`,
     );
 
-    // Use page.evaluate to run code in the browser context, dispatching events on the element.
-    await sliderInputLocator.evaluate((element, value) => {
-      const inputElement = element;
+    await sliderInputLocator.evaluate(
+      (element, { value, testId_b, name_b, id_b }) => {
+        const browserLog = (message) =>
+          console.log(
+            `[Browser-Side Log for Slider (TestID: ${testId_b}, Name: ${name_b}, ID: ${id_b})] ${message}`,
+          );
 
-      // Log from the browser to confirm we're targeting the right element.
-      console.log(
-          `[BROWSER-SIDE LOG] Firing 'mousedown' on input with id: '${inputElement.id}'`,
-      );
-      inputElement.dispatchEvent(
-          new MouseEvent("mousedown", {bubbles: true}),
-      );
+        if (
+          !(element instanceof HTMLInputElement && element.type === "range")
+        ) {
+          browserLog(
+            `ERROR: Target element is not an HTMLInputElement of type 'range'. TagName: ${element.tagName}, Type: ${element.getAttribute("type")}`,
+          );
+          throw new Error(
+            "Target element for setSliderValue is not an input[type=range]",
+          );
+        }
+        const inputElement = element;
+        browserLog(
+          `Target input element identified. Current value: '${inputElement.value}'. Attempting to set to '${value}'.`,
+        );
 
-      console.log(
-          `[BROWSER-SIDE LOG] Setting value to ${value} and firing 'input'`,
-      );
-      inputElement.value = value;
-      inputElement.dispatchEvent(new Event("input", {bubbles: true}));
+        browserLog("Dispatching 'mousedown' event on the input element.");
+        inputElement.dispatchEvent(
+          new MouseEvent("mousedown", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
 
-      console.log(`[BROWSER-SIDE LOG] Firing 'mouseup'`);
-      inputElement.dispatchEvent(new MouseEvent("mouseup", {bubbles: true}));
-    }, valueStr);
+        browserLog(
+          `Setting input element value to '${value}' and then dispatching 'input' event.`,
+        );
+        inputElement.value = value; // value is valueStr from the outer scope
+        inputElement.dispatchEvent(
+          new Event("input", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+        browserLog(
+          `Input element value is now '${inputElement.value}' post-dispatch.`,
+        );
+
+        browserLog("Dispatching 'mouseup' event on the input element.");
+        inputElement.dispatchEvent(
+          new MouseEvent("mouseup", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+        browserLog("All events dispatched for slider interaction.");
+      },
+      { value: valueStr, testId_b: testId, name_b: inputName, id_b: inputId }, // Pass valueStr and identifiers for logging
+    );
+    console.log(
+      `[TEST RUNNER] Event simulation complete for slider (Test ID: '${testId}') with value: ${valueStr}`,
+    );
   }
 
   /**

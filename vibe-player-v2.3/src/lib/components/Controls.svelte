@@ -79,12 +79,7 @@
     });
 
     function handlePlayPause() {
-        // engine.togglePlayPause();
-		if (get(playerStore).isPlaying) {
-			engine.pause();
-		} else {
-            engine.play();
-        }
+        engine.togglePlayPause();
     }
     function handleStop() {
         engine.stop();
