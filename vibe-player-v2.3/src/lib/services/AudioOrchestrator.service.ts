@@ -274,18 +274,18 @@ export class AudioOrchestrator {
     // Serialize relevant player state to URL params
     if (pStore.speed !== 1.0)
       params[URL_HASH_KEYS.SPEED] = pStore.speed.toFixed(
-        UI_CONSTANTS.URL_TIME_PRECISION,
+        2,
       );
     if (pStore.pitchShift !== 0.0)
       params[URL_HASH_KEYS.PITCH_SHIFT] = pStore.pitchShift.toFixed(1); // Using existing PITCH_SHIFT key
     if (pStore.gain !== 1.0)
       params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(
-        UI_CONSTANTS.URL_TIME_PRECISION,
+        2,
       );
 
     if (tStore > 0.1 && tStore < pStore.duration - 0.1) {
       params[URL_HASH_KEYS.TIME] = tStore.toFixed(
-        UI_CONSTANTS.URL_TIME_PRECISION,
+        2,
       );
     }
 
