@@ -9,8 +9,8 @@ function parseTimeToSeconds(timeStr) {
 }
 
 // UPDATED: Paths are now relative to the server root, as they are in the static dir.
-const TEST_AUDIO_FILE = "test-audio/C.Noisy_Voice.wav";
-const DTMF_TEST_AUDIO_FILE = "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
+const TEST_AUDIO_FILE = "static/test-audio/C.Noisy_Voice.wav";
+const DTMF_TEST_AUDIO_FILE = "static/test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
 
 test.describe("Vibe Player V2 E2E", () => {
   let playerPage;
