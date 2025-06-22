@@ -187,7 +187,7 @@ test.describe("Vibe Player V2 E2E", () => {
       await playerPage.page.goto(
         playerPage.devServerUrl + "?speed=1.75&pitch=-3",
       );
-      await expect(playerPage.appBarTitle).toHaveText("Vibe Player V2", {
+      await expect(playerPage.appBarTitle).toHaveText("Vibe Player", {
         timeout: 15000,
       });
       await expect(playerPage.fileInput).toBeVisible({ timeout: 10000 });

@@ -89,7 +89,7 @@
 
 <div class="container mx-auto p-4 max-w-4xl space-y-8">
     <header class="mb-6 text-center">
-        <h1 class="text-4xl font-bold text-primary-600 dark:text-primary-400" data-testid="app-bar-title">Vibe Player V2.3</h1>
+        <h1 class="text-4xl font-bold text-primary-600 dark:text-primary-400" data-testid="app-bar-title">Vibe Player</h1>
         <p class="text-gray-600 dark:text-gray-400">Refactored Audio Analysis & Playback</p>
     </header>
 

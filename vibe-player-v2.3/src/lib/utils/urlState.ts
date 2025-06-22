@@ -17,7 +17,9 @@ export function updateUrlWithParams(params: Record<string, string>) {
     }
   }
   const newUrl = url.toString();
-  console.log(`[URL Serialization] Updating URL to: ${newUrl}`);
+  console.log(
+    `[urlState.ts/updateUrlWithParams] Updating browser URL to: ${newUrl}`,
+  );
   history.replaceState({}, "", newUrl);
 }
 

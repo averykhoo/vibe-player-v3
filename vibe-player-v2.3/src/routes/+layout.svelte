@@ -7,7 +7,7 @@
 
 <AppBar>
   <svelte:fragment slot="lead">
-    <strong class="text-xl uppercase">Vibe Player V2</strong>
+    <strong class="text-xl uppercase">Vibe Player</strong>
   </svelte:fragment>
   <svelte:fragment slot="trail">
     <!-- Other nav elements could go here -->

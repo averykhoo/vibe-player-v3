@@ -18,9 +18,18 @@
     let vadPositive = get(analysisStore).vadPositiveThreshold;
     let vadNegative = get(analysisStore).vadNegativeThreshold;
 
-    const debouncedSetSpeed = debounce((val: number) => engine.setSpeed(val), 150);
-    const debouncedSetPitch = debounce((val: number) => engine.setPitch(val), 150); // audioEngine.setPitch expects pitchShift
-    const debouncedSetGain = debounce((val: number) => engine.setGain(val), 150);
+    const debouncedSetSpeed = debounce((val: number) => {
+        console.log(`[Controls.svelte] DEBOUNCED setSpeed executed with: ${val}`);
+        engine.setSpeed(val);
+    }, 150);
+    const debouncedSetPitch = debounce((val: number) => {
+        console.log(`[Controls.svelte] DEBOUNCED setPitch (pitchShift) executed with: ${val}`);
+        engine.setPitch(val);
+    }, 150);
+    const debouncedSetGain = debounce((val: number) => {
+        console.log(`[Controls.svelte] DEBOUNCED setGain executed with: ${val}`);
+        engine.setGain(val);
+    }, 150);
 
     // --- Debounced VAD Update (NEW) ---
     const debouncedSetVadThresholds = debounce(() => {
@@ -35,9 +44,22 @@
 
     // --- Reactive Statements to Call Services ---
     // MODIFIED: Simpler reactive triggers for speed, pitch, gain
-    $: if (speed !== undefined) debouncedSetSpeed(speed);
-    $: if (pitchShift !== undefined) debouncedSetPitch(pitchShift);
-    $: if (gain !== undefined) debouncedSetGain(gain);
+    $: if (speed !== undefined && speed !== get(playerStore).speed) {
+        console.log(`[Controls.svelte] UI 'speed' changed to: ${speed}. Queuing debouncedSetSpeed.`);
+        debouncedSetSpeed(speed);
+    }
+    $: if (pitchShift !== undefined && pitchShift !== get(playerStore).pitchShift) {
+        console.log(`[Controls.svelte] UI 'pitchShift' changed to: ${pitchShift}. Queuing debouncedSetPitch.`);
+        debouncedSetPitch(pitchShift);
+    }
+    $: if (gain !== undefined && gain !== get(playerStore).gain) {
+        console.log(`[Controls.svelte] UI 'gain' changed to: ${gain}. Queuing debouncedSetGain.`);
+        debouncedSetGain(gain);
+    }
+    // Note: The conditions `!== get(playerStore).<value>` are added to prevent
+    // the debounced functions from being called on initial component load if the
+    // local values are already in sync with the store.
+
 
     // --- Reactive Statement for VAD (NEW) ---
     $: if (vadPositive !== undefined && vadNegative !== undefined) debouncedSetVadThresholds();

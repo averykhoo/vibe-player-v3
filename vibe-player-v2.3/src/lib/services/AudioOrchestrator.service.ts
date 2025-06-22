@@ -233,17 +233,32 @@ export class AudioOrchestrator {
     }));
 
     audioEngine.stop();
-    this.updateUrlFromState();
+    this.updateUrlFromState(); // Update URL to clear params on error
   }
 
   private debouncedUrlUpdate = debounce(() => {
+    console.log(
+      `[AudioOrchestrator] debouncedUrlUpdate: EXECUTING call to updateUrlFromState.`,
+    );
     this.updateUrlFromState();
   }, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
 
   public setupUrlSerialization(): void {
     if (typeof window === "undefined") return;
     playerStore.subscribe((s) => {
+      console.log(
+        `[AudioOrchestrator] playerStore changed. Player playable: ${s.isPlayable}, Speed: ${s.speed}, Pitch: ${s.pitchShift}, Gain: ${s.gain}. Debouncing URL update.`,
+      );
       if (s.isPlayable) {
+        this.debouncedUrlUpdate();
+      }
+    });
+    timeStore.subscribe((t) => {
+      // Also log when timeStore changes, as it affects URL
+      console.log(
+        `[AudioOrchestrator] timeStore changed to: ${t.toFixed(3)}. Player playable: ${get(playerStore).isPlayable}. Debouncing URL update if playable.`,
+      );
+      if (get(playerStore).isPlayable) {
         this.debouncedUrlUpdate();
       }
     });
@@ -251,27 +266,42 @@ export class AudioOrchestrator {
 
   public updateUrlFromState = (): void => {
     if (typeof window === "undefined") return;
+    console.log(`[AudioOrchestrator] updateUrlFromState: STARTING`);
 
     const pStore = get(playerStore);
     const tStore = get(timeStore);
     const params: Record<string, string> = {};
 
     if (!pStore.isPlayable) {
+      console.log(
+        `[AudioOrchestrator] updateUrlFromState: Player not playable. Clearing URL params.`,
+      );
       updateUrlWithParams({});
       return;
     }
 
+    // Serialize relevant player state to URL params
     if (pStore.speed !== 1.0)
-      params[URL_HASH_KEYS.SPEED] = pStore.speed.toFixed(2);
+      params[URL_HASH_KEYS.SPEED] = pStore.speed.toFixed(
+        UI_CONSTANTS.URL_TIME_PRECISION,
+      );
     if (pStore.pitchShift !== 0.0)
-      params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2);
+      params[URL_HASH_KEYS.PITCH_SHIFT] = pStore.pitchShift.toFixed(1); // Using existing PITCH_SHIFT key
     if (pStore.gain !== 1.0)
-      params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(2);
+      params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(
+        UI_CONSTANTS.URL_TIME_PRECISION,
+      );
 
     if (tStore > 0.1 && tStore < pStore.duration - 0.1) {
-      params[URL_HASH_KEYS.TIME] = tStore.toFixed(2);
+      params[URL_HASH_KEYS.TIME] = tStore.toFixed(
+        UI_CONSTANTS.URL_TIME_PRECISION,
+      );
     }
 
+    console.log(
+      `[AudioOrchestrator] updateUrlFromState: Calculated params:`,
+      JSON.stringify(params),
+    );
     updateUrlWithParams(params);
   };
 }

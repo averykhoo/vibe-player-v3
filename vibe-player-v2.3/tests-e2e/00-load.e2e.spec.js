@@ -28,7 +28,7 @@ test.describe("Application Startup Smoke Test", () => {
     // 2. Assert that the main header is visible. This is a basic check that the
     //    Svelte layout has rendered. The timeout is generous for CI environments.
     await expect(playerPage.appBarTitle).toBeVisible({ timeout: 15000 });
-    await expect(playerPage.appBarTitle).toHaveText("Vibe Player V2.3");
+    await expect(playerPage.appBarTitle).toHaveText("Vibe Player");
 
     // 3. Assert that the FileLoader component has rendered and its primary
     //    interactive element (the file input) is visible.

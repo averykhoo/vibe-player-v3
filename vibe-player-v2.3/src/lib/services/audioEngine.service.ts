@@ -202,6 +202,9 @@ class AudioEngineService {
   }
 
   public seek(time: number): void {
+    console.log(
+      `[AudioEngineService] seek() called with time: ${time.toFixed(3)}`,
+    );
     if (!this.originalBuffer) {
       console.warn("Seek called without an originalBuffer.");
       return;
@@ -216,6 +219,9 @@ class AudioEngineService {
     }
     timeStore.set(clampedTime);
     playerStore.update((s) => ({ ...s, currentTime: clampedTime }));
+    console.log(
+      `[AudioEngineService] seek() updated timeStore to: ${clampedTime.toFixed(3)}, playerStore.currentTime to: ${clampedTime.toFixed(3)}`,
+    );
   }
 
   public jump(seconds: number): void {
@@ -230,6 +236,7 @@ class AudioEngineService {
   }
 
   public setSpeed(speed: number): void {
+    console.log(`[AudioEngineService] setSpeed() called with speed: ${speed}`);
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({
         type: RB_WORKER_MSG_TYPE.SET_SPEED,
@@ -237,9 +244,15 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, speed }));
+    console.log(
+      `[AudioEngineService] setSpeed() updated playerStore.speed to: ${speed}`,
+    );
   }
 
   public setPitch(pitch: number): void {
+    console.log(
+      `[AudioEngineService] setPitch() called with pitchShift: ${pitch}`,
+    );
     if (this.worker && this.isWorkerReady) {
       this.worker.postMessage({
         type: RB_WORKER_MSG_TYPE.SET_PITCH,
@@ -247,9 +260,13 @@ class AudioEngineService {
       });
     }
     playerStore.update((s) => ({ ...s, pitchShift: pitch }));
+    console.log(
+      `[AudioEngineService] setPitch() updated playerStore.pitchShift to: ${pitch}`,
+    );
   }
 
   public setGain(level: number): void {
+    console.log(`[AudioEngineService] setGain() called with level: ${level}`);
     const newGain = Math.max(
       0,
       Math.min(AUDIO_ENGINE_CONSTANTS.MAX_GAIN, level),
@@ -261,6 +278,9 @@ class AudioEngineService {
       );
     }
     playerStore.update((s) => ({ ...s, gain: newGain }));
+    console.log(
+      `[AudioEngineService] setGain() updated playerStore.gain to: ${newGain}`,
+    );
   }
 
   private _getAudioContext(): AudioContext {
@@ -395,6 +415,7 @@ class AudioEngineService {
           result.outputBuffer[0].length > 0
         ) {
           this.scheduleChunkPlayback(result.outputBuffer);
+          // console.log(`[AudioEngineService] Playback loop: Scheduled chunk. Current sourcePlaybackOffset: ${this.sourcePlaybackOffset.toFixed(3)}`);
         }
         timeStore.set(this.sourcePlaybackOffset);
         this._performSingleProcessAndPlayIteration();
