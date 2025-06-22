@@ -45,10 +45,10 @@ export class PlayerPage {
 
   /**
    * Loads an audio file using the file input.
-   * @param {string} fileName - The path to the file within the 'static' directory.
+   * @param {string} fileName - The path to the file, usually within the 'static' directory.
    */
   async loadAudioFile(fileName) {
-    const filePath = `static/${fileName}`;
+    const filePath = `${fileName}`;
     console.log(`[Test Runner Log] Loading audio file from path: ${filePath}`);
     await this.fileInput.setInputFiles(filePath);
     console.log(`[Test Runner Log] File input set for: ${fileName}`);
