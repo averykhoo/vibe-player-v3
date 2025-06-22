@@ -67,7 +67,7 @@ export class AudioOrchestrator {
         spectrogramData: null,
       }));
       timeStore.set(0);
-      await audioEngine.unlockAudio();
+      // await audioEngine.unlockAudio(); // commented out to fix firefox
       console.log("[Orchestrator|S1] State reset complete.");
 
       // --- STAGE 2: CORE AUDIO DECODING & VISUALS ---
