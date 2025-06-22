@@ -28,6 +28,7 @@
 
     // When the user presses down on the slider.
     function handleSeekStart() {
+        console.log('[App Log] handleSeekStart fired.'); // <-- ADD THIS
         if (!get(playerStore).isPlayable) return;
         isSeeking = true;
         wasPlayingBeforeSeek = get(playerStore).isPlaying;
@@ -38,12 +39,14 @@
 
     // While the user is dragging, only update the visual time display.
     function handleSeekInput(e: Event) {
+        console.log('[App Log] handleSeekInput fired.'); // <-- ADD THIS
         const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
         timeStore.set(newTime);
     }
 
     // When the user releases the slider, perform the single, final seek.
     function handleSeekEnd(e: Event) {
+        console.log('[App Log] handleSeekEnd fired.'); // <-- ADD THIS
         if (!get(playerStore).isPlayable) return;
 
         const newTime = (e.currentTarget as HTMLInputElement).valueAsNumber;
