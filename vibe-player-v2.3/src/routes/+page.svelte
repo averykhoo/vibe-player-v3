@@ -22,7 +22,7 @@
 
     let orchestrator: AudioOrchestrator; // To store instance
 
-    // --- START: REPLACE OLD handleSeek WITH THIS ---
+
     let isSeeking = false;
     let wasPlayingBeforeSeek = false;
 
@@ -131,7 +131,7 @@
             on:input={handleSeekInput}
             on:mouseup={handleSeekEnd}
             on:touchend={handleSeekEnd}
-            on:click={handleClickToSeek}
+            
             disabled={!$playerStore.isPlayable || $playerStore.status === 'loading'}
             data-testid="seek-slider-input"
             aria-label="Seek audio track"
