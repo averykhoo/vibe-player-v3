@@ -253,15 +253,6 @@ export class AudioOrchestrator {
         this.debouncedUrlUpdate();
       }
     });
-    timeStore.subscribe((t) => {
-      // Also log when timeStore changes, as it affects URL
-      console.log(
-        `[AudioOrchestrator] timeStore changed to: ${t.toFixed(3)}. Player playable: ${get(playerStore).isPlayable}. Debouncing URL update if playable.`,
-      );
-      if (get(playerStore).isPlayable) {
-        this.debouncedUrlUpdate();
-      }
-    });
   }
 
   public updateUrlFromState = (): void => {
