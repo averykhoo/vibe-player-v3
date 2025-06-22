@@ -81,9 +81,9 @@
     function handlePlayPause() {
         // engine.togglePlayPause();
 		if (get(playerStore).isPlaying) {
-			audioEngine.pause();
+			engine.pause();
 		} else {
-			audioEngine.play();
+			engine.play();
     }
     function handleStop() {
         engine.stop();
