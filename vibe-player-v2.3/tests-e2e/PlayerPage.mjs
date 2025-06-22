@@ -8,7 +8,7 @@ export class PlayerPage {
   constructor(page) {
     this.page = page;
     this.appBarTitle = page.getByTestId("app-bar-title");
-    this.fileInput = page.getByLabel("Upload Audio File");
+    this.fileInput = page.getByLabel("Load Audio File");
     this.fileNameDisplay = page.getByTestId("file-name-display");
     this.playButton = page.getByRole("button", { name: "Play" });
     this.pauseButton = page.getByRole("button", { name: "Pause" });
