@@ -17,7 +17,8 @@ import {
 import type { PlayerState } from "$lib/types/player.types";
 import { createWaveformData } from "$lib/utils/waveform";
 
-// Initial player state (consider if this needs to be exactly like playerStore's initial for reset logic)
+// A snapshot of the initial player state.
+// Used to reset the playerStore to a clean slate when a new file is loaded.
 const initialPlayerStateSnapshot: PlayerState = {
   status: "idle",
   fileName: null,
@@ -28,23 +29,56 @@ const initialPlayerStateSnapshot: PlayerState = {
   speed: 1.0,
   pitchShift: 0.0,
   gain: 1.0,
-  waveformData: undefined,
+  waveformData: undefined, // Waveform data is cleared on new file load
   error: null,
-  audioBuffer: undefined,
+  audioBuffer: undefined, // AudioBuffer is cleared on new file load
   audioContextResumed: false,
   channels: undefined,
   sampleRate: undefined,
-  lastProcessedChunk: undefined,
+  lastProcessedChunk: undefined, // Cleared on new file load
 };
 
+/**
+ * Helper function to prepare a state object for logging.
+ * It omits or summarizes large data fields like waveformData and audioBuffer
+ * to prevent cluttering the console.
+ * @param state The state object to prepare.
+ * @returns A new object with large fields summarized.
+ */
+const prepareStateForLog = (state: any) => {
+  // Destructure to separate large fields from the rest of the state
+  const { waveformData, audioBuffer, lastProcessedChunk, ...rest } = state;
+  return {
+    ...rest, // Keep all other properties
+    // Summarize waveformData: show number of channels and points if it exists
+    waveformData: waveformData
+      ? `[${waveformData.length}ch, ${waveformData[0]?.length || 0}pts]`
+      : undefined,
+    // Indicate if an AudioBuffer is present without logging its content
+    audioBuffer: audioBuffer ? `[AudioBuffer Present]` : undefined,
+    // Indicate if a lastProcessedChunk is present
+    lastProcessedChunk: lastProcessedChunk ? `[Chunk Present]` : undefined,
+  };
+};
+
+/**
+ * @class AudioOrchestrator
+ * @description A singleton service that orchestrates the entire audio loading,
+ * analysis, and playback pipeline. It coordinates interactions between various
+ * stores and services (AudioEngine, DTMF, Spectrogram).
+ */
 export class AudioOrchestrator {
   private static instance: AudioOrchestrator;
-  private isBusy = false;
+  private isBusy = false; // Flag to prevent concurrent loading operations
 
   private constructor() {
     console.log("[AO-LOG] AudioOrchestrator constructor: Instance created.");
   }
 
+  /**
+   * Gets the singleton instance of the AudioOrchestrator.
+   * @returns {AudioOrchestrator} The singleton instance.
+   */
   public static getInstance(): AudioOrchestrator {
     if (!AudioOrchestrator.instance) {
       console.log(
@@ -55,26 +89,35 @@ export class AudioOrchestrator {
     return AudioOrchestrator.instance;
   }
 
+  /**
+   * Main method to load an audio file and initiate analysis.
+   * This method manages the entire lifecycle from file selection to readiness for playback and analysis.
+   * @param file The audio File object selected by the user.
+   * @param initialState Optional initial player state values, typically from URL parameters.
+   */
   public async loadFileAndAnalyze(
     file: File,
-    initialState?: Partial<PlayerState>, // This comes from +page.ts -> +page.svelte
+    initialState?: Partial<PlayerState>,
   ): Promise<void> {
     console.log(
       `[AO-LOG] loadFileAndAnalyze: Entered. File: ${file?.name}, Received initialState:`,
-      JSON.stringify(initialState),
+      // Use helper to log initial state without large data
+      initialState ? JSON.stringify(prepareStateForLog(initialState)) : "undefined",
     );
 
+    // Prevent processing if already busy with another file
     if (this.isBusy) {
       console.warn(
         "[AO-LOG] loadFileAndAnalyze: Orchestrator is busy, skipping file load.",
       );
       return;
     }
-    this.isBusy = true;
+    this.isBusy = true; // Set busy flag
     console.log(
       `[AO-LOG] loadFileAndAnalyze: Orchestrator is now BUSY. Loading file: ${file.name}`,
     );
 
+    // Update global status store to indicate loading
     statusStore.set({
       message: `Loading ${file.name}...`,
       type: "info",
@@ -86,40 +129,44 @@ export class AudioOrchestrator {
 
     try {
       // --- STAGE 1: PRE-PROCESSING & STATE RESET ---
+      // Ensures a clean state before processing the new file.
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 1 - Resetting state and stopping audio.",
       );
-      await audioEngine.stop();
+      await audioEngine.stop(); // Stop any ongoing playback
       console.log("[AO-LOG] loadFileAndAnalyze: audioEngine.stop() completed.");
 
+      // Reset playerStore to its initial state, keeping the new file name and loading status
       playerStore.update((s) => {
         console.log(
           "[AO-LOG] loadFileAndAnalyze: playerStore.update (resetting). Current state before reset:",
-          JSON.stringify(s),
+          JSON.stringify(prepareStateForLog(s)), // Log summarized state
         );
         const newState = {
-          ...initialPlayerStateSnapshot, // Use the snapshot for a clean reset
+          ...initialPlayerStateSnapshot, // Use the clean snapshot
           fileName: file.name,
-          status: "loading", // Keep status as loading
-          waveformData: undefined, // Ensure waveform is cleared
+          status: "loading",
+          waveformData: undefined,
         };
         console.log(
           "[AO-LOG] loadFileAndAnalyze: playerStore.update (resetting). New state after reset:",
-          JSON.stringify(newState),
+          JSON.stringify(prepareStateForLog(newState)), // Log summarized state
         );
         return newState;
       });
 
+      // Reset analysisStore and timeStore
       analysisStore.update((s) => {
         console.log(
           "[AO-LOG] loadFileAndAnalyze: analysisStore.update (resetting).",
         );
-        return { ...s, dtmfResults: [], spectrogramData: null }; // Assuming dtmfResults exists
+        return { ...s, dtmfResults: [], spectrogramData: null };
       });
       timeStore.set(0);
       console.log("[AO-LOG] loadFileAndAnalyze: timeStore set to 0.");
 
-      // Non-awaited call to unlockAudio
+      // Attempt to unlock the AudioContext (fire-and-forget, doesn't block loading)
+      // This is crucial for browsers that require user interaction to start audio.
       audioEngine.unlockAudio();
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 1 - audioEngine.unlockAudio() attempt initiated (not awaited).",
@@ -128,20 +175,21 @@ export class AudioOrchestrator {
         "[AO-LOG] loadFileAndAnalyze: STAGE 1 - State reset complete.",
       );
 
-      // --- STAGE 2: CORE AUDIO DECODING & VISUALS ---
+      // --- STAGE 2: CORE AUDIO DECODING & VISUALS PREPARATION ---
+      // Decode the audio file into an AudioBuffer and prepare initial visual data.
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 2 - Decoding audio data...",
       );
       statusStore.set({
-        message: `Processing ${file.name}...`,
+        message: `Processing ${file.name}...`, // Update status message
         type: "info",
         isLoading: true,
       });
-      const arrayBuffer = await file.arrayBuffer();
+      const arrayBuffer = await file.arrayBuffer(); // Get file content as ArrayBuffer
       console.log(
         `[AO-LOG] loadFileAndAnalyze: STAGE 2 - file.arrayBuffer() completed. Byte length: ${arrayBuffer.byteLength}`,
       );
-      const audioBuffer = await audioEngine.decodeAudioData(arrayBuffer);
+      const audioBuffer = await audioEngine.decodeAudioData(arrayBuffer); // Decode using AudioEngine
       console.log(
         `[AO-LOG] loadFileAndAnalyze: STAGE 2 - Audio decoded. Duration: ${audioBuffer.duration.toFixed(2)}s`,
       );
@@ -149,40 +197,43 @@ export class AudioOrchestrator {
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 2 - Generating waveform data...",
       );
-      const waveformData = createWaveformData(
+      const waveformData = createWaveformData( // Generate downsampled waveform data
         audioBuffer,
-        VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH,
+        VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH, // Target number of points for the waveform
       );
       console.log(
         `[AO-LOG] loadFileAndAnalyze: STAGE 2 - Waveform data generated with ${waveformData[0]?.length || 0} points.`,
       );
 
-      // --- STAGE 3: INITIALIZE ALL SERVICES IN PARALLEL ---
+      // --- STAGE 3: INITIALIZE ALL BACKGROUND SERVICES IN PARALLEL ---
+      // Services like audio processing (Rubberband) and analysis (DTMF, Spectrogram) are initialized.
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 3 - Initializing all services in parallel...",
       );
+      // Promise.allSettled allows all initializations to attempt, even if some fail.
       const initResults = await Promise.allSettled([
-        audioEngine.initializeWorker(audioBuffer),
-        dtmfService.initialize(16000), // Standard DTMF sample rate
-        spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }),
+        audioEngine.initializeWorker(audioBuffer), // Initialize Rubberband worker
+        dtmfService.initialize(16000),            // Initialize DTMF worker (16kHz standard)
+        spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }), // Initialize Spectrogram worker
       ]);
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 3 - All service initializations have settled.",
       );
 
-      if (initResults[0].status === "rejected") {
+      // Check results of service initializations
+      if (initResults[0].status === "rejected") { // AudioEngine is critical
         console.error(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - CRITICAL FAILURE: AudioEngine worker could not initialize.",
           initResults[0].reason,
         );
-        throw new Error("Failed to initialize core audio engine.");
+        throw new Error("Failed to initialize core audio engine."); // This will be caught by the main catch block
       } else {
         console.log(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - SUCCESS: AudioEngine worker initialized.",
         );
       }
 
-      if (initResults[1].status === "rejected") {
+      if (initResults[1].status === "rejected") { // DTMF is non-critical for basic playback
         console.warn(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - NON-CRITICAL FAILURE: DTMF service could not initialize.",
           initResults[1].reason,
@@ -193,7 +244,7 @@ export class AudioOrchestrator {
         );
       }
 
-      if (initResults[2].status === "rejected") {
+      if (initResults[2].status === "rejected") { // Spectrogram is non-critical
         console.warn(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - NON-CRITICAL FAILURE: Spectrogram service could not initialize.",
           initResults[2].reason,
@@ -204,50 +255,53 @@ export class AudioOrchestrator {
         );
       }
 
-      // --- STAGE 4: FINALIZE PLAYER STATE & APPLY URL PARAMS ---
+      // --- STAGE 4: FINALIZE PLAYER STATE & APPLY URL/INITIAL PARAMETERS ---
+      // Update the playerStore with all decoded info and mark as playable.
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 4 - Finalizing player state.",
       );
       playerStore.update((s) => {
         console.log(
           "[AO-LOG] loadFileAndAnalyze: playerStore.update (finalizing). Current state before finalization:",
-          JSON.stringify(s),
+          JSON.stringify(prepareStateForLog(s)), // Log summarized state
         );
         const finalState = {
           ...s,
           duration: audioBuffer.duration,
           sampleRate: audioBuffer.sampleRate,
           channels: audioBuffer.numberOfChannels,
-          isPlayable: true,
-          audioBuffer: audioBuffer, // Keep a reference if needed elsewhere, careful with memory
+          isPlayable: true, // Core engine is ready, so mark as playable
+          audioBuffer: audioBuffer, // Store the buffer (consider if this is too large for store long-term)
           error: null,
           status: "ready",
-          // waveformData: waveformData, // too long
+          waveformData: waveformData, // Add the generated waveform data
         };
         console.log(
           "[AO-LOG] loadFileAndAnalyze: playerStore.update (finalizing). New state after finalization:",
-          JSON.stringify(finalState),
+          JSON.stringify(prepareStateForLog(finalState)), // Log summarized state
         );
         return finalState;
       });
 
+      // If initialState (from URL) was provided, merge it into the playerStore
       if (initialState && Object.keys(initialState).length > 0) {
         console.log(
           "[AO-LOG] loadFileAndAnalyze: STAGE 4 - Applying received initialState from URL/data.load:",
-          JSON.stringify(initialState),
+          JSON.stringify(prepareStateForLog(initialState)), // Log summarized initial state
         );
         playerStore.update((s) => {
           console.log(
             "[AO-LOG] loadFileAndAnalyze: playerStore.update (applying initialState). Current state before applying initialState:",
-            JSON.stringify(s),
+            JSON.stringify(prepareStateForLog(s)), // Log summarized current state
           );
-          const mergedState = { ...s, ...initialState };
+          const mergedState = { ...s, ...initialState }; // Merge, initialState overrides
           console.log(
             "[AO-LOG] loadFileAndAnalyze: playerStore.update (applying initialState). New state after merging initialState:",
-            JSON.stringify(mergedState),
+            JSON.stringify(prepareStateForLog(mergedState)), // Log summarized merged state
           );
           return mergedState;
         });
+        // If a currentTime was provided in initialState, seek to it
         if (initialState.currentTime) {
           console.log(
             `[AO-LOG] loadFileAndAnalyze: STAGE 4 - Seeking to initial time: ${initialState.currentTime.toFixed(2)}s`,
@@ -260,6 +314,7 @@ export class AudioOrchestrator {
         );
       }
 
+      // Update status store to indicate readiness
       statusStore.set({
         isLoading: false,
         message: `Ready: ${file.name}`,
@@ -269,48 +324,58 @@ export class AudioOrchestrator {
         `[AO-LOG] loadFileAndAnalyze: StatusStore updated to ready for ${file.name}.`,
       );
 
-      this.updateUrlFromState(); // Initial URL update after load based on (potentially merged) state
+      // Update the URL with the current player settings
+      this.updateUrlFromState();
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 4 - Player is ready, initial URL update called.",
       );
 
-      // --- STAGE 5: KICK OFF BACKGROUND ANALYSIS ---
+      // --- STAGE 5: KICK OFF BACKGROUND ANALYSIS TASKS ---
+      // These run in parallel and update their respective stores upon completion.
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Starting background analysis tasks.",
       );
       const analysisPromises = [];
-      if (initResults[1].status === "fulfilled") {
+      if (initResults[1].status === "fulfilled") { // If DTMF service initialized
         analysisPromises.push(dtmfService.process(audioBuffer));
         console.log(
           "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Queued DTMF process.",
         );
       }
-      if (initResults[2].status === "fulfilled") {
+      if (initResults[2].status === "fulfilled") { // If Spectrogram service initialized
         analysisPromises.push(
+          // Process only the first channel for spectrogram for simplicity
           spectrogramService.process(audioBuffer.getChannelData(0)),
         );
         console.log(
           "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Queued Spectrogram process.",
         );
       }
+      // Run analysis without awaiting, they operate in the background
       this._runBackgroundAnalysis(analysisPromises);
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Background analysis tasks dispatched.",
       );
-    } catch (e: any) {
+
+    } catch (e: any) { // Catch any error from the stages above
       console.error(
         "[AO-LOG] loadFileAndAnalyze: Error during main try block.",
         e,
       );
-      this.handleError(e);
+      this.handleError(e); // Centralized error handling
     } finally {
-      this.isBusy = false;
+      this.isBusy = false; // Release busy flag
       console.log(
         "[AO-LOG] loadFileAndAnalyze: Orchestrator is no longer busy. Method exit.",
       );
     }
   }
 
+  /**
+   * Helper to run background analysis tasks and log their outcomes.
+   * @param analysisPromises Array of promises for analysis tasks.
+   * @private
+   */
   private _runBackgroundAnalysis(analysisPromises: Promise<any>[]) {
     console.log(
       `[AO-LOG] _runBackgroundAnalysis: Entered. Number of promises: ${analysisPromises.length}`,
@@ -322,13 +387,15 @@ export class AudioOrchestrator {
       return;
     }
 
+    // Log results of analysis tasks once they all settle
     Promise.allSettled(analysisPromises).then((results) => {
       console.log(
         `[AO-LOG] _runBackgroundAnalysis: All background analysis promises settled.`,
       );
       results.forEach((result, index) => {
         if (result.status === "rejected") {
-          const serviceName = index === 0 ? "DTMF" : "Spectrogram"; // Adjust if more services
+          // Determine service name based on order (adjust if more services added)
+          const serviceName = index === 0 ? "DTMF" : "Spectrogram";
           console.error(
             `[AO-LOG] _runBackgroundAnalysis: ${serviceName} analysis failed:`,
             result.reason,
@@ -343,16 +410,23 @@ export class AudioOrchestrator {
     });
   }
 
+  /**
+   * Centralized error handler for critical loading/processing failures.
+   * Updates stores to reflect the error state.
+   * @param error The error object or message.
+   */
   public handleError(error: Error | string): void {
     const errorMessage = typeof error === "string" ? error : error.message;
     console.error("[AO-LOG] handleError: Entered.", errorMessage, error);
 
+    // Update status store to show error
     statusStore.set({
       message: `Error: ${errorMessage}`,
       type: "error",
       isLoading: false,
     });
 
+    // Update player store to reflect error state
     playerStore.update((s) => {
       console.log("[AO-LOG] handleError: playerStore.update (on error).");
       return {
@@ -364,24 +438,33 @@ export class AudioOrchestrator {
       };
     });
 
-    audioEngine.stop();
-    this.updateUrlFromState(); // Update URL to clear params on error
+    audioEngine.stop(); // Ensure playback is stopped
+    this.updateUrlFromState(); // Update URL, likely to clear parameters on error
     console.log("[AO-LOG] handleError: Completed.");
   }
 
+  /**
+   * Debounced function to update the URL from the current application state.
+   * This prevents excessive URL updates during rapid state changes (e.g., slider dragging).
+   */
   private debouncedUrlUpdate = debounce(() => {
     console.log(
       `[AO-LOG] debouncedUrlUpdate: Debounced function EXECUTED. Calling updateUrlFromState.`,
     );
     this.updateUrlFromState();
-  }, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
+  }, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS); // Debounce time from constants
 
+  /**
+   * Sets up subscriptions to relevant stores to trigger URL serialization
+   * when their state changes.
+   */
   public setupUrlSerialization(): void {
     console.log("[AO-LOG] setupUrlSerialization: Entered.");
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined") { // Guard for server-side rendering environments
       console.log("[AO-LOG] setupUrlSerialization: Not in browser, returning.");
       return;
     }
+    // Subscribe to playerStore. When it changes and player is playable, trigger debounced URL update.
     playerStore.subscribe((s) => {
       console.log(
         `[AO-LOG] setupUrlSerialization: playerStore subscribed. Player playable: ${s.isPlayable}, Speed: ${s.speed}, Pitch: ${s.pitchShift}, Gain: ${s.gain}, CurrentTime (from playerStore): ${s.currentTime}. Debouncing URL update.`,
@@ -392,58 +475,67 @@ export class AudioOrchestrator {
         );
         this.debouncedUrlUpdate();
       } else {
+        // If not playable (e.g., initial state or after an error), still update URL to clear params.
+        // This is handled more directly in updateUrlFromState logic.
         console.log(
-          "[AO-LOG] setupUrlSerialization: Condition s.isPlayable is false. NOT calling debouncedUrlUpdate.",
+          "[AO-LOG] setupUrlSerialization: Condition s.isPlayable is false. URL update will be handled by updateUrlFromState if called.",
         );
       }
     });
-    // Also subscribe to timeStore for more frequent time updates to URL if needed,
-    // but be careful as this can be very chatty. The current logic in updateUrlFromState uses get(timeStore).
+    // Note: VAD threshold changes in analysisStore would also need to trigger debouncedUrlUpdate
+    // if they are to be serialized. This is not currently implemented in the subscription.
     console.log(
       "[AO-LOG] setupUrlSerialization: Subscribed to playerStore for URL updates.",
     );
   }
 
+  /**
+   * Collects current state from playerStore and timeStore, then updates
+   * the browser URL search parameters.
+   * This is the core function for serializing state to the URL.
+   */
   public updateUrlFromState = (): void => {
     console.log(`[AO-LOG] updateUrlFromState: Entered.`);
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined") { // Guard for SSR
       console.log(`[AO-LOG] updateUrlFromState: Not in browser, returning.`);
       return;
     }
 
-    const pStore = get(playerStore);
-    const tStore = get(timeStore); // Time is taken from timeStore for URL
-    const params: Record<string, string> = {};
+    const pStore = get(playerStore); // Get current player state
+    const tStore = get(timeStore);   // Get current time from dedicated timeStore
+    const params: Record<string, string> = {}; // Initialize empty params object
 
     console.log(
       `[AO-LOG] updateUrlFromState: Current pStore.isPlayable: ${pStore.isPlayable}, pStore.status: ${pStore.status}`,
     );
 
+    // If player is not playable and not in a loading state (e.g., after an error or before any file load),
+    // clear all URL parameters.
     if (!pStore.isPlayable && pStore.status !== "loading") {
-      // Allow URL update during loading if params are set
       console.log(
         `[AO-LOG] updateUrlFromState: Player not playable and not loading. Clearing URL params.`,
       );
-      updateUrlWithParams({}); // Clear all params if not playable (e.g., after error or initial state before load)
+      updateUrlWithParams({}); // Call utility to update URL with empty params
       return;
     }
 
-    // Serialize relevant player state to URL params
-    if (pStore.speed !== 1.0)
+    // Serialize player settings to URL parameters if they differ from defaults
+    if (pStore.speed !== 1.0) {
       params[URL_HASH_KEYS.SPEED] = pStore.speed.toFixed(2);
-    if (pStore.pitchShift !== 0.0)
-      params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2); // Ensure it's pitchShift
-    if (pStore.gain !== 1.0)
+    }
+    if (pStore.pitchShift !== 0.0) {
+      params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2); // Using pitchShift
+    }
+    if (pStore.gain !== 1.0) {
       params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(2);
-
-    // Only add time if it's meaningful (not at the very start or end if those are defaults)
-    if (tStore > 0.1 && (!pStore.duration || tStore < pStore.duration - 0.1)) {
-      params[URL_HASH_KEYS.TIME] = tStore.toFixed(
-        UI_CONSTANTS.URL_TIME_PRECISION,
-      );
     }
 
-    // Add VAD thresholds from analysisStore if they differ from defaults
+    // Serialize current time if it's meaningful (not at the very start or end, if those are default implicit states)
+    if (tStore > 0.1 && (!pStore.duration || tStore < pStore.duration - 0.1)) {
+      params[URL_HASH_KEYS.TIME] = tStore.toFixed(UI_CONSTANTS.URL_TIME_PRECISION);
+    }
+
+    // Example for VAD parameters (currently not loaded from URL in +page.ts but shows how)
     // const aStore = get(analysisStore);
     // if (aStore.vadPositiveThreshold && aStore.vadPositiveThreshold !== VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD) {
     //     params[URL_HASH_KEYS.VAD_POSITIVE] = aStore.vadPositiveThreshold.toFixed(2);
@@ -451,19 +543,14 @@ export class AudioOrchestrator {
     // if (aStore.vadNegativeThreshold && aStore.vadNegativeThreshold !== VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD) {
     //     params[URL_HASH_KEYS.VAD_NEGATIVE] = aStore.vadNegativeThreshold.toFixed(2);
     // }
-    // Note: VAD params are not currently loaded from URL in +page.ts, this is for future if needed.
 
     console.log(
       `[AO-LOG] updateUrlFromState: Calculated params for URL:`,
-      JSON.stringify(params),
+      JSON.stringify(params), // Log the params being sent to the URL
     );
-    updateUrlWithParams(params);
+    updateUrlWithParams(params); // Call utility to update the browser's URL
     console.log(`[AO-LOG] updateUrlFromState: updateUrlWithParams called.`);
   };
 }
-
-// const initialPlayerState: PlayerState = { ... } // This should be PlayerState from types
-// Re-define initialPlayerStateSnapshot to match PlayerState type correctly if it's used for resetting.
-// It's defined at the top of the file now.
 
 export default AudioOrchestrator.getInstance();
