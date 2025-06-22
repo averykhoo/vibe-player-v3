@@ -222,7 +222,7 @@ export class AudioOrchestrator {
           audioBuffer: audioBuffer, // Keep a reference if needed elsewhere, careful with memory
           error: null,
           status: "ready",
-          waveformData: waveformData,
+          // waveformData: waveformData, // too long
         };
         console.log(
           "[AO-LOG] loadFileAndAnalyze: playerStore.update (finalizing). New state after finalization:",
