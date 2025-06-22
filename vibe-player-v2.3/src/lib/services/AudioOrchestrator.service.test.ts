@@ -26,7 +26,7 @@ import { playerStore } from "$lib/stores/player.store";
 import { timeStore } from "$lib/stores/time.store";
 import { statusStore } from "$lib/stores/status.store";
 import { analysisStore } from "$lib/stores/analysis.store";
-import * as urlState from "$lib/utils/urlState";
+import { updateUrlWithParams } from "$lib/utils/urlState"; // Corrected import
 
 // Mock services and external utilities
 vi.mock("./audioEngine.service");
@@ -51,6 +51,8 @@ vi.mock("$lib/stores/analysis.store", () => ({
 
 describe("AudioOrchestratorService", () => {
   let orchestrator: typeof AudioOrchestratorService;
+  let consoleWarnSpy: SpyInstance;
+  let consoleErrorSpy: SpyInstance;
 
   const initialPlayerState: PlayerState = {
     status: "idle",
@@ -73,6 +75,8 @@ describe("AudioOrchestratorService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     if (!File.prototype.arrayBuffer) {
       File.prototype.arrayBuffer = vi
@@ -81,19 +85,36 @@ describe("AudioOrchestratorService", () => {
     }
 
     // --- FIX: Reset the actual store instances before each test ---
-    vi.mocked(playerStore).set(initialPlayerState);
-    vi.mocked(timeStore).set(0);
-    vi.mocked(statusStore).set({ message: "", type: "idle", isLoading: false });
-    vi.mocked(analysisStore).set({ dtmfResults: [], spectrogramData: null });
+    playerStore.set({ ...initialPlayerState });
+    timeStore.set(0);
+    statusStore.set({ message: "", type: "idle", isLoading: false });
+    analysisStore.set({ dtmfResults: [], spectrogramData: null });
 
     // --- FIX: Re-mock service methods that might have been cleared ---
-    vi.mocked(audioEngine.decodeAudioData).mockReset();
-    vi.mocked(audioEngine.initializeWorker).mockReset();
-    vi.mocked(audioEngine.stop).mockReset();
-    vi.mocked(audioEngine.unlockAudio).mockReset(); // Added for the new test
-    vi.mocked(spectrogramService.initialize).mockReset();
+    vi.mocked(audioEngine.decodeAudioData).mockResolvedValue({
+      duration: 10,
+      sampleRate: 44100,
+      numberOfChannels: 2,
+      getChannelData: vi.fn(() => new Float32Array(0)),
+    } as unknown as AudioBuffer);
+    vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
+    vi.mocked(audioEngine.stop).mockResolvedValue(undefined);
+    vi.mocked(audioEngine.unlockAudio).mockResolvedValue(undefined); // Added for the new test
+    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
+    vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
+    vi.mocked(dtmfService.process).mockResolvedValue(undefined);
+    vi.mocked(spectrogramService.process).mockResolvedValue(undefined);
+    vi.mocked(updateUrlWithParams).mockImplementation(() => {});
 
     orchestrator = AudioOrchestratorService;
+    // Reset internal state of the singleton if necessary, or re-instantiate
+    // For simplicity here, we'll assume the singleton nature is handled or reset if needed by tests.
+    // AudioOrchestratorService.reset(); // Hypothetical reset method
+  });
+
+  afterEach(() => {
+    consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   const mockFile = new File([new ArrayBuffer(100)], "test.mp3", {
@@ -107,28 +128,27 @@ describe("AudioOrchestratorService", () => {
   } as unknown as AudioBuffer;
 
   it("should not proceed if isBusy is true", async () => {
-    const consoleWarnSpy = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => {});
     (orchestrator as any).isBusy = true;
 
     await orchestrator.loadFileAndAnalyze(mockFile, undefined);
 
     // --- FIX: Update assertion to match new log message ---
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      "[Orchestrator] Orchestrator is busy, skipping file load.",
+      "[AO-LOG] loadFileAndAnalyze: Orchestrator is busy, skipping file load.",
     );
     // --- END OF FIX ---
 
     expect(audioEngine.stop).not.toHaveBeenCalled();
-    (orchestrator as any).isBusy = false;
-    consoleWarnSpy.mockRestore();
+    (orchestrator as any).isBusy = false; // Reset for other tests
   });
 
   it("should handle a CRITICAL failure if audioEngine.initializeWorker rejects", async () => {
     const criticalError = new Error("Core engine failure");
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
     vi.mocked(audioEngine.initializeWorker).mockRejectedValue(criticalError);
+    // Ensure other service initializations are mocked if they might be called before the error
+    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
+    vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
 
     await orchestrator.loadFileAndAnalyze(mockFile, undefined);
     await tick(); // --- FIX: Wait for async error handling ---
@@ -143,47 +163,41 @@ describe("AudioOrchestratorService", () => {
   });
 
   it("should succeed with a NON-CRITICAL failure if spectrogramService.initialize rejects", async () => {
-    const consoleWarnSpy = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => {});
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
     vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
+    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined); // Ensure DTMF service resolves
     vi.mocked(spectrogramService.initialize).mockRejectedValue(
       new Error("Spectrogram failed"),
     );
 
     await orchestrator.loadFileAndAnalyze(mockFile, undefined);
-
-    // Wait for the asynchronous error handling to complete and stores to update
     await tick();
 
-    // Assert against the store's value directly
     const finalPlayerState = get(playerStore);
-    expect(finalPlayerState.isPlayable).toBe(true);
+    expect(finalPlayerState.isPlayable).toBe(true); // Should still be playable
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "NON-CRITICAL FAILURE: Spectrogram service could not initialize.",
-      ),
+      "[AO-LOG] loadFileAndAnalyze: STAGE 3 - NON-CRITICAL FAILURE: Spectrogram service could not initialize.",
       expect.any(Error),
     );
-    consoleWarnSpy.mockRestore();
   });
 
   it("should apply initialState and call seek if currentTime is provided", async () => {
     const seekTime = 5.5;
-    const initialState = {
+    const initialState: Partial<PlayerState> = {
+      // Ensure initialState type matches Partial<PlayerState>
       speed: 1.5,
       pitchShift: -2,
       gain: 0.75,
       currentTime: seekTime,
     };
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
+    vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
+    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
+    vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
 
     await orchestrator.loadFileAndAnalyze(mockFile, initialState);
-
-    // Wait for the asynchronous error handling to complete and stores to update
-    await tick();
+    await tick(); // Ensure all promises resolve and state updates complete
 
     // Assert against the store's value directly
     const finalPlayerState = get(playerStore);
@@ -201,30 +215,13 @@ describe("AudioOrchestratorService", () => {
     vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined); // Ensure other critical parts resolve
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
-    // Spy on unlockAudio but let it resolve normally (as it's fire-and-forget)
     const unlockAudioSpy = vi
       .mocked(audioEngine.unlockAudio)
-      .mockImplementation(() => Promise.resolve());
+      .mockResolvedValue(undefined); // Mock it to resolve immediately
 
-    // We don't await loadFileAndAnalyze fully if we are testing a non-awaited call within it,
-    // but we need to ensure the call to unlockAudio happens.
-    // The nature of not awaiting means we can't easily sequence it with await tick()
-    // against the *end* of loadFileAndAnalyze if unlockAudio itself is async.
-    // However, since unlockAudio is called early in stage 1, we can check it directly.
-
-    orchestrator.loadFileAndAnalyze(mockFile, undefined); // Fire off the method
-
-    // Since unlockAudio is called synchronously (the promise it returns is not awaited),
-    // it should have been called by the time loadFileAndAnalyze returns (or shortly after).
-    // Vitest's mock tracking should capture this.
-    // We might need a very short tick if there's any microtask queueing before it.
+    await orchestrator.loadFileAndAnalyze(mockFile, undefined);
     await tick(); // Allow any immediate microtasks to clear
 
     expect(unlockAudioSpy).toHaveBeenCalledTimes(1);
-
-    // To be absolutely sure the test doesn't hang if loadFileAndAnalyze has an issue,
-    // we can await it here, after the specific check for unlockAudio.
-    await vi.mocked(audioEngine.decodeAudioData).mock.results[0]?.value; // wait for decode
-    await vi.mocked(audioEngine.initializeWorker).mock.results[0]?.value; // wait for worker init
   });
 });
