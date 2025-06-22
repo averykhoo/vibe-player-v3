@@ -146,17 +146,23 @@ export class PlayerPage {
   /**
    * --- REPLACE THE OLD METHOD WITH THIS ---
    * Performs a robust, multi-stage interactive seek on the main seek slider.
-   * Uses programmatic event dispatching to ensure Svelte listeners are triggered.
+   * Uses programmatic event dispatching inside `evaluate` to ensure Svelte listeners are triggered.
+   * This pattern is adapted from the working v2.0 implementation.
    * @param {number} targetTime The time in seconds to seek to.
    */
   async performInteractiveSeek(targetTime) {
+    const testId = await this.seekSliderInput.getAttribute("data-testid");
+    console.log(
+      `[Test Runner Log] Starting interactive seek on '${testId}' to value: ${targetTime}`,
+    );
+
     await this.seekSliderInput.evaluate((slider, value) => {
       // Helper function for logging from the browser context
       const browserLog = (message) =>
         console.log(`[Browser-Side Log] ${message}`);
 
       // Stage 1: Dispatch 'mousedown' to trigger handleSeekStart
-      browserLog("Dispatching mousedown event...");
+      browserLog(`Dispatching 'mousedown' on slider with id: '${slider.id}'`);
       slider.dispatchEvent(
         new MouseEvent("mousedown", {
           bubbles: true,
@@ -167,7 +173,7 @@ export class PlayerPage {
 
       // Stage 2: Set the value and dispatch 'input' to trigger handleSeekInput
       browserLog(
-        `Setting slider value to ${value} and dispatching input event...`,
+        `Setting slider value to ${value} and dispatching 'input' event.`,
       );
       slider.value = String(value);
       slider.dispatchEvent(
@@ -175,7 +181,7 @@ export class PlayerPage {
       );
 
       // Stage 3: Dispatch 'mouseup' to trigger handleSeekEnd
-      browserLog("Dispatching mouseup event...");
+      browserLog("Dispatching 'mouseup' event.");
       slider.dispatchEvent(
         new MouseEvent("mouseup", {
           bubbles: true,
@@ -184,6 +190,7 @@ export class PlayerPage {
         }),
       );
     }, targetTime);
+    console.log(`[Test Runner Log] Finished interactive seek on '${testId}'.`);
   }
 
   /**
