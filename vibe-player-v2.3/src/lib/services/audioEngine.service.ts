@@ -461,7 +461,6 @@ class AudioEngineService {
           result.outputBuffer[0].length > 0
         ) {
           this.scheduleChunkPlayback(result.outputBuffer);
-          // console.log(`[AudioEngineService] Playback loop: Scheduled chunk. Current sourcePlaybackOffset: ${this.sourcePlaybackOffset.toFixed(3)}`);
         }
         timeStore.set(this.sourcePlaybackOffset);
         this._performSingleProcessAndPlayIteration();
