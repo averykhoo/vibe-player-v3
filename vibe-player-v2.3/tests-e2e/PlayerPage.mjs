@@ -40,7 +40,9 @@ export class PlayerPage {
       timeout: 15000,
     });
     await expect(this.fileInput).toBeVisible({ timeout: 10000 });
-    console.log("[Test Runner Log] Page navigation and initial load confirmed.");
+    console.log(
+      "[Test Runner Log] Page navigation and initial load confirmed.",
+    );
   }
 
   /**
@@ -55,11 +57,12 @@ export class PlayerPage {
   }
 
   /**
-   * --- THIS IS THE RESTORED METHOD ---
    * Waits for the UI to be in a state where playback is possible after a file load.
    */
   async expectControlsToBeReadyForPlayback() {
-    console.log("[Test Runner Log] Waiting for controls to be ready for playback...");
+    console.log(
+      "[Test Runner Log] Waiting for controls to be ready for playback...",
+    );
     // The single, most reliable indicator that the application is fully ready for playback
     // is that the play button has become enabled. We wait for this state directly.
     await expect(
@@ -75,7 +78,9 @@ export class PlayerPage {
       this.timeDisplay,
       "Time display did not update with audio duration",
     ).not.toHaveText("0:00 / 0:00", { timeout: 1000 });
-    console.log("[Test Runner Log] Time display has updated. Controls are ready.");
+    console.log(
+      "[Test Runner Log] Time display has updated. Controls are ready.",
+    );
   }
 
   /**
@@ -90,30 +95,37 @@ export class PlayerPage {
   }
 
   /**
-   * Sets the value of a real-time control slider (e.g., Speed, Pitch, Gain) by
-   * calculating the position and performing a single click.
+   * [CORRECTED METHOD] Programmatically sets the value on a slider input
+   * and dispatches the necessary events that Svelte handlers are listening for.
    * @param {import('@playwright/test').Locator} sliderInputLocator - The locator for the slider's <input type="range"> element.
-   * @param {string} valueStr - The target value as a string (e.g., "1.5").
+   * @param {string} valueStr - The target value as a string.
    */
   async setSliderValue(sliderInputLocator, valueStr) {
     const testId = await sliderInputLocator.getAttribute("data-testid");
-    console.log(`[Test Runner Log] Setting value on real-time slider '${testId}' to: ${valueStr}`);
+    console.log(
+      `[TEST RUNNER] Forcing events on slider '${testId}' to value: ${valueStr}`,
+    );
 
-    const targetValue = parseFloat(valueStr);
-    const slider = await sliderInputLocator.boundingBox();
-    if (!slider) {
-      throw new Error(`Could not get bounding box for slider '${testId}'`);
-    }
+    // Use page.evaluate to run code in the browser context, dispatching events on the element.
+    await sliderInputLocator.evaluate((element, value) => {
+      const inputElement = element;
 
-    const min = parseFloat((await sliderInputLocator.getAttribute("min")) || "0");
-    const max = parseFloat((await sliderInputLocator.getAttribute("max")) || "1");
-    const ratio = (targetValue - min) / (max - min);
-    const x = slider.width * ratio;
+      console.log(
+        `[BROWSER-SIDE LOG] Firing 'mousedown' on slider with id: '${inputElement.id}'`,
+      );
+      inputElement.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true }),
+      );
 
-    await sliderInputLocator.click({
-      position: { x: x, y: slider.height / 2 },
-    });
-    console.log(`[Test Runner Log] Clicked '${testId}' at position corresponding to value ${valueStr}.`);
+      console.log(
+        `[BROWSER-SIDE LOG] Setting value to ${value} and firing 'input'`,
+      );
+      inputElement.value = value;
+      inputElement.dispatchEvent(new Event("input", { bubbles: true }));
+
+      console.log(`[BROWSER-SIDE LOG] Firing 'mouseup'`);
+      inputElement.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    }, valueStr);
   }
 
   /**
@@ -123,51 +135,29 @@ export class PlayerPage {
   async getCurrentTime() {
     console.log("[Test Runner Log] Getting current time from display.");
     const timeDisplayText = await this.timeDisplay.textContent();
-    if (!timeDisplayText) throw new Error("Time display text content is empty or null.");
+    if (!timeDisplayText)
+      throw new Error("Time display text content is empty or null.");
 
     const currentTimeStr = timeDisplayText.split(" / ")[0].trim();
     const segments = currentTimeStr.split(":").map(Number);
     let currentTimeInSeconds = 0;
 
-    if (segments.length === 2) { // M:SS
+    if (segments.length === 2) {
+      // M:SS
       currentTimeInSeconds = segments[0] * 60 + segments[1];
-    } else if (segments.length === 3) { // H:MM:SS
-      currentTimeInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
+    } else if (segments.length === 3) {
+      // H:MM:SS
+      currentTimeInSeconds =
+        segments[0] * 3600 + segments[1] * 60 + segments[2];
     } else {
-      throw new Error(`Unexpected current time segment format: ${currentTimeStr}`);
+      throw new Error(
+        `Unexpected current time segment format: ${currentTimeStr}`,
+      );
     }
-    console.log(`[Test Runner Log] Parsed current time as: ${currentTimeInSeconds} seconds.`);
+    console.log(
+      `[Test Runner Log] Parsed current time as: ${currentTimeInSeconds} seconds.`,
+    );
     return currentTimeInSeconds;
-  }
-
-  /**
-   * Performs a robust, multi-stage interactive seek on the main seek slider's wrapper div.
-   * @param {number} targetTime The time in seconds to seek to.
-   */
-  async performInteractiveSeek(targetTime) {
-    const testId = await this.seekSliderInput.getAttribute("data-testid");
-    console.log(`[Test Runner Log] Starting interactive seek on '${testId}' to value: ${targetTime}`);
-    
-    const sliderWrapper = this.seekSliderInput.locator('..');
-
-    await sliderWrapper.evaluate((wrapper, { value }) => {
-      const browserLog = (message) => console.log(`[Browser-Side Log] ${message}`);
-      const sliderInput = wrapper.querySelector('input[type="range"]');
-      if (!sliderInput) throw new Error("Could not find slider input inside wrapper");
-
-      browserLog("Dispatching 'mousedown' event on wrapper...");
-      wrapper.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-
-      browserLog(`Setting slider value to ${value} and dispatching 'input' event.`);
-      sliderInput.value = String(value);
-      sliderInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-      browserLog("Dispatching 'mouseup' event on wrapper.");
-      wrapper.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-
-    }, { value: targetTime });
-
-    console.log(`[Test Runner Log] Finished interactive seek on '${testId}'.`);
   }
 
   /**
@@ -183,28 +173,18 @@ export class PlayerPage {
     const segments = durationStr.split(":").map(Number);
     let durationInSeconds = 0;
 
-    if (segments.length === 2) { // M:SS
+    if (segments.length === 2) {
+      // M:SS
       durationInSeconds = segments[0] * 60 + segments[1];
-    } else if (segments.length === 3) { // H:MM:SS
+    } else if (segments.length === 3) {
+      // H:MM:SS
       durationInSeconds = segments[0] * 3600 + segments[1] * 60 + segments[2];
     } else {
       throw new Error(`Unexpected duration segment format: ${durationStr}`);
     }
-    console.log(`[Test Runner Log] Parsed duration as: ${durationInSeconds} seconds.`);
+    console.log(
+      `[Test Runner Log] Parsed duration as: ${durationInSeconds} seconds.`,
+    );
     return durationInSeconds;
-  }
-
-  /**
-   * Formats seconds into a "M:SS" string for exact text matching in assertions.
-   * @param {number} sec - Time in seconds.
-   * @returns {string} The formatted time string.
-   */
-  formatTimeForAssertion(sec) {
-    if (isNaN(sec) || sec < 0) sec = 0;
-    const minutes = Math.floor(sec / 60);
-    const seconds = Math.floor(sec % 60);
-    const formatted = `${minutes}:${seconds < 10 ? "0" + seconds : seconds}`;
-    console.log(`[Test Runner Log] Formatted time for assertion: ${sec}s -> "${formatted}"`);
-    return formatted;
   }
 }

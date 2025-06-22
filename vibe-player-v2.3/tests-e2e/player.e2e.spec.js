@@ -10,7 +10,8 @@ function parseTimeToSeconds(timeStr) {
 
 // UPDATED: Paths are now relative to the server root, as they are in the static dir.
 const TEST_AUDIO_FILE = "static/test-audio/C.Noisy_Voice.wav";
-const DTMF_TEST_AUDIO_FILE = "static/test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
+const DTMF_TEST_AUDIO_FILE =
+  "static/test-audio/dtmf-123A456B789C(star)0(hex)D.mp3";
 
 test.describe("Vibe Player V2 E2E", () => {
   let playerPage;
@@ -122,7 +123,11 @@ test.describe("Vibe Player V2 E2E", () => {
     const targetSeekTimeSeconds = durationSeconds / 2;
 
     // 2. Perform the entire interactive seek using the new robust helper.
-    await playerPage.performInteractiveSeek(targetSeekTimeSeconds);
+    // THIS IS THE CORRECTED CALL
+    await playerPage.setSliderValue(
+      playerPage.seekSliderInput,
+      String(targetSeekTimeSeconds),
+    );
 
     // 3. Assert audio resumes playing automatically, since it was playing before the seek.
     await expect(playerPage.playButton).toHaveText(/Pause/, { timeout: 2000 });
