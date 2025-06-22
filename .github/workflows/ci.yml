@@ -74,3 +74,10 @@ jobs:
           name: playwright-report
           path: vibe-player-v2.3/playwright-report/ # Corrected path to be relative to workspace root
           retention-days: 7
+
+      - name: Upload Vibe Player Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibe-player-build-${{ github.run_id }}-${{ github.sha }}
+          path: vibe-player-v2.3/build/
+          retention-days: 7
