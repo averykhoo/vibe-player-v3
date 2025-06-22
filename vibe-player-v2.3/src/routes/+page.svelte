@@ -34,37 +34,43 @@
     });
 
     function handleSeekStart() {
-        console.log('[App Log] handleSeekStart fired.'); // Keep for debugging
+        console.log(`[+page.svelte handleSeekStart] Fired. Current $playerStore.isPlayable: ${get(playerStore).isPlayable}`);
         if (!get(playerStore).isPlayable) return;
         isSeeking = true;
         wasPlayingBeforeSeek = get(playerStore).isPlaying;
+        console.log(`[+page.svelte handleSeekStart] Set isSeeking=true, wasPlayingBeforeSeek=${wasPlayingBeforeSeek}`);
         if (wasPlayingBeforeSeek) {
-            audioEngine.pause(); // Direct call
+            console.log(`[+page.svelte handleSeekStart] Was playing. Calling audioEngine.pause().`);
+            audioEngine.pause();
         }
     }
 
-    // While dragging, update the store from our local variable.
     function handleSeekInput() {
-        // console.log('[App Log] handleSeekInput fired.'); // Keep for debugging
-        if (!isSeeking) return; // Only update if actively seeking
-        timeStore.set(seekTime); // Update timeStore for immediate visual feedback
+        if (!isSeeking) return; // Only log if actively seeking
+        console.log(`[+page.svelte handleSeekInput] Fired. Current local seekTime: ${seekTime.toFixed(3)}. Updating timeStore.`);
+        timeStore.set(seekTime);
     }
 
     function handleSeekEnd() {
-        console.log('[App Log] handleSeekEnd fired.'); // Keep for debugging
+        console.log(`[+page.svelte handleSeekEnd] Fired. wasPlayingBeforeSeek: ${wasPlayingBeforeSeek}, isSeeking (before reset): ${isSeeking}, local seekTime: ${seekTime.toFixed(3)}`);
         if (!get(playerStore).isPlayable) {
             isSeeking = false; // Ensure flag is reset
+            console.log('[+page.svelte handleSeekEnd] Player not playable, exiting.');
             return;
         }
 
-        // Finalize the seek with the value from our local variable.
+        console.log(`[+page.svelte handleSeekEnd] Calling audioEngine.seek(${seekTime.toFixed(3)}).`);
         audioEngine.seek(seekTime);
+
         isSeeking = false; // Reset seeking flag FIRST.
+        console.log(`[+page.svelte handleSeekEnd] Set isSeeking=false.`);
 
         if (wasPlayingBeforeSeek) {
-            audioEngine.play(); // Direct call
+            console.log('[+page.svelte handleSeekEnd] Condition wasPlayingBeforeSeek is true. Calling audioEngine.play().');
+            audioEngine.play();
         }
         wasPlayingBeforeSeek = false; // Reset flag
+        console.log(`[+page.svelte handleSeekEnd] Set wasPlayingBeforeSeek=false. Method complete.`);
     }
     // --- END: REFACTORED SEEK LOGIC ---
 

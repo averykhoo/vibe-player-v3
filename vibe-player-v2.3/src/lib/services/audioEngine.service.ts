@@ -58,9 +58,18 @@ class AudioEngineService {
   }
 
   public togglePlayPause(): void {
+    console.log(
+      `[AudioEngineService.togglePlayPause] Called. Current internal this.isPlaying: ${this.isPlaying}`,
+    );
     if (this.isPlaying) {
+      console.log(
+        `[AudioEngineService.togglePlayPause] Condition 'this.isPlaying' is true. Calling pause().`,
+      );
       this.pause();
     } else {
+      console.log(
+        `[AudioEngineService.togglePlayPause] Condition 'this.isPlaying' is false. Calling play().`,
+      );
       this.play();
     }
   }
@@ -150,13 +159,31 @@ class AudioEngineService {
   }
 
   public async play(): Promise<void> {
+    console.log(
+      `[AudioEngineService.play ENTRY] Current internal this.isPlaying: ${this.isPlaying}, isWorkerReady: ${this.isWorkerReady}, originalBuffer exists: ${!!this.originalBuffer}`,
+    );
     if (this.isPlaying || !this.originalBuffer || !this.isWorkerReady) {
+      console.log(
+        `[AudioEngineService.play] PRE-CONDITION FAIL: Returning early. this.isPlaying=${this.isPlaying}, originalBuffer=${!!this.originalBuffer}, isWorkerReady=${this.isWorkerReady}`,
+      );
       return;
     }
 
     await this.unlockAudio();
+    console.log(`[AudioEngineService.play] unlockAudio completed.`);
     this.isPlaying = true;
-    playerStore.update((s) => ({ ...s, isPlaying: true, error: null }));
+    console.log(
+      `[AudioEngineService.play] SET internal this.isPlaying = true.`,
+    );
+    playerStore.update((s) => {
+      console.log(
+        `[AudioEngineService.play] playerStore.update: Setting isPlaying to true. Previous store state s.isPlaying: ${s.isPlaying}`,
+      );
+      return { ...s, isPlaying: true, error: null };
+    });
+    console.log(
+      `[AudioEngineService.play] playerStore.update call completed. Current $playerStore.isPlaying (via get): ${get(playerStore).isPlaying}`,
+    );
 
     // --- START: ADDED FOR DIAGNOSTICS ---
     // this.loopCounter = 0;
@@ -171,10 +198,29 @@ class AudioEngineService {
   }
 
   public pause(): void {
-    if (!this.isPlaying) return;
+    console.log(
+      `[AudioEngineService.pause ENTRY] Current internal this.isPlaying: ${this.isPlaying}`,
+    );
+    if (!this.isPlaying) {
+      console.log(
+        `[AudioEngineService.pause] PRE-CONDITION FAIL: Returning early as not currently playing (internal this.isPlaying is false).`,
+      );
+      return;
+    }
 
     this.isPlaying = false;
-    playerStore.update((s) => ({ ...s, isPlaying: false }));
+    console.log(
+      `[AudioEngineService.pause] SET internal this.isPlaying = false.`,
+    );
+    playerStore.update((s) => {
+      console.log(
+        `[AudioEngineService.pause] playerStore.update: Setting isPlaying to false. Previous store state s.isPlaying: ${s.isPlaying}`,
+      );
+      return { ...s, isPlaying: false };
+    });
+    console.log(
+      `[AudioEngineService.pause] playerStore.update call completed. Current $playerStore.isPlaying (via get): ${get(playerStore).isPlaying}`,
+    );
 
     // --- START: ADDED FOR DIAGNOSTICS ---
     // if (this.heartbeatInterval) {
