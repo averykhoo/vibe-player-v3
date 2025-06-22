@@ -83,7 +83,8 @@
 		if (get(playerStore).isPlaying) {
 			engine.pause();
 		} else {
-			engine.play();
+            engine.play();
+        }
     }
     function handleStop() {
         engine.stop();
