@@ -102,7 +102,7 @@ test.describe("Vibe Player V2 E2E", () => {
     expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
   });
 
-  test.skip("should seek audio interactively (mousedown, input, mouseup) and resume if playing", async ({
+  test("should seek audio interactively (mousedown, input, mouseup) and resume if playing", async ({
     page,
   }) => {
     await playerPage.loadAudioFile(TEST_AUDIO_FILE);
