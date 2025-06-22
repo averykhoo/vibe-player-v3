@@ -53,7 +53,56 @@ class AudioEngineService {
   public async unlockAudio(): Promise<void> {
     const ctx = this._getAudioContext();
     if (ctx.state === "suspended") {
-      await ctx.resume();
+      console.log(
+        `[AudioEngineService.unlockAudio] Context is suspended. Calling resume(). Current time: ${ctx.currentTime.toFixed(3)}`,
+      );
+      try {
+        await ctx.resume(); // This await is internal to unlockAudio's own logic
+        console.log(
+          `[AudioEngineService.unlockAudio] resume() promise resolved. Context state: ${ctx.state}. Current time: ${ctx.currentTime.toFixed(3)}`,
+        );
+      } catch (err) {
+        console.error(
+          `[AudioEngineService.unlockAudio] Error during ctx.resume():`,
+          err,
+        );
+        // Update store with error, but do not re-throw if callers are not awaiting unlockAudio directly.
+        playerStore.update((s) => ({
+          ...s,
+          error: `AudioContext resume failed: ${(err as Error).message}`,
+          audioContextResumed: false,
+        }));
+        // If resume failed, the error is set and we should not proceed to clear it.
+        return;
+      }
+    } else {
+      console.log(
+        `[AudioEngineService.unlockAudio] Context already in state: ${ctx.state}. Current time: ${ctx.currentTime.toFixed(3)}`,
+      );
+    }
+    // Always update the store with the potentially new state AFTER resume attempt or if it was already running
+    // If we've reached here, it means resume() either succeeded or wasn't needed (already running).
+    // In either successful case, we clear any pre-existing error.
+    const isNowRunning = ctx.state === "running";
+    playerStore.update((s) => ({ ...s, audioContextResumed: isNowRunning, error: null }));
+
+    if (
+      isNowRunning &&
+      ctx.state !== "suspended" &&
+      !get(playerStore).audioContextResumed
+    ) {
+      // This log helps if the store was out of sync and context was already running.
+      console.log(
+        "[AudioEngineService.unlockAudio] Context was already running or just resumed successfully.",
+      );
+    } else if (
+      ctx.state === "suspended" &&
+      get(playerStore).audioContextResumed
+    ) {
+      // This indicates a potential issue or race condition if the store thought it was resumed but context is suspended.
+      console.warn(
+        "[AudioEngineService.unlockAudio] Warning: Store indicated resumed, but context is suspended.",
+      );
     }
   }
 
@@ -169,8 +218,11 @@ class AudioEngineService {
       return;
     }
 
-    await this.unlockAudio();
-    console.log(`[AudioEngineService.play] unlockAudio completed.`);
+    // await this.unlockAudio(); // Old awaited call
+    this.unlockAudio(); // Make NON-AWAITED (fire and forget)
+    console.log(
+      `[AudioEngineService.play] unlockAudio attempt initiated (not awaited).`,
+    );
     this.isPlaying = true;
     console.log(
       `[AudioEngineService.play] SET internal this.isPlaying = true.`,

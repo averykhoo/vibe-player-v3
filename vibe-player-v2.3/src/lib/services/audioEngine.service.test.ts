@@ -154,6 +154,54 @@ describe("AudioEngineService (Robust Loop)", () => {
     // (engine as any).worker = mockWorker; // Removed redundant assignment
   });
 
+  describe("unlockAudio", () => {
+    it("should call resume() when context is suspended and update store on success", async () => {
+      mockAudioContext.state = "suspended";
+      // Update mockAudioContext.state to 'running' when resume is called and resolves
+      mockAudioContext.resume = vi.fn().mockImplementation(() => {
+        mockAudioContext.state = "running";
+        return Promise.resolve(undefined);
+      });
+      playerStore.update(s => ({ ...s, audioContextResumed: false, error: "some previous error" })); // Also test that error is cleared
+
+      await engine.unlockAudio();
+
+      expect(mockAudioContext.resume).toHaveBeenCalledTimes(1);
+      expect(get(playerStore).audioContextResumed).toBe(true);
+      expect(get(playerStore).error).toBeNull();
+    });
+
+    it("should update store with error and audioContextResumed: false if resume() fails", async () => {
+      mockAudioContext.state = "suspended";
+      const resumeError = new Error("Resume failed");
+      mockAudioContext.resume = vi.fn().mockRejectedValue(resumeError);
+      playerStore.update((s) => ({
+        ...s,
+        audioContextResumed: true,
+        error: null,
+      }));
+
+      await engine.unlockAudio();
+
+      expect(mockAudioContext.resume).toHaveBeenCalledTimes(1);
+      expect(get(playerStore).audioContextResumed).toBe(false);
+      expect(get(playerStore).error).toBe(
+        `AudioContext resume failed: ${resumeError.message}`,
+      );
+    });
+
+    it("should not call resume() if context is already running, but still update store", async () => {
+      mockAudioContext.state = "running";
+      mockAudioContext.resume = vi.fn();
+      playerStore.update((s) => ({ ...s, audioContextResumed: false }));
+
+      await engine.unlockAudio();
+
+      expect(mockAudioContext.resume).not.toHaveBeenCalled();
+      expect(get(playerStore).audioContextResumed).toBe(true);
+    });
+  });
+
   describe("seek", () => {
     it("should update offsets, stores, and reset worker when called while not playing", () => {
       const seekTime = 3.0;
@@ -225,15 +273,62 @@ describe("AudioEngineService (Robust Loop)", () => {
     });
   });
 
-  it("play() should kick off the processing loop by calling a single iteration", async () => {
-    const iterationSpy = vi
-      .spyOn(engine as any, "_performSingleProcessAndPlayIteration")
-      .mockImplementation(() => {});
+  describe("play", () => {
+    let unlockAudioSpy: SpyInstance;
+    let iterationSpy: SpyInstance;
 
-    await engine.play();
+    beforeEach(() => {
+      // Ensure isPlaying is false and other relevant states are set before each play test
+      (engine as any).isPlaying = false;
+      playerStore.update((s) => ({ ...s, isPlaying: false, error: null }));
+      (engine as any).originalBuffer = mockAudioBuffer; // Ensure buffer is available
+      (engine as any).isWorkerReady = true; // Ensure worker is ready
 
-    expect(get(playerStore).isPlaying).toBe(true);
-    expect(iterationSpy).toHaveBeenCalledTimes(1);
+      unlockAudioSpy = vi
+        .spyOn(engine as any, "unlockAudio")
+        .mockImplementation(() => Promise.resolve());
+      iterationSpy = vi
+        .spyOn(engine as any, "_performSingleProcessAndPlayIteration")
+        .mockImplementation(() => {});
+    });
+
+    it("should call unlockAudio (non-awaited), set isPlaying, update store, and start iteration", () => {
+      // No await on engine.play() as unlockAudio is not awaited internally by play
+      engine.play();
+
+      expect(unlockAudioSpy).toHaveBeenCalledTimes(1);
+      expect((engine as any).isPlaying).toBe(true);
+      expect(get(playerStore).isPlaying).toBe(true);
+      expect(iterationSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not proceed if already playing", () => {
+      (engine as any).isPlaying = true; // Simulate already playing
+      playerStore.update((s) => ({ ...s, isPlaying: true }));
+
+      engine.play();
+
+      expect(unlockAudioSpy).not.toHaveBeenCalled();
+      expect(iterationSpy).not.toHaveBeenCalled();
+    });
+
+    it("should not proceed if originalBuffer is null", () => {
+      (engine as any).originalBuffer = null;
+
+      engine.play();
+
+      expect(unlockAudioSpy).not.toHaveBeenCalled();
+      expect(iterationSpy).not.toHaveBeenCalled();
+    });
+
+    it("should not proceed if worker is not ready", () => {
+      (engine as any).isWorkerReady = false;
+
+      engine.play();
+
+      expect(unlockAudioSpy).not.toHaveBeenCalled();
+      expect(iterationSpy).not.toHaveBeenCalled();
+    });
   });
 
   it("pause() should set the isPlaying flag to false", () => {

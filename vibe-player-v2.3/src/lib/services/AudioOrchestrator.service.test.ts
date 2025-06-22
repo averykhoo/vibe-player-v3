@@ -90,6 +90,7 @@ describe("AudioOrchestratorService", () => {
     vi.mocked(audioEngine.decodeAudioData).mockReset();
     vi.mocked(audioEngine.initializeWorker).mockReset();
     vi.mocked(audioEngine.stop).mockReset();
+    vi.mocked(audioEngine.unlockAudio).mockReset(); // Added for the new test
     vi.mocked(spectrogramService.initialize).mockReset();
 
     orchestrator = AudioOrchestratorService;
@@ -193,5 +194,37 @@ describe("AudioOrchestratorService", () => {
 
     expect(audioEngine.seek).toHaveBeenCalledTimes(1);
     expect(audioEngine.seek).toHaveBeenCalledWith(seekTime);
+  });
+
+  it("should call audioEngine.unlockAudio (non-awaited) during loadFileAndAnalyze", async () => {
+    vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
+    vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined); // Ensure other critical parts resolve
+    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
+    vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
+    // Spy on unlockAudio but let it resolve normally (as it's fire-and-forget)
+    const unlockAudioSpy = vi
+      .mocked(audioEngine.unlockAudio)
+      .mockImplementation(() => Promise.resolve());
+
+    // We don't await loadFileAndAnalyze fully if we are testing a non-awaited call within it,
+    // but we need to ensure the call to unlockAudio happens.
+    // The nature of not awaiting means we can't easily sequence it with await tick()
+    // against the *end* of loadFileAndAnalyze if unlockAudio itself is async.
+    // However, since unlockAudio is called early in stage 1, we can check it directly.
+
+    orchestrator.loadFileAndAnalyze(mockFile, undefined); // Fire off the method
+
+    // Since unlockAudio is called synchronously (the promise it returns is not awaited),
+    // it should have been called by the time loadFileAndAnalyze returns (or shortly after).
+    // Vitest's mock tracking should capture this.
+    // We might need a very short tick if there's any microtask queueing before it.
+    await tick(); // Allow any immediate microtasks to clear
+
+    expect(unlockAudioSpy).toHaveBeenCalledTimes(1);
+
+    // To be absolutely sure the test doesn't hang if loadFileAndAnalyze has an issue,
+    // we can await it here, after the specific check for unlockAudio.
+    await vi.mocked(audioEngine.decodeAudioData).mock.results[0]?.value; // wait for decode
+    await vi.mocked(audioEngine.initializeWorker).mock.results[0]?.value; // wait for worker init
   });
 });
