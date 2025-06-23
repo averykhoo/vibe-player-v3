@@ -15,21 +15,29 @@ export function createWaveformData(
 ): number[][] {
   const numChannels = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
-  const downsampledData: number[][] = Array.from({ length: numChannels }, () =>
-    new Array(targetPoints).fill(0),
-  );
+
+  // If the buffer is completely empty (0 samples), return arrays of zeros.
+  if (numSamples === 0) {
+    return Array.from({ length: numChannels }, () =>
+      new Array(targetPoints).fill(0),
+    );
+  }
 
   // The number of original samples that will be consolidated into a single downsampled point.
   const bucketSize = Math.floor(numSamples / targetPoints);
 
   if (bucketSize < 1) {
     console.warn(
-      "Audio file is shorter than target waveform points. Full resolution will be used.",
+      "Audio file is shorter than target waveform points. Cannot downsample. Returning empty array.",
     );
-    // In this case, we can't downsample. We could implement a more complex resampling,
-    // but for now, we'll just return an empty array to prevent errors.
+    // This handles the case where 0 < numSamples < targetPoints
     return [[]];
   }
+
+  // This initialization was moved down, as it's not needed if numSamples === 0 or bucketSize < 1
+  const downsampledData: number[][] = Array.from({ length: numChannels }, () =>
+    new Array(targetPoints).fill(0),
+  );
 
   // Process each channel separately.
   for (let c = 0; c < numChannels; c++) {
@@ -42,7 +50,8 @@ export function createWaveformData(
       let maxAmplitude = 0;
 
       // Find the peak amplitude within the current bucket.
-      for (let j = bucketStart; j < bucketEnd; j++) {
+      // Ensure j does not go out of bounds for channelData
+      for (let j = bucketStart; j < Math.min(bucketEnd, numSamples); j++) {
         const sample = Math.abs(channelData[j]);
         if (sample > maxAmplitude) {
           maxAmplitude = sample;

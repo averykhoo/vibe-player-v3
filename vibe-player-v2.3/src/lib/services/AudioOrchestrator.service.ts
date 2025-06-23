@@ -102,7 +102,9 @@ export class AudioOrchestrator {
     console.log(
       `[AO-LOG] loadFileAndAnalyze: Entered. File: ${file?.name}, Received initialState:`,
       // Use helper to log initial state without large data
-      initialState ? JSON.stringify(prepareStateForLog(initialState)) : "undefined",
+      initialState
+        ? JSON.stringify(prepareStateForLog(initialState))
+        : "undefined",
     );
 
     // Prevent processing if already busy with another file
@@ -197,7 +199,8 @@ export class AudioOrchestrator {
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 2 - Generating waveform data...",
       );
-      const waveformData = createWaveformData( // Generate downsampled waveform data
+      const waveformData = createWaveformData(
+        // Generate downsampled waveform data
         audioBuffer,
         VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH, // Target number of points for the waveform
       );
@@ -213,7 +216,7 @@ export class AudioOrchestrator {
       // Promise.allSettled allows all initializations to attempt, even if some fail.
       const initResults = await Promise.allSettled([
         audioEngine.initializeWorker(audioBuffer), // Initialize Rubberband worker
-        dtmfService.initialize(16000),            // Initialize DTMF worker (16kHz standard)
+        dtmfService.initialize(16000), // Initialize DTMF worker (16kHz standard)
         spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }), // Initialize Spectrogram worker
       ]);
       console.log(
@@ -221,7 +224,8 @@ export class AudioOrchestrator {
       );
 
       // Check results of service initializations
-      if (initResults[0].status === "rejected") { // AudioEngine is critical
+      if (initResults[0].status === "rejected") {
+        // AudioEngine is critical
         console.error(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - CRITICAL FAILURE: AudioEngine worker could not initialize.",
           initResults[0].reason,
@@ -233,7 +237,8 @@ export class AudioOrchestrator {
         );
       }
 
-      if (initResults[1].status === "rejected") { // DTMF is non-critical for basic playback
+      if (initResults[1].status === "rejected") {
+        // DTMF is non-critical for basic playback
         console.warn(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - NON-CRITICAL FAILURE: DTMF service could not initialize.",
           initResults[1].reason,
@@ -244,7 +249,8 @@ export class AudioOrchestrator {
         );
       }
 
-      if (initResults[2].status === "rejected") { // Spectrogram is non-critical
+      if (initResults[2].status === "rejected") {
+        // Spectrogram is non-critical
         console.warn(
           "[AO-LOG] loadFileAndAnalyze: STAGE 3 - NON-CRITICAL FAILURE: Spectrogram service could not initialize.",
           initResults[2].reason,
@@ -336,13 +342,15 @@ export class AudioOrchestrator {
         "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Starting background analysis tasks.",
       );
       const analysisPromises = [];
-      if (initResults[1].status === "fulfilled") { // If DTMF service initialized
+      if (initResults[1].status === "fulfilled") {
+        // If DTMF service initialized
         analysisPromises.push(dtmfService.process(audioBuffer));
         console.log(
           "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Queued DTMF process.",
         );
       }
-      if (initResults[2].status === "fulfilled") { // If Spectrogram service initialized
+      if (initResults[2].status === "fulfilled") {
+        // If Spectrogram service initialized
         analysisPromises.push(
           // Process only the first channel for spectrogram for simplicity
           spectrogramService.process(audioBuffer.getChannelData(0)),
@@ -356,8 +364,8 @@ export class AudioOrchestrator {
       console.log(
         "[AO-LOG] loadFileAndAnalyze: STAGE 5 - Background analysis tasks dispatched.",
       );
-
-    } catch (e: any) { // Catch any error from the stages above
+    } catch (e: any) {
+      // Catch any error from the stages above
       console.error(
         "[AO-LOG] loadFileAndAnalyze: Error during main try block.",
         e,
@@ -460,7 +468,8 @@ export class AudioOrchestrator {
    */
   public setupUrlSerialization(): void {
     console.log("[AO-LOG] setupUrlSerialization: Entered.");
-    if (typeof window === "undefined") { // Guard for server-side rendering environments
+    if (typeof window === "undefined") {
+      // Guard for server-side rendering environments
       console.log("[AO-LOG] setupUrlSerialization: Not in browser, returning.");
       return;
     }
@@ -496,13 +505,14 @@ export class AudioOrchestrator {
    */
   public updateUrlFromState = (): void => {
     console.log(`[AO-LOG] updateUrlFromState: Entered.`);
-    if (typeof window === "undefined") { // Guard for SSR
+    if (typeof window === "undefined") {
+      // Guard for SSR
       console.log(`[AO-LOG] updateUrlFromState: Not in browser, returning.`);
       return;
     }
 
     const pStore = get(playerStore); // Get current player state
-    const tStore = get(timeStore);   // Get current time from dedicated timeStore
+    const tStore = get(timeStore); // Get current time from dedicated timeStore
     const params: Record<string, string> = {}; // Initialize empty params object
 
     console.log(
@@ -532,7 +542,9 @@ export class AudioOrchestrator {
 
     // Serialize current time if it's meaningful (not at the very start or end, if those are default implicit states)
     if (tStore > 0.1 && (!pStore.duration || tStore < pStore.duration - 0.1)) {
-      params[URL_HASH_KEYS.TIME] = tStore.toFixed(UI_CONSTANTS.URL_TIME_PRECISION);
+      params[URL_HASH_KEYS.TIME] = tStore.toFixed(
+        UI_CONSTANTS.URL_TIME_PRECISION,
+      );
     }
 
     // Example for VAD parameters (currently not loaded from URL in +page.ts but shows how)
