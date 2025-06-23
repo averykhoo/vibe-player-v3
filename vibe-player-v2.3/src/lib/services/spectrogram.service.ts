@@ -126,7 +126,7 @@ class SpectrogramService {
       );
       this.pendingRequests.clear();
       this.isInitialized = false;
-      throw e; // <-- ADD THIS LINE
+      throw err; // <-- ADD THIS LINE
     };
 
     let fftScriptText: string;
