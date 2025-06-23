@@ -211,4 +211,40 @@ test.describe("Vibe Player V2 E2E", () => {
       ).toHaveText("Pitch: -3.0 semitones", { timeout: 2000 });
     });
   });
+
+  test("should correctly reset state when loading a second file", async ({
+    page,
+  }) => {
+    // 1. Load the first file (non-DTMF)
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+    await expect(playerPage.fileNameDisplay).toHaveText("C.Noisy_Voice.wav");
+
+    // 2. Play it for a moment to ensure state is active
+    await playerPage.playButton.click();
+    await expect(playerPage.timeDisplay).not.toHaveText(/^0:00 \//, {
+      timeout: 5000,
+    });
+    // Assert that the first file has NO DTMF tones
+    await expect(playerPage.dtmfDisplay).not.toBeVisible();
+
+    // 3. Load the second file (DTMF)
+    await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);
+
+    // 4. Assert that the UI is ready for playback with the *new* file's info
+    await playerPage.expectControlsToBeReadyForPlayback();
+
+    // 5. Assert that state has been fully reset and updated for the new file
+    // Assert new file name is displayed
+    await expect(playerPage.fileNameDisplay).toHaveText(
+      "dtmf-123A456B789C(star)0(hex)D.mp3",
+    );
+    // Assert time has reset
+    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ 0:02/);
+    // Assert DTMF tones from the *second* file are now visible
+    await expect(playerPage.dtmfDisplay).toBeVisible({ timeout: 15000 });
+    await expect(playerPage.dtmfDisplay).toHaveText(
+      "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D",
+    );
+  });
 });
