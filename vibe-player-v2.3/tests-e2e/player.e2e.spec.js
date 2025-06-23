@@ -212,6 +212,83 @@ test.describe("Vibe Player V2 E2E", () => {
     });
   });
 
+  test("should enable VAD controls after analysis is complete", async () => {
+    // This test verifies that background VAD analysis runs and enables its UI controls.
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+
+    // 1. VAD sliders should be disabled immediately after file load.
+    await expect(playerPage.vadPositiveSliderInput).toBeDisabled();
+
+    // 2. Wait for the background VAD analysis to complete, which enables the slider.
+    //    A long timeout is required because this is a background task.
+    await expect(
+      playerPage.vadPositiveSliderInput,
+      "VAD positive slider did not become enabled",
+    ).toBeEnabled({ timeout: 20000 });
+
+    // 3. The other VAD slider should also be enabled.
+    await expect(
+      playerPage.vadNegativeSliderInput,
+      "VAD negative slider did not become enabled",
+    ).toBeEnabled();
+  });
+
+  test("should stop playback and reset time to zero", async () => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+
+    // 1. Start playback.
+    await playerPage.playButton.click();
+
+    // 2. Confirm playback has started by waiting for time to advance.
+    await expect(
+      playerPage.timeDisplay,
+      "Time did not advance after play was clicked",
+    ).not.toHaveText(/^0:00 \//, { timeout: 5000 });
+
+    // 3. Click the stop button.
+    await playerPage.stopButton.click();
+
+    // 4. Assert UI has returned to a stopped state.
+    await expect(
+      await playerPage.getPlayButtonText(),
+      "Play button did not revert to 'Play' after stop",
+    ).toMatch(/Play/i);
+    await expect(
+      playerPage.timeDisplay,
+      "Time display did not reset to zero after stop",
+    ).toHaveText(/^0:00 \//);
+  });
+
+  test("should add and remove the time parameter from the URL correctly", async ({
+    page,
+  }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+
+    // 1. Play and then pause to trigger a URL update with the time.
+    await playerPage.playButton.click();
+    await page.waitForTimeout(1000); // Let playback advance for a second.
+    await playerPage.playButton.click(); // Pause the player.
+
+    // 2. Assert that the `time` parameter now exists in the URL.
+    //    A timeout is needed for the debounced URL update to fire.
+    await expect(
+      page,
+      "URL did not update with 'time' parameter on pause",
+    ).toHaveURL(/time=\d+\.\d+/, { timeout: 2000 });
+
+    // 3. Click the stop button, which should reset time and clear the parameter.
+    await playerPage.stopButton.click();
+
+    // 4. Assert that the `time` parameter has been removed from the URL.
+    await expect(
+      page,
+      "URL did not remove 'time' parameter on stop",
+    ).not.toHaveURL(/time=/, { timeout: 2000 });
+  });
+
   test("should correctly reset state when loading a second file", async ({
     page,
   }) => {
