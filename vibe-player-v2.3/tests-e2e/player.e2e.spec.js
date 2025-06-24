@@ -320,7 +320,7 @@ test.describe("Vibe Player V2 E2E", () => {
       "dtmf-123A456B789C(star)0(hex)D.mp3",
     );
     // Assert time has reset
-    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ 0:02/);
+    await expect(playerPage.timeDisplay).toHaveText(/0:00 \/ 0:10/);
     // Assert DTMF tones from the *second* file are now visible
     await expect(playerPage.dtmfDisplay).toBeVisible({ timeout: 15000 });
     await expect(playerPage.dtmfDisplay).toHaveText(
