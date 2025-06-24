@@ -256,7 +256,7 @@ test.describe("Vibe Player V2 E2E", () => {
     test("should auto-load and seek from URL url and time parameters", async ({
       page,
     }) => {
-      const seekTime = 3.5;
+      const seekTime = 1.2345;
       // 1. Navigate directly to a URL with both 'url' and 'time' parameters.
       const fullUrl = `${playerPage.devServerUrl}?url=${encodeURIComponent(TEST_AUDIO_URL)}&time=${seekTime}`;
       await page.goto(fullUrl);
