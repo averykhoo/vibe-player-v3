@@ -3,35 +3,82 @@
     import { createEventDispatcher } from 'svelte';
     import { statusStore } from '$lib/stores/status.store';
 
-    const dispatch = createEventDispatcher<{ load: { file: File } }>();
-    let selectedFileDisplay: { name: string; size: number } | null = null;
+    // Dispatcher can now handle two types of load events
+    const dispatch = createEventDispatcher<{
+        load: { file: File };
+        'load-url': { url: string };
+    }>();
 
-    async function handleFileSelect(event: Event) {
+    let selectedFileDisplay: { name: string; size: number } | null = null;
+    let urlInputValue = ''; // Local state for the URL input field
+
+    // --- Handler for the traditional file input ---
+    function handleFileSelect(event: Event) {
         const input = event.target as HTMLInputElement;
         if (input.files?.[0]) {
             const file = input.files[0];
             selectedFileDisplay = { name: file.name, size: file.size };
             dispatch('load', { file });
-            input.value = '';
+            input.value = ''; // Reset input
+            urlInputValue = ''; // Clear URL input if a file is chosen
+        }
+    }
+
+    // --- Handler for the new URL load button ---
+    function handleUrlLoad() {
+        if (urlInputValue.trim()) {
+            selectedFileDisplay = { name: urlInputValue, size: 0 };
+            dispatch('load-url', { url: urlInputValue.trim() });
         }
     }
 </script>
 
-<!-- The HTML remains largely the same, just ensure it uses `handleFileSelect` -->
-<div class="card p-4 space-y-2">
-    <label for="fileInput" class="h3 cursor-pointer hover:text-primary-500 transition-colors">Load Audio File</label>
-    <input
-        type="file"
-        id="fileInput"
-        class="file-input file-input-bordered file-input-primary w-full max-w-xs"
-        on:change={handleFileSelect}
-        accept="audio/*"
-        disabled={$statusStore.isLoading}
-    />
+<div class="card p-4 space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+        <!-- File Picker -->
+        <div class="space-y-2">
+            <label for="fileInput" class="h3 cursor-pointer hover:text-primary-500 transition-colors">Load from File</label>
+            <input
+                type="file"
+                id="fileInput"
+                aria-label="Load Audio File"
+                class="file-input file-input-bordered file-input-primary w-full"
+                on:change={handleFileSelect}
+                accept="audio/*"
+                disabled={$statusStore.isLoading}
+            />
+        </div>
 
+        <!-- URL Input -->
+        <div class="space-y-2">
+            <label for="urlInput" class="h3">Load from URL</label>
+            <div class="flex gap-2">
+                <input
+                    type="text"
+                    id="urlInput"
+                    bind:value={urlInputValue}
+                    placeholder="https://example.com/audio.mp3"
+                    class="input input-bordered w-full"
+                    disabled={$statusStore.isLoading}
+                    aria-label="Audio URL"
+                    on:keydown={(e) => e.key === 'Enter' && handleUrlLoad()}
+                />
+                <button
+                    class="btn btn-primary"
+                    on:click={handleUrlLoad}
+                    disabled={$statusStore.isLoading || !urlInputValue.trim()}>Load</button
+                >
+            </div>
+        </div>
+    </div>
+
+    <!-- Status and Error Display Logic -->
     {#if selectedFileDisplay && !$statusStore.isLoading && $statusStore.type !== 'error'}
         <p class="text-sm text-gray-600 dark:text-gray-400">
-            Selected: {selectedFileDisplay.name} ({(selectedFileDisplay.size / 1024 / 1024).toFixed(2)} MB)
+            Selected: {selectedFileDisplay.name}
+            {#if selectedFileDisplay.size > 0}
+                ({(selectedFileDisplay.size / 1024 / 1024).toFixed(2)} MB)
+            {/if}
         </p>
     {/if}
 

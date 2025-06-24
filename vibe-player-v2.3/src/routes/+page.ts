@@ -1,5 +1,4 @@
 // vibe-player-v2.3/src/routes/+page.ts
-// src/routes/+page.ts
 import { URL_HASH_KEYS } from "$lib/utils/constants";
 import type { PageLoad } from "./$types";
 
@@ -24,11 +23,15 @@ export const load: PageLoad = ({ url }) => {
     currentTime: url.searchParams.has(URL_HASH_KEYS.TIME)
       ? parseFloat(url.searchParams.get(URL_HASH_KEYS.TIME)!)
       : undefined,
+    // --- ADD THIS ---
+    sourceUrl: url.searchParams.get(URL_HASH_KEYS.AUDIO_URL) ?? undefined,
   };
 
   // Filter out undefined values
   const filteredData = Object.fromEntries(
-    Object.entries(initialPlayerData).filter(([_, v]) => v !== undefined),
+    Object.entries(initialPlayerData).filter(
+      ([_, v]) => v !== undefined && v !== null,
+    ),
   );
 
   console.log("[+page.ts load] Parsed initial player data:", filteredData);

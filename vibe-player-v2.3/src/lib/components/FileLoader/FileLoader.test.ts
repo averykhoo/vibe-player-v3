@@ -64,9 +64,9 @@ describe("FileLoader.svelte", () => {
 
   it("renders the file input and label", () => {
     render(FileLoader);
-    expect(screen.getByText("Load Audio File")).toBeInTheDocument();
+    expect(screen.getByText("Load from File")).toBeInTheDocument();
     const fileInput = screen.getByLabelText(
-      "Load Audio File",
+      "Load from File",
     ) as HTMLInputElement;
     expect(fileInput.type).toBe("file");
   });

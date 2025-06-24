@@ -130,11 +130,11 @@ describe("AudioOrchestratorService", () => {
   it("should not proceed if isBusy is true", async () => {
     (orchestrator as any).isBusy = true;
 
-    await orchestrator.loadFileAndAnalyze(mockFile, undefined);
+    await orchestrator.loadFromFile(mockFile, undefined);
 
     // --- FIX: Update assertion to match new log message ---
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      "[AO-LOG] loadFileAndAnalyze: Orchestrator is busy, skipping file load.",
+      "[AO-LOG] Orchestrator is busy, skipping file load.",
     );
     // --- END OF FIX ---
 
@@ -150,7 +150,7 @@ describe("AudioOrchestratorService", () => {
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
 
-    await orchestrator.loadFileAndAnalyze(mockFile, undefined);
+    await orchestrator.loadFromFile(mockFile, undefined);
     await tick(); // --- FIX: Wait for async error handling ---
 
     const finalStatus = get(statusStore);
@@ -170,14 +170,14 @@ describe("AudioOrchestratorService", () => {
       new Error("Spectrogram failed"),
     );
 
-    await orchestrator.loadFileAndAnalyze(mockFile, undefined);
+    await orchestrator.loadFromFile(mockFile, undefined);
     await tick();
 
     const finalPlayerState = get(playerStore);
     expect(finalPlayerState.isPlayable).toBe(true); // Should still be playable
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      "[AO-LOG] loadFileAndAnalyze: STAGE 3 - NON-CRITICAL FAILURE: Spectrogram service could not initialize.",
+      `A non-critical analysis service failed to initialize.`,
       expect.any(Error),
     );
   });
@@ -196,7 +196,7 @@ describe("AudioOrchestratorService", () => {
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
 
-    await orchestrator.loadFileAndAnalyze(mockFile, initialState);
+    await orchestrator.loadFromFile(mockFile, initialState);
     await tick(); // Ensure all promises resolve and state updates complete
 
     // Assert against the store's value directly
@@ -219,7 +219,7 @@ describe("AudioOrchestratorService", () => {
       .mocked(audioEngine.unlockAudio)
       .mockResolvedValue(undefined); // Mock it to resolve immediately
 
-    await orchestrator.loadFileAndAnalyze(mockFile, undefined);
+    await orchestrator.loadFromFile(mockFile, undefined);
     await tick(); // Allow any immediate microtasks to clear
 
     expect(unlockAudioSpy).toHaveBeenCalledTimes(1);

@@ -20,37 +20,31 @@
     import { statusStore } from '$lib/stores/status.store';
 
     let orchestrator: AudioOrchestrator;
+    let isDragOver = false; // For drag-and-drop UI feedback
 
-    // --- REFACTORED SEEK LOGIC (v2.0 Pattern) ---
-    let seekTime = $timeStore; // Bound to the slider's visual position.
+    // --- SEEK LOGIC (UNCHANGED) ---
+    let seekTime = $timeStore;
     let isSeeking = false;
     let wasPlayingBeforeSeek = false;
-
-    // Subscribe to the timeStore to update the slider when not actively seeking.
     timeStore.subscribe(value => {
-        if (!isSeeking) {
-            seekTime = value;
-        }
+        if (!isSeeking) seekTime = value;
     });
-
     function handleSeekStart() {
         console.log(`[+page.svelte handleSeekStart] Fired. Current $playerStore.isPlayable: ${get(playerStore).isPlayable}`);
         if (!get(playerStore).isPlayable) return;
-        isSeeking = true;
-        wasPlayingBeforeSeek = get(playerStore).isPlaying;
+		isSeeking = true;
+		wasPlayingBeforeSeek = get(playerStore).isPlaying;
         console.log(`[+page.svelte handleSeekStart] Set isSeeking=true, wasPlayingBeforeSeek=${wasPlayingBeforeSeek}`);
-        if (wasPlayingBeforeSeek) {
+		if (wasPlayingBeforeSeek) {
             console.log(`[+page.svelte handleSeekStart] Was playing. Calling audioEngine.pause().`);
-            audioEngine.pause();
-        }
-    }
-
+			audioEngine.pause();
+		}
+	}
     function handleSeekInput() {
         if (!isSeeking) return; // Only log if actively seeking
         console.log(`[+page.svelte handleSeekInput] Fired. Current local seekTime: ${seekTime.toFixed(3)}. Updating timeStore.`);
-        timeStore.set(seekTime);
-    }
-
+		timeStore.set(seekTime);
+	}
     function handleSeekEnd() {
         console.log(`[+page.svelte handleSeekEnd] Fired. wasPlayingBeforeSeek: ${wasPlayingBeforeSeek}, isSeeking (before reset): ${isSeeking}, local seekTime: ${seekTime.toFixed(3)}`);
         if (!get(playerStore).isPlayable) {
@@ -58,21 +52,36 @@
             console.log('[+page.svelte handleSeekEnd] Player not playable, exiting.');
             return;
         }
-
         console.log(`[+page.svelte handleSeekEnd] Calling audioEngine.seek(${seekTime.toFixed(3)}).`);
-        audioEngine.seek(seekTime);
-
+		audioEngine.seek(seekTime);
         isSeeking = false; // Reset seeking flag FIRST.
         console.log(`[+page.svelte handleSeekEnd] Set isSeeking=false.`);
-
-        if (wasPlayingBeforeSeek) {
+		if (wasPlayingBeforeSeek) {
             console.log('[+page.svelte handleSeekEnd] Condition wasPlayingBeforeSeek is true. Calling audioEngine.play().');
-            audioEngine.play();
-        }
+			audioEngine.play();
+		}
         wasPlayingBeforeSeek = false; // Reset flag
         console.log(`[+page.svelte handleSeekEnd] Set wasPlayingBeforeSeek=false. Method complete.`);
+	}
+    // --- END SEEK LOGIC ---
+
+    // --- DRAG-AND-DROP HANDLERS ---
+    function handleDragOver(e: DragEvent) {
+        e.preventDefault();
+        isDragOver = true;
     }
-    // --- END: REFACTORED SEEK LOGIC ---
+    function handleDragLeave(e: DragEvent) {
+        e.preventDefault();
+        isDragOver = false;
+    }
+    function handleDrop(e: DragEvent) {
+        e.preventDefault();
+        isDragOver = false;
+        if (e.dataTransfer?.files.length) {
+            const file = e.dataTransfer.files[0];
+            orchestrator.loadFromFile(file, data.player);
+        }
+    }
 
     onMount(() => {
         orchestrator = AudioOrchestrator.getInstance();
@@ -84,6 +93,11 @@
             }
         });
 
+        // --- AUTO-LOAD FROM URL ---
+        if (data.player?.sourceUrl) {
+            orchestrator.loadFromUrl(data.player.sourceUrl, data.player);
+        }
+
         return () => {
             unsubscribeStatus();
             console.log("Main page unmounted.");
@@ -93,14 +107,30 @@
 
 <Toaster richColors position="top-right" />
 
-<div class="container mx-auto p-4 max-w-4xl space-y-8">
-    <header class="mb-6 text-center">
+<!-- Main container with new drag-and-drop event handlers -->
+<div
+    role="region"
+    aria-label="Drop zone for audio files"
+    class="container mx-auto p-4 max-w-4xl space-y-8 transition-all"
+    class:outline-dashed={isDragOver}
+    class:outline-2={isDragOver}
+    class:outline-offset-8={isDragOver}
+    class:outline-primary-500={isDragOver}
+    on:dragover={handleDragOver}
+    on:dragleave={handleDragLeave}
+    on:drop={handleDrop}
+>
+    <header class="mb-6 text-center pointer-events-none"> <!-- pointer-events-none to prevent interfering with drop -->
         <h1 class="text-4xl font-bold text-primary-600 dark:text-primary-400" data-testid="app-bar-title">Vibe Player</h1>
         <p class="text-gray-600 dark:text-gray-400">Refactored Audio Analysis & Playback</p>
     </header>
 
     <section id="file-loader" class="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <FileLoader on:load={(e) => orchestrator.loadFileAndAnalyze(e.detail.file, data.player)} />
+        <!-- New event handlers for load and load-url -->
+        <FileLoader
+            on:load={(e) => orchestrator.loadFromFile(e.detail.file, data.player)}
+            on:load-url={(e) => orchestrator.loadFromUrl(e.detail.url, data.player)}
+        />
     </section>
 
     <section id="player-main" class="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg space-y-4">

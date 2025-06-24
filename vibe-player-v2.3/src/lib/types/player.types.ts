@@ -9,6 +9,7 @@ export interface PlayerState {
   speed: number;
   pitchShift: number;
   gain: number;
+  sourceUrl?: string | null; // <-- ADD THIS
   waveformData?: number[][];
   error: string | null;
   audioBuffer?: AudioBuffer;
