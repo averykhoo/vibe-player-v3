@@ -28,6 +28,7 @@ class AudioEngineService {
   private isStopping = false;
 
   private sourcePlaybackOffset = 0;
+  private animationFrameId: number | null = null;
 
   // --- START: ADDED FOR DIAGNOSTICS ---
   // private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -250,7 +251,13 @@ class AudioEngineService {
     // }, 250);
     // --- END: ADDED FOR DIAGNOSTICS ---
 
-    this._performSingleProcessAndPlayIteration();
+    // --- START OF FIX ---
+    // Start the new requestAnimationFrame loop instead of a single iteration.
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+    }
+    this._playbackLoop();
+    // --- END OF FIX ---
   }
 
   public pause(): void {
@@ -263,6 +270,14 @@ class AudioEngineService {
       );
       return;
     }
+
+    // --- START OF FIX ---
+    // Cancel the animation frame to stop the loop.
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    // --- END OF FIX ---
 
     this.isPlaying = false;
     console.log(
@@ -384,6 +399,19 @@ class AudioEngineService {
       `[AudioEngineService] setGain() updated playerStore.gain to: ${newGain}`,
     );
   }
+
+  private _playbackLoop = (): void => {
+    if (!this.isPlaying) {
+      this.animationFrameId = null;
+      return; // Stop the loop if not playing
+    }
+
+    // Continuously process chunks. The iteration function handles advancing the offset.
+    this._performSingleProcessAndPlayIteration();
+
+    // Schedule the next frame.
+    this.animationFrameId = requestAnimationFrame(this._playbackLoop);
+  };
 
   private _getAudioContext(): AudioContext {
     if (!this.audioContext || this.audioContext.state === "closed") {
@@ -519,7 +547,10 @@ class AudioEngineService {
           this.scheduleChunkPlayback(result.outputBuffer);
         }
         timeStore.set(this.sourcePlaybackOffset);
-        this._performSingleProcessAndPlayIteration();
+        // --- START OF FIX ---
+        // REMOVE the following line. The rAF loop handles continuing.
+        // this._performSingleProcessAndPlayIteration();
+        // --- END OF FIX ---
         break;
       case RB_WORKER_MSG_TYPE.ERROR:
         const workerErrorMsg =
