@@ -40,28 +40,31 @@ jobs:
         working-directory: ./vibe-player-v2.3
         run: npm run build
 
-      - name: Restore Playwright cache
+      - name: Restore Playwright and OS Dependencies from Cache
         id: cache-playwright-restore
         uses: actions/cache/restore@v4
         with:
-          path: /home/runner/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
+          path: |
+            /var/cache/apt/archives
+            /home/runner/.cache/ms-playwright
+          key: deps-${{ runner.os }}-playwright-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
 
-      - name: Install Playwright and OS dependencies
+      - name: Install Playwright Browsers and OS Dependencies
+        # This step runs if the cache was not found.
+        # `--with-deps` will trigger `apt-get` which will now download necessary libs.
         if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
         working-directory: ./vibe-player-v2.3
         run: npx playwright install --with-deps
 
-      - name: Save Playwright cache
-        if: always() && steps.cache-playwright-restore.outputs.cache-hit != 'true'
+      - name: Save Playwright and OS Dependencies to Cache
+        # This step runs only if the cache was not found during restore.
+        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          # --- START OF FIX ---
-          # The key used for saving MUST be the same string as the key used for restoring.
-          # Do not use the `outputs.cache-primary-key` as it's empty on a miss.
-          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
-          # --- END OF FIX ---
-          path: /home/runner/.cache/ms-playwright
+          path: |
+            /var/cache/apt/archives
+            /home/runner/.cache/ms-playwright
+          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key || format('deps-{0}-playwright-{1}', runner.os, hashFiles('vibe-player-v2.3/package-lock.json')) }}
 
       - name: Run Playwright E2E tests
         working-directory: ./vibe-player-v2.3
@@ -72,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: vibe-player-v2.3/playwright-report/ # Corrected path to be relative to workspace root
+          path: vibe-player-v2.3/playwright-report/
           retention-days: 7
 
       - name: Upload Vibe Player Build Artifact
