@@ -212,6 +212,68 @@ test.describe("Vibe Player V2 E2E", () => {
     });
   });
 
+  // --- START: ADD THIS NEW TEST BLOCK ---
+  test.describe("URL Loading Features", () => {
+    // This is the known URL to a test file in the repository's static assets.
+    // We use a real, fetchable URL to simulate a user providing a link.
+    const TEST_AUDIO_URL = `http://localhost:4173/test-audio/449496_9289636-lq.mp3`;
+
+    test("should load an audio file from the URL input field", async ({
+      page,
+    }) => {
+      // 1. Fill the URL input field with the link to the test audio.
+      await playerPage.urlInput.fill(TEST_AUDIO_URL);
+
+      // 2. Click the "Load" button next to the URL input.
+      await playerPage.urlLoadButton.click();
+
+      // 3. Use the existing helper to wait for the player to become ready.
+      await playerPage.expectControlsToBeReadyForPlayback();
+
+      // 4. Assert that the file name display shows the URL, confirming a successful load.
+      await expect(playerPage.fileNameDisplay).toHaveText(TEST_AUDIO_URL);
+
+      // 5. Assert that the URL was serialized to the page's query params.
+      await expect(page).toHaveURL(
+        new RegExp(`\\?url=${encodeURIComponent(TEST_AUDIO_URL)}`),
+      );
+    });
+
+    test("should automatically load an audio file from a URL parameter", async ({
+      page,
+    }) => {
+      // 1. Navigate directly to a URL with the 'url' parameter.
+      const fullUrl = `${playerPage.devServerUrl}?url=${encodeURIComponent(TEST_AUDIO_URL)}`;
+      await page.goto(fullUrl);
+
+      // 2. The application should auto-load the file. Wait for it to be ready.
+      await playerPage.expectControlsToBeReadyForPlayback();
+
+      // 3. Assert the file name display shows the URL.
+      await expect(playerPage.fileNameDisplay).toHaveText(TEST_AUDIO_URL);
+    });
+
+    test("should auto-load and seek from URL url and time parameters", async ({
+      page,
+    }) => {
+      const seekTime = 3.5;
+      // 1. Navigate directly to a URL with both 'url' and 'time' parameters.
+      const fullUrl = `${playerPage.devServerUrl}?url=${encodeURIComponent(TEST_AUDIO_URL)}&time=${seekTime}`;
+      await page.goto(fullUrl);
+
+      // 2. Wait for playback readiness.
+      await playerPage.expectControlsToBeReadyForPlayback();
+
+      // 3. Assert that the time display shows that the seek was successful.
+      //    We check that the current time is close to the target, allowing for minor float inaccuracies.
+      await expect(async () => {
+        const currentTime = await playerPage.getCurrentTime();
+        expect(currentTime).toBeCloseTo(seekTime, 1);
+      }).toPass({ timeout: 5000 }); // Use toPass for polling async value.
+    });
+  });
+  // --- END: ADD THIS NEW TEST BLOCK ---
+
   test("should enable VAD controls after analysis is complete", async () => {
     // This test verifies that background VAD analysis runs and enables its UI controls.
     await playerPage.loadAudioFile(TEST_AUDIO_FILE);
