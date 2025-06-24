@@ -265,10 +265,11 @@ test.describe("Vibe Player V2 E2E", () => {
       await playerPage.expectControlsToBeReadyForPlayback();
 
       // 3. Assert that the time display shows that the seek was successful.
-      //    We check that the current time is close to the target, allowing for minor float inaccuracies.
+      //    The UI floors the time for display, so our assertion must match that.
       await expect(async () => {
         const currentTime = await playerPage.getCurrentTime();
-        expect(currentTime).toBeCloseTo(seekTime, 1);
+        const expectedDisplayTime = Math.floor(seekTime); // Floor the expected time
+        expect(currentTime).toBe(expectedDisplayTime); // Check for exact integer match
       }).toPass({ timeout: 5000 }); // Use toPass for polling async value.
     });
   });
