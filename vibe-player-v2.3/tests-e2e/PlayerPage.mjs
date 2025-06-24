@@ -17,7 +17,7 @@ export class PlayerPage {
     this.fileInput = page.getByLabel("Load Audio File");
     // ADD THE FOLLOWING TWO LINES:
     this.urlInput = page.getByLabel("Audio URL");
-    this.urlLoadButton = page.getByRole("button", { name: "Load" });
+    this.urlLoadButton = page.getByRole("button", { name: "Load", exact: true });
     this.fileNameDisplay = page.getByTestId("file-name-display");
     this.playButton = page.getByTestId("play-button");
     this.stopButton = page.getByTestId("stop-button");
