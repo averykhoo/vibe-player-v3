@@ -59,6 +59,7 @@ INCLUDED_EXTENSIONS = {
     "r", "rb", "rs", "sass", "scss", "scala", "scm", "ss", "sh", "bash", "zsh",
     "sql", "svelte", "swift", "tcl", "tf", "toml", "tsv", "tsx", "ts", "vb", "vbs",
     "v", "sv", "vhdl", "xml", "yaml", "yml",
+    "3",  # special case, to remove later
 }
 # Define extensions (lowercase, without the dot) to explicitly exclude,
 # even if they are text-like (e.g., large data files you don't want).
