@@ -37,9 +37,6 @@ vi.mock("$lib/stores/analysis.store", async () => {
   // Create a genuine writable store. This instance will be used by the service.
   mockAnalysisStoreInstance = writable(initialAnalysisStateForMock);
 
-  // Spy on the .update method so we can check if it was called.
-  vi.spyOn(mockAnalysisStoreInstance, 'update');
-
   // The mock module must export an object with the same shape as the real module.
   return {
     analysisStore: mockAnalysisStoreInstance,
@@ -64,7 +61,6 @@ vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
 // Import the service *after* all mocks are defined.
 describe("AnalysisService", () => {
   let analysisService: typeof import("./analysis.service").default;
-  let analysisStore: typeof import("../stores/analysis.store").analysisStore;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -74,8 +70,6 @@ describe("AnalysisService", () => {
     // Re-import the service to get a fresh instance with our mocks.
     const serviceModule = await import("./analysis.service");
     analysisService = serviceModule.default;
-    const storeModule = await import("../stores/analysis.store");
-    analysisStore = storeModule.analysisStore;
 
     vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
@@ -93,7 +87,6 @@ describe("AnalysisService", () => {
   });
 
   describe("initialize", () => {
-    // This test was already passing but is kept for completeness.
     it("should handle concurrent initialization calls correctly", async () => {
       console.log("[TEST LOG] Running: should handle concurrent initialization calls correctly");
       let initPromise1, initPromise2;
@@ -115,10 +108,13 @@ describe("AnalysisService", () => {
 
       await expect(initPromise1).resolves.toBeUndefined();
       await expect(initPromise2).resolves.toBeUndefined();
+
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadInitialized).toBe(true);
+      expect(finalState.vadStatus).toBe("VAD service initialized.");
       console.log("[TEST LOG] PASSED: should handle concurrent initialization calls correctly");
     });
 
-    // This test was also passing.
     it("should handle initialization failure from the worker", async () => {
       console.log("[TEST LOG] Running: should handle initialization failure from the worker");
       const initPromise = analysisService.initialize();
@@ -134,6 +130,10 @@ describe("AnalysisService", () => {
       } as MessageEvent);
 
       await expect(initPromise).rejects.toThrow("Model load failed");
+
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadInitialized).toBe(false);
+      expect(finalState.vadError).toContain("Model load failed");
       console.log("[TEST LOG] PASSED: should handle initialization failure from the worker");
     });
   });
@@ -171,18 +171,12 @@ describe("AnalysisService", () => {
 
       await processPromise;
 
-      // FIX: The `analysisStore.update` has been spied upon. We check its calls.
-      const updateCalls = (analysisStore.update as vi.Mock).mock.calls;
-      // The service calls `update` multiple times. We are interested in the final states.
-      // 1. "Analyzing...", 2. Probabilities set, 3. Regions recalculated.
-      expect(updateCalls.length).toBeGreaterThanOrEqual(2);
+      // Let the debounced recalculateVadRegions run
+      vi.runAllTimers();
 
-      // Get the updater function from the call where probabilities were set
-      const probabilitiesUpdateFn = updateCalls[1][0];
-      // Test this updater function with a known state
-      const stateAfterProbs = probabilitiesUpdateFn({ vadProbabilities: null });
-      expect(stateAfterProbs.vadProbabilities).toEqual(mockProbs);
-
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadProbabilities).toEqual(mockProbs);
+      expect(finalState.vadStatus).toBe("VAD analysis complete.");
       console.log("[TEST LOG] PASSED: should send PCM data to worker and update store");
     });
   });
@@ -192,41 +186,26 @@ describe("AnalysisService", () => {
       console.log("[TEST LOG] Running: should correctly calculate and merge speech regions");
       const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1, 0.85, 0.95, 0.3]);
 
-      // FIX: Set the state on the real store mock instead of trying to mock `get`.
-      const state: AnalysisState = {
+      const initialState: AnalysisState = {
+        ...get(mockAnalysisStoreInstance),
         vadProbabilities: probabilities,
         vadPositiveThreshold: 0.5,
         vadNegativeThreshold: 0.35,
-        vadRegions: null,
         vadInitialized: true,
-        spectrogramData: null,
-        // Fill other required fields from the type
-        vadStatus: 'idle',
-        lastVadResult: null,
-        isSpeaking: false,
-        vadStateResetted: false,
-        vadError: null,
-        spectrogramStatus: 'idle',
-        spectrogramError: null,
-        spectrogramInitialized: false,
-        isLoading: false
       };
       console.log("[TEST LOG] Setting mock store state before calling recalculateVadRegions");
-      mockAnalysisStoreInstance.set(state);
+      mockAnalysisStoreInstance.set(initialState);
 
       analysisService.recalculateVadRegions();
 
       console.log("[TEST LOG] Advancing timers to trigger debounced function");
       vi.runAllTimers();
 
-      // Assert that the store's `update` method was called.
-      expect(analysisStore.update).toHaveBeenCalled();
-      const lastUpdateCall = (analysisStore.update as vi.Mock).mock.calls.pop()[0];
-      const newState = lastUpdateCall(state); // Pass a known state to the updater function
-
-      expect(newState.vadRegions.length).toBe(1);
-      expect(newState.vadRegions[0].start).toBeCloseTo(0);
-      expect(newState.vadRegions[0].end).toBeCloseTo(0.768);
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadRegions).not.toBeNull();
+      expect(finalState.vadRegions!.length).toBe(1);
+      expect(finalState.vadRegions![0].start).toBeCloseTo(0);
+      expect(finalState.vadRegions![0].end).toBeCloseTo(0.768);
       console.log("[TEST LOG] PASSED: should correctly calculate and merge speech regions");
     });
   });
@@ -234,15 +213,20 @@ describe("AnalysisService", () => {
   describe("dispose", () => {
     it("should terminate worker and reset state", async () => {
       console.log("[TEST LOG] Running: should terminate worker and reset state");
-      await analysisService.initialize();
+      // Initialize the service so there's a worker to terminate.
+      const initPromise = analysisService.initialize();
+      await new Promise(resolve => setImmediate(resolve));
+      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      mockVadWorkerInstance.onmessage!({
+        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: initMessageId },
+      } as MessageEvent);
+      await initPromise;
+
       analysisService.dispose();
 
       expect(mockVadWorkerInstance.terminate).toHaveBeenCalledTimes(1);
 
-      // Check the final state update from the dispose method
-      const lastUpdateCall = (analysisStore.update as vi.Mock).mock.calls.pop()[0];
-      const finalState = lastUpdateCall({}); // Call updater with empty state to see what it sets
-
+      const finalState = get(mockAnalysisStoreInstance);
       expect(finalState.vadInitialized).toBe(false);
       expect(finalState.vadStatus).toBe("VAD service disposed.");
       console.log("[TEST LOG] PASSED: should terminate worker and reset state");
