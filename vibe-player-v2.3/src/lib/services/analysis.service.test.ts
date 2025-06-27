@@ -5,45 +5,22 @@ import { get, type Writable } from "svelte/store";
 import type { AnalysisState } from "$lib/types/analysis.types";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 
-// --- START: CORRECTED STORE MOCKING ---
+// --- START: CORRECTED STORE MOCKING (No changes here, this part is correct) ---
 
-// 1. Hoist a variable to hold our real, writable store instance.
 let mockAnalysisStoreInstance: Writable<AnalysisState>;
 
-// 2. Mock the store module. This factory function will be called by Vitest.
 vi.mock("$lib/stores/analysis.store", async () => {
-  // Import the REAL `writable` function from the actual svelte/store library.
   const { writable } = await vi.importActual<typeof import("svelte/store")>("svelte/store");
-
-  // Define a complete initial state that matches the AnalysisState type.
   const initialAnalysisStateForMock: AnalysisState = {
-    vadStatus: "idle",
-    lastVadResult: null,
-    isSpeaking: undefined,
-    vadStateResetted: undefined,
-    vadError: null,
-    vadInitialized: false,
-    vadPositiveThreshold: 0.5,
-    vadNegativeThreshold: 0.35,
-    vadProbabilities: null,
-    vadRegions: null,
-    spectrogramStatus: "idle",
-    spectrogramError: null,
-    spectrogramData: null,
-    spectrogramInitialized: false,
-    isLoading: false,
+    vadStatus: "idle", lastVadResult: null, isSpeaking: undefined, vadStateResetted: undefined,
+    vadError: null, vadInitialized: false, vadPositiveThreshold: 0.5, vadNegativeThreshold: 0.35,
+    vadProbabilities: null, vadRegions: null, spectrogramStatus: "idle", spectrogramError: null,
+    spectrogramData: null, spectrogramInitialized: false, isLoading: false,
   };
-
-  // Create a genuine writable store. This instance will be used by the service.
   mockAnalysisStoreInstance = writable(initialAnalysisStateForMock);
-
-  // The mock module must export an object with the same shape as the real module.
-  return {
-    analysisStore: mockAnalysisStoreInstance,
-  };
+  return { analysisStore: mockAnalysisStoreInstance };
 });
 
-// 3. Mock the worker.
 const mockVadWorkerInstance = {
   postMessage: vi.fn(),
   terminate: vi.fn(),
@@ -58,16 +35,18 @@ vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
 // --- END: CORRECTED STORE MOCKING ---
 
 
-// Import the service *after* all mocks are defined.
 describe("AnalysisService", () => {
   let analysisService: typeof import("./analysis.service").default;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
-    vi.useFakeTimers(); // Use fake timers for controlling debounce
 
-    // Re-import the service to get a fresh instance with our mocks.
+    // IMPORTANT: Keep real timers for this test file. The async nature of promises
+    // and message passing works better without faking timers. The debounce in
+    // `recalculateVadRegions` can be tested by waiting with `tick()`.
+    // We will use fake timers only within the one test that needs it.
+
     const serviceModule = await import("./analysis.service");
     analysisService = serviceModule.default;
 
@@ -81,10 +60,10 @@ describe("AnalysisService", () => {
   });
 
   afterEach(() => {
-    // Restore real timers after each test to prevent pollution.
-    vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });
+
+  // --- START: CORRECTED TESTS ---
 
   describe("initialize", () => {
     it("should handle concurrent initialization calls correctly", async () => {
@@ -96,13 +75,15 @@ describe("AnalysisService", () => {
 
       expect(initPromise1).toBe(initPromise2);
 
+      // Let the promise chain start
       await new Promise(resolve => setImmediate(resolve));
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledTimes(1);
 
+      // FIX: Trigger the ACTUAL onmessage handler assigned by the service
       const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
-      mockVadWorkerInstance.onmessage!({
+      mockVadWorkerInstance.onmessage!({ // The `!` asserts that onmessage is not null
         data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: initMessageId },
       } as MessageEvent);
 
@@ -121,6 +102,7 @@ describe("AnalysisService", () => {
       await new Promise(resolve => setImmediate(resolve));
       const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
+      // FIX: Trigger the ACTUAL onmessage handler
       mockVadWorkerInstance.onmessage!({
         data: {
           type: VAD_WORKER_MSG_TYPE.INIT_ERROR,
@@ -161,6 +143,7 @@ describe("AnalysisService", () => {
       const processMessageId = mockVadWorkerInstance.postMessage.mock.calls[1][0].messageId;
 
       console.log("[TEST LOG] Simulating worker response for PROCESS_RESULT");
+      // FIX: Trigger the ACTUAL onmessage handler
       mockVadWorkerInstance.onmessage!({
         data: {
           type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT,
@@ -171,8 +154,10 @@ describe("AnalysisService", () => {
 
       await processPromise;
 
-      // Let the debounced recalculateVadRegions run
+      // Let the debounced recalculateVadRegions run. We need fake timers for this one part.
+      vi.useFakeTimers();
       vi.runAllTimers();
+      vi.useRealTimers();
 
       const finalState = get(mockAnalysisStoreInstance);
       expect(finalState.vadProbabilities).toEqual(mockProbs);
@@ -182,8 +167,11 @@ describe("AnalysisService", () => {
   });
 
   describe("recalculateVadRegions", () => {
-    it("should correctly calculate and merge speech regions", () => {
+    it("should correctly calculate and merge speech regions", async () => {
       console.log("[TEST LOG] Running: should correctly calculate and merge speech regions");
+      // Use fake timers ONLY for this test.
+      vi.useFakeTimers();
+
       const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1, 0.85, 0.95, 0.3]);
 
       const initialState: AnalysisState = {
