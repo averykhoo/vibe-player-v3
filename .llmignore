@@ -1,3 +1,3 @@
 package-lock.json
-!vibe-player/lib/ort-wasm-simd-threaded.jsep.mjs
-!vibe-player/lib/ort-wasm-simd-threaded.mjs
+vibe-player/lib/ort-wasm-simd-threaded.jsep.mjs
+vibe-player/lib/ort-wasm-simd-threaded.mjs
