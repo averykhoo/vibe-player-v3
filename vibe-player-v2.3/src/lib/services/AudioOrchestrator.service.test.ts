@@ -9,7 +9,6 @@ import {
   afterEach,
   type SpyInstance,
 } from "vitest";
-// --- FIX: Import 'get', 'writable', 'tick' and type definitions ---
 import { get, writable } from "svelte/store";
 import { tick } from "svelte";
 import type { StatusState } from "$lib/types/status.types";
@@ -20,21 +19,36 @@ import AudioOrchestratorService from "./AudioOrchestrator.service";
 import audioEngine from "./audioEngine.service";
 import dtmfService from "./dtmf.service";
 import spectrogramService from "./spectrogram.service";
+import analysisService from "./analysis.service"; // Import analysis service for mocking
 
-// --- FIX: Directly import the stores to be mocked ---
 import { playerStore } from "$lib/stores/player.store";
 import { timeStore } from "$lib/stores/time.store";
 import { statusStore } from "$lib/stores/status.store";
 import { analysisStore } from "$lib/stores/analysis.store";
-import { updateUrlWithParams } from "$lib/utils/urlState"; // Corrected import
+import { updateUrlWithParams } from "$lib/utils/urlState";
+
+// --- START: FIX FOR OfflineAudioContext ---
+// Mock OfflineAudioContext because it doesn't exist in the JSDOM test environment.
+const mockOfflineAudioContext = vi.fn(() => ({
+  createBufferSource: vi.fn(() => ({
+    buffer: null,
+    connect: vi.fn(),
+    start: vi.fn(),
+  })),
+  startRendering: vi.fn().mockResolvedValue({
+    getChannelData: vi.fn(() => new Float32Array(0)),
+  }),
+}));
+global.OfflineAudioContext = mockOfflineAudioContext as any;
+// --- END: FIX FOR OfflineAudioContext ---
 
 // Mock services and external utilities
 vi.mock("./audioEngine.service");
 vi.mock("./dtmf.service");
 vi.mock("./spectrogram.service");
+vi.mock("./analysis.service"); // Mock the analysis service as well
 vi.mock("$lib/utils/urlState");
 
-// --- FIX: Replace simple vi.mock() with mocks that provide real writable stores ---
 vi.mock("$lib/stores/player.store", () => ({
   playerStore: writable<PlayerState>(),
 }));
@@ -44,6 +58,10 @@ vi.mock("$lib/stores/status.store", () => ({
 }));
 vi.mock("$lib/stores/analysis.store", () => ({
   analysisStore: writable<AnalysisState>({
+    vadProbabilities: null,
+    vadRegions: null,
+    vadPositiveThreshold: 0.5,
+    vadNegativeThreshold: 0.35,
     dtmfResults: [],
     spectrogramData: null,
   }),
@@ -64,6 +82,7 @@ describe("AudioOrchestratorService", () => {
     speed: 1.0,
     pitchShift: 0.0,
     gain: 1.0,
+    jumpSeconds: 5,
     waveformData: undefined,
     error: null,
     audioBuffer: undefined,
@@ -84,13 +103,18 @@ describe("AudioOrchestratorService", () => {
         .mockResolvedValue(new ArrayBuffer(100));
     }
 
-    // --- FIX: Reset the actual store instances before each test ---
     playerStore.set({ ...initialPlayerState });
     timeStore.set(0);
     statusStore.set({ message: "", type: "idle", isLoading: false });
-    analysisStore.set({ dtmfResults: [], spectrogramData: null });
+    analysisStore.set({
+        vadProbabilities: null,
+        vadRegions: null,
+        vadPositiveThreshold: 0.5,
+        vadNegativeThreshold: 0.35,
+        dtmfResults: [],
+        spectrogramData: null,
+    });
 
-    // --- FIX: Re-mock service methods that might have been cleared ---
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue({
       duration: 10,
       sampleRate: 44100,
@@ -99,17 +123,16 @@ describe("AudioOrchestratorService", () => {
     } as unknown as AudioBuffer);
     vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
     vi.mocked(audioEngine.stop).mockResolvedValue(undefined);
-    vi.mocked(audioEngine.unlockAudio).mockResolvedValue(undefined); // Added for the new test
+    vi.mocked(audioEngine.unlockAudio).mockResolvedValue(undefined);
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
+    vi.mocked(analysisService.initialize).mockResolvedValue(undefined); // Mock VAD init
     vi.mocked(dtmfService.process).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.process).mockResolvedValue(undefined);
+    vi.mocked(analysisService.processVad).mockResolvedValue(undefined); // Mock VAD process
     vi.mocked(updateUrlWithParams).mockImplementation(() => {});
 
     orchestrator = AudioOrchestratorService;
-    // Reset internal state of the singleton if necessary, or re-instantiate
-    // For simplicity here, we'll assume the singleton nature is handled or reset if needed by tests.
-    // AudioOrchestratorService.reset(); // Hypothetical reset method
   });
 
   afterEach(() => {
@@ -132,40 +155,37 @@ describe("AudioOrchestratorService", () => {
 
     await orchestrator.loadFromFile(mockFile, undefined);
 
-    // --- FIX: Update assertion to match new log message ---
     expect(consoleWarnSpy).toHaveBeenCalledWith(
       "[AO-LOG] Orchestrator is busy, skipping file load.",
     );
-    // --- END OF FIX ---
 
     expect(audioEngine.stop).not.toHaveBeenCalled();
-    (orchestrator as any).isBusy = false; // Reset for other tests
+    (orchestrator as any).isBusy = false;
   });
 
   it("should handle a CRITICAL failure if audioEngine.initializeWorker rejects", async () => {
     const criticalError = new Error("Core engine failure");
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
     vi.mocked(audioEngine.initializeWorker).mockRejectedValue(criticalError);
-    // Ensure other service initializations are mocked if they might be called before the error
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
+    vi.mocked(analysisService.initialize).mockResolvedValue(undefined); // VAD should not block
 
     await orchestrator.loadFromFile(mockFile, undefined);
-    await tick(); // --- FIX: Wait for async error handling ---
+    await tick();
 
     const finalStatus = get(statusStore);
-    // --- FIX: Check the final status correctly ---
     expect(finalStatus.type).toBe("error");
     expect(finalStatus.message).toContain(
       "Failed to initialize core audio engine.",
     );
-    // --- END OF FIX ---
   });
 
   it("should succeed with a NON-CRITICAL failure if spectrogramService.initialize rejects", async () => {
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
     vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
-    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined); // Ensure DTMF service resolves
+    vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
+    vi.mocked(analysisService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockRejectedValue(
       new Error("Spectrogram failed"),
     );
@@ -174,18 +194,20 @@ describe("AudioOrchestratorService", () => {
     await tick();
 
     const finalPlayerState = get(playerStore);
-    expect(finalPlayerState.isPlayable).toBe(true); // Should still be playable
+    expect(finalPlayerState.isPlayable).toBe(true);
 
+    // --- START: FIX for console.warn assertion ---
+    // The test now correctly checks for the more specific log message.
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      `A non-critical analysis service failed to initialize.`,
+      `[AO-LOG] A non-critical analysis service (Spectrogram) failed to initialize.`,
       expect.any(Error),
     );
+    // --- END: FIX ---
   });
 
   it("should apply initialState and call seek if currentTime is provided", async () => {
     const seekTime = 5.5;
     const initialState: Partial<PlayerState> = {
-      // Ensure initialState type matches Partial<PlayerState>
       speed: 1.5,
       pitchShift: -2,
       gain: 0.75,
@@ -195,11 +217,11 @@ describe("AudioOrchestratorService", () => {
     vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
+    vi.mocked(analysisService.initialize).mockResolvedValue(undefined);
 
     await orchestrator.loadFromFile(mockFile, initialState);
-    await tick(); // Ensure all promises resolve and state updates complete
+    await tick();
 
-    // Assert against the store's value directly
     const finalPlayerState = get(playerStore);
     expect(finalPlayerState.speed).toBe(initialState.speed);
     expect(finalPlayerState.pitchShift).toBe(initialState.pitchShift);
@@ -212,15 +234,16 @@ describe("AudioOrchestratorService", () => {
 
   it("should call audioEngine.unlockAudio (non-awaited) during loadFileAndAnalyze", async () => {
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue(mockAudioBuffer);
-    vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined); // Ensure other critical parts resolve
+    vi.mocked(audioEngine.initializeWorker).mockResolvedValue(undefined);
     vi.mocked(dtmfService.initialize).mockResolvedValue(undefined);
     vi.mocked(spectrogramService.initialize).mockResolvedValue(undefined);
+    vi.mocked(analysisService.initialize).mockResolvedValue(undefined);
     const unlockAudioSpy = vi
       .mocked(audioEngine.unlockAudio)
-      .mockResolvedValue(undefined); // Mock it to resolve immediately
+      .mockResolvedValue(undefined);
 
     await orchestrator.loadFromFile(mockFile, undefined);
-    await tick(); // Allow any immediate microtasks to clear
+    await tick();
 
     expect(unlockAudioSpy).toHaveBeenCalledTimes(1);
   });
