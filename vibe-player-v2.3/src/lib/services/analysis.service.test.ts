@@ -1,11 +1,13 @@
 // vibe-player-v2.3/src/lib/services/analysis.service.test.ts
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { get } from "svelte/store";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mocked } from "vitest";
+import { get, writable, type Writable } from "svelte/store";
 import type { AnalysisState } from "$lib/types/analysis.types";
-import { VAD_CONSTANTS } from "$lib/utils";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
 
+// --- START: MOCK SETUP ---
+
+// Define the mock worker instance at the top level
 const mockVadWorkerInstance = {
   postMessage: vi.fn(),
   terminate: vi.fn(),
@@ -13,172 +15,191 @@ const mockVadWorkerInstance = {
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
 
+// Create a real writable store instance for mocking
+const mockAnalysisStore: Writable<AnalysisState> = writable({
+    vadProbabilities: null,
+    vadRegions: null,
+    vadPositiveThreshold: 0.5,
+    vadNegativeThreshold: 0.35,
+});
+
+// Mock the modules
 vi.mock("$lib/stores/analysis.store", () => ({
-  analysisStore: {
-    subscribe: vi.fn(),
-    set: vi.fn(),
-    update: vi.fn(),
-  },
+  analysisStore: mockAnalysisStore,
 }));
 
 vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
 
+// --- END: MOCK SETUP ---
+
+
 describe("AnalysisService", () => {
   let analysisService: typeof import("./analysis.service").default;
-  let analysisStore: typeof import("../stores/analysis.store").analysisStore;
+
+  // Helper to simulate a response from the worker
+  const simulateWorkerResponse = (messageId: string, type: string, payload: any, isError: boolean = false) => {
+    if (mockVadWorkerInstance.onmessage) {
+      mockVadWorkerInstance.onmessage({
+        data: {
+          type,
+          payload: isError ? undefined : payload,
+          error: isError ? payload : undefined,
+          messageId,
+        },
+      } as MessageEvent);
+    }
+  };
 
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
-
+    
+    // Dynamically import the service to get a fresh instance with mocks applied
     const serviceModule = await import("./analysis.service");
     analysisService = serviceModule.default;
-    const storeModule = await import("../stores/analysis.store");
-    analysisStore = storeModule.analysisStore;
 
+    // Set up global fetch mock for every test
     vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
       status: 200,
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     } as Response);
+    
+    // Reset store to a clean state
+    mockAnalysisStore.set({
+        vadProbabilities: null, vadRegions: null, vadPositiveThreshold: 0.5, vadNegativeThreshold: 0.35,
+    });
 
-    analysisService.dispose();
+    // We must dispose to clear any state from previous tests (like initPromise)
+    analysisService.dispose(); 
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    analysisService.dispose();
   });
 
+
   describe("initialize", () => {
+    
     it("should handle concurrent initialization calls correctly", async () => {
-      vi.useFakeTimers();
-      let initPromise1, initPromise2;
-      let resolveWorkerInit;
-
-      // Wrap the worker's onmessage to control when INIT_SUCCESS is sent
-      mockVadWorkerInstance.onmessage = (event) => {
-        if (event.data.type === VAD_WORKER_MSG_TYPE.INIT_SUCCESS) {
-          resolveWorkerInit();
-        }
-      };
-
-      // Call initialize twice, concurrently
-      initPromise1 = analysisService.initialize();
-      initPromise2 = analysisService.initialize();
-
-      // Assert that only ONE initialization process was started
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-
-      // Both promises should be the same instance
+      // Start two initializations. They should both get the same promise.
+      const initPromise1 = analysisService.initialize();
+      const initPromise2 = analysisService.initialize();
       expect(initPromise1).toBe(initPromise2);
 
-      // Now, simulate the worker finishing its setup
-      const workerInitSignal = new Promise<void>((res) => {
-        resolveWorkerInit = res;
-      });
-      vi.runAllTimers(); // Let promises proceed
-      await workerInitSignal;
+      // Only one fetch and one postMessage should have been called
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledTimes(1);
 
-      // Both promises should resolve
+      // Simulate the worker responding with success
+      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      simulateWorkerResponse(initMessageId, VAD_WORKER_MSG_TYPE.INIT_SUCCESS, {});
+      
+      // Await both promises, they should now resolve.
       await expect(initPromise1).resolves.toBeUndefined();
       await expect(initPromise2).resolves.toBeUndefined();
     });
 
     it("should handle initialization failure from the worker", async () => {
       const initPromise = analysisService.initialize();
-      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      
+      // Wait for the postMessage call to happen before trying to access its details
+      await vi.waitFor(() => {
+          expect(mockVadWorkerInstance.postMessage).toHaveBeenCalled();
+      });
 
-      mockVadWorkerInstance.onmessage!({
-        data: {
-          type: VAD_WORKER_MSG_TYPE.INIT_ERROR,
-          error: "Model load failed",
-          messageId: initMessageId,
-        },
-      } as MessageEvent);
+      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      simulateWorkerResponse(initMessageId, VAD_WORKER_MSG_TYPE.INIT_ERROR, "Model load failed", true);
 
       await expect(initPromise).rejects.toThrow("Model load failed");
     });
   });
 
+
   describe("processVad", () => {
-    // Helper to fully initialize the service for these tests
-    async function initializeService() {
+    // Helper to initialize the service before each test in this block
+    beforeEach(async () => {
       const initPromise = analysisService.initialize();
+      await vi.waitFor(() => expect(mockVadWorkerInstance.postMessage).toHaveBeenCalled());
       const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
-      mockVadWorkerInstance.onmessage!({
-        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: initMessageId },
-      } as MessageEvent);
+      simulateWorkerResponse(initMessageId, VAD_WORKER_MSG_TYPE.INIT_SUCCESS, {});
       await initPromise;
-    }
+    });
 
     it("should send PCM data to worker and update store with probabilities", async () => {
-      await initializeService();
       const pcmData = new Float32Array([0.1, 0.2, 0.3]);
       const mockProbs = new Float32Array([0.9, 0.8, 0.7]);
+      
       const processPromise = analysisService.processVad(pcmData);
-      
+
+      await vi.waitFor(() => {
+          // The first call was INIT, the second should be PROCESS
+          expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledTimes(2);
+      });
       const processMessageId = mockVadWorkerInstance.postMessage.mock.calls[1][0].messageId;
-
-      mockVadWorkerInstance.onmessage!({
-        data: {
-          type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT,
-          payload: { probabilities: mockProbs },
-          messageId: processMessageId
-        },
-      } as MessageEvent);
-
-      await processPromise;
       
-      const lastUpdateCall = (analysisStore.update as vi.Mock).mock.calls.pop()[0];
-      const finalState = lastUpdateCall(get(analysisStore));
+      // Simulate the worker responding with the processed data
+      simulateWorkerResponse(processMessageId, VAD_WORKER_MSG_TYPE.PROCESS_RESULT, { probabilities: mockProbs });
+      
+      await processPromise;
 
+      const finalState = get(mockAnalysisStore);
       expect(finalState.vadProbabilities).toEqual(mockProbs);
       expect(finalState.vadStatus).toBe("VAD analysis complete.");
     });
   });
 
+
   describe("recalculateVadRegions", () => {
-    it("should correctly calculate and merge speech regions", () => {
+    beforeEach(() => {
       vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("should correctly calculate and merge speech regions", () => {
       const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1, 0.85, 0.95, 0.3]);
-      const state: AnalysisState = {
+      // Set the store state directly
+      mockAnalysisStore.set({
         vadProbabilities: probabilities,
         vadPositiveThreshold: 0.5,
         vadNegativeThreshold: 0.35,
-        vadRegions: null,
-      };
-      (get as vi.Mock).mockReturnValue(state);
+        vadRegions: null
+      });
 
       analysisService.recalculateVadRegions();
       vi.runAllTimers(); // Trigger the debounced function
 
-      const updateCall = (analysisStore.update as vi.Mock).mock.calls[0][0];
-      const newState = updateCall(state);
-      
-      // Explanation of expected result:
-      // Frame 1 (0.8) and 2 (0.9) are speech.
-      // Frame 5 (0.85) and 6 (0.95) are speech.
-      // With padding (100ms = 1.66 frames at 16kHz/1536 samples), the two regions merge.
-      // Let's assume a simplified frame time for clarity: frame time = index * (1536/16000) = index * 0.096s
-      // Region 1: [1*0.096, 3*0.096] -> [0.096, 0.288]. Padded: [-0.004, 0.388] -> [0, 0.388]
-      // Region 2: [5*0.096, 7*0.096] -> [0.480, 0.672]. Padded: [0.380, 0.772]
-      // They overlap, so they merge into one region.
-      // Final region should be approximately [0, 0.772]
-      expect(newState.vadRegions.length).toBe(1);
-      expect(newState.vadRegions[0].start).toBeCloseTo(0);
-      expect(newState.vadRegions[0].end).toBeCloseTo(0.768); // (7 * 1536 / 16000) + 0.1
+      const finalState = get(mockAnalysisStore);
+
+      expect(finalState.vadRegions?.length).toBe(1);
+      // Recalculate the expected end time more precisely:
+      // Last positive frame is at index 6. The end is after this frame.
+      // End time = (last_positive_index + 1) * frame_size / sample_rate + padding
+      // End time = (6 + 1) * 1536 / 16000 + 0.100 = 7 * 0.096 + 0.1 = 0.672 + 0.1 = 0.772
+      expect(finalState.vadRegions?.[0]?.start).toBeCloseTo(0);
+      expect(finalState.vadRegions?.[0]?.end).toBeCloseTo(0.772);
     });
   });
 
+
   describe("dispose", () => {
     it("should terminate worker and reset state", async () => {
-      await analysisService.initialize();
+      // Initialize first to ensure there's a worker to terminate
+      const initPromise = analysisService.initialize();
+      await vi.waitFor(() => expect(mockVadWorkerInstance.postMessage).toHaveBeenCalled());
+      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      simulateWorkerResponse(initMessageId, VAD_WORKER_MSG_TYPE.INIT_SUCCESS, {});
+      await initPromise;
+
       analysisService.dispose();
+      
       expect(mockVadWorkerInstance.terminate).toHaveBeenCalledTimes(1);
-      const lastUpdate = (analysisStore.update as vi.Mock).mock.calls.pop()[0];
-      const finalState = lastUpdate({});
+      const finalState = get(mockAnalysisStore);
       expect(finalState.vadInitialized).toBe(false);
       expect(finalState.vadStatus).toBe("VAD service disposed.");
     });
