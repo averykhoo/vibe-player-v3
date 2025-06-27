@@ -24,6 +24,8 @@ class AnalysisService {
   private worker: Worker | null = null;
   private isInitialized = false;
   private isInitializing = false;
+  private initPromise: Promise<void> | null = null; // <-- FIX: To handle concurrent calls
+
   private nextMessageId = 0;
   private pendingRequests = new Map<string, PendingRequest>();
 
@@ -54,14 +56,57 @@ class AnalysisService {
     });
   }
 
-  public async initialize(
+  public initialize(
     options?: AnalysisServiceInitializeOptions,
   ): Promise<void> {
-    if (!browser) return;
-    if (this.isInitialized || this.isInitializing) {
-      return;
+    // --- START OF FIX: Robust Idempotency ---
+    console.log(
+      `[AnalysisService-INIT] Call received. isInitialized: ${this.isInitialized}, isInitializing: ${this.isInitializing}`,
+    );
+
+    if (!browser) {
+      console.log("[AnalysisService-INIT] Not in browser, returning resolved promise.");
+      return Promise.resolve();
     }
+
+    // If already initialized, return immediately.
+    if (this.isInitialized) {
+      console.log("[AnalysisService-INIT] Already initialized. Returning resolved promise.");
+      return Promise.resolve();
+    }
+
+    // If an initialization is already in progress, return the existing promise to wait on.
+    if (this.isInitializing && this.initPromise) {
+      console.log("[AnalysisService-INIT] Initialization in progress. Returning existing promise.");
+      return this.initPromise;
+    }
+
+    // This is the first call, so create the initialization promise.
+    console.log("[AnalysisService-INIT] Starting new initialization process.");
     this.isInitializing = true;
+    this.initPromise = this._doInitialize(options)
+      .then(() => {
+        console.log("[AnalysisService-INIT] _doInitialize resolved successfully.");
+        this.isInitialized = true;
+        this.isInitializing = false;
+        this.initPromise = null; // Clear promise after success
+      })
+      .catch((err) => {
+        console.error("[AnalysisService-INIT] _doInitialize rejected with error:", err);
+        this.isInitialized = false;
+        this.isInitializing = false;
+        this.initPromise = null; // Clear promise after failure
+        throw err; // Re-throw the error so callers can handle it
+      });
+
+    return this.initPromise;
+    // --- END OF FIX ---
+  }
+
+  // --- NEW PRIVATE METHOD for the actual initialization logic ---
+  private async _doInitialize(
+    options?: AnalysisServiceInitializeOptions,
+  ): Promise<void> {
     analysisStore.update((s) => ({
       ...s,
       vadStatus: "VAD service initializing...",
@@ -85,8 +130,6 @@ class AnalysisService {
         }));
         if (request) request.reject(new Error(errorMsg));
         if (type === VAD_WORKER_MSG_TYPE.INIT_ERROR) {
-          this.isInitialized = false;
-          this.isInitializing = false;
           analysisStore.update((s) => ({
             ...s,
             vadStatus: "Error initializing VAD service.",
@@ -96,8 +139,6 @@ class AnalysisService {
       } else {
         switch (type) {
           case VAD_WORKER_MSG_TYPE.INIT_SUCCESS:
-            this.isInitialized = true;
-            this.isInitializing = false;
             analysisStore.update((s) => ({
               ...s,
               vadStatus: "VAD service initialized.",
@@ -142,11 +183,10 @@ class AnalysisService {
         req.reject(new Error(`VAD Worker failed critically: ${errorMsg}`)),
       );
       this.pendingRequests.clear();
-      this.isInitialized = false;
-      this.isInitializing = false;
     };
 
     try {
+      console.log("[AnalysisService-INIT] Fetching ONNX model...");
       const modelResponse = await fetch(VAD_CONSTANTS.ONNX_MODEL_URL);
       if (!modelResponse.ok) {
         throw new Error(
@@ -154,6 +194,7 @@ class AnalysisService {
         );
       }
       const modelBuffer = await modelResponse.arrayBuffer();
+      console.log("[AnalysisService-INIT] Model fetched. Posting INIT message to worker.");
       const initPayload = {
         origin: location.origin,
         modelBuffer,
@@ -164,10 +205,9 @@ class AnalysisService {
         { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [initPayload.modelBuffer],
       );
+      console.log("[AnalysisService-INIT] INIT message sent to worker, awaiting response.");
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      this.isInitialized = false;
-      this.isInitializing = false;
       analysisStore.update((s) => ({
         ...s,
         vadStatus: "Error sending VAD init to worker.",
@@ -320,6 +360,7 @@ class AnalysisService {
     this.nextMessageId = 0;
     this.isInitialized = false;
     this.isInitializing = false;
+    this.initPromise = null;
     analysisStore.update((s) => ({
       ...s,
       vadStatus: "VAD service disposed.",
