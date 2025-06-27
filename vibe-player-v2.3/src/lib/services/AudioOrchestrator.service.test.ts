@@ -107,12 +107,12 @@ describe("AudioOrchestratorService", () => {
     timeStore.set(0);
     statusStore.set({ message: "", type: "idle", isLoading: false });
     analysisStore.set({
-        vadProbabilities: null,
-        vadRegions: null,
-        vadPositiveThreshold: 0.5,
-        vadNegativeThreshold: 0.35,
-        dtmfResults: [],
-        spectrogramData: null,
+      vadProbabilities: null,
+      vadRegions: null,
+      vadPositiveThreshold: 0.5,
+      vadNegativeThreshold: 0.35,
+      dtmfResults: [],
+      spectrogramData: null,
     });
 
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue({

@@ -27,7 +27,6 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       case VAD_WORKER_MSG_TYPE.INIT:
         const initPayload = payload as SileroVadInitPayload;
 
-        // --- ADD THESE ASSERTIONS ---
         assert(
           initPayload && typeof initPayload === "object",
           "INIT payload is missing or not an object.",
@@ -42,22 +41,18 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           typeof initPayload.sampleRate === "number",
           "INIT payload is missing `sampleRate`.",
         );
-        // --- END ASSERTIONS ---
 
         sampleRate = initPayload.sampleRate;
         frameSamples = initPayload.frameSamples;
         positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
         negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
 
-        // --- THE FIX ---
         if (!initPayload.origin) {
           throw new Error(
             "SileroVadWorker INIT: `origin` is missing in payload.",
           );
         }
-        // Ensure the path has a trailing slash before ORT uses it.
         ort.env.wasm.wasmPaths = `${initPayload.origin}/`;
-        // --- END FIX ---
 
         if (!initPayload.modelBuffer) {
           throw new Error(
@@ -97,11 +92,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         if (!vadSession || !_h || !_c || !srTensor) {
           throw new Error("VAD worker not initialized or tensors not ready.");
         }
-        // This payload is now the full PCM data, not just a frame
         const { pcmData } = payload as { pcmData: Float32Array };
         const allProbabilities: number[] = [];
 
-        // Loop through the entire audio data, frame by frame
         for (let i = 0; i + frameSamples <= pcmData.length; i += frameSamples) {
           const audioFrame = pcmData.subarray(i, i + frameSamples);
           const inputTensor = new ort.Tensor("float32", audioFrame, [
@@ -132,7 +125,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
             messageId,
           },
           [resultPayload.probabilities.buffer],
-        ); // Transfer the buffer back
+        );
         break;
 
       case VAD_WORKER_MSG_TYPE.RESET:
@@ -155,11 +148,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error(
       `Error in SileroVadWorker (type: ${type}):`,
       errorMessage,
-      errorStack,
+      error instanceof Error ? error.stack : undefined,
     );
     self.postMessage({
       type: `${type}_ERROR` as string,

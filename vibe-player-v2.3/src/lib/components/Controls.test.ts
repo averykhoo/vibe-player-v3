@@ -200,7 +200,9 @@ describe("Controls.svelte", () => {
     });
 
     it("calls audioEngine.jump(1) when the forward button is clicked", async () => {
-      const forwardButton = screen.getByRole("button", { name: /Jump forward/i });
+      const forwardButton = screen.getByRole("button", {
+        name: /Jump forward/i,
+      });
       await fireEvent.click(forwardButton);
       expect(audioEngineService.jump).toHaveBeenCalledWith(1);
     });

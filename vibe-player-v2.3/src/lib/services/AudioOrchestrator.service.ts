@@ -141,7 +141,10 @@ export class AudioOrchestrator {
         spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }),
         analysisService.initialize(), // <-- ADDED THIS LINE
       ]);
-      console.log("[AO-LOG] Service initialization complete. Results:", initResults);
+      console.log(
+        "[AO-LOG] Service initialization complete. Results:",
+        initResults,
+      );
 
       // Check results. We now have 4 results to check.
       if (initResults[0].status === "rejected") {
@@ -150,7 +153,7 @@ export class AudioOrchestrator {
       // Log non-critical failures for analysis services (indices 1, 2, and 3)
       initResults.slice(1).forEach((result, index) => {
         if (result.status === "rejected") {
-          const serviceName = ['DTMF', 'Spectrogram', 'VAD'][index];
+          const serviceName = ["DTMF", "Spectrogram", "VAD"][index];
           console.warn(
             `[AO-LOG] A non-critical analysis service (${serviceName}) failed to initialize.`,
             result.reason,
@@ -158,7 +161,6 @@ export class AudioOrchestrator {
         }
       });
       // --- END OF FIX ---
-
 
       playerStore.update((s) => ({
         ...s,
@@ -196,7 +198,9 @@ export class AudioOrchestrator {
 
       // Check for Spectrogram service readiness (index 2)
       if (initResults[2].status === "fulfilled") {
-        console.log("[AO-LOG] Spectrogram service is ready. Queuing processing.");
+        console.log(
+          "[AO-LOG] Spectrogram service is ready. Queuing processing.",
+        );
         analysisPromises.push(
           spectrogramService.process(audioBuffer.getChannelData(0)),
         );
@@ -204,7 +208,9 @@ export class AudioOrchestrator {
 
       // Check for VAD service readiness (index 3)
       if (initResults[3].status === "fulfilled") {
-        console.log("[AO-LOG] VAD service is ready. Starting VAD processing flow.");
+        console.log(
+          "[AO-LOG] VAD service is ready. Starting VAD processing flow.",
+        );
         // This is now the fire-and-forget block, but it's safe because we know the service is initialized.
         (async () => {
           try {
@@ -221,7 +227,9 @@ export class AudioOrchestrator {
             source.start();
             const resampled = await offlineCtx.startRendering();
             const pcmData = resampled.getChannelData(0);
-            console.log("[AO-LOG-VAD] Resampling complete. Kicking off VAD processing.");
+            console.log(
+              "[AO-LOG-VAD] Resampling complete. Kicking off VAD processing.",
+            );
             await analysisService.processVad(pcmData);
             console.log("[AO-LOG-VAD] VAD processing successfully completed.");
           } catch (e) {
@@ -229,12 +237,13 @@ export class AudioOrchestrator {
           }
         })();
       } else {
-        console.warn("[AO-LOG] VAD service failed to initialize, skipping VAD analysis.");
+        console.warn(
+          "[AO-LOG] VAD service failed to initialize, skipping VAD analysis.",
+        );
       }
-      
+
       this._runBackgroundAnalysis(analysisPromises);
       // --- END OF REVISED ANALYSIS BLOCK ---
-
     } catch (e: any) {
       this.handleError(e);
     } finally {
@@ -306,8 +315,7 @@ export class AudioOrchestrator {
       params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2);
     if (pStore.gain !== 1.0)
       params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(2);
-    if (pStore.jumpSeconds !== 5)
-        params['jump'] = String(pStore.jumpSeconds);
+    if (pStore.jumpSeconds !== 5) params["jump"] = String(pStore.jumpSeconds);
 
     // ADD THIS for URL serialization
     if (pStore.sourceUrl) {
@@ -372,7 +380,7 @@ export class AudioOrchestrator {
 
   public jump(direction: 1 | -1): void {
     console.log(`[AO-LOG] jump called with direction: ${direction}`);
-    if(!get(playerStore).isPlayable) return;
+    if (!get(playerStore).isPlayable) return;
     audioEngine.jump(direction);
   }
 

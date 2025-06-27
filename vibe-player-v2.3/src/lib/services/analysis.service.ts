@@ -56,28 +56,32 @@ class AnalysisService {
     });
   }
 
-  public initialize(
-    options?: AnalysisServiceInitializeOptions,
-  ): Promise<void> {
+  public initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
     // --- START OF FIX: Robust Idempotency ---
     console.log(
       `[AnalysisService-INIT] Call received. isInitialized: ${this.isInitialized}, isInitializing: ${this.isInitializing}`,
     );
 
     if (!browser) {
-      console.log("[AnalysisService-INIT] Not in browser, returning resolved promise.");
+      console.log(
+        "[AnalysisService-INIT] Not in browser, returning resolved promise.",
+      );
       return Promise.resolve();
     }
 
     // If already initialized, return immediately.
     if (this.isInitialized) {
-      console.log("[AnalysisService-INIT] Already initialized. Returning resolved promise.");
+      console.log(
+        "[AnalysisService-INIT] Already initialized. Returning resolved promise.",
+      );
       return Promise.resolve();
     }
 
     // If an initialization is already in progress, return the existing promise to wait on.
     if (this.isInitializing && this.initPromise) {
-      console.log("[AnalysisService-INIT] Initialization in progress. Returning existing promise.");
+      console.log(
+        "[AnalysisService-INIT] Initialization in progress. Returning existing promise.",
+      );
       return this.initPromise;
     }
 
@@ -86,13 +90,18 @@ class AnalysisService {
     this.isInitializing = true;
     this.initPromise = this._doInitialize(options)
       .then(() => {
-        console.log("[AnalysisService-INIT] _doInitialize resolved successfully.");
+        console.log(
+          "[AnalysisService-INIT] _doInitialize resolved successfully.",
+        );
         this.isInitialized = true;
         this.isInitializing = false;
         this.initPromise = null; // Clear promise after success
       })
       .catch((err) => {
-        console.error("[AnalysisService-INIT] _doInitialize rejected with error:", err);
+        console.error(
+          "[AnalysisService-INIT] _doInitialize rejected with error:",
+          err,
+        );
         this.isInitialized = false;
         this.isInitializing = false;
         this.initPromise = null; // Clear promise after failure
@@ -194,7 +203,9 @@ class AnalysisService {
         );
       }
       const modelBuffer = await modelResponse.arrayBuffer();
-      console.log("[AnalysisService-INIT] Model fetched. Posting INIT message to worker.");
+      console.log(
+        "[AnalysisService-INIT] Model fetched. Posting INIT message to worker.",
+      );
       const initPayload = {
         origin: location.origin,
         modelBuffer,
@@ -205,7 +216,9 @@ class AnalysisService {
         { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [initPayload.modelBuffer],
       );
-      console.log("[AnalysisService-INIT] INIT message sent to worker, awaiting response.");
+      console.log(
+        "[AnalysisService-INIT] INIT message sent to worker, awaiting response.",
+      );
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       analysisStore.update((s) => ({
