@@ -248,9 +248,7 @@ describe("AnalysisService", () => {
         analysisStore.update as vi.Mock
       ).mock.calls.pop()?.[0];
       const finalState = storeUpdateArgs(getStoreState());
-      const expectedRegions: VadRegion[] = [
-                { start: 0, end: 1.344 }
-            ];
+      const expectedRegions: VadRegion[] = [{ start: 0, end: 1.344 }];
 
       // THEN the regions should be merged into one single region due to padding and subsequent merge logic.
       // NOTE: This differs from a hypothetical V1 behavior that might not have merged

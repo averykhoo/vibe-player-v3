@@ -12,6 +12,7 @@ const initialState: PlayerState = {
   speed: 1.0,
   pitchShift: 0.0,
   gain: 1.0,
+  jumpSeconds: 5, // <-- ADD THIS LINE
   waveformData: undefined,
   error: null,
   audioBuffer: undefined,

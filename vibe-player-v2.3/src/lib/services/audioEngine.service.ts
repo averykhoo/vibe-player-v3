@@ -346,15 +346,18 @@ class AudioEngineService {
     );
   }
 
-  public jump(seconds: number): void {
-    if (!this.originalBuffer) return;
-    const wasPlaying = this.isPlaying;
-    const currentTime = get(timeStore);
-    const newTime = currentTime + seconds;
-    this.seek(newTime);
-    if (wasPlaying) {
-      this.play();
+  public jump(direction: 1 | -1): void {
+    if (!this.originalBuffer) {
+      console.warn("AudioEngine: Cannot jump, no audio buffer loaded.");
+      return;
     }
+    const { jumpSeconds } = get(playerStore);
+    const currentTime = get(timeStore);
+    const jumpAmount = direction * jumpSeconds;
+    const newTime = currentTime + jumpAmount;
+
+    // The existing seek method already handles clamping the time between 0 and duration.
+    this.seek(newTime);
   }
 
   public setSpeed(speed: number): void {

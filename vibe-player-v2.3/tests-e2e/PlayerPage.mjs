@@ -24,6 +24,12 @@ export class PlayerPage {
     this.fileNameDisplay = page.getByTestId("file-name-display");
     this.playButton = page.getByTestId("play-button");
     this.stopButton = page.getByTestId("stop-button");
+
+    // --- ADD THESE THREE LOCATORS ---
+    this.jumpBackButton = page.getByRole("button", { name: "Jump back" });
+    this.jumpForwardButton = page.getByRole("button", { name: "Jump forward" });
+    this.jumpDurationInput = page.getByLabel("Jump duration in seconds");
+
     this.timeDisplay = page.getByTestId("time-display");
     this.seekSliderInput = page.getByTestId("seek-slider-input");
     this.speedSliderInput = page.getByTestId("speed-slider-input");

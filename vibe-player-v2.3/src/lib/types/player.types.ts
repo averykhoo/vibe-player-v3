@@ -11,6 +11,7 @@ export interface PlayerState {
   gain: number;
   sourceUrl?: string | null; // <-- ADD THIS
   waveformData?: number[][];
+  jumpSeconds: number; // <-- ADD THIS LINE
   error: string | null;
   audioBuffer?: AudioBuffer;
   audioContextResumed?: boolean;

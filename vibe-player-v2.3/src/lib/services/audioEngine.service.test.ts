@@ -402,4 +402,42 @@ describe("AudioEngineService (Robust Loop)", () => {
 
     expect(scheduleSpy).toHaveBeenCalledWith(mockResult.outputBuffer);
   });
+
+  describe("jump", () => {
+    beforeEach(() => {
+      // Ensure originalBuffer is set for jump tests
+      (engine as any).originalBuffer = mockAudioBuffer;
+      // Update playerStore with jumpSeconds and a duration
+      // Note: The mockAudioBuffer already defines a duration,
+      // but explicitly setting it in the store ensures consistency if needed by other parts of the test.
+      playerStore.update((s) => ({
+        ...s,
+        jumpSeconds: 5,
+        duration: mockAudioBuffer.duration,
+      }));
+    });
+
+    it("should call seek with a positive offset when direction is 1", () => {
+      const seekSpy = vi.spyOn(engine, "seek");
+      timeStore.set(10); // Current time before jump
+      engine.jump(1); // Jump forward
+      // Expected new time = currentTime (10) + jumpSeconds (5)
+      expect(seekSpy).toHaveBeenCalledWith(15);
+    });
+
+    it("should call seek with a negative offset when direction is -1", () => {
+      const seekSpy = vi.spyOn(engine, "seek");
+      timeStore.set(10); // Current time before jump
+      engine.jump(-1); // Jump backward
+      // Expected new time = currentTime (10) - jumpSeconds (5)
+      expect(seekSpy).toHaveBeenCalledWith(5);
+    });
+
+    it("should not call seek if originalBuffer is null", () => {
+      (engine as any).originalBuffer = null; // Simulate no buffer loaded
+      const seekSpy = vi.spyOn(engine, "seek");
+      engine.jump(1);
+      expect(seekSpy).not.toHaveBeenCalled();
+    });
+  });
 });

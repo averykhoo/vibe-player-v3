@@ -389,4 +389,47 @@ test.describe("Vibe Player V2 E2E", () => {
       "1 2 3 A 4 5 6 B 7 8 9 C * 0 # D",
     );
   });
+
+  test("should jump forward and backward using the jump controls", async ({
+    page,
+  }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
+
+    const startTime = 10;
+    // Using setSliderValue for seek as performInteractiveSeek might be too complex/unreliable for simple value setting
+    await playerPage.setSliderValue(
+      playerPage.seekSliderInput,
+      String(startTime),
+    );
+
+    // Wait for the time to update after seek
+    await expect(async () => {
+      expect(await playerPage.getCurrentTime()).toBe(startTime);
+    }).toPass({ timeout: 2000 });
+
+    // Jump forward (default 5 seconds)
+    await playerPage.jumpForwardButton.click();
+    await expect(async () => {
+      expect(await playerPage.getCurrentTime()).toBe(startTime + 5);
+    }).toPass({ timeout: 2000 }); // Increased timeout for stability
+
+    // Jump backward (default 5 seconds)
+    await playerPage.jumpBackButton.click();
+    await expect(async () => {
+      expect(await playerPage.getCurrentTime()).toBe(startTime);
+    }).toPass({ timeout: 2000 }); // Increased timeout
+
+    // Change jump duration and test again
+    const newJumpDuration = 2;
+    await playerPage.jumpDurationInput.fill(String(newJumpDuration));
+
+    // Jump forward with new duration
+    await playerPage.jumpForwardButton.click();
+    await expect(async () => {
+      expect(await playerPage.getCurrentTime()).toBe(
+        startTime + newJumpDuration,
+      );
+    }).toPass({ timeout: 2000 }); // Increased timeout
+  });
 });
