@@ -13,9 +13,11 @@ import {
   UI_CONSTANTS,
   URL_HASH_KEYS,
   VISUALIZER_CONSTANTS,
+  VAD_CONSTANTS,
 } from "$lib/utils/constants";
 import type { PlayerState } from "$lib/types/player.types";
 import { createWaveformData } from "$lib/utils/waveform";
+import analysisService from "./analysis.service";
 
 const initialPlayerStateSnapshot: PlayerState = {
   status: "idle",
@@ -180,6 +182,32 @@ export class AudioOrchestrator {
           spectrogramService.process(audioBuffer.getChannelData(0)),
         );
       this._runBackgroundAnalysis(analysisPromises);
+
+      // Add this block after statusStore.set({ message: `Ready...` });
+      // and before the catch/finally blocks.
+      // Don't await this, let it run in the background
+      (async () => {
+        try {
+          // Resample audio for VAD
+          const targetSampleRate = VAD_CONSTANTS.SAMPLE_RATE;
+          const offlineCtx = new OfflineAudioContext(
+            1,
+            audioBuffer.duration * targetSampleRate,
+            targetSampleRate,
+          );
+          const source = offlineCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(offlineCtx.destination);
+          source.start();
+          const resampled = await offlineCtx.startRendering();
+          const pcmData = resampled.getChannelData(0);
+
+          // Kick off VAD processing
+          await analysisService.processVad(pcmData);
+        } catch (e) {
+          console.warn("[AO-LOG] Background VAD analysis failed.", e);
+        }
+      })();
     } catch (e: any) {
       this.handleError(e);
     } finally {

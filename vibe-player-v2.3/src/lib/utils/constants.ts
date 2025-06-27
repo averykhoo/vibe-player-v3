@@ -35,6 +35,9 @@ export interface VadConstants {
   DEFAULT_POSITIVE_THRESHOLD: number;
   DEFAULT_NEGATIVE_THRESHOLD: number;
   ONNX_MODEL_URL: string;
+  MIN_SPEECH_DURATION_MS: number; // <-- ADD
+  SPEECH_PAD_MS: number; // <-- ADD
+  REDEMPTION_FRAMES: number; // <-- ADD
 }
 
 export const VAD_CONSTANTS: VadConstants = {
@@ -44,7 +47,10 @@ export const VAD_CONSTANTS: VadConstants = {
   YIELD_INTERVAL: 5,
   DEFAULT_POSITIVE_THRESHOLD: 0.5,
   DEFAULT_NEGATIVE_THRESHOLD: 0.35,
-  ONNX_MODEL_URL: "/models/silero_vad.onnx", // UPDATED
+  ONNX_MODEL_URL: "/models/silero_vad.onnx",
+  MIN_SPEECH_DURATION_MS: 250, // <-- SET TO V1 VALUE
+  SPEECH_PAD_MS: 100, // <-- SET TO V1 VALUE
+  REDEMPTION_FRAMES: 7, // <-- SET TO V1 VALUE
 };
 
 export interface UiConstants {

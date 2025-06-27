@@ -1,24 +1,22 @@
 // vibe-player-v2.3/src/lib/services/analysis.service.ts
 import { browser } from "$app/environment";
-import type {
-  SileroVadInitPayload,
-  SileroVadProcessPayload,
-  SileroVadProcessResultPayload,
-  WorkerMessage,
-} from "$lib/types/worker.types";
+import { get } from "svelte/store";
+import type { WorkerMessage } from "$lib/types/worker.types";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
-import { VAD_CONSTANTS } from "$lib/utils";
+import { VAD_CONSTANTS, UI_CONSTANTS } from "$lib/utils";
 import { analysisStore } from "$lib/stores/analysis.store";
 import SileroVadWorker from "$lib/workers/sileroVad.worker?worker&inline";
-
-interface PendingRequest {
-  resolve: (value: unknown) => void;
-  reject: (reason?: any) => void;
-}
+import type { VadRegion } from "$lib/types/analysis.types";
+import { debounce } from "$lib/utils/async";
 
 interface AnalysisServiceInitializeOptions {
   positiveThreshold?: number;
   negativeThreshold?: number;
+}
+
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (reason?: any) => void;
 }
 
 class AnalysisService {
@@ -109,13 +107,7 @@ class AnalysisService {
             if (request) request.resolve(payload);
             break;
           case VAD_WORKER_MSG_TYPE.PROCESS_RESULT:
-            const resultPayload = payload as SileroVadProcessResultPayload;
-            analysisStore.update((s) => ({
-              ...s,
-              lastVadResult: resultPayload,
-              isSpeaking: resultPayload.isSpeech,
-            }));
-            if (request) request.resolve(resultPayload);
+            if (request) request.resolve(payload);
             break;
           case `${VAD_WORKER_MSG_TYPE.RESET}_SUCCESS`:
             analysisStore.update((s) => ({
@@ -162,21 +154,13 @@ class AnalysisService {
         );
       }
       const modelBuffer = await modelResponse.arrayBuffer();
-
-      const initPayload: SileroVadInitPayload = {
-        origin: location.origin, // <-- ADDED
+      const initPayload = {
+        origin: location.origin,
         modelBuffer,
         sampleRate: VAD_CONSTANTS.SAMPLE_RATE,
         frameSamples: VAD_CONSTANTS.DEFAULT_FRAME_SAMPLES,
-        positiveThreshold:
-          options?.positiveThreshold ||
-          VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
-        negativeThreshold:
-          options?.negativeThreshold ||
-          VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
       };
-
-      await this.postMessageToWorker<SileroVadInitPayload>(
+      await this.postMessageToWorker(
         { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [initPayload.modelBuffer],
       );
@@ -194,41 +178,138 @@ class AnalysisService {
     }
   }
 
-  public async analyzeAudioFrame(
-    audioFrame: Float32Array,
-    timestamp?: number,
-  ): Promise<SileroVadProcessResultPayload | null> {
+  public async processVad(pcmData: Float32Array): Promise<void> {
     if (!this.worker || !this.isInitialized) {
-      const errorMsg = "VAD Service not initialized or worker unavailable.";
-      analysisStore.update((s) => ({ ...s, vadError: errorMsg }));
-      throw new Error(errorMsg);
+      throw new Error("VAD Service not initialized or worker unavailable.");
     }
 
-    // --- ROBUSTNESS FIX ---
-    // Create a copy of the audio frame to ensure the original buffer is not detached.
-    const audioFrameCopy = new Float32Array(audioFrame);
-    const payload: SileroVadProcessPayload = {
-      audioFrame: audioFrameCopy,
-      timestamp,
-    };
-    // --- END OF FIX ---
+    analysisStore.update((s) => ({
+      ...s,
+      vadStatus: "Analyzing voice activity...",
+      isLoading: true,
+      vadProbabilities: null,
+      vadRegions: null,
+    }));
 
-    try {
-      const result = await this.postMessageToWorker<SileroVadProcessPayload>(
-        { type: VAD_WORKER_MSG_TYPE.PROCESS, payload },
-        [payload.audioFrame.buffer], // Transfer the copy's buffer
-      );
-      return result as SileroVadProcessResultPayload;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      analysisStore.update((s) => ({
-        ...s,
-        vadError: `Error processing VAD frame: ${errorMessage}`,
-      }));
-      return null;
-    }
+    const payload = { pcmData };
+    const result = (await this.postMessageToWorker(
+      { type: VAD_WORKER_MSG_TYPE.PROCESS, payload },
+      [payload.pcmData.buffer],
+    )) as { probabilities: Float32Array };
+
+    analysisStore.update((s) => ({
+      ...s,
+      vadProbabilities: result.probabilities,
+      isLoading: false,
+      vadStatus: "VAD analysis complete.",
+    }));
+
+    this.recalculateVadRegions();
   }
+
+  public recalculateVadRegions = debounce((): void => {
+    const state = get(analysisStore);
+    if (!state.vadProbabilities) return;
+
+    const { vadProbabilities, vadPositiveThreshold, vadNegativeThreshold } =
+      state;
+    const {
+      SAMPLE_RATE,
+      DEFAULT_FRAME_SAMPLES,
+      MIN_SPEECH_DURATION_MS,
+      SPEECH_PAD_MS,
+      REDEMPTION_FRAMES,
+    } = VAD_CONSTANTS;
+
+    const newRegions: VadRegion[] = [];
+    let inSpeech = false;
+    let regionStart = 0.0;
+    let redemptionCounter = 0;
+    let lastPositiveFrameIndex = -1;
+
+    for (let i = 0; i < vadProbabilities.length; i++) {
+      const probability = vadProbabilities[i];
+      const frameStartTime = (i * DEFAULT_FRAME_SAMPLES) / SAMPLE_RATE;
+
+      if (probability >= vadPositiveThreshold) {
+        if (!inSpeech) {
+          inSpeech = true;
+          regionStart = frameStartTime;
+        }
+        redemptionCounter = 0;
+        lastPositiveFrameIndex = i;
+      } else if (inSpeech) {
+        if (probability < vadNegativeThreshold) {
+          redemptionCounter++;
+          if (redemptionCounter >= REDEMPTION_FRAMES) {
+            const firstBadFrameIndex = i - REDEMPTION_FRAMES + 1;
+            const actualEnd =
+              (firstBadFrameIndex * DEFAULT_FRAME_SAMPLES) / SAMPLE_RATE;
+            newRegions.push({
+              start: regionStart,
+              end: Math.max(regionStart, actualEnd),
+            });
+            inSpeech = false;
+            redemptionCounter = 0;
+            lastPositiveFrameIndex = -1;
+          }
+        } else {
+          redemptionCounter = 0;
+        }
+      }
+    }
+
+    if (inSpeech) {
+      const endFrameIndexPlusOne =
+        lastPositiveFrameIndex !== -1 &&
+        lastPositiveFrameIndex < vadProbabilities.length
+          ? lastPositiveFrameIndex + 1
+          : vadProbabilities.length;
+      const finalEnd =
+        (endFrameIndexPlusOne * DEFAULT_FRAME_SAMPLES) / SAMPLE_RATE;
+      newRegions.push({
+        start: regionStart,
+        end: Math.max(regionStart, finalEnd),
+      });
+    }
+
+    const minSpeechDuration = MIN_SPEECH_DURATION_MS / 1000.0;
+    const speechPad = SPEECH_PAD_MS / 1000.0;
+
+    const paddedAndFilteredRegions: VadRegion[] = [];
+    for (const region of newRegions) {
+      const start = Math.max(0, region.start - speechPad);
+      const end = region.end + speechPad;
+
+      if (end - start >= minSpeechDuration) {
+        paddedAndFilteredRegions.push({ start: start, end: end });
+      }
+    }
+
+    const mergedRegions: VadRegion[] = [];
+    if (paddedAndFilteredRegions.length > 0) {
+      let currentRegion = { ...paddedAndFilteredRegions[0] };
+      for (let i = 1; i < paddedAndFilteredRegions.length; i++) {
+        const nextRegion = paddedAndFilteredRegions[i];
+        if (nextRegion.start < currentRegion.end) {
+          currentRegion.end = Math.max(currentRegion.end, nextRegion.end);
+        } else {
+          mergedRegions.push(currentRegion);
+          currentRegion = { ...nextRegion };
+        }
+      }
+      mergedRegions.push(currentRegion);
+    }
+
+    const maxProbTime =
+      (vadProbabilities.length * DEFAULT_FRAME_SAMPLES) / SAMPLE_RATE;
+    const finalRegions = mergedRegions.map((region) => ({
+      start: region.start,
+      end: Math.min(region.end, maxProbTime),
+    }));
+
+    analysisStore.update((s) => ({ ...s, vadRegions: finalRegions }));
+  }, UI_CONSTANTS.DEBOUNCE_HASH_UPDATE_MS);
 
   public dispose(): void {
     if (this.worker) {

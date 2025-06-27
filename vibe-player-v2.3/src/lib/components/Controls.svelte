@@ -2,10 +2,11 @@
 <script lang="ts">
     import { RangeSlider } from '@skeletonlabs/skeleton';
     import audioEngine from '$lib/services/audioEngine.service';
+    import analysisService from '$lib/services/analysis.service'; // <-- IMPORT
     import { playerStore } from '$lib/stores/player.store';
-    import { analysisStore } from '$lib/stores/analysis.store'; // <-- ADDED for VAD
+    import { analysisStore } from '$lib/stores/analysis.store';
     import { debounce } from '$lib/utils/async';
-    import { get } from 'svelte/store'; // <-- Ensure get is imported
+    import { get } from 'svelte/store';
 
     const engine = audioEngine;
     $: controlsDisabled = !$playerStore.isPlayable || $playerStore.status === 'loading';
@@ -15,9 +16,10 @@
     let pitchShift = get(playerStore).pitchShift;
     let gain = get(playerStore).gain;
 
-    // --- Local State for VAD Sliders (NEW) ---
-    let vadPositive = get(analysisStore).vadPositiveThreshold;
-    let vadNegative = get(analysisStore).vadNegativeThreshold;
+    // Local state for VAD thresholds, initialized from the store
+    let vadPositive: number = get(analysisStore).vadPositiveThreshold;
+    let vadNegative: number = get(analysisStore).vadNegativeThreshold;
+    let loopActive = false; // This was in the example, but not used. Retaining for now.
 
     const debouncedSetSpeed = debounce((val: number) => {
         console.log(`[Controls.svelte] DEBOUNCED setSpeed executed with: ${val}`);
@@ -32,19 +34,15 @@
         engine.setGain(val);
     }, 150);
 
-    // --- Debounced VAD Update (NEW) ---
-    const debouncedSetVadThresholds = debounce(() => {
-        analysisStore.update(s => ({
-            ...s,
-            vadPositiveThreshold: vadPositive,
-            vadNegativeThreshold: vadNegative
-        }));
-        // Note: For live VAD updates, analysisService would need a method to re-init or update worker thresholds.
-        // For now, this just updates the store, which might be used on next file load by orchestrator.
-    }, 250);
+    // Replace the old debouncedSetVadThresholds logic with this:
+    $: if (vadPositive !== undefined) {
+        analysisStore.update(s => ({...s, vadPositiveThreshold: vadPositive }));
+    }
+    $: if (vadNegative !== undefined) {
+        analysisStore.update(s => ({...s, vadNegativeThreshold: vadNegative }));
+    }
 
     // --- Reactive Statements to Call Services ---
-    // MODIFIED: Simpler reactive triggers for speed, pitch, gain
     $: if (speed !== undefined) {
         console.log(`[Controls.svelte] UI 'speed' changed to: ${speed}. Queuing debouncedSetSpeed.`);
         debouncedSetSpeed(speed);
@@ -57,13 +55,6 @@
         console.log(`[Controls.svelte] UI 'gain' changed to: ${gain}. Queuing debouncedSetGain.`);
         debouncedSetGain(gain);
     }
-    // Note: The conditions `!== get(playerStore).<value>` are added to prevent
-    // the debounced functions from being called on initial component load if the
-    // local values are already in sync with the store.
-
-
-    // --- Reactive Statement for VAD (NEW) ---
-    $: if (vadPositive !== undefined && vadNegative !== undefined) debouncedSetVadThresholds();
 
     // --- Subscriptions to Sync UI from External Store Changes ---
     playerStore.subscribe(val => {
@@ -72,11 +63,14 @@
         if (val.gain !== gain) gain = val.gain;
     });
 
-    analysisStore.subscribe(val => { // (NEW)
+    analysisStore.subscribe(val => {
         if (val.vadPositiveThreshold !== undefined && vadPositive !== val.vadPositiveThreshold)
             vadPositive = val.vadPositiveThreshold;
         if (val.vadNegativeThreshold !== undefined && vadNegative !== val.vadNegativeThreshold)
             vadNegative = val.vadNegativeThreshold;
+
+		// Trigger recalculation WHENEVER the thresholds in the store change
+		analysisService.recalculateVadRegions();
     });
 
     function handlePlayPause() {

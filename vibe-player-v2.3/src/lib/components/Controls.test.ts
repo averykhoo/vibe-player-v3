@@ -7,12 +7,7 @@ import audioEngineService from "$lib/services/audioEngine.service";
 import { get, writable, type Writable } from "svelte/store";
 import type { PlayerState } from "$lib/types/player.types";
 
-// Minimal AnalysisState for mocking based on component usage
-interface MockAnalysisState {
-  vadPositiveThreshold: number;
-  vadNegativeThreshold: number;
-  // Add other fields if Controls.svelte starts using them
-}
+import type { AnalysisState } from "$lib/types/analysis.types";
 
 // Mock playerStore
 vi.mock("$lib/stores/player.store", async () => {
@@ -42,9 +37,23 @@ vi.mock("$lib/stores/player.store", async () => {
 vi.mock("$lib/stores/analysis.store", async () => {
   const { writable } =
     await vi.importActual<typeof import("svelte/store")>("svelte/store");
-  const initialAnalysisStateForMock: MockAnalysisState = {
+  const initialAnalysisStateForMock: AnalysisState = {
     vadPositiveThreshold: 0.8,
     vadNegativeThreshold: 0.2,
+    vadProbabilities: null, // Required by AnalysisState
+    vadRegions: null, // Required by AnalysisState
+    // Add other non-optional fields from AnalysisState with default/mock values
+    vadStatus: undefined,
+    lastVadResult: null,
+    isSpeaking: undefined,
+    vadStateResetted: undefined,
+    vadError: null,
+    vadInitialized: false,
+    spectrogramStatus: undefined,
+    spectrogramError: null,
+    spectrogramData: null,
+    spectrogramInitialized: false,
+    isLoading: false,
   };
   const storeInstance = writable(initialAnalysisStateForMock);
   return {
@@ -61,15 +70,23 @@ vi.mock("$lib/services/audioEngine.service", () => ({
     setSpeed: vi.fn(),
     setPitch: vi.fn(),
     setGain: vi.fn(),
-    // jump: vi.fn(), // REMOVED: jump functionality is gone from Controls.svelte
+  },
+}));
+
+// Mock analysisService
+vi.mock("$lib/services/analysis.service", () => ({
+  default: {
+    recalculateVadRegions: vi.fn(),
+    // Mock other methods if Controls.svelte starts using them
   },
 }));
 
 describe("Controls.svelte", () => {
   let mockPlayerStore: Writable<PlayerState>;
-  let mockAnalysisStore: Writable<MockAnalysisState>;
+  let mockAnalysisStore: Writable<AnalysisState>; // Updated type
   let initialPlayerState: PlayerState;
-  let initialAnalysisState: MockAnalysisState;
+  let initialAnalysisState: AnalysisState; // Updated type
+  let analysisService: typeof import("$lib/services/analysis.service").default;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -88,6 +105,12 @@ describe("Controls.svelte", () => {
       JSON.stringify(analysisStoreModule.__initialAnalysisState),
     ); // Deep copy
     mockAnalysisStore.set({ ...initialAnalysisState });
+
+    // Import the mocked analysisService
+    const analysisServiceModule = await import(
+      "$lib/services/analysis.service"
+    );
+    analysisService = analysisServiceModule.default;
   });
 
   afterEach(() => {
@@ -262,9 +285,10 @@ describe("Controls.svelte", () => {
     expect(get(mockAnalysisStore).vadNegativeThreshold).toBe(
       initialAnalysisState.vadNegativeThreshold,
     ); // Ensure other value didn't change
+    expect(analysisService.recalculateVadRegions).toHaveBeenCalled();
   });
 
-  it("updates analysisStore with debounce when VAD negative threshold slider is moved", async () => {
+  it("updates analysisStore and calls recalculateVadRegions when VAD negative threshold slider is moved", async () => {
     render(Controls);
     act(() => {
       mockPlayerStore.update((s) => ({ ...s, isPlayable: true }));
@@ -286,6 +310,7 @@ describe("Controls.svelte", () => {
     expect(get(mockAnalysisStore).vadPositiveThreshold).toBe(
       initialAnalysisState.vadPositiveThreshold,
     ); // Ensure other value didn't change
+    expect(analysisService.recalculateVadRegions).toHaveBeenCalled();
   });
 
   it("disables all controls when not playable", async () => {

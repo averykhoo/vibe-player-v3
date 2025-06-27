@@ -97,52 +97,42 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         if (!vadSession || !_h || !_c || !srTensor) {
           throw new Error("VAD worker not initialized or tensors not ready.");
         }
-        const processPayload = payload as SileroVadProcessPayload;
+        // This payload is now the full PCM data, not just a frame
+        const { pcmData } = payload as { pcmData: Float32Array };
+        const allProbabilities: number[] = [];
 
-        // --- ADD THIS ASSERTION ---
-        assert(
-          processPayload.audioFrame &&
-            processPayload.audioFrame instanceof Float32Array,
-          "PROCESS payload is missing a valid `audioFrame`.",
-        );
-        // --- END ASSERTION ---
+        // Loop through the entire audio data, frame by frame
+        for (let i = 0; i + frameSamples <= pcmData.length; i += frameSamples) {
+          const audioFrame = pcmData.subarray(i, i + frameSamples);
+          const inputTensor = new ort.Tensor("float32", audioFrame, [
+            1,
+            audioFrame.length,
+          ]);
+          const feeds: Record<string, ort.Tensor> = {
+            input: inputTensor,
+            sr: srTensor,
+            h: _h,
+            c: _c,
+          };
 
-        const audioFrame = processPayload.audioFrame;
-
-        if (audioFrame.length !== frameSamples) {
-          throw new Error(
-            `Input audio frame size ${audioFrame.length} does not match expected frameSamples ${frameSamples}`,
-          );
+          const results = await vadSession.run(feeds);
+          allProbabilities.push((results.output.data as Float32Array)[0]);
+          _h = results.hn;
+          _c = results.cn;
         }
 
-        const inputTensor = new ort.Tensor("float32", audioFrame, [
-          1,
-          audioFrame.length,
-        ]);
-        const feeds: Record<string, ort.Tensor> = {
-          input: inputTensor,
-          sr: srTensor,
-          h: _h,
-          c: _c,
+        const resultPayload = {
+          probabilities: new Float32Array(allProbabilities),
         };
 
-        const results = await vadSession.run(feeds);
-        const outputScore = (results.output.data as Float32Array)[0];
-        _h = results.hn;
-        _c = results.cn;
-
-        const isSpeech = outputScore >= positiveThreshold;
-
-        const resultPayload: SileroVadProcessResultPayload = {
-          isSpeech: isSpeech,
-          timestamp: payload.timestamp || 0,
-          score: outputScore,
-        };
-        self.postMessage({
-          type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT,
-          payload: resultPayload,
-          messageId,
-        });
+        self.postMessage(
+          {
+            type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT,
+            payload: resultPayload,
+            messageId,
+          },
+          [resultPayload.probabilities.buffer],
+        ); // Transfer the buffer back
         break;
 
       case VAD_WORKER_MSG_TYPE.RESET:

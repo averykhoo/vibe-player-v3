@@ -102,45 +102,44 @@ test.describe("Vibe Player V2 E2E", () => {
     expect(timeAfterPauseAndDelay).toBe(timeAfterPause);
   });
 
-  test(
-    "should seek audio interactively (mousedown, input, mouseup) and resume if playing",
-    async ({ page }) => {
-      await playerPage.loadAudioFile(TEST_AUDIO_FILE);
-      await playerPage.expectControlsToBeReadyForPlayback();
+  test("should seek audio interactively (mousedown, input, mouseup) and resume if playing", async ({
+    page,
+  }) => {
+    await playerPage.loadAudioFile(TEST_AUDIO_FILE);
+    await playerPage.expectControlsToBeReadyForPlayback();
 
-      // 1. Start playback and verify it's running
-      await playerPage.playButton.click();
-      await expect(playerPage.playButton).toHaveText(/Pause/);
-      await expect(playerPage.timeDisplay).not.toHaveText(/^0:00 \//, {
-        timeout: 5000,
-      });
+    // 1. Start playback and verify it's running
+    await playerPage.playButton.click();
+    await expect(playerPage.playButton).toHaveText(/Pause/);
+    await expect(playerPage.timeDisplay).not.toHaveText(/^0:00 \//, {
+      timeout: 5000,
+    });
 
-      const durationSeconds = await playerPage.getDuration();
-      expect(
-        durationSeconds,
-        "Duration should be greater than 0",
-      ).toBeGreaterThan(0);
-      const targetSeekTimeSeconds = durationSeconds / 2;
+    const durationSeconds = await playerPage.getDuration();
+    expect(
+      durationSeconds,
+      "Duration should be greater than 0",
+    ).toBeGreaterThan(0);
+    const targetSeekTimeSeconds = durationSeconds / 2;
 
-      // 2. Perform the entire interactive seek using the new robust helper.
-      // THIS IS THE CORRECTED CALL
-      await playerPage.setSliderValue(
-        playerPage.seekSliderInput,
-        String(targetSeekTimeSeconds),
-      );
+    // 2. Perform the entire interactive seek using the new robust helper.
+    // THIS IS THE CORRECTED CALL
+    await playerPage.setSliderValue(
+      playerPage.seekSliderInput,
+      String(targetSeekTimeSeconds),
+    );
 
-      // 3. Assert audio resumes playing automatically, since it was playing before the seek.
-      await expect(playerPage.playButton).toHaveText(/Pause/, {
-        timeout: 2000,
-      });
+    // 3. Assert audio resumes playing automatically, since it was playing before the seek.
+    await expect(playerPage.playButton).toHaveText(/Pause/, {
+      timeout: 2000,
+    });
 
-      // 4. Assert the actual time has settled near the seek target.
-      await expect(async () => {
-        const currentTime = await playerPage.getCurrentTime();
-        expect(currentTime).toBeCloseTo(targetSeekTimeSeconds, 1);
-      }).toPass({ timeout: 5000 });
-    },
-  );
+    // 4. Assert the actual time has settled near the seek target.
+    await expect(async () => {
+      const currentTime = await playerPage.getCurrentTime();
+      expect(currentTime).toBeCloseTo(targetSeekTimeSeconds, 1);
+    }).toPass({ timeout: 5000 });
+  });
 
   test("should detect and display DTMF tones", async ({ page }) => {
     await playerPage.loadAudioFile(DTMF_TEST_AUDIO_FILE);

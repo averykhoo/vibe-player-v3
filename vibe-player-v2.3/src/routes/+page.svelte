@@ -18,6 +18,7 @@
     import { AudioOrchestrator } from '$lib/services/AudioOrchestrator.service';
     import { formatTime } from '$lib/utils/formatters';
     import { statusStore } from '$lib/stores/status.store';
+    import analysisService from '$lib/services/analysis.service';
 
     let orchestrator: AudioOrchestrator;
     let isDragOver = false; // For drag-and-drop UI feedback
@@ -86,6 +87,7 @@
     onMount(() => {
         orchestrator = AudioOrchestrator.getInstance();
         orchestrator.setupUrlSerialization();
+        analysisService.initialize(); // Eagerly initialize the VAD service
 
         const unsubscribeStatus = statusStore.subscribe(currentStatus => {
             if (currentStatus.type === 'error' && currentStatus.message) {

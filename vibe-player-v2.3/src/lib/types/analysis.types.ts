@@ -1,16 +1,23 @@
 // vibe-player-v2.3/src/lib/types/analysis.types.ts
 import type { SileroVadProcessResultPayload } from "$lib/types/worker.types";
 
+export interface VadRegion {
+  start: number;
+  end: number;
+}
+
 export interface AnalysisState {
   // VAD related properties
-  vadStatus?: string; // e.g., "VAD service initializing...", "VAD service initialized."
+  vadStatus?: string;
   lastVadResult?: SileroVadProcessResultPayload | null;
   isSpeaking?: boolean;
   vadStateResetted?: boolean;
   vadError?: string | null;
-  vadInitialized?: boolean; // To track VAD worker initialization status
-  vadPositiveThreshold?: number; // Added for VAD positive threshold
-  vadNegativeThreshold?: number; // Added for VAD negative threshold
+  vadInitialized?: boolean;
+  vadPositiveThreshold: number; // Changed to non-optional
+  vadNegativeThreshold: number; // Changed to non-optional
+  vadProbabilities: Float32Array | null; // <-- ADD
+  vadRegions: VadRegion[] | null; // <-- ADD
 
   // Spectrogram related properties
   spectrogramStatus?: string; // e.g., "Spectrogram worker initializing..."

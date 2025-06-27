@@ -327,7 +327,9 @@ class AudioEngineService {
       return;
     }
     // --- ADD THIS LOG ---
-    console.log(`[AudioEngineService] seek(): Clamping against duration: ${this.originalBuffer.duration.toFixed(3)}`);
+    console.log(
+      `[AudioEngineService] seek(): Clamping against duration: ${this.originalBuffer.duration.toFixed(3)}`,
+    );
     // --- END LOG ---
     const clampedTime = Math.max(
       0,

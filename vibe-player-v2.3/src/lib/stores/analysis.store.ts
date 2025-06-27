@@ -1,6 +1,7 @@
 // vibe-player-v2.3/src/lib/stores/analysis.store.ts
 import { writable } from "svelte/store";
 import type { AnalysisState } from "$lib/types/analysis.types";
+import { VAD_CONSTANTS } from "$lib/utils/constants";
 
 const initialState: AnalysisState = {
   vadStatus: undefined,
@@ -9,8 +10,10 @@ const initialState: AnalysisState = {
   vadStateResetted: undefined,
   vadError: null,
   vadInitialized: false,
-  vadPositiveThreshold: 0.5, // Default value
-  vadNegativeThreshold: 0.35, // Default value
+  vadPositiveThreshold: VAD_CONSTANTS.DEFAULT_POSITIVE_THRESHOLD,
+  vadNegativeThreshold: VAD_CONSTANTS.DEFAULT_NEGATIVE_THRESHOLD,
+  vadProbabilities: null,
+  vadRegions: null,
 
   spectrogramStatus: undefined,
   spectrogramError: null,
