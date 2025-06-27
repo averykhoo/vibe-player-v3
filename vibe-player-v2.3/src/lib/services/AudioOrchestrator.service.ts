@@ -29,6 +29,7 @@ const initialPlayerStateSnapshot: PlayerState = {
   speed: 1.0,
   pitchShift: 0.0,
   gain: 1.0,
+  jumpSeconds: 5,
   sourceUrl: null,
   waveformData: undefined,
   error: null,
@@ -131,22 +132,33 @@ export class AudioOrchestrator {
         VISUALIZER_CONSTANTS.SPEC_FIXED_WIDTH,
       );
 
+      // --- START OF FIX ---
+      // We now explicitly wait for all services, including analysisService, to initialize.
+      console.log("[AO-LOG] Awaiting initialization of all services...");
       const initResults = await Promise.allSettled([
         audioEngine.initializeWorker(audioBuffer),
         dtmfService.initialize(16000),
         spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }),
+        analysisService.initialize(), // <-- ADDED THIS LINE
       ]);
+      console.log("[AO-LOG] Service initialization complete. Results:", initResults);
 
+      // Check results. We now have 4 results to check.
       if (initResults[0].status === "rejected") {
         throw new Error("Failed to initialize core audio engine.");
       }
-      initResults.slice(1).forEach((result) => {
-        if (result.status === "rejected")
+      // Log non-critical failures for analysis services (indices 1, 2, and 3)
+      initResults.slice(1).forEach((result, index) => {
+        if (result.status === "rejected") {
+          const serviceName = ['DTMF', 'Spectrogram', 'VAD'][index];
           console.warn(
-            `A non-critical analysis service failed to initialize.`,
+            `[AO-LOG] A non-critical analysis service (${serviceName}) failed to initialize.`,
             result.reason,
           );
+        }
       });
+      // --- END OF FIX ---
+
 
       playerStore.update((s) => ({
         ...s,
@@ -174,40 +186,55 @@ export class AudioOrchestrator {
       });
       this.updateUrlFromState();
 
+      // --- START OF REVISED ANALYSIS BLOCK ---
       const analysisPromises = [];
-      if (initResults[1].status === "fulfilled")
+      // Check for DTMF service readiness (index 1)
+      if (initResults[1].status === "fulfilled") {
+        console.log("[AO-LOG] DTMF service is ready. Queuing processing.");
         analysisPromises.push(dtmfService.process(audioBuffer));
-      if (initResults[2].status === "fulfilled")
+      }
+
+      // Check for Spectrogram service readiness (index 2)
+      if (initResults[2].status === "fulfilled") {
+        console.log("[AO-LOG] Spectrogram service is ready. Queuing processing.");
         analysisPromises.push(
           spectrogramService.process(audioBuffer.getChannelData(0)),
         );
+      }
+
+      // Check for VAD service readiness (index 3)
+      if (initResults[3].status === "fulfilled") {
+        console.log("[AO-LOG] VAD service is ready. Starting VAD processing flow.");
+        // This is now the fire-and-forget block, but it's safe because we know the service is initialized.
+        (async () => {
+          try {
+            console.log("[AO-LOG-VAD] Resampling audio for VAD...");
+            const targetSampleRate = VAD_CONSTANTS.SAMPLE_RATE;
+            const offlineCtx = new OfflineAudioContext(
+              1,
+              audioBuffer.duration * targetSampleRate,
+              targetSampleRate,
+            );
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(offlineCtx.destination);
+            source.start();
+            const resampled = await offlineCtx.startRendering();
+            const pcmData = resampled.getChannelData(0);
+            console.log("[AO-LOG-VAD] Resampling complete. Kicking off VAD processing.");
+            await analysisService.processVad(pcmData);
+            console.log("[AO-LOG-VAD] VAD processing successfully completed.");
+          } catch (e) {
+            console.warn("[AO-LOG] Background VAD analysis failed.", e);
+          }
+        })();
+      } else {
+        console.warn("[AO-LOG] VAD service failed to initialize, skipping VAD analysis.");
+      }
+      
       this._runBackgroundAnalysis(analysisPromises);
+      // --- END OF REVISED ANALYSIS BLOCK ---
 
-      // Add this block after statusStore.set({ message: `Ready...` });
-      // and before the catch/finally blocks.
-      // Don't await this, let it run in the background
-      (async () => {
-        try {
-          // Resample audio for VAD
-          const targetSampleRate = VAD_CONSTANTS.SAMPLE_RATE;
-          const offlineCtx = new OfflineAudioContext(
-            1,
-            audioBuffer.duration * targetSampleRate,
-            targetSampleRate,
-          );
-          const source = offlineCtx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(offlineCtx.destination);
-          source.start();
-          const resampled = await offlineCtx.startRendering();
-          const pcmData = resampled.getChannelData(0);
-
-          // Kick off VAD processing
-          await analysisService.processVad(pcmData);
-        } catch (e) {
-          console.warn("[AO-LOG] Background VAD analysis failed.", e);
-        }
-      })();
     } catch (e: any) {
       this.handleError(e);
     } finally {
@@ -226,12 +253,10 @@ export class AudioOrchestrator {
               "[AO-LOG] A background analysis task failed:",
               result.reason,
             );
-            // Optionally, dispatch a non-critical error notification to the user
           }
         });
       })
       .catch((error) => {
-        // This catch is for errors in the Promise.allSettled itself, which is unlikely
         console.error(
           "[AO-LOG] Unexpected error in background analysis coordination:",
           error,
@@ -281,6 +306,8 @@ export class AudioOrchestrator {
       params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2);
     if (pStore.gain !== 1.0)
       params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(2);
+    if (pStore.jumpSeconds !== 5)
+        params['jump'] = String(pStore.jumpSeconds);
 
     // ADD THIS for URL serialization
     if (pStore.sourceUrl) {
@@ -334,13 +361,19 @@ export class AudioOrchestrator {
   public setPitchShift(pitch: number): void {
     console.log(`[AO-LOG] setPitchShift called with pitch: ${pitch}`);
     if (!get(playerStore).isPlayable) return;
-    audioEngine.setPitchShift(pitch);
+    audioEngine.setPitch(pitch);
   }
 
   public setGain(gain: number): void {
     console.log(`[AO-LOG] setGain called with gain: ${gain}`);
     if (!get(playerStore).isPlayable) return;
     audioEngine.setGain(gain);
+  }
+
+  public jump(direction: 1 | -1): void {
+    console.log(`[AO-LOG] jump called with direction: ${direction}`);
+    if(!get(playerStore).isPlayable) return;
+    audioEngine.jump(direction);
   }
 
   public toggleLoop(loop: boolean): void {
