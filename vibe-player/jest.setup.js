@@ -1,4 +1,4 @@
-// jest.setup.js
+// vibe-player/jest.setup.js
 const fs = require('fs');
 const path = require('path');
 // const vm = require('vm'); // vm not used for this strategy

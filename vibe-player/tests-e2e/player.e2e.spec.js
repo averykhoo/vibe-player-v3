@@ -1,4 +1,4 @@
-// tests-e2e/player.e2e.spec.js
+// vibe-player/tests-e2e/player.e2e.spec.js
 const { test, expect } = require('@playwright/test');
 const { PlayerPage } = require('./PlayerPage');
 

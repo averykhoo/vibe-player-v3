@@ -1,5 +1,4 @@
-// tests/unit/state/constants.test.js
-
+// vibe-player/tests/unit/state/constants.test.js
 describe('Constants Class', () => {
     test('should be defined globally and accessible in tests', () => {
         // This is the primary check. If Constants is not defined here, jest.setup.js

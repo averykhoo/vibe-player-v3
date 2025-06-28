@@ -1,4 +1,4 @@
-// tests/unit/app.test.js
+// vibe-player/tests/unit/app.test.js
 /* eslint-env jest */
 
 // Mock dependencies BEFORE app.js is loaded

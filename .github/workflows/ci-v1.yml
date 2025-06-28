@@ -1,3 +1,4 @@
+# .github/workflows/ci-v1.yml
 name: Vibe Player V1 CI
 
 on:

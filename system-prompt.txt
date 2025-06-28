@@ -18,7 +18,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
 .
 ├── .github
 │   └── workflows
-│       ├── ci.yml
+│       ├── ci-v1.yml
+│       ├── ci-v2.yml
 │       ├── deploy.yml
 │       └── release.yml
 ├── .gitignore
@@ -27,7 +28,6 @@ Your goal is to develop a robust mental model of this repository based *only* on
 ├── REFACTOR_PLAN.md
 ├── build_system_prompt.py
 ├── fix_headers.py
-├── package-lock.json
 ├── system-prompt.txt
 ├── test-audio
 │   ├── CGI_Animated_Short_Film：_＂Watermelon_A_Cautionary_Tale＂_by_Kefei.m4a
@@ -59,6 +59,8 @@ Your goal is to develop a robust mental model of this repository based *only* on
 │   │   ├── ms_sans_serif_bold.woff
 │   │   └── ms_sans_serif_bold.woff2
 │   ├── index.html
+│   ├── jest.config.js
+│   ├── jest.setup.js
 │   ├── js
 │   │   ├── app.js
 │   │   ├── goertzel.js
@@ -91,8 +93,21 @@ Your goal is to develop a robust mental model of this repository based *only* on
 │   │   ├── ort.min.js.map
 │   │   ├── rubberband-loader.js
 │   │   └── rubberband.wasm
-│   └── model
-│       └── silero_vad.onnx
+│   ├── model
+│   │   └── silero_vad.onnx
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── playwright.config.js
+│   ├── tests
+│   │   └── unit
+│   │       ├── app.test.js
+│   │       ├── state
+│   │       │   ├── appState.test.js
+│   │       │   └── constants.test.js
+│   │       └── uiManager.test.js
+│   └── tests-e2e
+│       ├── PlayerPage.js
+│       └── player.e2e.spec.js
 └── vibe-player-v2.3
     ├── .gitignore
     ├── .npmrc
@@ -201,11 +216,78 @@ Your goal is to develop a robust mental model of this repository based *only* on
 
 **File Contents:**
 
---- File: .github/workflows/ci.yml ---
+--- File: .github/workflows/ci-v1.yml ---
 ````yaml
-# .github/workflows/ci.yml
+# .github/workflows/ci-v1.yml
+name: Vibe Player V1 CI
 
-name: Vibe Player CI
+on:
+  push:
+    branches: [ "**" ] # Run on pushes to all branches
+  pull_request:
+    branches: [ "main" ] # Run on PRs targeting main
+
+jobs:
+  test-v1:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    # Set a default working directory for all run steps in this job.
+    # This is the key change to handle the new project structure.
+    defaults:
+      run:
+        working-directory: ./vibe-player
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('vibe-player/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Install Playwright Browsers and dependencies
+        run: npx playwright install --with-deps
+
+      - name: Start test server
+        run: npm run serve-for-test &
+
+      - name: Run E2E tests
+        run: |
+          sleep 5 # Wait for server to start
+          npx playwright test # Using npx is a bit cleaner
+
+      - name: Upload Playwright report
+        if: always() # Run this step even if previous steps fail, to get reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          # Update the path to find the report inside the subdirectory
+          path: vibe-player/playwright-report/
+          retention-days: 7
+
+````
+--- End of File: .github/workflows/ci-v1.yml ---
+--- File: .github/workflows/ci-v2.yml ---
+````yaml
+# .github/workflows/ci-v2.yml
+
+name: Vibe Player V2 CI
 
 on:
   push:
@@ -214,7 +296,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test:
+  test-v2:
     timeout-minutes: 60
     runs-on: ubuntu-latest
 
@@ -222,10 +304,10 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Use Node.js 18.x
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: '20.x'
           cache: 'npm'
           cache-dependency-path: 'vibe-player-v2.3/package-lock.json'
 
@@ -237,60 +319,62 @@ jobs:
         working-directory: ./vibe-player-v2.3
         run: npm run lint
 
-      - name: Run V2 unit and component tests
-        working-directory: ./vibe-player-v2.3
-        run: npm run test:unit
+# COMMENTED OUT ALL V2 THINGS IN PREPARATION FOR V3
 
-      - name: Build Vibe Player V2
-        working-directory: ./vibe-player-v2.3
-        run: npm run build
-
-      - name: Restore Playwright and OS Dependencies from Cache
-        id: cache-playwright-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /home/runner/.cache/ms-playwright
-          key: deps-${{ runner.os }}-playwright-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
-
-      - name: Install Playwright Browsers and OS Dependencies
-        # This step runs if the cache was not found.
-        # `--with-deps` will trigger `apt-get` which will now download necessary libs.
-        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
-        working-directory: ./vibe-player-v2.3
-        run: npx playwright install --with-deps
-
-      - name: Save Playwright and OS Dependencies to Cache
-        # This step runs only if the cache was not found during restore.
-        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /home/runner/.cache/ms-playwright
-          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key || format('deps-{0}-playwright-{1}', runner.os, hashFiles('vibe-player-v2.3/package-lock.json')) }}
-
-      - name: Run Playwright E2E tests
-        working-directory: ./vibe-player-v2.3
-        run: npx playwright test
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: vibe-player-v2.3/playwright-report/
-          retention-days: 7
-
-      - name: Upload Vibe Player Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vibe-player-build-${{ github.run_id }}-${{ github.sha }}
-          path: vibe-player-v2.3/build/
-          retention-days: 7
+#      - name: Run V2 unit and component tests
+#        working-directory: ./vibe-player-v2.3
+#        run: npm run test:unit
+#
+#      - name: Build Vibe Player V2
+#        working-directory: ./vibe-player-v2.3
+#        run: npm run build
+#
+#      - name: Restore Playwright and OS Dependencies from Cache
+#        id: cache-playwright-restore
+#        uses: actions/cache/restore@v4
+#        with:
+#          path: |
+#            /var/cache/apt/archives
+#            /home/runner/.cache/ms-playwright
+#          key: deps-${{ runner.os }}-playwright-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
+#
+#      - name: Install Playwright Browsers and OS Dependencies
+#        # This step runs if the cache was not found.
+#        # `--with-deps` will trigger `apt-get` which will now download necessary libs.
+#        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
+#        working-directory: ./vibe-player-v2.3
+#        run: npx playwright install --with-deps
+#
+#      - name: Save Playwright and OS Dependencies to Cache
+#        # This step runs only if the cache was not found during restore.
+#        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
+#        uses: actions/cache/save@v4
+#        with:
+#          path: |
+#            /var/cache/apt/archives
+#            /home/runner/.cache/ms-playwright
+#          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key || format('deps-{0}-playwright-{1}', runner.os, hashFiles('vibe-player-v2.3/package-lock.json')) }}
+#
+#      - name: Run Playwright E2E tests
+#        working-directory: ./vibe-player-v2.3
+#        run: npx playwright test
+#
+#      - name: Upload Playwright report
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: playwright-report
+#          path: vibe-player-v2.3/playwright-report/
+#          retention-days: 7
+#
+#      - name: Upload Vibe Player Build Artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: vibe-player-build-${{ github.run_id }}-${{ github.sha }}
+#          path: vibe-player-v2.3/build/
+#          retention-days: 7
 ````
---- End of File: .github/workflows/ci.yml ---
+--- End of File: .github/workflows/ci-v2.yml ---
 --- File: .github/workflows/deploy.yml ---
 ````yaml
 # .github/workflows/deploy.yml
@@ -334,7 +418,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3 # Use latest upload-artifact action
         with:
           # Upload content from the vibe-player directory
-          path: './vibe-player-v2.3/build'
+          path: './vibe-player'
 
       - name: Deploy to GitHub Pages
         id: deployment
@@ -370,7 +454,11 @@ jobs:
 
       - name: Build the zip archive
         run: |
-          zip -r vibe-player-${{ env.TAG_NAME }}.zip ./vibe-player-v2/build -x "./vibe-player-v2/build/.DS_Store"
+          echo "Creating zip for tag ${{ env.TAG_NAME }}"
+          cd vibe-player # Move into the target directory
+          # Use standard 'zip' command available on ubuntu runners
+          zip -r ../vibe-player-${{ env.TAG_NAME }}.zip .
+          cd .. # Move back to the root
         # Standard shell commands
 
       - name: Create GitHub Release
@@ -383,7 +471,7 @@ jobs:
           release_name: Release ${{ env.TAG_NAME }}
           body: | # Optional: Add release notes here, can be simple or more complex
             Automated release for version ${{ env.TAG_NAME }}.
-            Contains the static build of the Vibe Player V2 application.
+            Contains contents of the vibe-player directory.
           draft: false
           prerelease: false # Set to true if needed based on tag format
 
@@ -1141,6 +1229,270 @@ Ports and Adapters pattern where each domain of functionality is its own "micro-
   `WorkerManager`'s promise. This rejection will be caught by the service that called it. If the error is unrecoverable,
   the service will reject its own promise, which will be caught by the `AppHexagon`, which will then update the
   `StateStore` to the `Error` status. This provides a clear and traceable path for all errors.
+
+---
+
+### **Appendix A: V3 State Management & Data Flow**
+
+This appendix provides a concrete and detailed implementation guide for the state management and data flow principles of the V3 Hexagonal Architecture. It specifies where each piece of state is owned, the strict communication pathways between components, and the step-by-step flow for every user interaction.
+
+#### **1. The State Store: A Driven Adapter, Not a Hexagon**
+
+A foundational principle of this architecture is the clear separation of business logic (Hexagons) from technology (Adapters). The "State Store" (e.g., a collection of Svelte stores) is a technology choice for enabling reactive UI updates. It is not a hexagon itself.
+
+*   **Role**: The State Store acts as a centralized, write-only message bus for the application's core logic.
+*   **Management**: No single hexagon "manages" the store. Instead, multiple hexagons **drive** it through a `StateStoreAdapter`.
+*   **Data Flow**: A hexagon calculates a new state, calls its driven port (e.g., `IPlayerStatePublisher`), and the `StateStoreAdapter`'s implementation of that port is what actually writes to the Svelte store. The hexagon remains pure, with no knowledge of Svelte.
+
+#### **2. Communication Hierarchy: Who Can Talk to Whom**
+
+To prevent the tight coupling of previous versions, communication follows these strict rules:
+
+| From | Can Call / Drive | CANNOT Call / Drive | Example |
+| :--- | :--- | :--- | :--- |
+| **Driving Adapter** (e.g., UI Component) | A **Hexagon's** driving port. | Another adapter, the State Store, or a worker directly. | The "Play" button component calls `AppHexagon.play()`. |
+| **Hexagon** (e.g., `PlaybackHexagon`) | A **Driven Adapter's** port (e.g., `StateStoreAdapter`, `WebAudioAdapter`). | Another Hexagon directly. | `PlaybackHexagon` calls `this.statePublisher.publish(...)` which the `StateStoreAdapter` implements. |
+| **Technology Adapter** (e.g., `WebAudioAdapter`) | A **Worker** (via the `WorkerManager`) or Browser APIs (`AudioContext`). | A Hexagon. | `WebAudioAdapter` calls `this.workerManager.postRequest(...)` to communicate with the `rubberband.worker`. |
+
+The **`AppHexagon`** is the only exception: it is the orchestrator and is allowed to call the driving ports of other domain hexagons (e.g., `PlaybackHexagon`, `VADHexagon`) to coordinate complex use cases.
+
+#### **3. State Ownership and Pathways**
+
+The following table details every piece of application state, its official "owner," and its location in the central state store.
+
+| State Item | Owning Hexagon | Location in Store | Description |
+| :--- | :--- | :--- | :--- |
+| `status` (`loading`, `ready`, etc.) | `AppHexagon` | `statusStore` | The single source of truth for the application's overall state. |
+| `error` | `AppHexagon` | `statusStore` | The global error message, if any. |
+| `fileName`, `duration`, `isPlayable` | `AppHexagon` | `playerStore` | High-level metadata about the loaded audio, managed by the orchestrator. |
+| `isPlaying`, `isLooping` | `PlaybackHexagon` | `playerStore` | The canonical boolean playback state. |
+| `currentTime` | `PlaybackHexagon` | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
+| `speed`, `pitchShift`, `gain` | `PlaybackHexagon` | `playerStore` | Playback manipulation parameters. |
+| `isSeeking`, `wasPlayingBeforeSeek` | `AppHexagon` | *Internal to `AppHexagon`* | Ephemeral UI state for managing the seek interaction. Not needed by the rest of the app, so it is not published to the store. |
+| `vadProbabilities` | `VADHexagon` | `analysisStore` | The raw frame-by-frame speech probabilities from the ML model. |
+| `vadRegions` | `VADHexagon` | `analysisStore` | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds. |
+| `vadPositiveThreshold`, etc. | `VADHexagon` | `analysisStore` | The tuning parameters for VAD region calculation. |
+| `dtmfResults` | `DTMFHexagon` | `dtmfStore` | The list of detected DTMF tones. |
+| `spectrogramData` | `SpectrogramHexagon` | `analysisStore` | The calculated spectrogram data (frequency-magnitude arrays). |
+| `waveformData` | `WaveformHexagon` | `playerStore` | The calculated peak data for waveform visualization. |
+
+---
+#### **4. Detailed Interaction Flows**
+
+The following sections detail the end-to-end data flow for every user interaction.
+
+##### **4.1 Application Initialization & URL Loading**
+
+This flow describes what happens when a user first loads the page with URL parameters.
+
+1.  **Driving Adapter (`+page.ts`)**: The SvelteKit `load` function reads parameters (`url`, `time`, `speed`, etc.) from the page's URL search params. It bundles these into an `initialState` object.
+2.  **Driving Adapter (UI - `+page.svelte`)**: The `initialState` is passed as a prop. In `onMount`, it checks if `initialState.url` exists.
+3.  **Port Call**: If a URL exists, it calls `AppHexagon.loadAudio(initialState.url, initialState)`.
+4.  **`AppHexagon` (Orchestrator)**: It sets `statusStore` to `loading`. It then drives the `AudioLoaderService` to fetch the URL content.
+5.  **`AudioLoaderService`**: Returns a decoded `AudioBuffer`.
+6.  **`AppHexagon`**: It receives the `AudioBuffer` and begins driving all other hexagons in parallel:
+    *   `PlaybackHexagon.prepare(audioBuffer, initialState)`: Sets the duration, initial seek time, speed, etc.
+    *   `WaveformHexagon.generatePeaks(audioBuffer)`: Generates the waveform visualization data.
+    *   *Fire-and-forget calls:* `VADHexagon.analyze()`, `DTMFHexagon.analyze()`, `SpectrogramHexagon.generate()`.
+7.  **Hexagons Publish State**: As each hexagon completes its task, it publishes its data (`waveformData`, `duration`, `isPlayable=true`, etc.) to the `StateStoreAdapter`.
+8.  **`AppHexagon`**: Once the *critical path* (playback prep and waveform) is complete, it sets `statusStore` to `ready`.
+9.  **UI Reaction**: All components subscribed to the stores (`playerStore`, `statusStore`) update to show the waveform and enable the playback controls. The background analysis results (`vadRegions`, `spectrogramData`) pop in later as they become available.
+
+##### **4.2 Loading Audio (User Interaction)**
+
+This flow is nearly identical to URL loading, but is initiated by a user click.
+
+*   **Load from File**: `FileLoader.svelte` -> `on:change` -> `AppHexagon.loadAudio(file)`. The flow proceeds as in 4.1.
+*   **Load from URL Input**: `FileLoader.svelte` -> `on:click` on "Load" button -> `AppHexagon.loadAudio(url)`. The flow proceeds as in 4.1.
+
+##### **4.3 Playback Control (Cold Path)**
+
+*   **Play/Pause (Button or Keyboard)**
+    1.  **Driving Adapter (UI)**: `Controls.svelte` button click or global keybind fires.
+    2.  **Port Call**: Calls `AppHexagon.togglePlayPause()`.
+    3.  **`AppHexagon`**: Delegates by calling `PlaybackHexagon.togglePlayPause()`.
+    4.  **`PlaybackHexagon`**: Flips its internal `isPlaying` boolean. It then publishes the new state (`isPlaying: true`) via its driven port. It also calls `this.audioOutput.play()`, which is implemented by the `WebAudioAdapter`.
+    5.  **`WebAudioAdapter`**: Starts the `rAF` loop for the "Hot Path" time updates.
+    6.  **`StateStoreAdapter`**: Updates `playerStore`. The UI's play button icon changes.
+
+*   **Stop Button**
+    1.  **Driving Adapter (UI)**: `Controls.svelte` "Stop" button click.
+    2.  **Port Call**: Calls `AppHexagon.stop()`.
+    3.  **`AppHexagon`**: Orchestrates the stop sequence. It calls `PlaybackHexagon.stop()` and `PlaybackHexagon.seek(0)`.
+    4.  **`PlaybackHexagon`**: Pauses playback, sets its internal `currentTime` to 0, and publishes both `isPlaying: false` and `currentTime: 0` to the store.
+    5.  **`WebAudioAdapter`**: The `rAF` loop stops. The `URLWriterAdapter` sees the time is 0 and removes the `t=` parameter from the URL.
+
+*   **Jump Forward/Backward**
+    1.  **Driving Adapter (UI)**: `Controls.svelte` jump button click or keybind fires.
+    2.  **Port Call**: Calls `AppHexagon.jump(direction)`.
+    3.  **`AppHexagon`**: Reads the `jumpSeconds` and `currentTime` from the `playerStore`. It calculates the `newTime` and calls `PlaybackHexagon.seek(newTime)`.
+    4.  **`PlaybackHexagon`**: Updates its internal time and publishes the change. The UI updates.
+
+##### **4.4 Parameter Sliders (Cold Path)**
+
+*   **Speed, Pitch, Gain, VAD Thresholds**
+    1.  **Driving Adapter (UI)**: A slider in `Controls.svelte` is moved.
+    2.  **Port Call**: The `on:input` event triggers a debounced call to `AppHexagon.setSpeed(value)` (or `setPitch`, `setVadThreshold`, etc.).
+    3.  **`AppHexagon`**: Delegates the call to the appropriate domain hexagon (e.g., `PlaybackHexagon.setSpeed(value)`).
+    4.  **`PlaybackHexagon`/`VADHexagon`**: The hexagon updates its internal parameter. It then publishes the new value to the `StateStoreAdapter`. For VAD, it also re-runs its internal region calculation and publishes the new `vadRegions`.
+    5.  **UI/Adapter Reaction**:
+        *   The slider's label, subscribed to the store, updates its text.
+        *   The `WebAudioAdapter`, subscribed to the `playerStore`, sees the new speed and sends a command to the `rubberband.worker`.
+        *   The `Waveform.svelte` component, subscribed to the `analysisStore`, sees the new `vadRegions` and redraws the highlights.
+
+##### **4.5 The Seek Interaction (Special Case)**
+
+The seek bar is unique because it involves a continuous user drag action that must temporarily override the real-time playback updates.
+
+*   **State Owner**: The temporary `isSeeking` and `wasPlayingBeforeSeek` flags are owned internally by the **`AppHexagon`**. They are ephemeral UI orchestration state and do not belong in the `PlaybackHexagon` or the global state store.
+
+*   **Flow**:
+    1.  **`mousedown` / `touchstart`**: The user presses the seek bar.
+        *   **Driving Adapter (UI - `+page.svelte`)**: Calls `AppHexagon.beginSeek()`.
+        *   **`AppHexagon`**: Sets its internal `this.isSeeking = true`. It checks the `playerStore` for the current `isPlaying` status and saves it: `this.wasPlayingBeforeSeek = isPlaying`. If it was playing, it immediately calls `PlaybackHexagon.pause()`.
+    2.  **`input` / `touchmove`**: The user drags the seek bar.
+        *   **Driving Adapter (UI)**: The slider's value changes. It directly updates the "hot" `timeStore` with the new value. The `TimeDisplay` and the slider's thumb update instantly, providing responsive feedback *without* repeatedly commanding the audio engine.
+    3.  **`mouseup` / `touchend`**: The user releases the seek bar.
+        *   **Driving Adapter (UI)**: Calls `AppHexagon.endSeek(finalTime)`.
+        *   **`AppHexagon`**: It calls `PlaybackHexagon.seek(finalTime)`. Then, it checks its internal flag: if `this.wasPlayingBeforeSeek` was true, it calls `PlaybackHexagon.play()`. Finally, it resets its internal flags: `this.isSeeking = false`, `this.wasPlayingBeforeSeek = false`.
+
+*   **Why This Separation?**
+    *   **Decoupling**: The `PlaybackHexagon`'s job is simple: play, pause, seek. It doesn't need to know *why* it's being paused or sought. The complex UI logic of "pause-for-seek-then-resume" is an application-level concern, perfectly suited for the `AppHexagon` orchestrator.
+    *   **Performance**: The `input` events update the UI directly via the `timeStore`, providing a smooth dragging experience without sending dozens of `seek` commands to the audio engine and worker, which would be slow and cause audible glitching.
+
+##### **4.6 Real-time UI Updates (The Hot Path)**
+
+This flow is the high-performance, read-only path for UI elements that must update on every frame.
+
+1.  **Initiator**: The **`WebAudioAdapter`**. When it is told to play by the `PlaybackHexagon`, it starts a `requestAnimationFrame` loop.
+2.  **Calculation**: On each frame, the loop calculates the precise `estimatedTime` based on `AudioContext.currentTime` and the current speed from the `playerStore`.
+3.  **Direct Store Update**: The loop calls `timeStore.set(estimatedTime)`.
+4.  **Targeted UI Reaction**: Only the `SeekBar.svelte` thumb and the `TimeDisplay.svelte` text subscribe to `timeStore`. They are the only components that re-render at 60fps. The rest of the application is unaffected.
+5.  **Termination**: When the `WebAudioAdapter` is told to pause, it cancels the `requestAnimationFrame` loop.
+
+---
+
+## Appendix B: Advanced State Protocol & Edge Case Handling
+
+This appendix provides a concrete and detailed implementation guide for the state management and data flow principles of the V3 Hexagonal Architecture. It specifies where each piece of state is owned, the strict communication pathways between components, and the step-by-step flow for every user interaction, including edge case handling.
+
+### 1. Architectural Principles
+
+#### 1.1. The Command vs. Event Pattern
+To eliminate race conditions and enforce a predictable, sequential flow of logic, the system adheres to a strict Command/Event pattern:
+
+*   **Commands (Input):** Originate from a **Driving Adapter** (e.g., the UI). They are requests for the application to *do something* (e.g., `play()`, `seek()`, `setSpeed()`). The flow is always `UI -> AppHexagon -> Domain Hexagon`.
+*   **Events (Output):** Originate from a **Driven Adapter** (e.g., `WebAudioAdapter`) or a worker. They are notifications that a *system event has occurred* (e.g., `playbackFinished`, `workerCrashed`). The flow is always `Adapter -> Domain Hexagon -> AppHexagon`.
+
+#### 1.2. The `AppHexagon`: A Transactional State Machine
+The `AppHexagon` is the sole authority for all major state transitions. Domain hexagons (like `PlaybackHexagon`) do not change their own state based on system events. They report these events up to the `AppHexagon`, which then consults its current state (`this.status`) and issues explicit commands back down to the domain hexagons to update their canonical state. This makes the system robust and transactional.
+
+#### 1.3. The "Hot Path" Reflex Arc
+For high-frequency UI updates (e.g., the seek bar position during playback), a controlled bypass mechanism is used. This "hot path" is a **read-only, UI-specific data flow** that does not alter the core application state.
+
+*   The `WebAudioAdapter` runs a `requestAnimationFrame` loop during playback.
+*   Inside the loop, it calculates the estimated time and writes **directly** to a dedicated, lightweight UI store (`timeStore`).
+*   Only UI components that need 60fps updates subscribe to this "hot" store.
+*   The application's core hexagons are not involved or burdened by this loop.
+
+#### 1.4. Debouncing at the Adapter Layer
+To prevent flooding the application core with commands from continuous user input (e.g., wiggling a slider), debouncing is handled at the **Driving Adapter** layer. The UI component (`Controls.svelte`) is responsible for debouncing the user's input before sending a final, clean command to the `AppHexagon`.
+
+#### 1.5. Large Data Handling
+To maintain UI performance, large, static data payloads (like the VAD probabilities array) are **not** stored in reactive Svelte stores. Instead, the owning hexagon (`VADHexagon`) holds the data internally and provides a synchronous accessor method on its port (`getProbabilityData()`). The store will only hold a boolean flag (`hasProbabilities: true`), which signals to the relevant UI component that it can now call the accessor to retrieve the data for rendering.
+
+### 2. Communication Hierarchy
+
+Communication follows these strict rules to maintain decoupling:
+
+| From | Can Call / Drive | CANNOT Call / Drive | Example |
+| :--- | :--- | :--- | :--- |
+| **Driving Adapter** (e.g., UI Component) | A **Hexagon's** driving port. | Another adapter, the State Store, or a worker directly. | The "Play" button component calls `AppHexagon.play()`. |
+| **Hexagon** (e.g., `PlaybackHexagon`) | A **Driven Adapter's** port (e.g., `StateStoreAdapter`, `WebAudioAdapter`). | Another Hexagon directly. (Exception: `AppHexagon`). | `PlaybackHexagon` calls `this.statePublisher.publish(...)` which the `StateStoreAdapter` implements. |
+| **Technology Adapter** (e.g., `WebAudioAdapter`) | A **Worker** (via the `WorkerManager`) or Browser APIs (`AudioContext`). | A Hexagon. | `WebAudioAdapter` calls `this.workerManager.postRequest(...)` to communicate with the `rubberband.worker`. |
+
+### 3. State Ownership and Pathways
+
+| State Item | Owning Hexagon | Location in Store | Description |
+| :--- | :--- | :--- | :--- |
+| `status` (`loading`, `ready`, etc.) | `AppHexagon` | `statusStore` | The single source of truth for the application's overall state. |
+| `error` | `AppHexagon` | `statusStore` | The global error message, if any. |
+| `fileName`, `duration`, `isPlayable` | `AppHexagon` | `playerStore` | High-level metadata about the loaded audio, managed by the orchestrator. |
+| `isPlaying`, `isLooping` | `PlaybackHexagon` | `playerStore` | The canonical boolean playback state. |
+| `currentTime` | `PlaybackHexagon` | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
+| `speed`, `pitchShift`, `gain` | `PlaybackHexagon` | `playerStore` | Playback manipulation parameters. |
+| **`isSeeking`**, **`wasPlayingBeforeSeek`** | **`AppHexagon`** | **Internal to `AppHexagon`** | Ephemeral UI state for managing the seek interaction. **Not published to the store.** |
+| **`vadProbabilities`** | **`VADHexagon`** | **Internal to `VADHexagon`** | The raw frame-by-frame speech probabilities. **Not published to the store.** |
+| `hasVadProbabilities` | `VADHexagon` | `analysisStore` | A boolean flag indicating that the probability data is available for retrieval. |
+| `vadRegions` | `VADHexagon` | `analysisStore` | The calculated speech time segments. |
+| `vadPositiveThreshold`, etc. | `VADHexagon` | `analysisStore` | The tuning parameters for VAD region calculation. |
+| `dtmfResults` | `DTMFHexagon` | `dtmfStore` | The list of detected DTMF tones. |
+| `spectrogramData` | `SpectrogramHexagon` | `analysisStore` | The calculated spectrogram data. |
+| `waveformData` | `WaveformHexagon` | `playerStore` | The calculated peak data for waveform visualization. |
+
+### 4. Detailed Interaction Flows & Edge Case Handling
+
+#### 4.1. File Loading (with Cancellation)
+
+1.  **Initiation**: User selects a new file. `UI` -> `AppHexagon.loadAudio(file)`.
+2.  **`AppHexagon` (Cancellation)**:
+    *   It immediately calls its internal `this.cancelCurrentOperation()`. This dispatches a cancellation signal down to all adapters via an `AbortController`. Any ongoing `fetch` or long worker task is aborted.
+    *   It transitions the application state: `this.status = 'loading'`. It publishes this to the `statusStore`. The UI shows a global spinner and disables controls.
+3.  **`AppHexagon` (Orchestration)**: It proceeds with the standard loading sequence (driving `AudioLoaderService`, then other hexagons in parallel).
+4.  **Completion/Error**:
+    *   On success, once critical path hexagons complete, `AppHexagon` sets `this.status = 'ready'`.
+    *   If any critical step (e.g., decoding, `rubberband.worker` init) fails, the error propagates up to the `AppHexagon`. It sets `this.status = 'error'`, publishes a descriptive error message to the `statusStore`, and ensures all UI controls are in a safe, disabled state.
+
+#### 4.2. Playback Control (Command/Event Pattern)
+
+*   **Play Command**:
+    1.  `UI` -> `AppHexagon.play()`.
+    2.  `AppHexagon` Gatekeeper: Checks `this.status`. If `'ready'`, it proceeds.
+    3.  `AppHexagon` -> `PlaybackHexagon.play()`.
+    4.  `PlaybackHexagon` -> `WebAudioAdapter.play()`.
+    5.  `WebAudioAdapter` **activates the "Hot Path" `rAF` loop**.
+    6.  `PlaybackHexagon` publishes `{ isPlaying: true }` to `playerStore`.
+
+*   **Playback Finished Event (System-Generated)**:
+    1.  `WebAudioAdapter` detects the stream has ended. It **emits an event**: `playbackFinished`.
+    2.  `PlaybackHexagon` receives this event and **forwards it** to the `AppHexagon.onPlaybackFinished()`.
+    3.  `AppHexagon` Gatekeeper: Checks `this.status`. If `'playing'`, it transitions `this.status = 'ready'`.
+    4.  `AppHexagon` **issues a command**: `PlaybackHexagon.updateState({ isPlaying: false, currentTime: [duration] })`.
+    5.  `PlaybackHexagon` obeys, updates its internal state, and publishes the final state to the `playerStore`. The `WebAudioAdapter`'s `rAF` loop is already stopped.
+
+#### 4.3. The Seek Interaction (Stateful Orchestration)
+
+1.  **`mousedown`**:
+    *   `UI` -> `AppHexagon.beginSeek()`.
+    *   **`AppHexagon`**:
+        *   Sets its internal state: `this.isSeeking = true`.
+        *   Reads `isPlaying` from `playerStore` and sets `this.wasPlayingBeforeSeek`.
+        *   If `wasPlayingBeforeSeek` is true, it commands `PlaybackHexagon.pause()`. The `WebAudioAdapter` stops its `rAF` loop upon receiving the pause command.
+
+2.  **`input`**:
+    *   `UI` -> `timeStore.set(newValue)`. The seek bar thumb and time display update instantly via the **Hot Path**. The application core is not involved.
+
+3.  **`mouseup`**:
+    *   `UI` -> `AppHexagon.endSeek(finalTime)`.
+    *   **`AppHexagon`**:
+        *   Issues command: `PlaybackHexagon.seek(finalTime)`.
+        *   Checks internal state: `if (this.wasPlayingBeforeSeek) { AppHexagon.play(); }`.
+        *   Resets internal state: `this.isSeeking = false; this.wasPlayingBeforeSeek = false;`.
+
+#### 4.4. Slider Input (Debounced)
+
+1.  **User Action**: User wiggles the "Speed" slider.
+2.  **Driving Adapter (`Controls.svelte`)**:
+    *   The slider's value is bound to a local variable, `localSpeed`.
+    *   A reactive statement (`$:`) watches `localSpeed` and calls a **debounced function**: `debouncedSetSpeed(localSpeed)`.
+    *   The debouncer is configured with a 200-300ms wait time.
+3.  **Command Path**: After the user stops wiggling the slider for the configured wait time, the debounced function finally executes.
+    *   `debouncedSetSpeed` -> `AppHexagon.setSpeed(finalValue)`.
+    *   The command proceeds cleanly down the chain: `AppHexagon` -> `PlaybackHexagon` -> `StateStoreAdapter` and `WebAudioAdapter`.
+
+This ensures that even with frantic, simultaneous input across multiple sliders, the core application only receives a few clean, final commands after the user's actions have settled.
+
+---
 ````
 --- End of File: REFACTOR_PLAN.md ---
 --- File: vibe-player/architecture.md ---
@@ -3184,6 +3536,156 @@ small {
 
 ````
 --- End of File: vibe-player/index.html ---
+--- File: vibe-player/jest.config.js ---
+````javascript
+// vibe-player/jest.config.js
+module.exports = {
+  testEnvironment: 'jsdom', // Using 'jsdom' as global install should be in PATH
+
+  setupFilesAfterEnv: ['./jest.setup.js'],
+
+  testMatch: [
+    "**/tests/unit/**/*.test.js"
+  ]
+};
+
+````
+--- End of File: vibe-player/jest.config.js ---
+--- File: vibe-player/jest.setup.js ---
+````javascript
+// vibe-player/jest.setup.js
+const fs = require('fs');
+const path = require('path');
+// const vm = require('vm'); // vm not used for this strategy
+
+// --- 1. Mock Browser-Specific APIs ---
+global.window = global; // JSDOM's global IS window. Make it explicit.
+global.self = global;   // Common alias for window or worker global scope
+global.document = global.document; // JSDOM provides document
+
+// Mocks (ensure these are comprehensive enough for the scripts being loaded)
+global.AudioContext = jest.fn(() => ({
+  createGain: jest.fn(() => ({ connect: jest.fn(), gain: { value: 1, setTargetAtTime: jest.fn() } })),
+  decodeAudioData: jest.fn((buffer, successCb, errorCb) => {
+    if (typeof successCb === 'function') {
+      successCb({ duration: 10, numberOfChannels: 1, sampleRate: 44100, getChannelData: () => new Float32Array(10) });
+    }
+    return Promise.resolve({ duration: 10, numberOfChannels: 1, sampleRate: 44100, getChannelData: () => new Float32Array(10) });
+  }),
+  audioWorklet: {
+    addModule: jest.fn(() => Promise.resolve())
+  },
+  resume: jest.fn(() => Promise.resolve()),
+  currentTime: 0,
+  state: 'running',
+  destination: {},
+  createBufferSource: jest.fn(() => ({ buffer: null, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), loop: false, onended: null })),
+  createOscillator: jest.fn(() => ({ type: 'sine', frequency: { value: 440, setValueAtTime: jest.fn() }, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), onended: null })),
+}));
+global.AudioWorkletNode = jest.fn().mockImplementation(() => ({ connect: jest.fn(), disconnect: jest.fn(), port: { postMessage: jest.fn(), onmessage: null }, onprocessorerror: null }));
+global.Worker = jest.fn().mockImplementation(function(stringUrl) { this.postMessage = jest.fn(); this.terminate = jest.fn(); this.onmessage = null; this.onerror = null; });
+
+// Mock for ONNX Runtime, crucial for sileroWrapper.js
+if (typeof global.ort === 'undefined') {
+    global.ort = {
+        InferenceSession: {
+            create: jest.fn(() => Promise.resolve({
+                run: jest.fn(() => Promise.resolve({
+                    // Ensure the 'output' tensor matches what sileroWrapper expects
+                    output: new global.ort.Tensor('float32', [0.5], [1])
+                }))
+            }))
+        },
+        Tensor: jest.fn((type, data, dims) => ({ type, data, dims, ortType: type, input: true })),
+        env: {wasm: {}} // For setting wasmPaths
+    };
+}
+
+// Load FFT script into the global context using JSDOM's script execution
+try {
+    // CORRECTED: The path should be relative to this file's location (__dirname).
+    // We don't need to add 'vibe-player' as we are already in that directory.
+    const fftScriptContent = fs.readFileSync(path.join(__dirname, 'lib/fft.js'), 'utf-8');
+    const scriptEl = global.document.createElement('script');
+    scriptEl.textContent = fftScriptContent;
+    global.document.body.appendChild(scriptEl);
+    console.log('FFT script loaded via JSDOM script tag.');
+} catch (e) {
+    console.error("Failed to load lib/fft.js via JSDOM:", e.message);
+}
+
+
+// --- 2. Load Application Scripts in Order ---
+// CORRECTED: The application root is simply __dirname, as this setup file
+// is located at the root of the project scripts.
+const appRoot = __dirname;
+global.AudioApp = global.AudioApp || {};
+global.__jestLoadedScripts = global.__jestLoadedScripts || new Set(); // To prevent re-execution
+
+const loadScriptInJsdom = (scriptPathFromAppRoot, isCritical = false) => {
+  const absoluteScriptPath = path.join(appRoot, scriptPathFromAppRoot);
+  if (global.__jestLoadedScripts.has(absoluteScriptPath)) {
+    return;
+  }
+  try {
+    const scriptCode = fs.readFileSync(absoluteScriptPath, 'utf-8');
+    const scriptEl = global.document.createElement('script');
+    scriptEl.textContent = scriptCode;
+    global.document.body.appendChild(scriptEl); // JSDOM executes this
+    global.__jestLoadedScripts.add(absoluteScriptPath);
+  } catch (e) {
+    console.error(`Error JSDOM loading script ${absoluteScriptPath}: ${e.message}`);
+    if (isCritical) throw e;
+  }
+};
+
+// A corrected version of the orderedScripts array for jest.setup.js
+const orderedScripts = [
+  // 1. Foundational modules with no dependencies on other app logic
+  { path: 'js/state/constants.js', critical: true },
+  { path: 'js/utils.js', critical: true },
+
+  // 2. State management
+  { path: 'js/state/appState.js', critical: true }, // Depends on Constants
+
+  // 3. All other feature modules that attach to AudioApp
+  { path: 'js/goertzel.js', critical: true },
+  { path: 'js/uiManager.js', critical: false },
+  { path: 'js/player/audioEngine.js', critical: false },
+  { path: 'js/vad/sileroWrapper.js', critical: false },
+  { path: 'js/vad/sileroProcessor.js', critical: false },
+  { path: 'js/vad/RemoteApiStrategy.js', critical: false },
+  { path: 'js/vad/LocalWorkerStrategy.js', critical: false },
+  { path: 'js/vad/vadAnalyzer.js', critical: false },
+  { path: 'js/visualizers/waveformVisualizer.js', critical: false },
+  { path: 'js/visualizers/spectrogramVisualizer.js', critical: false },
+  { path: 'js/sparkles.js', critical: false },
+
+  // 4. Main application controller, loaded LAST
+  { path: 'js/app.js', critical: true }
+];
+
+console.log("Loading application scripts for Jest environment using JSDOM script execution...");
+orderedScripts.forEach(scriptInfo => {
+  if (scriptInfo.path === 'js/constants.js') { // Skip old constants file if it was in a broader list
+      console.log("Skipping obsolete js/constants.js");
+      return;
+  }
+  loadScriptInJsdom(scriptInfo.path, scriptInfo.critical);
+});
+
+console.log('All specified scripts processed for Jest environment.');
+
+// Optional: Final checks after all scripts are loaded
+// These checks help confirm if the global variables are set as expected.
+// if (typeof global.Constants === 'undefined') console.error('FINAL CHECK: global.Constants is undefined');
+// if (typeof global.AppState === 'undefined') console.error('FINAL CHECK: global.AppState is undefined');
+// if (!global.AudioApp || !global.AudioApp.Utils) console.error('FINAL CHECK: global.AudioApp.Utils is undefined');
+// if (!global.AudioApp || !global.AudioApp.DTMFParser) console.error('FINAL CHECK: global.AudioApp.DTMFParser is undefined');
+// if (!global.AudioApp || !global.AudioApp.state) console.error('FINAL CHECK: global.AudioApp.state is undefined');
+
+````
+--- End of File: vibe-player/jest.setup.js ---
 --- File: vibe-player/js/app.js ---
 ````javascript
 // vibe-player/js/app.js
@@ -10307,6 +10809,81 @@ var Rubberband = (() => { // Outer IIFE defines Rubberband scope
 
 ````
 --- End of File: vibe-player/lib/rubberband-loader.js ---
+--- File: vibe-player/package.json ---
+````json
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "<!-- README.md --> # Vibe Player",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest",
+    "test:e2e": "npx playwright test",
+    "serve-for-test": "npx http-server  -p 8080 -c-1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/averykhoo/vibe-player.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/averykhoo/vibe-player/issues"
+  },
+  "homepage": "https://github.com/averykhoo/vibe-player#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "canvas": "^2.11.2",
+    "http-server": "^14.1.1",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "playwright": "^1.52.0"
+  }
+}
+
+````
+--- End of File: vibe-player/package.json ---
+--- File: vibe-player/playwright.config.js ---
+````javascript
+// vibe-player/playwright.config.js
+const { defineConfig } = require('@playwright/test');
+
+module.exports = defineConfig({
+  testDir: './tests-e2e', // Specify the directory for E2E tests
+  // Optional: Configure projects for major browsers
+  projects: [
+    {
+      name: 'chromium',
+      use: { browserName: 'chromium' },
+    },
+    // {
+    //   name: 'firefox',
+    //   use: { browserName: 'firefox' },
+    // },
+    // {
+    //   name: 'webkit',
+    //   use: { browserName: 'webkit' },
+    // },
+  ],
+  // Optional: Set a global timeout for all tests
+  timeout: 60000, // 60 seconds
+  // Optional: Reporter to use. See https://playwright.dev/docs/test-reporters
+  reporter: 'html', // Generates a nice HTML report
+
+  use: {
+    // Optional: Base URL to use in actions like `await page.goto('/')`
+    // baseURL: 'http://localhost:8080', // Not using this as goto() has full URL
+
+    // Optional: Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer
+    trace: 'on-first-retry',
+    headless: true, // Run tests in headless mode
+  },
+});
+
+````
+--- End of File: vibe-player/playwright.config.js ---
 --- File: vibe-player/README.md ---
 ````markdown
 [//]: # ( vibe-player/README.md )
@@ -10373,6 +10950,1445 @@ file is loaded into the LLM's context before starting work. If the file is missi
 
 ````
 --- End of File: vibe-player/README.md ---
+--- File: vibe-player/tests/unit/app.test.js ---
+````javascript
+// vibe-player/tests/unit/app.test.js
+/* eslint-env jest */
+
+// Mock dependencies BEFORE app.js is loaded
+global.AudioApp = global.AudioApp || {};
+
+global.AudioApp.state = {
+  params: {
+    jumpTime: 5, // Default
+    speed: 1.0,
+    pitch: 1.0,
+    gain: 1.0,
+    audioUrl: '',
+    initialSeekTime: null,
+    vadPositive: 0.8,
+    vadNegative: 0.4,
+  },
+  runtime: {
+    currentAudioBuffer: { duration: 100 },
+    playbackStartSourceTime: 0,
+    playbackStartTimeContext: null,
+    currentSpeedForUpdate: 1,
+    currentFile: null,
+    currentVadResults: null,
+  },
+  status: {
+    workletPlaybackReady: true,
+    isActuallyPlaying: false,
+    urlInputStyle: 'default',
+    fileInfoMessage: '',
+    urlLoadingErrorMessage: '',
+    isVadProcessing: false,
+    playbackNaturallyEnded: false,
+  },
+  updateParam: jest.fn(),
+  updateRuntime: jest.fn(),
+  updateStatus: jest.fn(),
+  serialize: jest.fn().mockReturnValue('serialized=hash'),
+  deserialize: jest.fn(),
+  subscribe: jest.fn(), // Added from uiManager tests, though app.js doesn't directly use it.
+};
+
+global.AudioApp.audioEngine = {
+  seek: jest.fn(),
+  getAudioContext: jest.fn().mockReturnValue({ currentTime: 0 }), // Mock audio context
+  getCurrentTime: jest.fn().mockReturnValue({ currentTime: 0 }),
+  init: jest.fn(),
+  loadAndProcessFile: jest.fn(),
+  setSpeed: jest.fn(),
+  setPitch: jest.fn(),
+  setGain: jest.fn(),
+  togglePlayPause: jest.fn(),
+  cleanup: jest.fn(),
+  resampleTo16kMono: jest.fn().mockResolvedValue(new Float32Array(16000)), // For VAD/tone
+};
+
+global.AudioApp.uiManager = {
+  init: jest.fn(),
+  resetUI: jest.fn(),
+  setFileInfo: jest.fn(),
+  updateFileName: jest.fn(),
+  setPlayButtonState: jest.fn(),
+  updateTimeDisplay: jest.fn(),
+  updateSeekBar: jest.fn(),
+  setSpeechRegionsText: jest.fn(),
+  updateVadDisplay: jest.fn(),
+  enablePlaybackControls: jest.fn(),
+  enableSeekBar: jest.fn(),
+  updateVadProgress: jest.fn(),
+  showVadProgress: jest.fn(),
+  setUrlLoadingError: jest.fn(),
+  setUrlInputStyle: jest.fn(),
+  unfocusUrlInput: jest.fn(),
+  setAudioUrlInputValue: jest.fn(),
+  getAudioUrlInputValue: jest.fn().mockReturnValue(''),
+  setJumpTimeValue: jest.fn(),
+  showDropZone: jest.fn(),
+  hideDropZone: jest.fn(),
+  // getJumpTime: jest.fn(), // This should not be used by app.js anymore
+};
+
+global.AudioApp.waveformVisualizer = {
+  init: jest.fn(),
+  clearVisuals: jest.fn(),
+  updateProgressIndicator: jest.fn(),
+  computeAndDrawWaveform: jest.fn(),
+  redrawWaveformHighlight: jest.fn(),
+  resizeAndRedraw: jest.fn(),
+};
+
+global.AudioApp.spectrogramVisualizer = {
+  init: jest.fn(),
+  clearVisuals: jest.fn(),
+  showSpinner: jest.fn(),
+  updateProgressIndicator: jest.fn(),
+  computeAndDrawSpectrogram: jest.fn(),
+  resizeAndRedraw: jest.fn(),
+};
+
+global.AudioApp.vadAnalyzer = {
+  init: jest.fn(),
+  analyze: jest.fn().mockResolvedValue({ regions: [], initialPositiveThreshold: 0.8, initialNegativeThreshold: 0.4, probabilities: {}, frameSamples:0, sampleRate:0, redemptionFrames:0 }),
+  recalculateSpeechRegions: jest.fn().mockReturnValue([]),
+};
+
+global.AudioApp.DTMFParser = jest.fn().mockImplementation(() => ({
+    processAudioBlock: jest.fn().mockReturnValue(null)
+}));
+global.AudioApp.CallProgressToneParser = jest.fn().mockImplementation(() => ({
+    processAudioBlock: jest.fn().mockReturnValue(null)
+}));
+
+
+global.AudioApp.Utils = {
+  debounce: jest.fn((fn) => fn), // Executes immediately
+  formatTime: jest.fn(time => `${time}s`), // From uiManager tests
+};
+
+global.Constants = {
+  UI: {
+    SYNC_DEBOUNCE_WAIT_MS: 50,
+    DEBOUNCE_HASH_UPDATE_MS: 250,
+  },
+  VAD: {
+    DEFAULT_POSITIVE_THRESHOLD: 0.5,
+    DEFAULT_NEGATIVE_THRESHOLD: 0.35,
+    SAMPLE_RATE: 16000,
+    DEFAULT_FRAME_SAMPLES: 1536, // CHANGED from 512
+    MIN_SPEECH_DURATION_MS: 100,
+    SPEECH_PAD_MS: 50,
+    REDEMPTION_FRAMES: 3,
+    PROGRESS_REPORT_INTERVAL: 100,
+    YIELD_INTERVAL: 200,
+  },
+  DTMF: {
+    SAMPLE_RATE: 16000,
+    BLOCK_SIZE: 1024,
+  },
+  // Add other Constants sub-objects if app.js uses them and they aren't mocked elsewhere
+};
+
+// Mock AppState constructor for app.js IIFE
+global.AppState = jest.fn().mockImplementation(() => global.AudioApp.state);
+
+
+// To capture event handlers
+const eventListeners = {};
+const originalAddEventListener = document.addEventListener;
+let addEventListenerSpy;
+
+// --- Load app.js AFTER all mocks are set up ---
+// The IIFE in app.js will use the mocked global.AudioApp
+require('../../js/app.js');
+// --- End of app.js loading ---
+
+
+describe('AudioApp (app.js logic)', () => {
+  let capturedHandlers = {};
+  let debouncedUpdateUrlHashMock;
+
+
+  beforeAll(() => {
+    // Spy on addEventListener to capture handlers
+    addEventListenerSpy = jest.spyOn(document, 'addEventListener').mockImplementation((event, handler) => {
+      capturedHandlers[event] = handler;
+    });
+
+    // Mocking the result of debounce specifically for updateUrlHashFromState
+    // updateUrlHashFromState is not directly exported, so we mock its debounced version
+    debouncedUpdateUrlHashMock = jest.fn();
+    global.AudioApp.Utils.debounce.mockImplementation((fn, delay) => {
+        if (fn.name === 'updateUrlHashFromState') {
+            return debouncedUpdateUrlHashMock;
+        }
+        return fn; // For other debounced functions, return them directly
+    });
+
+    // Call init to setup event listeners etc.
+    // app.init is assigned by the IIFE.
+    AudioApp.init();
+  });
+
+  afterAll(() => {
+    // Restore original addEventListener
+    addEventListenerSpy.mockRestore();
+  });
+
+  beforeEach(() => {
+    // Reset mocks before each test
+    jest.clearAllMocks();
+
+    // Restore debounce mock for updateUrlHashFromState for each test if needed,
+    // or ensure it's freshly created.
+    global.AudioApp.Utils.debounce.mockImplementation((fn, delay) => {
+        if (fn.name === 'updateUrlHashFromState') {
+            return debouncedUpdateUrlHashMock;
+        }
+        return fn;
+    });
+
+    // Default states (can be overridden in specific tests)
+    global.AudioApp.state.params.jumpTime = 5;
+    global.AudioApp.state.runtime.currentAudioBuffer = { duration: 100 };
+    global.AudioApp.state.runtime.playbackStartSourceTime = 0;
+    global.AudioApp.state.runtime.playbackStartTimeContext = null;
+    global.AudioApp.state.runtime.currentSpeedForUpdate = 1;
+    global.AudioApp.state.status.workletPlaybackReady = true;
+    global.AudioApp.state.status.isActuallyPlaying = false;
+    global.AudioApp.audioEngine.getAudioContext.mockReturnValue({ currentTime: 0 });
+    global.AudioApp.audioEngine.getCurrentTime.mockReturnValue({ currentTime: 0 });
+
+  });
+
+  describe('handleJumpTimeChange', () => {
+    const handleJumpTimeChange = () => capturedHandlers['audioapp:jumpTimeChanged'];
+
+    test('valid input should update jumpTime and call debouncedUpdateUrlHash', () => {
+      handleJumpTimeChange()({ detail: { value: 15 } });
+      expect(AudioApp.state.updateParam).toHaveBeenCalledWith('jumpTime', 15);
+      expect(debouncedUpdateUrlHashMock).toHaveBeenCalled();
+    });
+
+    test('zero input should not update jumpTime', () => {
+      handleJumpTimeChange()({ detail: { value: 0 } });
+      expect(AudioApp.state.updateParam).not.toHaveBeenCalled();
+      expect(debouncedUpdateUrlHashMock).not.toHaveBeenCalled();
+    });
+
+    test('negative input should not update jumpTime', () => {
+      handleJumpTimeChange()({ detail: { value: -5 } });
+      expect(AudioApp.state.updateParam).not.toHaveBeenCalled();
+      expect(debouncedUpdateUrlHashMock).not.toHaveBeenCalled();
+    });
+
+    test('non-numeric input should not update jumpTime', () => {
+      handleJumpTimeChange()({ detail: { value: 'abc' } });
+      expect(AudioApp.state.updateParam).not.toHaveBeenCalled();
+      expect(debouncedUpdateUrlHashMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleJump', () => {
+    const handleJump = () => capturedHandlers['audioapp:jumpClicked'];
+
+    // Mocking calculateEstimatedSourceTime by controlling its inputs
+    // For these tests, assume calculateEstimatedSourceTime returns playbackStartSourceTime when paused,
+    // or a calculated value if playing. We'll control playbackStartSourceTime and mock audioContext.currentTime.
+
+    test('jump forward within bounds', () => {
+      AudioApp.state.runtime.playbackStartSourceTime = 50; // current time
+      handleJump()({ detail: { direction: 1 } }); // jumpTime is 5
+      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(55);
+      expect(debouncedUpdateUrlHashMock).toHaveBeenCalled();
+    });
+
+    test('jump backward within bounds', () => {
+      AudioApp.state.runtime.playbackStartSourceTime = 50;
+      handleJump()({ detail: { direction: -1 } });
+      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(45);
+      expect(debouncedUpdateUrlHashMock).toHaveBeenCalled();
+    });
+
+    test('jump backward resulting in time before 0 seconds', () => {
+      AudioApp.state.runtime.playbackStartSourceTime = 3;
+      handleJump()({ detail: { direction: -1 } }); // 3 - 5 = -2 -> 0
+      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(0);
+    });
+
+    test('jump forward resulting in time after duration', () => {
+      AudioApp.state.runtime.playbackStartSourceTime = 98;
+      AudioApp.state.runtime.currentAudioBuffer.duration = 100;
+      handleJump()({ detail: { direction: 1 } }); // 98 + 5 = 103 -> 100
+      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(100);
+    });
+
+    test('when playing, should update playbackStartTimeContext', () => {
+      AudioApp.state.status.isActuallyPlaying = true;
+      AudioApp.state.runtime.playbackStartSourceTime = 50;
+      AudioApp.audioEngine.getAudioContext.mockReturnValue({ currentTime: 10 }); // Simulate context time
+
+      handleJump()({ detail: { direction: 1 } });
+
+      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(55);
+      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartSourceTime', 55);
+      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartTimeContext', 10);
+    });
+
+    test('when paused, should set playbackStartTimeContext to null and call updateUIWithTime', () => {
+      AudioApp.state.status.isActuallyPlaying = false;
+      AudioApp.state.runtime.playbackStartSourceTime = 50;
+
+      // Mock updateUIWithTime by checking calls to uiManager functions it calls
+      AudioApp.uiManager.updateTimeDisplay.mockClear();
+      AudioApp.uiManager.updateSeekBar.mockClear();
+
+      handleJump()({ detail: { direction: 1 } });
+
+      expect(AudioApp.audioEngine.seek).toHaveBeenCalledWith(55);
+      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartSourceTime', 55);
+      expect(AudioApp.state.updateRuntime).toHaveBeenCalledWith('playbackStartTimeContext', null);
+
+      // Check if updateUIWithTime was effectively called
+      expect(AudioApp.uiManager.updateTimeDisplay).toHaveBeenCalledWith(55, AudioApp.state.runtime.currentAudioBuffer.duration);
+      expect(AudioApp.uiManager.updateSeekBar).toHaveBeenCalled(); // Argument depends on fraction
+    });
+     test('should not jump if worklet not ready', () => {
+        AudioApp.state.status.workletPlaybackReady = false;
+        handleJump()({ detail: { direction: 1 } });
+        expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
+    });
+
+    test('should not jump if no audio buffer', () => {
+        AudioApp.state.runtime.currentAudioBuffer = null;
+        handleJump()({ detail: { direction: 1 } });
+        expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleKeyPress', () => {
+    let handlePlayPauseMock;
+    const handleKeyPress = () => capturedHandlers['audioapp:keyPressed'];
+
+    beforeEach(() => {
+        // To test if handlePlayPause is called, we can spy on it.
+        // Since handlePlayPause is internal to app.js, we'd typically have to
+        // trigger the 'Space' key and check its side effects (e.g., audioEngine.togglePlayPause).
+        // For simplicity here, if we could mock 'handlePlayPause' itself, that would be easier.
+        // Given the structure, we'll check the call to audioEngine.togglePlayPause,
+        // as handlePlayPause directly calls it.
+        AudioApp.audioEngine.togglePlayPause.mockClear();
+    });
+
+    test('ArrowLeft should not trigger seek', () => {
+      handleKeyPress()({ detail: { key: 'ArrowLeft' } });
+      expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
+      expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
+    });
+
+    test('ArrowRight should not trigger seek', () => {
+      handleKeyPress()({ detail: { key: 'ArrowRight' } });
+      expect(AudioApp.audioEngine.seek).not.toHaveBeenCalled();
+      expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
+    });
+
+    test('Space key should call togglePlayPause (via handlePlayPause)', () => {
+      handleKeyPress()({ detail: { key: 'Space' } });
+      expect(AudioApp.audioEngine.togglePlayPause).toHaveBeenCalled();
+    });
+
+    test('should not process key press if worklet not ready', () => {
+        AudioApp.state.status.workletPlaybackReady = false;
+        handleKeyPress()({ detail: { key: 'Space' } });
+        expect(AudioApp.audioEngine.togglePlayPause).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('generateSpeechRegionsFromProbs logic', () => {
+    let generateFunc;
+    // const MOCK_REDEMPTION_FRAMES = global.Constants.VAD.REDEMPTION_FRAMES; // Kept if still used locally, or remove if all direct global access
+
+    // Helper to calculate duration of N frames
+    // Directly uses global.Constants.VAD to ensure values are picked up after mock setup.
+    const frameDuration = (numFrames) => {
+      const sampleRate = global.Constants.VAD.SAMPLE_RATE;
+      const frameSamples = global.Constants.VAD.DEFAULT_FRAME_SAMPLES;
+      if (typeof sampleRate !== 'number' || typeof frameSamples !== 'number' || sampleRate === 0) {
+        // This case should ideally not be hit if Constants.VAD is mocked correctly.
+        console.error('frameDuration: Invalid sampleRate or frameSamples from global.Constants.VAD', global.Constants.VAD);
+        return NaN;
+      }
+      return (numFrames * frameSamples) / sampleRate;
+    };
+
+    beforeAll(() => {
+      // Ensure app.js is loaded and testExports is available
+      if (AudioApp.testExports && AudioApp.testExports.generateSpeechRegionsFromProbs) {
+        generateFunc = AudioApp.testExports.generateSpeechRegionsFromProbs;
+      } else {
+        throw new Error('generateSpeechRegionsFromProbs not exposed on AudioApp.testExports. Make sure app.js is correctly refactored for testing.');
+      }
+    });
+
+    test('should detect a basic speech segment correctly', () => {
+      const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1]); // Speech: frames 1, 2
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 2. Raw region start: fd(1), end: fd(3)
+      const expectedRawStart = frameDuration(1);
+      const expectedRawEnd = frameDuration(3);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('should not detect speech if probabilities are below positive threshold', () => {
+      const probabilities = new Float32Array([0.1, 0.2, 0.4, 0.3, 0.2, 0.1]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+    });
+
+    test('high positive threshold should detect less speech', () => {
+      const probabilities = new Float32Array([0.1, 0.6, 0.8, 0.9, 0.7, 0.2, 0.1]); // Speech frame: 3 (0.9)
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.85,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 3. Raw region start: fd(3), end: fd(4)
+      const expectedRawStart = frameDuration(3);
+      const expectedRawEnd = frameDuration(4);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('low positive threshold should detect more speech', () => {
+      const probabilities = new Float32Array([0.1, 0.25, 0.3, 0.28, 0.1, 0.05]); // Speech: frames 1,2,3
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.2, // Lower threshold
+        negativeSpeechThreshold: 0.1,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 3. Raw region start: fd(1), end: fd(4)
+      const expectedRawStart = frameDuration(1);
+      const expectedRawEnd = frameDuration(4);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('impact of negative threshold and redemption frames', () => {
+      // Dip below negative threshold for less than redemptionFrames should continue speech
+      const probabilities1 = new Float32Array([0.8, 0.8, 0.2, 0.2, 0.8, 0.8]); // Dip of 2 frames
+      const options1 = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3, // Dip is below this
+        redemptionFrames: 3, // But dip length (2) < redemption (3)
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions1 = generateFunc(probabilities1, options1);
+      expect(regions1.length).toBe(1); // Should be one continuous region
+      // lastPositiveFrameIndex = 5. Raw region start: fd(0), end: fd(6)
+      const expectedRawStart1 = frameDuration(0);
+      const expectedRawEnd1 = frameDuration(6);
+      const expectedPaddedStart1 = Math.max(0, expectedRawStart1 - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd1 = Math.min(frameDuration(probabilities1.length), expectedRawEnd1 + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions1[0].start).toBeCloseTo(expectedPaddedStart1);
+      expect(regions1[0].end).toBeCloseTo(expectedPaddedEnd1);
+
+      // Dip below negative threshold for redemptionFrames or more should break speech
+      const probabilities2 = new Float32Array([0.8, 0.8, 0.2, 0.2, 0.2, 0.8, 0.8]); // Dip of 3 frames
+      const options2 = { ...options1, redemptionFrames: 3 }; // Dip length (3) == redemption (3)
+      const regions2 = generateFunc(probabilities2, options2);
+      expect(regions2.length).toBe(2); // Should be two regions
+      // Region 1: lastPositiveFrameIndex = 1. Raw start fd(0), end fd(2)
+      // Region 2: lastPositiveFrameIndex = 6 (relative to its own start). Raw start fd(5), end fd(7)
+    });
+
+    test('should filter out segments shorter than MIN_SPEECH_DURATION_MS (after padding)', () => {
+      const probabilities = new Float32Array([0.1, 0.9, 0.1]); // 1 frame of speech (index 1)
+      const originalMinSpeechMs = global.Constants.VAD.MIN_SPEECH_DURATION_MS;
+      global.Constants.VAD.MIN_SPEECH_DURATION_MS = 200; // Raw 96ms + Pad 100ms = 196ms. This should fail.
+
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS, // Uses the mocked 200ms
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+      global.Constants.VAD.MIN_SPEECH_DURATION_MS = originalMinSpeechMs; // Restore
+    });
+
+    test('should apply SPEECH_PAD_MS to start and end of regions', () => {
+      const probabilities = new Float32Array([0.1, 0.8, 0.8, 0.1]); // Speech frames 1, 2
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 2. Raw region start: fd(1), end: fd(3)
+      const expectedRawStart = frameDuration(1);
+      const expectedRawEnd = frameDuration(3);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('should merge overlapping regions after padding', () => {
+      const probabilities = new Float32Array([0.1, 0.9, 0.9, 0.1, 0.9, 0.9, 0.1]); // Seg1: fr 1-2, Seg2: fr 4-5
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES, // Short redemption to prevent merging inside core logic
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS, // 50ms pad
+      };
+      // Seg1 raw: fd(1) to fd(3). Padded: max(0, fd(1)-0.05) to fd(3)+0.05. -> 0.046 to 0.288+0.05=0.338
+      // Seg2 raw: fd(4) to fd(6). Padded: max(0, fd(4)-0.05) to fd(6)+0.05. -> 0.384-0.05=0.334 to 0.576+0.05=0.626
+      // These are now just touching or barely overlapping due to pad.
+      // fd(1)=0.096, fd(3)=0.288. Padded S1: [0.046, 0.338]
+      // fd(4)=0.384, fd(6)=0.576. Padded S2: [0.334, 0.626]
+      // They overlap: 0.334 < 0.338. Merged: [0.046, 0.626]
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      const expectedMergedStart = Math.max(0, frameDuration(1) - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedMergedEnd = Math.min(frameDuration(probabilities.length), frameDuration(6) + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedMergedStart);
+      expect(regions[0].end).toBeCloseTo(expectedMergedEnd);
+    });
+
+    test('should return empty array for empty probabilities', () => {
+      const probabilities = new Float32Array([]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+    });
+
+    test('should handle probabilities all being 1.0', () => {
+      const probabilities = new Float32Array([1.0, 1.0, 1.0, 1.0]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(1);
+      // lastPositiveFrameIndex = 3. Raw region start: fd(0), end: fd(4)
+      const expectedRawStart = frameDuration(0);
+      const expectedRawEnd = frameDuration(4);
+      const expectedPaddedStart = Math.max(0, expectedRawStart - (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      const expectedPaddedEnd = Math.min(frameDuration(probabilities.length), expectedRawEnd + (global.Constants.VAD.SPEECH_PAD_MS / 1000));
+      expect(regions[0].start).toBeCloseTo(expectedPaddedStart);
+      expect(regions[0].end).toBeCloseTo(expectedPaddedEnd);
+    });
+
+    test('should handle probabilities all being 0.0', () => {
+      const probabilities = new Float32Array([0.0, 0.0, 0.0, 0.0]);
+      const options = {
+        frameSamples: global.Constants.VAD.DEFAULT_FRAME_SAMPLES,
+        sampleRate: global.Constants.VAD.SAMPLE_RATE,
+        positiveSpeechThreshold: 0.5,
+        negativeSpeechThreshold: 0.3,
+        redemptionFrames: global.Constants.VAD.REDEMPTION_FRAMES,
+        minSpeechDurationMs: global.Constants.VAD.MIN_SPEECH_DURATION_MS,
+        speechPadMs: global.Constants.VAD.SPEECH_PAD_MS,
+      };
+      const regions = generateFunc(probabilities, options);
+      expect(regions.length).toBe(0);
+    });
+
+  });
+});
+
+````
+--- End of File: vibe-player/tests/unit/app.test.js ---
+--- File: vibe-player/tests/unit/state/appState.test.js ---
+````javascript
+// vibe-player/tests/unit/state/appState.test.js
+describe('AppState Class', () => {
+    let appState;
+
+    beforeEach(() => {
+        // Ensure Constants is available if AppState relies on it for defaults
+        if (typeof Constants === 'undefined') {
+            // This error will fail the test suite if Constants isn't loaded by jest.setup.js
+            throw new Error("AppState tests require Constants to be globally available.");
+        }
+        // Create a new AppState instance for each test to ensure isolation
+        // This also relies on AppState being globally available via jest.setup.js
+        if (typeof AppState === 'undefined') {
+            throw new Error("AppState tests require AppState to be globally available to instantiate.");
+        }
+        appState = new AppState();
+    });
+
+    test('should be defined globally and instantiable', () => {
+        expect(typeof AppState).not.toBe('undefined');
+        // The check below is redundant due to beforeEach, but good for explicit clarity
+        if (typeof AppState === 'undefined') {
+            throw new Error("Test Error: AppState class is undefined in appState.test.js.");
+        }
+        expect(appState).toBeInstanceOf(AppState);
+    });
+
+    describe('Constructor and Default Values', () => {
+        test('should initialize params with default values', () => {
+            expect(appState.params.speed).toBe(1.0);
+            expect(appState.params.pitch).toBe(1.0);
+            expect(appState.params.gain).toBe(1.0);
+            // Constants should be defined here due to the check in beforeEach
+            expect(appState.params.vadPositive).toBe(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD);
+            expect(appState.params.vadNegative).toBe(Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD);
+            expect(appState.params.audioUrl).toBe("");
+            expect(appState.params.jumpTime).toBe(5);
+            expect(appState.params.initialSeekTime).toBeNull();
+        });
+
+        test('should initialize runtime with default values', () => {
+            expect(appState.runtime.currentAudioBuffer).toBeNull();
+            expect(appState.runtime.currentVadResults).toBeNull();
+            expect(appState.runtime.currentFile).toBeNull();
+            expect(appState.runtime.playbackStartTimeContext).toBeNull();
+            expect(appState.runtime.playbackStartSourceTime).toBe(0.0);
+            expect(appState.runtime.currentSpeedForUpdate).toBe(1.0);
+        });
+
+        test('should initialize status with default values', () => {
+            expect(appState.status.isActuallyPlaying).toBe(false);
+            expect(appState.status.workletPlaybackReady).toBe(false);
+            expect(appState.status.vadModelReady).toBe(false);
+            expect(appState.status.isVadProcessing).toBe(false);
+            expect(appState.status.playbackNaturallyEnded).toBe(false);
+            expect(appState.status.urlInputStyle).toBe('default');
+            expect(appState.status.fileInfoMessage).toBe("No file selected.");
+            expect(appState.status.urlLoadingErrorMessage).toBe("");
+        });
+    });
+
+    describe('State Update Methods', () => {
+        test('updateParam should update a param and notify subscribers', () => {
+            const mockSpecificSubscriber = jest.fn();
+            const mockGenericSubscriber = jest.fn();
+            appState.subscribe('param:speed:changed', mockSpecificSubscriber);
+            appState.subscribe('param:changed', mockGenericSubscriber);
+
+            appState.updateParam('speed', 1.5);
+
+            expect(appState.params.speed).toBe(1.5);
+            expect(mockSpecificSubscriber).toHaveBeenCalledWith(1.5);
+            expect(mockSpecificSubscriber).toHaveBeenCalledTimes(1);
+            expect(mockGenericSubscriber).toHaveBeenCalledWith({ param: 'speed', value: 1.5 });
+            expect(mockGenericSubscriber).toHaveBeenCalledTimes(1);
+        });
+
+        test('updateParam should not notify if value is unchanged', () => {
+            appState.updateParam('speed', 1.5); // Set initial value
+            const mockSubscriber = jest.fn();
+            const mockGenericSubscriber = jest.fn();
+            appState.subscribe('param:speed:changed', mockSubscriber);
+            appState.subscribe('param:changed', mockGenericSubscriber);
+
+            appState.updateParam('speed', 1.5); // Update with same value
+
+            expect(mockSubscriber).not.toHaveBeenCalled();
+            expect(mockGenericSubscriber).not.toHaveBeenCalled();
+        });
+
+        test('updateParam should warn for unknown param and not update', () => {
+            const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            const originalParams = JSON.parse(JSON.stringify(appState.params)); // Deep copy
+
+            appState.updateParam('unknownParam', 999);
+
+            expect(appState.params).toEqual(originalParams); // Ensure params object is not changed
+            expect(consoleWarnSpy).toHaveBeenCalledWith('AppState: Attempted to update unknown param "unknownParam"');
+            consoleWarnSpy.mockRestore();
+        });
+
+
+        test('updateRuntime should update a runtime property and notify', () => {
+            const mockSubscriber = jest.fn();
+            appState.subscribe('runtime:currentAudioBuffer:changed', mockSubscriber);
+            const newBuffer = { id: 'testBuffer' }; // Mock buffer
+            appState.updateRuntime('currentAudioBuffer', newBuffer);
+            expect(appState.runtime.currentAudioBuffer).toEqual(newBuffer);
+            expect(mockSubscriber).toHaveBeenCalledWith(newBuffer);
+        });
+
+        test('updateStatus should update a status flag and notify', () => {
+            const mockSubscriber = jest.fn();
+            appState.subscribe('status:isActuallyPlaying:changed', mockSubscriber);
+            appState.updateStatus('isActuallyPlaying', true);
+            expect(appState.status.isActuallyPlaying).toBe(true);
+            expect(mockSubscriber).toHaveBeenCalledWith(true);
+        });
+    });
+
+    describe('Publisher/Subscriber System', () => {
+        test('should allow subscription and unsubscription', () => {
+            const mockCallback = jest.fn();
+            appState.subscribe('testEvent', mockCallback);
+            appState._notify('testEvent', 'testData');
+            expect(mockCallback).toHaveBeenCalledWith('testData');
+
+            appState.unsubscribe('testEvent', mockCallback);
+            appState._notify('testEvent', 'testData2');
+            expect(mockCallback).toHaveBeenCalledTimes(1); // Should not be called again
+        });
+
+        test('unsubscribe should remove event key if no callbacks remain', () => {
+            const cb1 = jest.fn();
+            appState.subscribe('emptyEvent', cb1);
+            expect(appState._subscribers['emptyEvent']).toBeDefined();
+            appState.unsubscribe('emptyEvent', cb1);
+            expect(appState._subscribers['emptyEvent']).toBeUndefined();
+        });
+
+        test('should handle multiple subscribers for an event', () => {
+            const cb1 = jest.fn();
+            const cb2 = jest.fn();
+            appState.subscribe('multiEvent', cb1);
+            appState.subscribe('multiEvent', cb2);
+            appState._notify('multiEvent', 'data');
+            expect(cb1).toHaveBeenCalledWith('data');
+            expect(cb2).toHaveBeenCalledWith('data');
+        });
+
+        test('subscribe should not add same callback multiple times', () => {
+            const cb1 = jest.fn();
+            appState.subscribe('singleCbTest', cb1);
+            appState.subscribe('singleCbTest', cb1);
+            expect(appState._subscribers['singleCbTest'].length).toBe(1);
+        });
+
+        test('_notify should handle errors in callbacks gracefully', () => {
+            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const cb1 = jest.fn(() => { throw new Error("Test CB Error"); });
+            const cb2 = jest.fn();
+
+            appState.subscribe('errorTestEvent', cb1);
+            appState.subscribe('errorTestEvent', cb2);
+            appState._notify('errorTestEvent', 'data');
+
+            expect(cb1).toHaveBeenCalledWith('data');
+            expect(cb2).toHaveBeenCalledWith('data'); // cb2 should still be called
+            expect(consoleErrorSpy).toHaveBeenCalled();
+            consoleErrorSpy.mockRestore();
+        });
+    });
+
+    describe('Serialization/Deserialization', () => {
+        test('serialize should produce correct hash string for non-default values', () => {
+            appState.updateParam('speed', 1.25);
+            appState.updateParam('pitch', 0.75);
+            appState.updateParam('audioUrl', 'http://example.com/audio.mp3');
+            // Deliberately set one VAD param to non-default
+            appState.updateParam('vadPositive', 0.6);
+
+
+            const hash = appState.serialize(123.45);
+            const searchParams = new URLSearchParams(hash);
+
+            expect(searchParams.get(Constants.URLHashKeys.SPEED)).toBe('1.25');
+            expect(searchParams.get(Constants.URLHashKeys.PITCH)).toBe('0.75');
+            expect(searchParams.get(Constants.URLHashKeys.AUDIO_URL)).toBe('http://example.com/audio.mp3');
+            expect(searchParams.get(Constants.URLHashKeys.TIME)).toBe('123.45');
+            expect(searchParams.get(Constants.URLHashKeys.VAD_POSITIVE)).toBe('0.60');
+            // Ensure non-changed defaults are not in the hash
+            expect(searchParams.has(Constants.URLHashKeys.GAIN)).toBe(false);
+            expect(searchParams.has(Constants.URLHashKeys.VAD_NEGATIVE)).toBe(false);
+        });
+
+        test('serialize should return empty string if all params are default and no time', () => {
+            // All params are already default in a new instance
+            const hash = appState.serialize(0); // time 0 or undefined should not be included
+            expect(hash).toBe('');
+            const hash2 = appState.serialize();
+            expect(hash2).toBe('');
+        });
+
+        test('deserialize should update params correctly from hash string', () => {
+            const hash = 'speed=1.5&pitch=0.8&url=test.mp3&time=10.5&vadPositive=0.75&gain=0.5';
+            // Mock updateParam to check calls if direct state checking is complex
+            // For this test, we'll check the state directly after deserialize
+            appState.deserialize(hash);
+
+            expect(appState.params.speed).toBe(1.5);
+            expect(appState.params.pitch).toBe(0.8);
+            expect(appState.params.audioUrl).toBe('test.mp3');
+            expect(appState.params.initialSeekTime).toBe(10.5);
+            expect(appState.params.vadPositive).toBe(0.75);
+            expect(appState.params.gain).toBe(0.5);
+            // Ensure params not in hash remain default
+            expect(appState.params.vadNegative).toBe(Constants.VAD.DEFAULT_NEGATIVE_THRESHOLD);
+            expect(appState.params.jumpTime).toBe(5); // Assuming default jumpTime is 5
+        });
+
+        test('deserialize should handle empty, null, or undefined hash string gracefully', () => {
+            // Spy on updateParam to ensure it's not called
+            const updateParamSpy = jest.spyOn(appState, 'updateParam');
+            appState.deserialize('');
+            expect(updateParamSpy).not.toHaveBeenCalled();
+            appState.deserialize(null);
+            expect(updateParamSpy).not.toHaveBeenCalled();
+            appState.deserialize(undefined);
+            expect(updateParamSpy).not.toHaveBeenCalled();
+            updateParamSpy.mockRestore();
+        });
+
+        test('deserialize should not update params if values are invalid', () => {
+            const hash = 'speed=abc&pitch=xyz&gain=foo&vadPositive=bar&vadNegative=baz&time=qux';
+            const originalParamsJSON = JSON.stringify(appState.params);
+
+            appState.deserialize(hash);
+
+            // Check that params object is unchanged because all parsed values would be NaN
+            expect(JSON.stringify(appState.params)).toEqual(originalParamsJSON);
+        });
+    });
+});
+
+````
+--- End of File: vibe-player/tests/unit/state/appState.test.js ---
+--- File: vibe-player/tests/unit/state/constants.test.js ---
+````javascript
+// vibe-player/tests/unit/state/constants.test.js
+describe('Constants Class', () => {
+    test('should be defined globally and accessible in tests', () => {
+        // This is the primary check. If Constants is not defined here, jest.setup.js
+        // and the self-exporting mechanism in constants.js are not working as expected.
+        expect(typeof Constants).not.toBe('undefined');
+        if (typeof Constants === 'undefined') {
+            console.error("Test Error: Constants class is undefined in constants.test.js");
+            // Throw an error to make it very clear in test output if this fails.
+            throw new Error("Test Error: Constants class is undefined in constants.test.js. Check jest.setup.js and the global assignment in constants.js.");
+        }
+    });
+
+    // Only proceed with these if the above test passes or if we want to see detailed failures.
+    // These tests assume 'Constants' is available.
+    test('should have correct AudioEngine structure and key values', () => {
+        if (typeof Constants === 'undefined') return; // Guard for cleaner output if first test fails
+        expect(Constants.AudioEngine).toBeDefined();
+        expect(Constants.AudioEngine.PROCESSOR_NAME).toBe('rubberband-processor');
+        expect(Constants.AudioEngine.WASM_BINARY_URL).toBe('lib/rubberband.wasm');
+    });
+
+    test('should have correct VAD structure and key values', () => {
+        if (typeof Constants === 'undefined') return;
+        expect(Constants.VAD).toBeDefined();
+        expect(Constants.VAD.SAMPLE_RATE).toBe(16000);
+        expect(Constants.VAD.DEFAULT_POSITIVE_THRESHOLD).toBe(0.5);
+    });
+
+    test('should have correct UI structure and key values', () => {
+        if (typeof Constants === 'undefined') return;
+        expect(Constants.UI).toBeDefined();
+        expect(Constants.UI.DEBOUNCE_HASH_UPDATE_MS).toBe(500);
+    });
+
+    test('should have correct Visualizer structure and key values', () => {
+        if (typeof Constants === 'undefined') return;
+        expect(Constants.Visualizer).toBeDefined();
+        expect(Constants.Visualizer.WAVEFORM_COLOR_SPEECH).toBe('#FDE725');
+    });
+
+    test('should have correct URLHashKeys structure and key values', () => {
+        if (typeof Constants === 'undefined') return;
+        expect(Constants.URLHashKeys).toBeDefined();
+        expect(Constants.URLHashKeys.SPEED).toBe('speed');
+        expect(Constants.URLHashKeys.TIME).toBe('time');
+    });
+
+    test('should have correct DTMF structure and key values', () => {
+        if (typeof Constants === 'undefined') return;
+        expect(Constants.DTMF).toBeDefined();
+        expect(Constants.DTMF.SAMPLE_RATE).toBe(16000);
+    });
+});
+
+````
+--- End of File: vibe-player/tests/unit/state/constants.test.js ---
+--- File: vibe-player/tests/unit/uiManager.test.js ---
+````javascript
+// vibe-player/tests/unit/uiManager.test.js
+/* eslint-env jest */
+
+// Mock AudioApp and its dependencies before uiManager is loaded
+global.AudioApp = global.AudioApp || {};
+global.AudioApp.Utils = {
+  formatTime: jest.fn(time => `${time}s`), // Minimal mock for Utils used in init/reset path
+};
+global.Constants = { // Minimal mock for Constants used in init/reset path
+  VAD: {
+    DEFAULT_POSITIVE_THRESHOLD: 0.8,
+    DEFAULT_NEGATIVE_THRESHOLD: 0.4,
+  },
+  UI: {}, // if uiManager accesses anything under UI
+};
+
+// Mock AudioApp.state and its subscribe method
+global.AudioApp.state = {
+  subscribe: jest.fn(),
+  params: {}, // For setJumpTimeValue if it tries to read state, though current impl doesn't
+  runtime: {},
+  status: {},
+};
+
+// Now load the uiManager after mocks are in place
+require('../../js/uiManager.js'); // Assuming path from tests/unit/ to js/
+
+describe('AudioApp.uiManager', () => {
+  let jumpTimeInput;
+  let jumpBackButton;
+  let jumpForwardButton;
+  let dispatchEventSpy;
+
+  beforeEach(() => {
+    // Create and append mock DOM elements
+    jumpTimeInput = document.createElement('input');
+    jumpTimeInput.id = 'jumpTime';
+    jumpTimeInput.type = 'number';
+    jumpTimeInput.value = '5'; // Default value
+    document.body.appendChild(jumpTimeInput);
+
+    jumpBackButton = document.createElement('button');
+    jumpBackButton.id = 'jumpBack';
+    document.body.appendChild(jumpBackButton);
+
+    jumpForwardButton = document.createElement('button');
+    jumpForwardButton.id = 'jumpForward';
+    document.body.appendChild(jumpForwardButton);
+
+    // Other elements uiManager.init() might try to access to avoid errors
+    const chooseFileButton = document.createElement('button'); // Added to silence warning
+    chooseFileButton.id = 'chooseFileButton';
+    document.body.appendChild(chooseFileButton);
+
+    const playPauseButton = document.createElement('button');
+    playPauseButton.id = 'playPause';
+    document.body.appendChild(playPauseButton);
+
+    const seekBar = document.createElement('input');
+    seekBar.id = 'seekBar';
+    document.body.appendChild(seekBar);
+
+    const fileNameDisplay = document.createElement('span');
+    fileNameDisplay.id = 'fileNameDisplay';
+    document.body.appendChild(fileNameDisplay);
+
+    const fileInfo = document.createElement('p');
+    fileInfo.id = 'fileInfo';
+    document.body.appendChild(fileInfo);
+
+    const timeDisplay = document.createElement('div');
+    timeDisplay.id = 'timeDisplay';
+    document.body.appendChild(timeDisplay);
+
+    const speechRegionsDisplay = document.createElement('pre');
+    speechRegionsDisplay.id = 'speechRegionsDisplay';
+    document.body.appendChild(speechRegionsDisplay);
+
+    const vadThresholdValueDisplay = document.createElement('span');
+    vadThresholdValueDisplay.id = 'vadThresholdValue';
+    document.body.appendChild(vadThresholdValueDisplay);
+
+    const vadNegativeThresholdValueDisplay = document.createElement('span');
+    vadNegativeThresholdValueDisplay.id = 'vadNegativeThresholdValue';
+    document.body.appendChild(vadNegativeThresholdValueDisplay);
+
+    const vadThresholdSlider = document.createElement('input');
+    vadThresholdSlider.id = 'vadThreshold';
+    document.body.appendChild(vadThresholdSlider);
+
+    const vadNegativeThresholdSlider = document.createElement('input');
+    vadNegativeThresholdSlider.id = 'vadNegativeThreshold';
+    document.body.appendChild(vadNegativeThresholdSlider);
+
+    const vadProgressContainer = document.createElement('div');
+    vadProgressContainer.id = 'vadProgressContainer';
+    document.body.appendChild(vadProgressContainer);
+
+    const vadProgressBar = document.createElement('span');
+    vadProgressBar.id = 'vadProgressBar';
+    document.body.appendChild(vadProgressBar);
+
+    const dtmfDisplay = document.createElement('div');
+    dtmfDisplay.id = 'dtmfDisplay';
+    document.body.appendChild(dtmfDisplay);
+
+    const cptDisplay = document.createElement('div');
+    cptDisplay.id = 'cpt-display-content';
+    document.body.appendChild(cptDisplay);
+
+    const urlLoadingErrorDisplay = document.createElement('span');
+    urlLoadingErrorDisplay.id = 'urlLoadingErrorDisplay';
+    document.body.appendChild(urlLoadingErrorDisplay);
+
+    const audioUrlInput = document.createElement('input');
+    audioUrlInput.id = 'audioUrlInput';
+    document.body.appendChild(audioUrlInput);
+
+    const playbackSpeedControl = document.createElement('input');
+    playbackSpeedControl.id = 'playbackSpeed';
+    playbackSpeedControl.min = "0.5"; playbackSpeedControl.max = "2"; playbackSpeedControl.value = "1";
+    document.body.appendChild(playbackSpeedControl);
+    const speedValueDisplay = document.createElement('span');
+    speedValueDisplay.id = 'speedValue';
+    document.body.appendChild(speedValueDisplay);
+
+    const pitchControl = document.createElement('input');
+    pitchControl.id = 'pitchControl';
+    pitchControl.min = "0.5"; pitchControl.max = "2"; pitchControl.value = "1";
+    document.body.appendChild(pitchControl);
+    const pitchValueDisplay = document.createElement('span');
+    pitchValueDisplay.id = 'pitchValue';
+    document.body.appendChild(pitchValueDisplay);
+
+    const gainControl = document.createElement('input');
+    gainControl.id = 'gainControl';
+    gainControl.min = "0"; gainControl.max = "2"; gainControl.value = "1";
+    document.body.appendChild(gainControl);
+    const gainValueDisplay = document.createElement('span');
+    gainValueDisplay.id = 'gainValue';
+    document.body.appendChild(gainValueDisplay);
+
+    // Spy on document.dispatchEvent
+    dispatchEventSpy = jest.spyOn(document, 'dispatchEvent');
+
+    // Initialize uiManager
+    // This will call assignDOMElements and setupEventListeners
+    AudioApp.uiManager.init();
+  });
+
+  afterEach(() => {
+    // Clean up DOM elements
+    document.body.innerHTML = '';
+    // Restore spies
+    dispatchEventSpy.mockRestore();
+    // Clear mocks state
+    AudioApp.state.subscribe.mockClear();
+  });
+
+  describe('setupEventListeners - jumpTimeInput', () => {
+    test('should dispatch audioapp:jumpTimeChanged with correct value on valid input', () => {
+      jumpTimeInput.value = '10';
+      jumpTimeInput.dispatchEvent(new Event('input'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpTimeChanged');
+      expect(event.detail).toEqual({ value: 10 });
+    });
+
+    test('should dispatch audioapp:jumpTimeChanged with value 1 on empty input', () => {
+      jumpTimeInput.value = '';
+      jumpTimeInput.dispatchEvent(new Event('input'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpTimeChanged');
+      expect(event.detail).toEqual({ value: 1 });
+    });
+
+    test('should dispatch audioapp:jumpTimeChanged with value 1 on non-numeric input', () => {
+      jumpTimeInput.value = 'abc';
+      jumpTimeInput.dispatchEvent(new Event('input'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpTimeChanged');
+      expect(event.detail).toEqual({ value: 1 });
+    });
+
+    test('should dispatch audioapp:jumpTimeChanged with value 1 on zero input', () => {
+      jumpTimeInput.value = '0';
+      jumpTimeInput.dispatchEvent(new Event('input'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpTimeChanged');
+      expect(event.detail).toEqual({ value: 1 });
+    });
+
+    test('should dispatch audioapp:jumpTimeChanged with value 1 on negative input', () => {
+      jumpTimeInput.value = '-5';
+      jumpTimeInput.dispatchEvent(new Event('input'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpTimeChanged');
+      expect(event.detail).toEqual({ value: 1 });
+    });
+  });
+
+  describe('Jump Button/Key Event Dispatch', () => {
+    test('jumpBackButton click should dispatch audioapp:jumpClicked with direction -1', () => {
+      jumpBackButton.dispatchEvent(new Event('click'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpClicked');
+      expect(event.detail).toEqual({ direction: -1 });
+    });
+
+    test('jumpForwardButton click should dispatch audioapp:jumpClicked with direction 1', () => {
+      jumpForwardButton.dispatchEvent(new Event('click'));
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+      const event = dispatchEventSpy.mock.calls[0][0];
+      expect(event.type).toBe('audioapp:jumpClicked');
+      expect(event.detail).toEqual({ direction: 1 });
+    });
+
+    test('ArrowLeft keydown should dispatch audioapp:jumpClicked with direction -1', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft' }));
+      // Note: handleKeyDown is attached to 'document', so we dispatch on document.
+      // The spy should capture this.
+      const jumpClickedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:jumpClicked');
+      expect(jumpClickedEvent).toBeDefined();
+      expect(jumpClickedEvent[0].detail).toEqual({ direction: -1 });
+    });
+
+    test('ArrowRight keydown should dispatch audioapp:jumpClicked with direction 1', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }));
+      const jumpClickedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:jumpClicked');
+      expect(jumpClickedEvent).toBeDefined();
+      expect(jumpClickedEvent[0].detail).toEqual({ direction: 1 });
+    });
+
+    test('Space keydown should dispatch audioapp:keyPressed with key Space', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
+      const keyPressedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:keyPressed');
+      expect(keyPressedEvent).toBeDefined();
+      expect(keyPressedEvent[0].detail).toEqual({ key: 'Space' });
+    });
+
+    test('ArrowLeft keydown should NOT dispatch audioapp:keyPressed', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft' }));
+      const keyPressedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:keyPressed');
+      expect(keyPressedEvent).toBeUndefined();
+    });
+
+    test('ArrowRight keydown should NOT dispatch audioapp:keyPressed', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }));
+      const keyPressedEvent = dispatchEventSpy.mock.calls.find(call => call[0].type === 'audioapp:keyPressed');
+      expect(keyPressedEvent).toBeUndefined();
+    });
+  });
+
+  describe('setJumpTimeValue(value)', () => {
+    beforeEach(() => {
+        // Reset jumpTimeInput for these specific tests if needed, though init() does set it.
+        // AudioApp.uiManager.init() is called in global beforeEach, so jumpTimeInput exists.
+        // Ensure a known state if previous tests could modify it and init() doesn't reset it perfectly for tests.
+        jumpTimeInput.value = '5'; // Explicitly set before each setJumpTimeValue test
+    });
+
+    test('should update jumpTimeInput.value for a new valid string number', () => {
+      AudioApp.uiManager.setJumpTimeValue("10");
+      expect(jumpTimeInput.value).toBe("10");
+    });
+
+    test('should not change jumpTimeInput.value if new string value is same as current', () => {
+      AudioApp.uiManager.setJumpTimeValue("5"); // Current is "5"
+      expect(jumpTimeInput.value).toBe("5");
+    });
+
+    test('should update jumpTimeInput.value for a new valid number', () => {
+      AudioApp.uiManager.setJumpTimeValue(15);
+      expect(jumpTimeInput.value).toBe("15");
+    });
+
+    test('should not change jumpTimeInput.value if new numeric value is effectively the same (e.g. "5.0" vs 5)', () => {
+      jumpTimeInput.value = "5.0";
+      AudioApp.uiManager.setJumpTimeValue(5);
+      expect(jumpTimeInput.value).toBe("5.0"); // Value remains "5.0" because 5.0 === 5
+    });
+
+    test('should not change jumpTimeInput.value if new numeric value is effectively the same (e.g. "5" vs 5.0)', () => {
+      jumpTimeInput.value = "5";
+      AudioApp.uiManager.setJumpTimeValue(5.0);
+      // parseFloat("5") is 5, parseFloat("5.0") is 5. Values are same.
+      expect(jumpTimeInput.value).toBe("5");
+    });
+
+    test('should not update jumpTimeInput.value for an invalid input like "invalid"', () => {
+      jumpTimeInput.value = "7"; // Set a known valid state
+      AudioApp.uiManager.setJumpTimeValue("invalid");
+      expect(jumpTimeInput.value).toBe("7"); // Should remain unchanged
+    });
+
+    test('should not update jumpTimeInput.value for NaN', () => {
+      jumpTimeInput.value = "8"; // Set a known valid state
+      AudioApp.uiManager.setJumpTimeValue(NaN);
+      expect(jumpTimeInput.value).toBe("8"); // Should remain unchanged
+    });
+  });
+});
+
+````
+--- End of File: vibe-player/tests/unit/uiManager.test.js ---
+--- File: vibe-player/tests-e2e/player.e2e.spec.js ---
+````javascript
+// vibe-player/tests-e2e/player.e2e.spec.js
+const { test, expect } = require('@playwright/test');
+const { PlayerPage } = require('./PlayerPage');
+
+// Helper function at the top of player.e2e.spec.js
+function parseTimeToSeconds(timeStr) {
+  if (!timeStr || !timeStr.includes(':')) return 0;
+  const parts = timeStr.split(':');
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+
+test.describe('Vibe Player End-to-End', () => {
+  let player;
+
+  test.beforeEach(async ({ page }) => {
+    player = new PlayerPage(page);
+    await player.goto();
+  });
+
+  test('should load an audio file and enable playback controls', async () => {
+    await expect(player.playPauseButton).toBeDisabled();
+    await expect(player.fileNameDisplay).toHaveText('');
+    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+    await player.expectFileName('IELTS13-Tests1-4CD1Track_01.mp3');
+    await player.expectControlsToBeEnabled();
+  });
+
+  test('should correctly detect and display DTMF tones', async () => {
+    await player.loadAudioFile('dtmf-123A456B789C(star)0(hex)D.mp3');
+    await player.expectControlsToBeEnabled();
+    await expect(player.dtmfDisplay).toContainText('1, 2, 3, A, 4, 5, 6, B, 7, 8, 9, C, *, 0, #, D', { timeout: 15000 });
+  });
+
+  test('should correctly detect and display Call Progress Tones', async () => {
+    await player.loadAudioFile('Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3');
+    await player.expectControlsToBeEnabled();
+    await expect(player.cptDisplay).toContainText('Fast Busy / Reorder Tone', { timeout: 15000 });
+  });
+
+  test('should display initial time as 0:00 / 0:00', async () => {
+    await expect(player.timeDisplay).toHaveText('0:00 / 0:00');
+  });
+
+  test('should play and pause audio', async ({ page }) => {
+    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3'); // A short file
+    await player.expectControlsToBeEnabled();
+
+    // Check initial button text is 'Play'
+    await expect(player.playPauseButton).toHaveText('Play');
+
+    // Click Play
+    await player.playPauseButton.click();
+    await expect(player.playPauseButton).toHaveText('Pause'); // Assuming text changes
+
+    // Wait for time to advance - check that current time is not 0:00
+    // This requires the audio to actually play and time to update.
+    // We might need a small delay or a more robust way to check time advancement.
+    await page.waitForFunction(() => document.getElementById('timeDisplay').textContent?.startsWith('0:00') === false, null, { timeout: 5000 });
+    const initialTime = await player.timeDisplay.textContent();
+    expect(initialTime).not.toBe('0:00 / 0:00'); // Or more specific check if duration is known
+    expect(initialTime?.startsWith('0:00')).toBe(false); // Current time should not be 0:00
+
+    // Click Pause
+    await player.playPauseButton.click();
+    await expect(player.playPauseButton).toHaveText('Play');
+    const timeAfterPause = await player.timeDisplay.textContent();
+    await page.waitForTimeout(500); // Wait again
+    const timeAfterPauseAndDelay = await player.timeDisplay.textContent();
+    expect(timeAfterPauseAndDelay).toBe(timeAfterPause); // Time should not change after pause
+  });
+
+  test('should seek audio using the seek bar', async ({ page }) => {
+    // This test assumes IELTS13-Tests1-4CD1Track_01.mp3 is longer than a few seconds
+    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+    await player.expectControlsToBeEnabled();
+    await player.playPauseButton.click(); // Start playback
+
+    // Wait for some playback to ensure duration is loaded and displayed
+    await page.waitForFunction(() => document.getElementById('timeDisplay').textContent !== '0:00 / 0:00');
+
+    const initialTimeText = await player.timeDisplay.textContent();
+    const durationSeconds = parseTimeToSeconds(initialTimeText.split(' / ')[1]);
+    expect(durationSeconds).toBeGreaterThan(5); // Ensure file is reasonably long
+
+    // Seek to middle
+    await player.seekToMiddle(); // This is the new method in PlayerPage
+    await page.waitForTimeout(200); // Allow time for UI to update after seek
+
+    const timeAfterSeekText = await player.timeDisplay.textContent();
+    const currentTimeAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[0]);
+    const durationAfterSeek = parseTimeToSeconds(timeAfterSeekText.split(' / ')[1]);
+
+    // Expect current time to be roughly half of duration, allow some tolerance
+    // This also verifies duration is still displayed correctly
+    expect(currentTimeAfterSeek).toBeGreaterThanOrEqual(durationAfterSeek * 0.4);
+    expect(currentTimeAfterSeek).toBeLessThanOrEqual(durationAfterSeek * 0.6);
+    await expect(player.playPauseButton).toHaveText('Pause', { timeout: 2000 }); // Should still be playing
+  });
+
+  test('should jump forward and backward', async ({ page }) => {
+    await player.loadAudioFile('IELTS13-Tests1-4CD1Track_01.mp3');
+    await player.expectControlsToBeEnabled();
+    await player.playPauseButton.click(); // Start playing
+
+    // Wait for a couple of seconds of playback
+    await page.waitForFunction(() => {
+      const timeParts = document.getElementById('timeDisplay').textContent?.split(' / ')[0].split(':');
+      if (!timeParts || timeParts.length < 2) return false;
+      const currentTime = parseInt(timeParts[0], 10) * 60 + parseInt(timeParts[1], 10);
+      return currentTime >= 2;
+    }, null, { timeout: 10000 });
+
+    let currentTimeText = await player.timeDisplay.textContent();
+    let currentTimeSeconds = parseTimeToSeconds(currentTimeText.split(' / ')[0]);
+
+    // Jump forward (default 5s)
+    await player.jumpForward.click();
+    await page.waitForTimeout(200); // Allow UI to update
+    let timeAfterForwardJumpText = await player.timeDisplay.textContent();
+    let timeAfterForwardJumpSeconds = parseTimeToSeconds(timeAfterForwardJumpText.split(' / ')[0]);
+    expect(timeAfterForwardJumpSeconds).toBeCloseTo(currentTimeSeconds + 5, 0); // Allow 0 decimal places tolerance
+
+    currentTimeSeconds = timeAfterForwardJumpSeconds; // Update current time
+
+    // Jump backward
+    await player.jumpBack.click();
+    await page.waitForTimeout(200); // Allow UI to update
+    let timeAfterBackwardJumpText = await player.timeDisplay.textContent();
+    let timeAfterBackwardJumpSeconds = parseTimeToSeconds(timeAfterBackwardJumpText.split(' / ')[0]);
+    expect(timeAfterBackwardJumpSeconds).toBeCloseTo(currentTimeSeconds - 5, 0);
+  });
+});
+
+````
+--- End of File: vibe-player/tests-e2e/player.e2e.spec.js ---
+--- File: vibe-player/tests-e2e/PlayerPage.js ---
+````javascript
+// vibe-player/tests-e2e/PlayerPage.js
+const { expect } = require('@playwright/test');
+const path = require('path');
+
+exports.PlayerPage = class PlayerPage {
+  constructor(page) {
+    this.page = page;
+
+    // --- Define UI Element Locators Here ---
+    this.playPauseButton = page.locator('#playPause');
+    this.fileNameDisplay = page.locator('#fileNameDisplay');
+    this.dtmfDisplay = page.locator('#dtmfDisplay');
+    this.cptDisplay = page.locator('#cpt-display-content');
+    this.chooseFileButton = page.locator('#chooseFileButton');
+    this.hiddenFileInput = page.locator('#hiddenAudioFile');
+    this.fileInfoStatus = page.locator('#fileInfo');
+    this.timeDisplay = page.locator('#timeDisplay');
+    this.seekBar = page.locator('#seekBar');
+    this.jumpBack = page.locator('#jumpBack');
+    this.jumpForward = page.locator('#jumpForward');
+    this.jumpTimeInput = page.locator('#jumpTime');
+  }
+
+  // --- Define User Actions Here ---
+  async goto() {
+    await this.page.goto('http://localhost:8080/');
+    // REFACTORED: Wait for a more reliable signal of app initialization.
+    // The uiManager sets this text to "No file selected." once it's fully ready.
+    // This is much more robust than waiting for a static element to be visible.
+    await expect(this.fileInfoStatus).toHaveText("No file selected.", { timeout: 10000 });
+  }
+
+  async loadAudioFile(fileName) {
+    // This is the idiomatic and more robust way to handle file uploads in Playwright.
+    // It targets the hidden input element directly and doesn't rely on clicking
+    // the proxy button, which avoids the timeout issue.
+    // Playwright's setInputFiles will correctly trigger the 'change' event
+    // on the input that the application's uiManager is listening for.
+
+    // CORRECTED: Go up two directories instead of one to find the test-audio folder
+    // from the nested CI path.
+    const audioFilePath = path.join(__dirname, `../../test-audio/${fileName}`);
+    await this.hiddenFileInput.setInputFiles(audioFilePath);
+  }
+
+  // --- Define Test Assertions Here ---
+  async expectControlsToBeEnabled() {
+    await expect(this.playPauseButton).toBeEnabled({ timeout: 20000 });
+  }
+
+  async expectFileName(fileName) {
+    await expect(this.fileNameDisplay).toHaveText(fileName);
+  }
+
+  async seekToMiddle() {
+    await this.seekBar.click(); // Playwright clicks in the center by default
+  }
+};
+
+````
+--- End of File: vibe-player/tests-e2e/PlayerPage.js ---
 --- File: vibe-player/TODO.md ---
 ````markdown
 [//]: # ( vibe-player/TODO.md )

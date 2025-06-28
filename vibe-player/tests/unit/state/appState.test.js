@@ -1,5 +1,4 @@
-// tests/unit/state/appState.test.js
-
+// vibe-player/tests/unit/state/appState.test.js
 describe('AppState Class', () => {
     let appState;
 

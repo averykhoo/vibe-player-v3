@@ -1,4 +1,4 @@
-// jest.config.js
+// vibe-player/jest.config.js
 module.exports = {
   testEnvironment: 'jsdom', // Using 'jsdom' as global install should be in PATH
 

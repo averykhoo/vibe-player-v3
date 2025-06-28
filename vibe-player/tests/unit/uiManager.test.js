@@ -1,4 +1,4 @@
-// tests/unit/uiManager.test.js
+// vibe-player/tests/unit/uiManager.test.js
 /* eslint-env jest */
 
 // Mock AudioApp and its dependencies before uiManager is loaded

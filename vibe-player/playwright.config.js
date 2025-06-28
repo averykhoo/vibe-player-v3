@@ -1,4 +1,4 @@
-// playwright.config.js
+// vibe-player/playwright.config.js
 const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
