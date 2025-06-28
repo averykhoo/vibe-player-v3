@@ -1,4 +1,4 @@
-// --- /vibe-player/js/visualizers/waveformVisualizer.js ---
+// vibe-player/js/visualizers/waveformVisualizer.js
 // Handles drawing the Waveform visualization to a canvas element.
 
 /** @namespace AudioApp */

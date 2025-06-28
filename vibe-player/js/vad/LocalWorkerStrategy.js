@@ -1,4 +1,4 @@
-// --- /vibe-player/js/vad/LocalWorkerStrategy.js ---
+// vibe-player/js/vad/LocalWorkerStrategy.js
 // This strategy handles VAD processing locally using a Web Worker.
 
 /** @namespace AudioApp */

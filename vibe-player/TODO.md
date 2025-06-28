@@ -1,5 +1,4 @@
-<!-- /vibe-player/TODO.md -->
-
+[//]: # ( vibe-player/TODO.md )
 # Vibe Player - TODO & Future Ideas
 
 This file tracks potential improvements, features, and known issues requiring further investigation for the Vibe Player

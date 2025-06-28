@@ -1,4 +1,4 @@
-// --- /vibe-player/js/player/rubberbandProcessor.js --- // Updated Path
+// vibe-player/js/player/rubberbandProcessor.js
 // AudioWorkletProcessor for real-time time-stretching using Rubberband WASM.
 
 // Constants cannot be accessed here directly, but name is needed for registration.

@@ -1,3 +1,4 @@
+// vibe-player/js/visualizers/spectrogramVisualizer.js
 // --- /vibe-player/js/visualizers/spectrogramVisualizer.js --- (CORRECTED)
 // Handles orchestrating the Spectrogram worker and rendering the results to a canvas.
 

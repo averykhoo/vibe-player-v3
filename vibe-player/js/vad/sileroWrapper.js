@@ -1,4 +1,4 @@
-// --- /vibe-player/js/vad/sileroWrapper.js --- // Updated Path
+// vibe-player/js/vad/sileroWrapper.js
 // Wraps the ONNX Runtime session for the Silero VAD model.
 // Manages ONNX session creation, state tensors, and inference calls.
 

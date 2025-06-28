@@ -1,4 +1,4 @@
-// --- /vibe-player/js/utils.js ---
+// vibe-player/js/utils.js
 // General utility functions for the Vibe Player application.
 
 /** @namespace AudioApp */

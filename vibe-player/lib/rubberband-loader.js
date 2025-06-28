@@ -1,3 +1,4 @@
+// vibe-player/lib/rubberband-loader.js
 // --- START OF FILE rubberband.js (Self-Contained Loader + Options) ---
 
 // ** MODIFIED Emscripten Loader for AudioWorklet **

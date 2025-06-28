@@ -1,5 +1,4 @@
-<!-- /CONTRIBUTING-LLM.md -->
-
+[//]: # ( vibe-player/CONTRIBUTING-LLM.md )
 # Coding Agent Collaboration Guidelines
 
 This document outlines the principles and procedures for collaborating with a coding agent or automated/semi-automated

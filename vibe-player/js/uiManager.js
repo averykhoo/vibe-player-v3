@@ -1,4 +1,4 @@
-// --- /vibe-player/js/uiManager.js ---
+// vibe-player/js/uiManager.js
 // Handles DOM manipulation, UI event listeners, and dispatches UI events.
 
 /** @namespace AudioApp */

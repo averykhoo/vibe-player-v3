@@ -1,4 +1,4 @@
-// --- /vibe-player/js/vad/sileroProcessor.js --- // Updated Path
+// vibe-player/js/vad/sileroProcessor.js
 // Performs VAD analysis frame-by-frame using the SileroWrapper.
 // Encapsulates the logic for iterating through audio data and calculating speech regions.
 

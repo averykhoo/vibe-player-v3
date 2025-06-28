@@ -1,5 +1,4 @@
-<!-- vibe-player-v2.3/README.md -->
-
+[//]: # ( vibe-player-v2.3/README.md )
 # sv
 
 Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).

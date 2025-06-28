@@ -1,3 +1,4 @@
+// vibe-player/lib/ort-wasm-simd-threaded.mjs
 var ortWasmThreaded = (() => {
     var _scriptName = import.meta.url;
 

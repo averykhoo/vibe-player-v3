@@ -1,5 +1,4 @@
-<!-- /vibe-player/architecture.md -->
-
+[//]: # ( vibe-player/architecture.md )
 # Vibe Player Architecture
 
 ## 1. Overview

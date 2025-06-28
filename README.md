@@ -1,4 +1,4 @@
-<!-- README.md -->
+[//]: # ( README.md )
 # Vibe Player
 
 Vibe Player is a simple, browser-based audio player designed for analyzing and manipulating audio files, inspired by classic desktop application aesthetics. It runs entirely client-side using static files.

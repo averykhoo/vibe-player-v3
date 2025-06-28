@@ -749,6 +749,7 @@ if __name__ == "__main__":
         # print(f"Total files in tree structure: {len(all_scanned_files_relative_paths)}") # <<< Example of how you might update the summary
         print(f"Total files with content included: {len(included_files)}")
         print(f"Total estimated 'tokens' (regex chunks): ~{total_est_tokens}")
+        print(f"Guesstimated Gemini tokens: ~{int(total_est_tokens * 5 / 3)}")
         print("\nIncluded Files (path, estimated 'tokens'):")
         if included_files:
             # Sort by estimated token count (descending) for clarity in the summary

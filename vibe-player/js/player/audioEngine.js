@@ -1,4 +1,4 @@
-// --- /vibe-player/js/player/audioEngine.js --- // Updated Path
+// vibe-player/js/player/audioEngine.js
 // Manages Web Audio API, AudioWorklet loading/communication, decoding, resampling, and playback control.
 // Uses Rubberband WASM via an AudioWorkletProcessor for time-stretching and pitch/formant shifting.
 

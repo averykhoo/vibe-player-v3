@@ -1,4 +1,4 @@
-// In vibe-player/js/state/appState.js
+// vibe-player/js/state/appState.js
 class AppState {
     constructor() {
         // --- State Categories ---

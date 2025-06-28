@@ -1,4 +1,4 @@
-// --- goertzel.js ---
+// vibe-player/js/goertzel.js
 // Pure JavaScript Goertzel Algorithm Implementation for Vibe Player
 // Attaches GoertzelFilter to AudioApp.
 

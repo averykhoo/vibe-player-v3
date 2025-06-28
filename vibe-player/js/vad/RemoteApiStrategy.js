@@ -1,4 +1,4 @@
-// --- /vibe-player/js/vad/RemoteApiStrategy.js ---
+// vibe-player/js/vad/RemoteApiStrategy.js
 // This strategy will handle VAD by calling an external API.
 // It is currently a placeholder.
 

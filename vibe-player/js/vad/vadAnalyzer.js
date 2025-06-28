@@ -1,3 +1,4 @@
+// vibe-player/js/vad/vadAnalyzer.js
 // --- /vibe-player/js/vad/vadAnalyzer.js --- (REFACTORED)
 // Manages the VAD strategy. The rest of the app talks to this module.
 

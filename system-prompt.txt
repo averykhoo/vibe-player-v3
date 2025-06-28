@@ -24,7 +24,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
 ├── .gitignore
 ├── .llmignore
 ├── README.md
-├── REFACTOR_PLAN.txt
+├── REFACTOR_PLAN.md
 ├── build_system_prompt.py
 ├── fix_headers.py
 ├── package-lock.json
@@ -596,42 +596,129 @@ vibe-player/lib/ort-wasm-simd-threaded.mjs
 --- End of File: .llmignore ---
 --- File: fix_headers.py ---
 ````python
+# fix_headers.py
 #!/usr/bin/env python3
 import os
 import re
 from pathlib import Path
 
+# This script requires the 'pathspec' library to correctly handle .gitignore files.
+# Install it using: pip install pathspec
+try:
+    import pathspec
+except ImportError:
+    print("Error: The 'pathspec' library is required.")
+    print("Please install it using: pip install pathspec")
+    exit(1)
+
 # --- Configuration: Define comment styles and file extensions ---
 COMMENT_STYLES = {
-    ".svelte": ("<!--", "-->"),
-    ".html": ("<!--", "-->"),
-    ".ts": ("//", ""),
-    ".js": ("//", ""),
-    ".mjs": ("//", ""),
+    ".aiignore": ("#", ""),
     ".css": ("/*", "*/"),
-    ".yml": ("#", ""),
-    ".yaml": ("#", ""),
     ".gitignore": ("#", ""),
+    ".html": ("<!--", "-->"),
+    ".js": ("//", ""),
+    ".llmignore": ("#", ""),
+    ".md": ("[//]: # (", ")"),
+    ".mjs": ("//", ""),
     ".npmrc": ("#", ""),
-    ".prettierrc": ("//", ""),
+    # ".prettierrc": ("//", ""),
+    ".svelte": ("<!--", "-->"),
+    ".ts": ("//", ""),
     ".txt": ("#", ""),
+    ".yaml": ("#", ""),
+    ".yml": ("#", ""),
 }
 
-# Regex to find a header comment at the START of the file (after optional whitespace)
-# that looks suspiciously like a file path. It will match:
-# - A single-line comment: // path/to/file.js
-# - A block comment: /* path/to/file.css */
-# - An HTML comment: <!-- path/to/file.html -->
-# It is specifically looking for path-like characters (/, \, .) to avoid
-# removing legitimate, non-path comments.
-HEADER_REGEX = re.compile(
-    r"^\s*(?:"
-    r"<!--\s*[\w\-\./\\_ ]+\s*-->|"
-    r"/\*\s*[\w\-\./\\_ ]+\s*\*/|"
-    r"(?://|#)\s*[\w\-\./\\_ ]+$"
-    r")\s*",
-    re.MULTILINE
-)
+
+def build_header_regex(styles):
+    """
+    Dynamically builds a regular expression to find header comments based on
+    the provided comment styles dictionary.
+    """
+    path_like_content = r"[\w\-\./\\_ ]+"
+    block_patterns = []
+    line_starters = []
+    unique_styles = set(styles.values())
+
+    for start, end in unique_styles:
+        escaped_start = re.escape(start)
+        if end:
+            escaped_end = re.escape(end)
+            pattern = rf"{escaped_start}\s*{path_like_content}\s*{escaped_end}"
+            block_patterns.append(pattern)
+        else:
+            line_starters.append(escaped_start)
+
+    all_patterns = list(block_patterns)
+    if line_starters:
+        line_group = "|".join(line_starters)
+        line_pattern = rf"(?:{line_group})\s*{path_like_content}$"
+        all_patterns.append(line_pattern)
+
+    combined_patterns = "|".join(all_patterns)
+    final_regex_str = rf"^\s*(?:{combined_patterns})\s*"
+    return re.compile(final_regex_str, re.MULTILINE)
+
+
+# --- Dynamically Generated Regex ---
+HEADER_REGEX = build_header_regex(COMMENT_STYLES)
+
+
+class IgnoreChecker:
+    """
+    A helper class to check if a file should be ignored based on hierarchical
+    .gitignore files. Logic is adapted from the provided reference script.
+    """
+
+    def __init__(self, root_path: Path):
+        self.root = root_path.resolve()
+        self._specs_cache = {}
+
+    def _load_spec_for_dir(self, directory: Path) -> pathspec.PathSpec | None:
+        """Loads .gitignore from a single directory."""
+        if directory in self._specs_cache:
+            return self._specs_cache[directory]
+
+        ignore_file = directory / ".gitignore"
+        spec = None
+        if ignore_file.is_file():
+            try:
+                with ignore_file.open('r', encoding='utf-8', errors='ignore') as f:
+                    spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
+            except Exception as e:
+                print(f"Warning: Could not read or parse {ignore_file}: {e}")
+
+        self._specs_cache[directory] = spec
+        return spec
+
+    def is_ignored(self, file_path: Path) -> bool:
+        """
+        Checks if a file path is ignored by any .gitignore file from its
+        directory up to the root. Rules in deeper directories take precedence.
+        """
+        absolute_path = file_path.resolve()
+
+        # Always ignore anything inside the .git directory
+        if ".git" in absolute_path.parts:
+            return True
+
+        # Walk up from the file's directory to the root
+        current_dir = absolute_path.parent
+        while current_dir >= self.root:
+            spec = self._load_spec_for_dir(current_dir)
+            if spec:
+                # Pathspec needs the path relative to the .gitignore file's location
+                path_relative_to_spec = absolute_path.relative_to(current_dir)
+                if spec.match_file(path_relative_to_spec):
+                    # A match at a deeper level is definitive.
+                    return True
+
+            if current_dir == self.root:
+                break
+            current_dir = current_dir.parent
+
+        return False
 
 
 def format_header(file_path_str, style):
@@ -645,7 +732,7 @@ def format_header(file_path_str, style):
         return f"{start} {path_display}"
 
 
-def get_proposed_changes(file_path):
+def get_proposed_changes(file_path, project_root):
     """
     Scans a file and determines if a change is needed.
     Returns the proposed new content if a change is required, otherwise None.
@@ -655,7 +742,7 @@ def get_proposed_changes(file_path):
         return None, None
 
     style = COMMENT_STYLES[file_ext]
-    relative_path_str = str(file_path.relative_to(Path.cwd()))
+    relative_path_str = str(file_path.relative_to(project_root))
     correct_header = format_header(relative_path_str, style)
 
     try:
@@ -665,68 +752,57 @@ def get_proposed_changes(file_path):
         return None, None
 
     if not original_content.strip():
-        # Skip empty or whitespace-only files
         return None, None
 
-    # Does the correct header already exist at the top? If so, we're done.
     if original_content.startswith(correct_header):
         return None, None
 
-    # Try to find and remove an old, incorrect header at the top of the file.
     match = HEADER_REGEX.match(original_content)
-
     action = ""
     content_to_prepend = original_content
 
     if match:
-        # An old, incorrect header was found and will be replaced.
         action = "UPDATED"
-        # Get the content *after* the matched header.
         content_to_prepend = original_content[match.end():]
     else:
-        # No suspicious header was found, so we're adding a new one.
         action = "ADDED"
 
-    # **MODIFICATION:** Add the header followed by ONE newline, then the rest of the content.
-    # .lstrip() removes any leading whitespace/newlines from the old content, ensuring
-    # there is exactly one newline after our header.
     new_content = f"{correct_header}\n{content_to_prepend.lstrip()}"
-
     return action, new_content
 
 
 def main():
-    """Main function to find target directories, scan them, and apply changes upon confirmation."""
-
+    """
+    Main function to recursively scan the current directory, respect .gitignore,
+    find files needing header changes, and apply them upon confirmation.
+    """
     project_root = Path.cwd()
-    # Find all directories starting with 'vibe-player-' and the '.github' directory
-    target_dirs = [p for p in project_root.glob('vibe-player-*') if p.is_dir()]
-    github_dir = project_root / ".github"
-    if github_dir.is_dir():
-        target_dirs.append(github_dir)
+    ignore_checker = IgnoreChecker(project_root)
 
-    if not target_dirs:
-        print("No 'vibe-player-*' or '.github' directories found. Exiting.")
-        return
-
-    print("Found target directories to scan:")
-    for d in sorted(target_dirs):  # Sort for consistent output
-        print(f"- {d.name}")
+    print(f"Scanning directory: {project_root}")
+    print("Applying .gitignore rules...")
     print("-" * 30)
 
     # --- Scan Phase ---
     changes_to_make = []
-    for target_path in sorted(target_dirs):
-        for root, _, files in os.walk(target_path):
-            for filename in files:
-                # Exclude package-lock.json from being processed
-                if filename == 'package-lock.json':
-                    continue
+    # os.walk is generally efficient for full directory traversal
+    for root, _, files in os.walk(project_root, topdown=True):
+        root_path = Path(root)
 
-                file_path = Path(root) / filename
-                action, new_content = get_proposed_changes(file_path)
-                if action and new_content:
-                    changes_to_make.append((action, file_path, new_content))
+        for filename in files:
+            file_path = root_path / filename
+
+            # >>> The crucial new step: check if the file is ignored <<<
+            if ignore_checker.is_ignored(file_path):
+                continue
+
+            # Exclude the script file itself from being processed
+            if file_path.samefile(Path(__file__)):
+                continue
+
+            action, new_content = get_proposed_changes(file_path, project_root)
+            if action and new_content:
+                changes_to_make.append((action, file_path, new_content))
 
     # --- Report and Confirmation Phase ---
     if not changes_to_make:
@@ -734,19 +810,19 @@ def main():
         return
 
     print("The following changes will be made:")
-    # Sort the changes for a clean, deterministic report
     changes_to_make.sort(key=lambda x: x[1])
     for action, file_path, _ in changes_to_make:
         relative_path = file_path.relative_to(project_root)
         print(f"  - {action}: {relative_path}")
 
-    # print("-" * 30)
+    print("-" * 30)
     # try:
+    #     # Re-enabled confirmation for safety, can be hardcoded to 'y' for automation.
     #     confirm = input(f"Apply these {len(changes_to_make)} changes? (y/N): ")
     # except KeyboardInterrupt:
     #     print("\nOperation cancelled by user.")
     #     return
-    confirm = 'y'
+    confirm = 'y'  # skip confirmation, you can always git reset
 
     # --- Write Phase ---
     if confirm.lower() == 'y':
@@ -754,6 +830,7 @@ def main():
         written_count = 0
         for _, file_path, new_content in changes_to_make:
             try:
+                # Use newline='\n' to ensure consistent line endings (LF)
                 with open(file_path, 'w', encoding='utf-8', newline='\n') as f:
                     f.write(new_content)
                 written_count += 1
@@ -770,7 +847,7 @@ if __name__ == "__main__":
 --- End of File: fix_headers.py ---
 --- File: README.md ---
 ````markdown
-<!-- README.md -->
+[//]: # ( README.md )
 # Vibe Player
 
 Vibe Player is a simple, browser-based audio player designed for analyzing and manipulating audio files, inspired by classic desktop application aesthetics. It runs entirely client-side using static files.
@@ -831,186 +908,244 @@ Development involving LLM assistance should follow the guidelines outlined in `v
 <!-- README.md -->
 ````
 --- End of File: README.md ---
---- File: REFACTOR_PLAN.txt ---
-````
-# REFACTOR_PLAN.txt
-Of course. This is the right approach—solidifying the plan with all the new information and recommendations before starting implementation.
+--- File: REFACTOR_PLAN.md ---
+````markdown
+[//]: # ( REFACTOR_PLAN.md )
+# **Vibe Player V3: The Hexagonal Refactoring Plan**
 
-Here is the complete, rewritten V3 plan. It incorporates the decision to use a modern UI, the NPM package for ONNX, and all the architectural and risk-mitigation strategies we've discussed. This document is designed to be a definitive blueprint for the project.
+## 1. Vision & Executive Summary
+
+This document outlines the complete architectural blueprint for Vibe Player V3. It is not an incremental fix, but a
+ground-up redesign based on the principles of **Hexagonal (Ports and Adapters) Architecture**.
+
+The primary impetus for this refactor stems from the architectural weaknesses discovered in the V2.3 implementation.
+Despite using modern tools like Svelte and TypeScript, the V2.3 system suffered from subtle but critical flaws in its
+handling of asynchronous operations, leading to race conditions, deadlocks, and fragile inter-service communication.
+These issues proved difficult to debug and indicated that the architecture, while more modern than V1, had not fully
+escaped V1's monolithic design thinking.
+
+The vision for V3 is to create a system that is:
+
+* **Fundamentally Testable:** Every piece of core application logic must be testable in complete isolation, without
+  depending on a UI framework, browser APIs, or live Web Workers. This will be achieved by treating every major domain
+  of functionality as its own independent, self-contained hexagon.
+* **Decoupled and Maintainable:** The application's core business logic will be completely separated from the external "
+  technologies" that drive it (the UI) and that it drives (Web Workers, state stores). This allows any piece of
+  technology to be swapped out without affecting the core application.
+* **Framework Agnostic:** The core application will be written in pure, platform-agnostic TypeScript. The UI will be
+  treated as just one of many possible "adapters," allowing for a future migration to React, Vanilla JS, or any other
+  view layer with minimal effort.
+* **Robust and Predictable:** By enforcing strict boundaries and unidirectional data flow between highly specialized
+  modules, we will eliminate the entire class of race conditions and state management bugs that plagued previous
+  versions.
+
+## 2. Critique of Previous Architectures (V1 & V2)
+
+To justify this comprehensive redesign, we must first perform a critical analysis of the previous versions,
+acknowledging what worked and identifying the root causes of what failed.
+
+### 2.1. Analysis of V1 (The Working-but-Brittle Monolith)
+
+The original `vibe-player` in Vanilla JS was functionally complete and, importantly, **it worked**.
+
+* **What Worked:** It successfully integrated complex technologies like the Web Audio API, ONNX Runtime, and Rubberband
+  WASM. Its "analyze once, tune in real-time" model for VAD was highly effective.
+* **Tradeoffs & Flaws:**
+    * **Tight Coupling:** Its success was dependent on a fragile, manually-enforced script loading order in
+      `index.html`. A change in this order would break the entire application.
+    * **Monolithic Controller:** `app.js` was a "God Object" that knew about and controlled every other module, from UI
+      management to audio processing to VAD analysis. This made it extremely difficult to test or modify any single
+      piece of functionality in isolation.
+    * **Global State:** State was managed via properties on the global `AudioApp` namespace, making it difficult to
+      track when and where state was being changed.
+    * **Main-Thread Blocking:** Intensive tasks like VAD and Spectrogram analysis were performed on the main thread with
+      `async/await` and `setTimeout` hacks to yield control. While this worked for moderately sized files, it was not a
+      truly non-blocking solution and could lead to UI stuttering.
+
+### 2.2. Analysis of V2.3 (The Flawed Refactor)
+
+The V2.3 SvelteKit refactor was a positive step towards modernization, but it failed to address the core architectural
+problems, instead "porting the monolith" into a new framework.
+
+* **What Improved:** It introduced a proper build system, TypeScript for type safety, and a reactive UI layer with
+  Svelte. It correctly moved intensive tasks into dedicated Web Workers.
+* **The Architectural Failure:** The core flaw was the **decentralized and fragile worker communication contract**. Each
+  service (`audioEngine.service`, `analysis.service`, etc.) independently implemented its own manual, error-prone system
+  for managing asynchronous communication with its worker. This involved:
+    1. Manually creating and storing promise `resolve`/`reject` callbacks.
+    2. Manually generating unique message IDs.
+    3. Manually managing a `Map` of pending requests.
+    4. Requiring the worker to perfectly echo back the message ID.
+* **The Consequence:** This fragile, duplicated boilerplate was the direct cause of the bugs we chased. A missing
+  `messageId` in `sileroVad.worker.ts` caused its `initialize()` promise to hang forever. When we fixed that, we
+  immediately discovered the *exact same bug* in `rubberband.worker.ts`. This pattern of repeated, identical bugs is a
+  clear sign that the architecture itself, not the implementation, is the problem.
+
+## 3. The V3 Architectural Model: A Federation of Hexagons
+
+V3 will be built as a **federation of collaborating, self-contained hexagons**. This is an advanced application of the
+Ports and Adapters pattern where each domain of functionality is its own "micro-application."
+
+* **The Hexagon (Application Core):** A module containing pure, isolated business logic with no dependencies on external
+  technologies.
+* **Ports:** The formal interfaces (e.g., TypeScript `interface` or public class methods) that define how data and
+  commands flow into or out of the hexagon.
+* **Adapters:** The "pluggable" pieces of technology that connect to the ports.
+    * **Driving Adapters:** Initiate action *on* the hexagon (e.g., the UI, a test suite).
+    * **Driven Adapters:** Are driven *by* the hexagon to perform a task (e.g., a Web Worker, a state store, the
+      browser's URL bar).
+
+## 4. The V3 System Components (The Hexagons)
+
+### 4.1. The `AppHexagon` (The Orchestrator)
+
+* **Core Responsibility:** Manages the application's top-level state machine (`Initializing`, `Idle`, `Loading`,
+  `Ready`, `Error`) and defines the high-level user stories. It is the primary client of all other domain hexagons.
+* **Inside (`AppService`):** Contains the logic for coordinating services to fulfill use cases like `initializeApp()`
+  and `loadAudio(source)`.
+* **Ports:**
+    * **Driving (`IAppDriver`):** The public methods of the `AppService`.
+    * **Driven (`ILoaderPort`, `IPlaybackPort`, `IAnalysisPort`):** Interfaces used to command the other hexagons.
+* **Adapters:**
+    * **Driving:** The UI Framework Adapter, Keyboard Input Adapter.
+    * **Driven:** The other Hexagons (`PlaybackHexagon`, `VADHexagon`, etc.) are the adapters that plug into this
+      hexagon's driven ports.
+
+### 4.2. The `UIHexagon`
+
+* **Core Responsibility:** To translate the application's central state into a pure, framework-agnostic view model, and
+  to map raw user inputs into formal application commands.
+* **Inside (`UIViewLogic`):** Contains pure presentation logic (e.g., "if status is 'loading', the play button view
+  model should have an `isDisabled` property set to `true`"). It produces a virtual representation of the UI.
+* **Ports:**
+    * **Driving (`IStateProvider`):** A port that receives state updates from the outside world.
+    * **Driven (`ICommandPort`, `IRenderPort`):** Ports used to send application commands out and to send rendering
+      instructions to the DOM.
+* **Adapters:**
+    * **Driving:** The `StateStoreAdapter` pushes state changes *into* the UIHexagon.
+    * **Driven:**
+        * The `AppHexagon` implements the `ICommandPort`.
+        * The **`DOMAdapter` (Svelte/React/VanillaJS)** implements the `IRenderPort`, translating the view model into
+          actual HTML/CSS.
+
+### 4.3. The `PlaybackHexagon`
+
+* **Core Responsibility:** The pure state machine for a time-stretchable audio player. It knows nothing of the Web Audio
+  API.
+* **Inside (`PlaybackService`):** Manages properties like `duration`, `currentTime`, `speed`, and states like `playing`
+  or `paused`.
+* **Ports:**
+    * **Driving (`IPlaybackDriver`):** Public methods like `play()`, `pause()`, `seek()`.
+    * **Driven (`IAudioOutput`, `IPlayerStatePublisher`):** Interfaces to command an audio backend and to publish state
+      updates.
+* **Adapters:**
+    * **Driven:**
+        * **`WebAudioAdapter`**: The implementation of `IAudioOutput` that manages the `AudioContext` and the
+          `rubberband.worker` via a `WorkerManager`. This is the *only* place with Web Audio API code.
+        * **`StateStoreAdapter`**: The implementation of `IPlayerStatePublisher`.
+
+### 4.4. The Visualization Hexagons (`WaveformHexagon`, `SpectrogramHexagon`)
+
+* **Core Responsibility:** Pure data transformation.
+* **Inside (`WaveformService`, `SpectrogramService`):** Contain the algorithms to convert an `AudioBuffer` into visual
+  data (peak arrays or frequency-magnitude arrays).
+* **Ports:**
+    * **Driven (`IFFTEngine`):** The `SpectrogramService` depends on a port to perform FFT calculations.
+* **Adapters:**
+    * **Driven:**
+        * **`FFTJsWorkerAdapter`**: An adapter for the `IFFTEngine` port that uses a `WorkerManager` to run `fft.js` in
+          a background thread.
+        * **Canvas Adapters (`Waveform.svelte`, `Spectrogram.svelte`):** These are now "dumb" driven adapters that only
+          know how to render the data they receive.
+
+### 4.5. The Analysis Hexagons (`VADHexagon`, `DTMFHexagon`)
+
+* **Core Responsibility:** Pure signal processing and analysis logic.
+* **Inside (`VADService`, `DTMFService`):** Contain the algorithms for VAD region merging and Goertzel-based tone
+  detection.
+* **Ports:**
+    * **Driven (`IInferenceEngine`):** The `VADService` depends on a port to get raw speech probabilities.
+* **Adapters:**
+    * **Driven:**
+        * **`SileroVadWorkerAdapter`**: Implements `IInferenceEngine`, managing the `sileroVad.worker`.
+        * **`DTMFWorkerAdapter`**: Manages the `dtmf.worker`.
+
+### 4.6. The Infrastructure Hexagon (`WorkerManagerHexagon`)
+
+* **Core Responsibility:** To provide a robust, promise-based request/response communication channel.
+* **Inside (`WorkerManagerService`):** The logic for managing pending promises, IDs, and timeouts.
+* **Ports & Adapters:** It is driven by the application services and drives the browser's `Worker` API. This isolates
+  all other services from the mechanics of `postMessage`.
 
 ---
 
-## **Vibe Player V2: The SvelteKit Refactoring Plan (Version 3.0 - Final)**
+## 5. Detailed State Sequences & Event Flows
 
-### **1. Vision & Executive Summary**
+### Flow 1: Application Initialization
 
-This document outlines the complete plan to refactor Vibe Player from its original IIFE-based architecture to a modern, robust, and maintainable application built on SvelteKit and TypeScript.
+1. **UI Adapter** (`main.ts` or equivalent) -> calls `AppHexagon.initializeApp()`.
+2. **AppHexagon** -> updates `StateStore` to `Status: Initializing`.
+3. **AppHexagon** -> calls `initialize()` on all domain hexagons (`Playback`, `VAD`, `DTMF`, etc.) in parallel.
+4. Each **Domain Hexagon** -> creates its required **Driven Adapters** (e.g., `WebAudioAdapter`,
+   `SileroVadWorkerAdapter`).
+5. Each **Adapter** -> creates its `WorkerManager` and sends an `INIT` message to its respective **Worker**.
+6. Each **Worker** -> performs its setup (loading WASM/models).
+7. Each **Worker** -> posts `INIT_SUCCESS` back to its `WorkerManager`.
+8. Each **WorkerManager** -> resolves the promise its service is awaiting.
+9. **AppHexagon** -> The `Promise.all` resolves.
+10. **AppHexagon** -> checks the **URL Adapter**. If a source URL exists, it proceeds to Flow 2. Otherwise, it updates
+    `StateStore` to `Status: Idle`.
 
-The primary goals are to eliminate the architectural problems of the original version—specifically the reliance on global variables, script load order, and manual DOM manipulation—and to create a superior developer and user experience. A key design decision for V2 is to create a **clean, modern, and accessible user interface**, moving away from the original retro aesthetic to improve usability and maintainability.
+### Flow 2: Successful File Load
 
-The final "V2" application will be:
+1. **UI Adapter** (e.g., File input) -> calls `AppHexagon.loadAudio(source)`.
+2. **AppHexagon** -> updates `StateStore` to `Status: Loading`.
+3. **AppHexagon** -> `await`s **AudioLoaderService** `decode(source)`.
+4. **AudioLoaderService** -> returns the `AudioBuffer`.
+5. **AppHexagon** -> `await`s **PlaybackHexagon** `prepare(audioBuffer)`.
+6. **AppHexagon** -> `await`s **WaveformHexagon** `generatePeaks(audioBuffer)`. The result is published to the
+   `StateStore`.
+7. **AppHexagon** -> **IMMEDIATELY** updates `StateStore` to `Status: Ready` and `isPlayable: true`.
+8. **UI** -> Controls become enabled. The waveform appears instantly.
+9. **AppHexagon** -> In the background (not awaited), calls `process()` on the `VADHexagon`, `DTMFHexagon`, and
+   `SpectrogramHexagon`.
+10. As each of these hexagons completes, they update their respective parts of the `StateStore`.
+11. **UI** -> VAD highlights, DTMF results, and the spectrogram "pop in" as their data becomes available.
 
-*   **Declarative & Reactive:** The UI will be a direct function of the application's state, updating automatically.
-*   **Type-Safe:** Leveraging TypeScript to prevent common bugs and improve code clarity.
-*   **Modular & Decoupled:** A clean separation between UI components, state stores, business logic services, and intensive background workers.
-*   **Performant:** Built with Svelte's compile-time optimizations and Vite's fast tooling.
-*   **Statically Deployable:** The final output will be a folder of static files, fully compatible with GitHub Pages or any simple web server, preserving the original's deployment simplicity.
-*   **Feature-Complete:** All core features of the original, including URL state serialization for sharing links with specific settings, will be preserved and enhanced.
+### Flow 3: Seeking
 
-### **2. The Final Technology Stack**
+1. **UI Adapter** `mousedown` on seek bar -> calls `AppHexagon.beginSeek()`.
+2. **AppHexagon** -> checks `StateStore`. If `Player.isPlaying` is true, it saves this fact (`wasPlaying = true`).
+3. **AppHexagon** -> calls `PlaybackHexagon.pause()`.
+4. **AppHexagon** -> updates `StateStore` to `Status: Seeking`.
+5. **UI Adapter** `input` on seek bar -> updates `StateStore` with new `Player.currentTime`.
+6. **UI Adapter** `mouseup` on seek bar -> calls `AppHexagon.endSeek(finalTime)`.
+7. **AppHexagon** -> calls `PlaybackHexagon.seek(finalTime)`.
+8. **AppHexagon** -> if `wasPlaying` was true, calls `PlaybackHexagon.play()`.
+9. **AppHexagon** -> updates `StateStore` to `Status: Playing` or `Status: Paused`.
 
-| Category                  | Tool / Technology                                       | Role & Rationale                                                                                                                                                            |
-| :------------------------ | :------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Framework**             | **SvelteKit**                                           | Provides the application structure, file-based routing, and a powerful build system powered by Vite. Its `adapter-static` is perfect for our deployment needs.            |
-| **UI Library**            | **Svelte**                                              | A compiler that turns components into highly efficient vanilla JavaScript. Its reactivity model is ideal for this project.                                              |
-| **Language**              | **TypeScript**                                          | Enforces type safety across the entire codebase, eliminating a major class of runtime errors and making the code self-documenting.                                     |
-| **Styling**               | **Tailwind CSS**                                        | A utility-first CSS framework for rapidly building a custom, modern design without writing extensive custom CSS. Ensures a tiny, optimized final CSS file.               |
-| **Component Library**     | **Skeleton UI**                                         | A Svelte-native component library built on Tailwind CSS. It provides pre-built, accessible components (Buttons, Sliders, etc.) to accelerate modern UI development.       |
-| **State Management**      | **Svelte Stores**                                       | The simple, powerful, and built-in solution for reactive state management. We will use multiple stores for clear separation of concerns, including `derived` stores.       |
-| **WASM/ML Libraries**     | **`onnxruntime-web` (NPM)** & `rubberband-wasm` (static) | `onnxruntime-web` will be managed via NPM for robust VAD analysis. `rubberband` assets will be served statically from the `static` folder.                              |
-| **Testing**               | **Vitest & Playwright**                                 | A complete testing suite. Vitest for fast unit/component tests, and Playwright for robust end-to-end browser tests.                                                  |
-| **Code Quality**          | **ESLint & Prettier**                                   | Essential tools for automatically enforcing consistent code style and catching potential bugs before they happen.                                                        |
-| **Build Tooling**         | **Vite**                                                | SvelteKit's underlying build tool. We will leverage its first-class support for Web Workers (`?worker`) and static asset handling.                                    |
+---
 
-### **3. The Final Architecture**
+## 6. Other Key Architectural Decisions & V1 Tradeoff Analysis
 
-The V2 architecture uses a **unidirectional data flow** for a clear and predictable application state.
-
-**Core Data Flow:**
-`User Action in Component` -> `Calls Service Method` -> `Service Performs Logic` -> `Service Updates Store` -> `Component Reactively Updates`
-
-#### **3.1. Directory Structure**
-
-```
-.
-├── .github/
-├── build/                  <-- Final static output folder
-├── static/                 <-- Non-NPM assets (rubberband.wasm, silero_vad.onnx)
-├── src/
-│   ├── lib/
-│   │   ├── actions/
-│   │   │   └── sparkles.action.ts
-│   │   ├── components/
-│   │   │   ├── visualizers/
-│   │   │   │   ├── Waveform.svelte
-│   │   │   │   └── Spectrogram.svelte
-│   │   │   ├── Controls.svelte
-│   │   │   └── FileLoader.svelte
-│   │   ├── services/
-│   │   │   ├── audioEngine.service.ts
-│   │   │   └── analysis.service.ts
-│   │   ├── stores/
-│   │   │   ├── player.store.ts
-│   │   │   ├── status.store.ts
-│   │   │   ├── analysis.store.ts
-│   │   │   └── derived.store.ts      <-- For computed state like isAppBusy
-│   │   ├── types/
-│   │   │   ├── index.ts
-│   │   │   └── worker.types.ts       <-- For type-safe worker messages
-│   │   ├── utils/
-│   │   │   └── index.ts
-│   │   └── workers/
-│   │       ├── rubberband.worker.ts
-│   │       ├── sileroVad.worker.ts
-│   │       └── spectrogram.worker.ts
-│   ├── routes/
-│   │   └── +page.svelte
-│   └── app.html
-├── tests/
-└── svelte.config.js
-```
-
-#### **3.2. Architectural Layers**
-
-1.  **Service Layer (`src/lib/services/`):**
-    *   The "brain" of the application. Services are UI-agnostic TypeScript **singletons** (created once and exported) that handle complex logic.
-    *   Each service will expose `initialize()` and `dispose()` methods to be called from the main component's lifecycle hooks (`onMount`, `onDestroy`).
-    *   `audioEngine.service.ts`: Manages the Web Audio API and the Rubberband WASM worker.
-    *   `analysis.service.ts`: Manages the Silero VAD worker and contains the rewritten Goertzel logic for tone detection.
-
-2.  **State Layer (`src/lib/stores/`):**
-    *   The reactive "heart" and single source of truth, composed of multiple Svelte stores.
-    *   `derived.store.ts` will be used to compute values from other stores (e.g., an `isAppBusy` flag) to simplify logic in components.
-
-3.  **Component Layer (`src/lib/components/` & `src/routes/`):**
-    *   The "face" of the application. Components are "dumb" and focused on presentation.
-    *   They **read** from stores to display data and **call** service methods to trigger actions.
-    *   Visualizers (`Waveform.svelte`, `Spectrogram.svelte`) are now self-contained Svelte components.
-
-4.  **Worker Layer (`src/lib/workers/`):**
-    *   A dedicated home for all Web Worker scripts, used for computationally intensive tasks.
-    *   Vite's `?worker` import syntax will be used to handle bundling and pathing automatically.
-
-5.  **Actions Layer (`src/lib/actions/`):**
-    *   Home for Svelte Actions, which are functions that provide a clean way to interact directly with DOM elements.
-    *   `sparkles.action.ts` will encapsulate the sparkle effect.
-
-### **4. Step-by-Step Migration Process**
-
-This will be performed on a dedicated `feature/svelte-refactor` branch.
-
-1.  **Phase 0: Project Scaffolding & Configuration:**
-    *   Run `npm create svelte@latest vibe-player-v2`. Select "Skeleton project" with TypeScript, ESLint, Prettier, Playwright, Vitest.
-    *   `cd vibe-player-v2` and `npm install`.
-    *   Install dependencies: `npm install onnxruntime-web` and `npm install -D tailwindcss postcss autoprefixer vite-plugin-static-copy`.
-    *   Initialize Tailwind: `npx svelte-add@latest tailwindcss`.
-    *   Configure `adapter-static` in `svelte.config.js`.
-    *   In `vite.config.js`, configure `vite-plugin-static-copy` to copy the `onnxruntime-web` WASM files to the build output directory.
-
-2.  **Phase 1: Asset & Core Logic Migration:**
-    *   Copy `rubberband.wasm`, `rubberband-loader.js`, and `silero_vad.onnx` into `vibe-player-v2/static/`.
-    *   Create the Svelte stores in `src/lib/stores/`, including `derived.store.ts`.
-    *   Rewrite `constants.js` and `utils.js` as typed TypeScript modules in `src/lib/utils/index.ts`.
-    *   Implement URL State Serialization: Create a utility that subscribes to stores and updates the URL via `goto()`. This utility must use **debouncing** to avoid excessive updates and a flag to prevent loops during initial page load.
-
-3.  **Phase 2: Service & Worker Implementation:**
-    *   Create a shared `src/lib/types/worker.types.ts` file to define interfaces for all `postMessage` data, ensuring type-safe communication.
-    *   Implement the singleton `audioEngine.service.ts` and its `rubberband.worker.ts`.
-    *   Implement the singleton `analysis.service.ts` and its `sileroVad.worker.ts`. This service will import `onnxruntime-web` as a module.
-
-4.  **Phase 3: UI Reconstruction:**
-    *   Clear `src/routes/+page.svelte` and build the main layout using Skeleton UI components for a modern, clean aesthetic. This is a full UI redesign.
-    *   In `+page.svelte`, use `onMount` and `onDestroy` to call the `initialize()` and `dispose()` methods of the services.
-    *   Create reusable Svelte components (`FileLoader.svelte`, `Controls.svelte`, etc.) and the visualizer components.
-    *   Implement `sparkles.action.ts` and apply it to a root layout element.
-
-5.  **Phase 4: Test Rewrite:**
-    *   Write Vitest unit tests for utility functions and services. **Plan for extensive mocking** of browser-only APIs (`AudioContext`, `Worker`, `ort.InferenceSession`) using Vitest's `vi.mock()` capabilities.
-    *   Write Vitest + Svelte Testing Library component tests for key UI interactions.
-    *   Rewrite the Playwright E2E tests to target the new component structure and user flows.
-
-6.  **Phase 5: Documentation & The Switchover:**
-    *   Rewrite `architecture.md` to fully document the new SvelteKit architecture. Update `README.md`.
-    *   Once the feature branch is complete, merge it into `main`.
-    *   Update all `.github/workflows/*.yml` files. The `path` for `upload-pages-artifact` in `deploy.yml` will now be `./build`, and test/build commands will be `npm run test` and `npm run build`.
-    *   In a separate PR, delete the old `vibe-player` directory and all obsolete root-level files to finalize the transition.
-
-### **5. Key Challenges & Solutions**
-
-*   **Challenge: `AudioContext` User Gesture Policy.** Modern browsers block audio until a user interaction.
-    *   **Solution:** The `audioEngine.service` will have an `unlockAudio()` method. This method will be called only once, after the first user click (e.g., on the "Choose File" button), ensuring the `AudioContext` is properly resumed.
-
-*   **Challenge: Dual WASM Loading Patterns.** `onnxruntime-web` fetches its own WASM, while Rubberband uses a legacy loader.
-    *   **Solution:** The `audioEngine.service` will pass the public path to `rubberband.wasm` (constructed using SvelteKit's `$app/paths`) as an initialization message to its worker. This ensures the worker knows where to find its static asset.
-
-*   **Challenge: Worker Type-Safety.** `postMessage` is inherently untyped.
-    *   **Solution:** We will create and use a shared `src/lib/types/worker.types.ts` file that defines interfaces for all worker message payloads. Both the services and the workers will import these types.
-
-*   **Challenge: Testing Browser-Dependent Services.** Vitest runs in Node.js and lacks browser APIs.
-    *   **Solution:** The test plan explicitly includes a phase for creating robust mocks for `AudioContext`, `Worker`, and other browser-only globals, allowing for isolated unit testing of service logic.
-
-### **6. Architectural Principles (The V2 Golden Rules)**
-
-*   **Prefer Svelte Reactivity over Direct DOM Manipulation.** All UI updates should be a result of store changes.
-*   **Keep Components Focused on Presentation.** Complex logic, state management, and side effects belong in services and stores.
-*   **Maintain Unidirectional Data Flow.** Services update stores; components read from stores and call services. Services do not read from stores to prevent circular dependencies.
-*   **Encapsulate Intensive Tasks in Workers.** Any long-running or CPU-intensive task (VAD, spectrograms, audio processing) must be offloaded to a Web Worker to keep the UI responsive.
+* **Waveform Rendering Fix:** The `WaveformHexagon`'s `generatePeaks` method will explicitly implement the V1 `min/max`
+  peak detection algorithm. V1's tradeoff was doing this calculation on the main thread, which was acceptable because
+  it's a very fast, single-pass operation. V3 will keep this synchronous logic, as moving it to a worker would add
+  unnecessary complexity for little performance gain. This is a pragmatic choice inspired by V1's success.
+* **URL State Management:** The `URLAdapter` (on init) and `URLWriterAdapter` (on state change) formalize this process.
+  The `URLWriterAdapter` will subscribe to the `StateStore` and, using a `debounce` function, will update the browser's
+  URL bar. This decouples the application core from the browser's History API.
+* **Unified Status:** The single `Status` object in the `StateStore` provides a single source of truth for the UI's
+  state, preventing conflicts between different "isLoading" or "error" flags.
+* **Error Handling:** Errors will propagate up through the promise chain. An error in a worker will reject the
+  `WorkerManager`'s promise. This rejection will be caught by the service that called it. If the error is unrecoverable,
+  the service will reject its own promise, which will be caught by the `AppHexagon`, which will then update the
+  `StateStore` to the `Error` status. This provides a clear and traceable path for all errors.
 ````
---- End of File: REFACTOR_PLAN.txt ---
+--- End of File: REFACTOR_PLAN.md ---
 --- File: vibe-player/architecture.md ---
 ````markdown
-<!-- /vibe-player/architecture.md -->
-
+[//]: # ( vibe-player/architecture.md )
 # Vibe Player Architecture
 
 ## 1. Overview
@@ -1254,8 +1389,7 @@ stateDiagram-v2
 --- End of File: vibe-player/architecture.md ---
 --- File: vibe-player/CONTRIBUTING-LLM.md ---
 ````markdown
-<!-- /CONTRIBUTING-LLM.md -->
-
+[//]: # ( vibe-player/CONTRIBUTING-LLM.md )
 # Coding Agent Collaboration Guidelines
 
 This document outlines the principles and procedures for collaborating with a coding agent or automated/semi-automated
@@ -1438,6 +1572,7 @@ enabling review and CI/CD.
 --- End of File: vibe-player/CONTRIBUTING-LLM.md ---
 --- File: vibe-player/css/98.css ---
 ````css
+/* vibe-player/css/98.css */
 /*! 98.css v0.1.20 - https://github.com/jdan/98.css */
 @font-face {
     font-family: "Pixelated MS Sans Serif";
@@ -2258,8 +2393,7 @@ table > tbody > tr > * {
 --- End of File: vibe-player/css/98.css ---
 --- File: vibe-player/css/styles.css ---
 ````css
-/* --- /vibe-player/styles.css --- */
-
+/* vibe-player/css/styles.css */
 /* --- Global Styles --- */
 body {
     font-family: "Pixelated MS Sans Serif", Arial;
@@ -2750,7 +2884,7 @@ small {
 --- End of File: vibe-player/css/styles.css ---
 --- File: vibe-player/index.html ---
 ````html
-<!-- /vibe-player/index.html -->
+<!-- vibe-player/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3052,7 +3186,7 @@ small {
 --- End of File: vibe-player/index.html ---
 --- File: vibe-player/js/app.js ---
 ````javascript
-// --- /vibe-player/js/app.js ---
+// vibe-player/js/app.js
 // Creates the global namespace and orchestrates the application flow.
 // MUST be loaded AFTER all its dependency modules.
 
@@ -4072,7 +4206,7 @@ var AudioApp = AudioApp || {};
 --- End of File: vibe-player/js/app.js ---
 --- File: vibe-player/js/goertzel.js ---
 ````javascript
-// --- goertzel.js ---
+// vibe-player/js/goertzel.js
 // Pure JavaScript Goertzel Algorithm Implementation for Vibe Player
 // Attaches GoertzelFilter to AudioApp.
 
@@ -4787,7 +4921,7 @@ if (typeof AudioApp.GoertzelFilter !== 'undefined') {
 --- End of File: vibe-player/js/goertzel.js ---
 --- File: vibe-player/js/player/audioEngine.js ---
 ````javascript
-// --- /vibe-player/js/player/audioEngine.js --- // Updated Path
+// vibe-player/js/player/audioEngine.js
 // Manages Web Audio API, AudioWorklet loading/communication, decoding, resampling, and playback control.
 // Uses Rubberband WASM via an AudioWorkletProcessor for time-stretching and pitch/formant shifting.
 
@@ -5405,7 +5539,7 @@ AudioApp.audioEngine = (function () {
 --- End of File: vibe-player/js/player/audioEngine.js ---
 --- File: vibe-player/js/player/rubberbandProcessor.js ---
 ````javascript
-// --- /vibe-player/js/player/rubberbandProcessor.js --- // Updated Path
+// vibe-player/js/player/rubberbandProcessor.js
 // AudioWorkletProcessor for real-time time-stretching using Rubberband WASM.
 
 // Constants cannot be accessed here directly, but name is needed for registration.
@@ -5970,6 +6104,7 @@ try {
 --- End of File: vibe-player/js/player/rubberbandProcessor.js ---
 --- File: vibe-player/js/sparkles.js ---
 ````javascript
+// vibe-player/js/sparkles.js
 // ─────────────────────────────────────────────────────────────────────────────
 //  sparkles.js
 //  A self-contained sparkle/dot effect that you can turn on/off by calling
@@ -6347,7 +6482,7 @@ try {
 --- End of File: vibe-player/js/sparkles.js ---
 --- File: vibe-player/js/state/appState.js ---
 ````javascript
-// In vibe-player/js/state/appState.js
+// vibe-player/js/state/appState.js
 class AppState {
     constructor() {
         // --- State Categories ---
@@ -6668,7 +6803,7 @@ if (typeof module !== 'undefined' && module.exports) {
 --- End of File: vibe-player/js/state/constants.js ---
 --- File: vibe-player/js/uiManager.js ---
 ````javascript
-// --- /vibe-player/js/uiManager.js ---
+// vibe-player/js/uiManager.js
 // Handles DOM manipulation, UI event listeners, and dispatches UI events.
 
 /** @namespace AudioApp */
@@ -7690,7 +7825,7 @@ AudioApp.uiManager = (function () {
 --- End of File: vibe-player/js/uiManager.js ---
 --- File: vibe-player/js/utils.js ---
 ````javascript
-// --- /vibe-player/js/utils.js ---
+// vibe-player/js/utils.js
 // General utility functions for the Vibe Player application.
 
 /** @namespace AudioApp */
@@ -7849,7 +7984,7 @@ AudioApp.Utils = (function () {
 --- End of File: vibe-player/js/utils.js ---
 --- File: vibe-player/js/vad/LocalWorkerStrategy.js ---
 ````javascript
-// --- /vibe-player/js/vad/LocalWorkerStrategy.js ---
+// vibe-player/js/vad/LocalWorkerStrategy.js
 // This strategy handles VAD processing locally using a Web Worker.
 
 /** @namespace AudioApp */
@@ -8018,7 +8153,7 @@ AudioApp.LocalWorkerStrategy = class {
 --- End of File: vibe-player/js/vad/LocalWorkerStrategy.js ---
 --- File: vibe-player/js/vad/RemoteApiStrategy.js ---
 ````javascript
-// --- /vibe-player/js/vad/RemoteApiStrategy.js ---
+// vibe-player/js/vad/RemoteApiStrategy.js
 // This strategy will handle VAD by calling an external API.
 // It is currently a placeholder.
 
@@ -8053,7 +8188,7 @@ AudioApp.RemoteApiStrategy = class {
 --- End of File: vibe-player/js/vad/RemoteApiStrategy.js ---
 --- File: vibe-player/js/vad/sileroProcessor.js ---
 ````javascript
-// --- /vibe-player/js/vad/sileroProcessor.js --- // Updated Path
+// vibe-player/js/vad/sileroProcessor.js
 // Performs VAD analysis frame-by-frame using the SileroWrapper.
 // Encapsulates the logic for iterating through audio data and calculating speech regions.
 
@@ -8321,7 +8456,7 @@ AudioApp.sileroProcessor = (function (wrapper) {
 --- End of File: vibe-player/js/vad/sileroProcessor.js ---
 --- File: vibe-player/js/vad/sileroWrapper.js ---
 ````javascript
-// --- /vibe-player/js/vad/sileroWrapper.js --- // Updated Path
+// vibe-player/js/vad/sileroWrapper.js
 // Wraps the ONNX Runtime session for the Silero VAD model.
 // Manages ONNX session creation, state tensors, and inference calls.
 
@@ -8535,6 +8670,7 @@ AudioApp.sileroWrapper = (function (globalOrt) {
 --- End of File: vibe-player/js/vad/sileroWrapper.js ---
 --- File: vibe-player/js/vad/vadAnalyzer.js ---
 ````javascript
+// vibe-player/js/vad/vadAnalyzer.js
 // --- /vibe-player/js/vad/vadAnalyzer.js --- (REFACTORED)
 // Manages the VAD strategy. The rest of the app talks to this module.
 
@@ -8590,7 +8726,7 @@ AudioApp.vadAnalyzer = (function () {
 --- End of File: vibe-player/js/vad/vadAnalyzer.js ---
 --- File: vibe-player/js/visualizers/spectrogram.worker.js ---
 ````javascript
-// --- /vibe-player/js/visualizers/spectrogram.worker.js ---
+// vibe-player/js/visualizers/spectrogram.worker.js
 // This worker handles the computationally intensive task of calculating the spectrogram.
 
 // 1. Import Dependencies
@@ -8722,6 +8858,7 @@ function computeSpectrogram(channelData, sampleRate, duration, actualFftSize, ta
 --- End of File: vibe-player/js/visualizers/spectrogram.worker.js ---
 --- File: vibe-player/js/visualizers/spectrogramVisualizer.js ---
 ````javascript
+// vibe-player/js/visualizers/spectrogramVisualizer.js
 // --- /vibe-player/js/visualizers/spectrogramVisualizer.js --- (CORRECTED)
 // Handles orchestrating the Spectrogram worker and rendering the results to a canvas.
 
@@ -9026,7 +9163,7 @@ AudioApp.spectrogramVisualizer = (function (globalFFT) {
 --- End of File: vibe-player/js/visualizers/spectrogramVisualizer.js ---
 --- File: vibe-player/js/visualizers/waveformVisualizer.js ---
 ````javascript
-// --- /vibe-player/js/visualizers/waveformVisualizer.js ---
+// vibe-player/js/visualizers/waveformVisualizer.js
 // Handles drawing the Waveform visualization to a canvas element.
 
 /** @namespace AudioApp */
@@ -9418,7 +9555,7 @@ AudioApp.waveformVisualizer = (function () {
 --- End of File: vibe-player/js/visualizers/waveformVisualizer.js ---
 --- File: vibe-player/lib/fft.js ---
 ````javascript
-// --- /vibe-player/lib/fft.js ---
+// vibe-player/lib/fft.js
 // NOTE: This is 3rd party code (adapted). JSDoc annotations not added here.
 'use strict';
 
@@ -9679,6 +9816,7 @@ FFT.prototype._singleRealTransform4 = function _singleRealTransform4(outOff, off
 --- End of File: vibe-player/lib/fft.js ---
 --- File: vibe-player/lib/rubberband-loader.js ---
 ````javascript
+// vibe-player/lib/rubberband-loader.js
 // --- START OF FILE rubberband.js (Self-Contained Loader + Options) ---
 
 // ** MODIFIED Emscripten Loader for AudioWorklet **
@@ -10171,8 +10309,7 @@ var Rubberband = (() => { // Outer IIFE defines Rubberband scope
 --- End of File: vibe-player/lib/rubberband-loader.js ---
 --- File: vibe-player/README.md ---
 ````markdown
-<!-- /vibe-player/README.md -->
-
+[//]: # ( vibe-player/README.md )
 # Vibe Player
 
 A simple, browser-based audio player designed for analyzing and manipulating audio files, inspired by classic desktop
@@ -10238,8 +10375,7 @@ file is loaded into the LLM's context before starting work. If the file is missi
 --- End of File: vibe-player/README.md ---
 --- File: vibe-player/TODO.md ---
 ````markdown
-<!-- /vibe-player/TODO.md -->
-
+[//]: # ( vibe-player/TODO.md )
 # Vibe Player - TODO & Future Ideas
 
 This file tracks potential improvements, features, and known issues requiring further investigation for the Vibe Player
@@ -10562,8 +10698,7 @@ export default {
 --- End of File: vibe-player-v2.3/postcss.config.js ---
 --- File: vibe-player-v2.3/README.md ---
 ````markdown
-<!-- vibe-player-v2.3/README.md -->
-
+[//]: # ( vibe-player-v2.3/README.md )
 # sv
 
 Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
@@ -11203,7 +11338,9 @@ describe("Controls.svelte", () => {
     });
 
     it("calls audioEngine.jump(1) when the forward button is clicked", async () => {
-      const forwardButton = screen.getByRole("button", { name: /Jump forward/i });
+      const forwardButton = screen.getByRole("button", {
+        name: /Jump forward/i,
+      });
       await fireEvent.click(forwardButton);
       expect(audioEngineService.jump).toHaveBeenCalledWith(1);
     });
@@ -11842,10 +11979,37 @@ describe("FileLoader.svelte", () => {
 // vibe-player-v2.3/src/lib/services/analysis.service.test.ts
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { get } from "svelte/store";
+import { get, type Writable } from "svelte/store";
 import type { AnalysisState } from "$lib/types/analysis.types";
-import { VAD_CONSTANTS } from "$lib/utils";
 import { VAD_WORKER_MSG_TYPE } from "$lib/types/worker.types";
+
+// --- START: CORRECTED STORE MOCKING (No changes here, this part is correct) ---
+
+let mockAnalysisStoreInstance: Writable<AnalysisState>;
+
+vi.mock("$lib/stores/analysis.store", async () => {
+  const { writable } =
+    await vi.importActual<typeof import("svelte/store")>("svelte/store");
+  const initialAnalysisStateForMock: AnalysisState = {
+    vadStatus: "idle",
+    lastVadResult: null,
+    isSpeaking: undefined,
+    vadStateResetted: undefined,
+    vadError: null,
+    vadInitialized: false,
+    vadPositiveThreshold: 0.5,
+    vadNegativeThreshold: 0.35,
+    vadProbabilities: null,
+    vadRegions: null,
+    spectrogramStatus: "idle",
+    spectrogramError: null,
+    spectrogramData: null,
+    spectrogramInitialized: false,
+    isLoading: false,
+  };
+  mockAnalysisStoreInstance = writable(initialAnalysisStateForMock);
+  return { analysisStore: mockAnalysisStoreInstance };
+});
 
 const mockVadWorkerInstance = {
   postMessage: vi.fn(),
@@ -11854,30 +12018,26 @@ const mockVadWorkerInstance = {
   onerror: null as ((event: ErrorEvent) => void) | null,
 };
 
-vi.mock("$lib/stores/analysis.store", () => ({
-  analysisStore: {
-    subscribe: vi.fn(),
-    set: vi.fn(),
-    update: vi.fn(),
-  },
-}));
-
 vi.mock("$lib/workers/sileroVad.worker?worker&inline", () => ({
   default: vi.fn().mockImplementation(() => mockVadWorkerInstance),
 }));
 
+// --- END: CORRECTED STORE MOCKING ---
+
 describe("AnalysisService", () => {
   let analysisService: typeof import("./analysis.service").default;
-  let analysisStore: typeof import("../stores/analysis.store").analysisStore;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
 
+    // IMPORTANT: Keep real timers for this test file. The async nature of promises
+    // and message passing works better without faking timers. The debounce in
+    // `recalculateVadRegions` can be tested by waiting with `tick()`.
+    // We will use fake timers only within the one test that needs it.
+
     const serviceModule = await import("./analysis.service");
     analysisService = serviceModule.default;
-    const storeModule = await import("../stores/analysis.store");
-    analysisStore = storeModule.analysisStore;
 
     vi.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
@@ -11892,48 +12052,58 @@ describe("AnalysisService", () => {
     vi.useRealTimers();
   });
 
+  // --- START: CORRECTED TESTS ---
+
   describe("initialize", () => {
-    // --- START OF FIX: This test is now async ---
     it("should handle concurrent initialization calls correctly", async () => {
+      console.log(
+        "[TEST LOG] Running: should handle concurrent initialization calls correctly",
+      );
       let initPromise1, initPromise2;
-      
-      // Call initialize twice, concurrently
+
       initPromise1 = analysisService.initialize();
       initPromise2 = analysisService.initialize();
 
-      // Assert that both calls return the exact same promise object,
-      // proving the idempotency logic is working.
       expect(initPromise1).toBe(initPromise2);
-      
-      // Allow microtasks to run (i.e., let the async _doInitialize method execute)
-      await new Promise(resolve => setImmediate(resolve));
-      
-      // Now that the async work has started, check that the underlying
-      // initialization logic was only triggered once.
+
+      // Let the promise chain start
+      await new Promise((resolve) => setImmediate(resolve));
+
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(mockVadWorkerInstance.postMessage).toHaveBeenCalledTimes(1);
 
-      // Simulate the worker responding with success
-      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      // FIX: Trigger the ACTUAL onmessage handler assigned by the service
+      const initMessageId =
+        mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
       mockVadWorkerInstance.onmessage!({
-        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: initMessageId },
+        // The `!` asserts that onmessage is not null
+        data: {
+          type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS,
+          messageId: initMessageId,
+        },
       } as MessageEvent);
 
-      // Both original promises should now resolve successfully.
       await expect(initPromise1).resolves.toBeUndefined();
       await expect(initPromise2).resolves.toBeUndefined();
+
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadInitialized).toBe(true);
+      expect(finalState.vadStatus).toBe("VAD service initialized.");
+      console.log(
+        "[TEST LOG] PASSED: should handle concurrent initialization calls correctly",
+      );
     });
-    // --- END OF FIX ---
 
     it("should handle initialization failure from the worker", async () => {
+      console.log(
+        "[TEST LOG] Running: should handle initialization failure from the worker",
+      );
       const initPromise = analysisService.initialize();
+      await new Promise((resolve) => setImmediate(resolve));
+      const initMessageId =
+        mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
 
-      // Allow async tasks to run so postMessage is called
-      await new Promise(resolve => setImmediate(resolve));
-
-      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
-
-      // Simulate worker failure
+      // FIX: Trigger the ACTUAL onmessage handler
       mockVadWorkerInstance.onmessage!({
         data: {
           type: VAD_WORKER_MSG_TYPE.INIT_ERROR,
@@ -11943,88 +12113,141 @@ describe("AnalysisService", () => {
       } as MessageEvent);
 
       await expect(initPromise).rejects.toThrow("Model load failed");
+
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadInitialized).toBe(false);
+      expect(finalState.vadError).toContain("Model load failed");
+      console.log(
+        "[TEST LOG] PASSED: should handle initialization failure from the worker",
+      );
     });
   });
 
   describe("processVad", () => {
     async function initializeService() {
       const initPromise = analysisService.initialize();
-      // Allow async tasks to run
-      await new Promise(resolve => setImmediate(resolve));
-      const initMessageId = mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      await new Promise((resolve) => setImmediate(resolve));
+      const initMessageId =
+        mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
       mockVadWorkerInstance.onmessage!({
-        data: { type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS, messageId: initMessageId },
+        data: {
+          type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS,
+          messageId: initMessageId,
+        },
       } as MessageEvent);
       await initPromise;
     }
 
     it("should send PCM data to worker and update store with probabilities", async () => {
+      console.log(
+        "[TEST LOG] Running: should send PCM data to worker and update store",
+      );
       await initializeService();
       const pcmData = new Float32Array([0.1, 0.2, 0.3]);
       const mockProbs = new Float32Array([0.9, 0.8, 0.7]);
       const processPromise = analysisService.processVad(pcmData);
-      
-      // Allow async tasks to run
-      await new Promise(resolve => setImmediate(resolve));
 
-      const processMessageId = mockVadWorkerInstance.postMessage.mock.calls[1][0].messageId;
+      await new Promise((resolve) => setImmediate(resolve));
 
+      const processMessageId =
+        mockVadWorkerInstance.postMessage.mock.calls[1][0].messageId;
+
+      console.log("[TEST LOG] Simulating worker response for PROCESS_RESULT");
+      // FIX: Trigger the ACTUAL onmessage handler
       mockVadWorkerInstance.onmessage!({
         data: {
           type: VAD_WORKER_MSG_TYPE.PROCESS_RESULT,
           payload: { probabilities: mockProbs },
-          messageId: processMessageId
+          messageId: processMessageId,
         },
       } as MessageEvent);
 
       await processPromise;
-      
-      const lastUpdateCall = (analysisStore.update as vi.Mock).mock.calls.pop()[0];
-      const finalState = lastUpdateCall(get(analysisStore));
 
+      // Let the debounced recalculateVadRegions run. We need fake timers for this one part.
+      vi.useFakeTimers();
+      vi.runAllTimers();
+      vi.useRealTimers();
+
+      const finalState = get(mockAnalysisStoreInstance);
       expect(finalState.vadProbabilities).toEqual(mockProbs);
       expect(finalState.vadStatus).toBe("VAD analysis complete.");
+      console.log(
+        "[TEST LOG] PASSED: should send PCM data to worker and update store",
+      );
     });
   });
 
   describe("recalculateVadRegions", () => {
-    it("should correctly calculate and merge speech regions", () => {
+    it("should correctly calculate and merge speech regions", async () => {
+      console.log(
+        "[TEST LOG] Running: should correctly calculate and merge speech regions",
+      );
+      // Use fake timers ONLY for this test.
       vi.useFakeTimers();
-      const probabilities = new Float32Array([0.1, 0.8, 0.9, 0.2, 0.1, 0.85, 0.95, 0.3]);
-      const state: AnalysisState = {
+
+      const probabilities = new Float32Array([
+        0.1, 0.8, 0.9, 0.2, 0.1, 0.85, 0.95, 0.3,
+      ]);
+
+      const initialState: AnalysisState = {
+        ...get(mockAnalysisStoreInstance),
         vadProbabilities: probabilities,
         vadPositiveThreshold: 0.5,
         vadNegativeThreshold: 0.35,
-        vadRegions: null,
-        vadInitialized: true, // Assuming it's initialized
-        spectrogramData: null,
+        vadInitialized: true,
       };
-      (get as vi.Mock).mockReturnValue(state);
+      console.log(
+        "[TEST LOG] Setting mock store state before calling recalculateVadRegions",
+      );
+      mockAnalysisStoreInstance.set(initialState);
 
       analysisService.recalculateVadRegions();
+
+      console.log("[TEST LOG] Advancing timers to trigger debounced function");
       vi.runAllTimers();
 
-      const updateCall = (analysisStore.update as vi.Mock).mock.calls[0][0];
-      const newState = updateCall(state);
-      
-      expect(newState.vadRegions.length).toBe(1);
-      expect(newState.vadRegions[0].start).toBeCloseTo(0);
-      expect(newState.vadRegions[0].end).toBeCloseTo(0.768);
+      const finalState = get(mockAnalysisStoreInstance);
+      expect(finalState.vadRegions).not.toBeNull();
+      expect(finalState.vadRegions!.length).toBe(1);
+      expect(finalState.vadRegions![0].start).toBeCloseTo(0);
+      expect(finalState.vadRegions![0].end).toBeCloseTo(0.768);
+      console.log(
+        "[TEST LOG] PASSED: should correctly calculate and merge speech regions",
+      );
     });
   });
 
   describe("dispose", () => {
     it("should terminate worker and reset state", async () => {
-      await analysisService.initialize();
+      console.log(
+        "[TEST LOG] Running: should terminate worker and reset state",
+      );
+      // Initialize the service so there's a worker to terminate.
+      const initPromise = analysisService.initialize();
+      await new Promise((resolve) => setImmediate(resolve));
+      const initMessageId =
+        mockVadWorkerInstance.postMessage.mock.calls[0][0].messageId;
+      mockVadWorkerInstance.onmessage!({
+        data: {
+          type: VAD_WORKER_MSG_TYPE.INIT_SUCCESS,
+          messageId: initMessageId,
+        },
+      } as MessageEvent);
+      await initPromise;
+
       analysisService.dispose();
+
       expect(mockVadWorkerInstance.terminate).toHaveBeenCalledTimes(1);
-      const lastUpdate = (analysisStore.update as vi.Mock).mock.calls.pop()[0];
-      const finalState = lastUpdate({});
+
+      const finalState = get(mockAnalysisStoreInstance);
       expect(finalState.vadInitialized).toBe(false);
       expect(finalState.vadStatus).toBe("VAD service disposed.");
+      console.log("[TEST LOG] PASSED: should terminate worker and reset state");
     });
   });
 });
+
 ````
 --- End of File: vibe-player-v2.3/src/lib/services/analysis.service.test.ts ---
 --- File: vibe-player-v2.3/src/lib/services/analysis.service.ts ---
@@ -12087,28 +12310,32 @@ class AnalysisService {
     });
   }
 
-  public initialize(
-    options?: AnalysisServiceInitializeOptions,
-  ): Promise<void> {
+  public initialize(options?: AnalysisServiceInitializeOptions): Promise<void> {
     // --- START OF FIX: Robust Idempotency ---
     console.log(
       `[AnalysisService-INIT] Call received. isInitialized: ${this.isInitialized}, isInitializing: ${this.isInitializing}`,
     );
 
     if (!browser) {
-      console.log("[AnalysisService-INIT] Not in browser, returning resolved promise.");
+      console.log(
+        "[AnalysisService-INIT] Not in browser, returning resolved promise.",
+      );
       return Promise.resolve();
     }
 
     // If already initialized, return immediately.
     if (this.isInitialized) {
-      console.log("[AnalysisService-INIT] Already initialized. Returning resolved promise.");
+      console.log(
+        "[AnalysisService-INIT] Already initialized. Returning resolved promise.",
+      );
       return Promise.resolve();
     }
 
     // If an initialization is already in progress, return the existing promise to wait on.
     if (this.isInitializing && this.initPromise) {
-      console.log("[AnalysisService-INIT] Initialization in progress. Returning existing promise.");
+      console.log(
+        "[AnalysisService-INIT] Initialization in progress. Returning existing promise.",
+      );
       return this.initPromise;
     }
 
@@ -12117,13 +12344,18 @@ class AnalysisService {
     this.isInitializing = true;
     this.initPromise = this._doInitialize(options)
       .then(() => {
-        console.log("[AnalysisService-INIT] _doInitialize resolved successfully.");
+        console.log(
+          "[AnalysisService-INIT] _doInitialize resolved successfully.",
+        );
         this.isInitialized = true;
         this.isInitializing = false;
         this.initPromise = null; // Clear promise after success
       })
       .catch((err) => {
-        console.error("[AnalysisService-INIT] _doInitialize rejected with error:", err);
+        console.error(
+          "[AnalysisService-INIT] _doInitialize rejected with error:",
+          err,
+        );
         this.isInitialized = false;
         this.isInitializing = false;
         this.initPromise = null; // Clear promise after failure
@@ -12225,7 +12457,9 @@ class AnalysisService {
         );
       }
       const modelBuffer = await modelResponse.arrayBuffer();
-      console.log("[AnalysisService-INIT] Model fetched. Posting INIT message to worker.");
+      console.log(
+        "[AnalysisService-INIT] Model fetched. Posting INIT message to worker.",
+      );
       const initPayload = {
         origin: location.origin,
         modelBuffer,
@@ -12236,7 +12470,9 @@ class AnalysisService {
         { type: VAD_WORKER_MSG_TYPE.INIT, payload: initPayload },
         [initPayload.modelBuffer],
       );
-      console.log("[AnalysisService-INIT] INIT message sent to worker, awaiting response.");
+      console.log(
+        "[AnalysisService-INIT] INIT message sent to worker, awaiting response.",
+      );
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       analysisStore.update((s) => ({
@@ -12405,6 +12641,7 @@ class AnalysisService {
 }
 
 export default AnalysisService.getInstance();
+
 ````
 --- End of File: vibe-player-v2.3/src/lib/services/analysis.service.ts ---
 --- File: vibe-player-v2.3/src/lib/services/audioEngine.service.test.ts ---
@@ -13581,12 +13818,12 @@ describe("AudioOrchestratorService", () => {
     timeStore.set(0);
     statusStore.set({ message: "", type: "idle", isLoading: false });
     analysisStore.set({
-        vadProbabilities: null,
-        vadRegions: null,
-        vadPositiveThreshold: 0.5,
-        vadNegativeThreshold: 0.35,
-        dtmfResults: [],
-        spectrogramData: null,
+      vadProbabilities: null,
+      vadRegions: null,
+      vadPositiveThreshold: 0.5,
+      vadNegativeThreshold: 0.35,
+      dtmfResults: [],
+      spectrogramData: null,
     });
 
     vi.mocked(audioEngine.decodeAudioData).mockResolvedValue({
@@ -13722,6 +13959,7 @@ describe("AudioOrchestratorService", () => {
     expect(unlockAudioSpy).toHaveBeenCalledTimes(1);
   });
 });
+
 ````
 --- End of File: vibe-player-v2.3/src/lib/services/AudioOrchestrator.service.test.ts ---
 --- File: vibe-player-v2.3/src/lib/services/AudioOrchestrator.service.ts ---
@@ -13869,7 +14107,10 @@ export class AudioOrchestrator {
         spectrogramService.initialize({ sampleRate: audioBuffer.sampleRate }),
         analysisService.initialize(), // <-- ADDED THIS LINE
       ]);
-      console.log("[AO-LOG] Service initialization complete. Results:", initResults);
+      console.log(
+        "[AO-LOG] Service initialization complete. Results:",
+        initResults,
+      );
 
       // Check results. We now have 4 results to check.
       if (initResults[0].status === "rejected") {
@@ -13878,7 +14119,7 @@ export class AudioOrchestrator {
       // Log non-critical failures for analysis services (indices 1, 2, and 3)
       initResults.slice(1).forEach((result, index) => {
         if (result.status === "rejected") {
-          const serviceName = ['DTMF', 'Spectrogram', 'VAD'][index];
+          const serviceName = ["DTMF", "Spectrogram", "VAD"][index];
           console.warn(
             `[AO-LOG] A non-critical analysis service (${serviceName}) failed to initialize.`,
             result.reason,
@@ -13886,7 +14127,6 @@ export class AudioOrchestrator {
         }
       });
       // --- END OF FIX ---
-
 
       playerStore.update((s) => ({
         ...s,
@@ -13924,7 +14164,9 @@ export class AudioOrchestrator {
 
       // Check for Spectrogram service readiness (index 2)
       if (initResults[2].status === "fulfilled") {
-        console.log("[AO-LOG] Spectrogram service is ready. Queuing processing.");
+        console.log(
+          "[AO-LOG] Spectrogram service is ready. Queuing processing.",
+        );
         analysisPromises.push(
           spectrogramService.process(audioBuffer.getChannelData(0)),
         );
@@ -13932,7 +14174,9 @@ export class AudioOrchestrator {
 
       // Check for VAD service readiness (index 3)
       if (initResults[3].status === "fulfilled") {
-        console.log("[AO-LOG] VAD service is ready. Starting VAD processing flow.");
+        console.log(
+          "[AO-LOG] VAD service is ready. Starting VAD processing flow.",
+        );
         // This is now the fire-and-forget block, but it's safe because we know the service is initialized.
         (async () => {
           try {
@@ -13949,7 +14193,9 @@ export class AudioOrchestrator {
             source.start();
             const resampled = await offlineCtx.startRendering();
             const pcmData = resampled.getChannelData(0);
-            console.log("[AO-LOG-VAD] Resampling complete. Kicking off VAD processing.");
+            console.log(
+              "[AO-LOG-VAD] Resampling complete. Kicking off VAD processing.",
+            );
             await analysisService.processVad(pcmData);
             console.log("[AO-LOG-VAD] VAD processing successfully completed.");
           } catch (e) {
@@ -13957,12 +14203,13 @@ export class AudioOrchestrator {
           }
         })();
       } else {
-        console.warn("[AO-LOG] VAD service failed to initialize, skipping VAD analysis.");
+        console.warn(
+          "[AO-LOG] VAD service failed to initialize, skipping VAD analysis.",
+        );
       }
-      
+
       this._runBackgroundAnalysis(analysisPromises);
       // --- END OF REVISED ANALYSIS BLOCK ---
-
     } catch (e: any) {
       this.handleError(e);
     } finally {
@@ -14034,8 +14281,7 @@ export class AudioOrchestrator {
       params[URL_HASH_KEYS.PITCH] = pStore.pitchShift.toFixed(2);
     if (pStore.gain !== 1.0)
       params[URL_HASH_KEYS.GAIN] = pStore.gain.toFixed(2);
-    if (pStore.jumpSeconds !== 5)
-        params['jump'] = String(pStore.jumpSeconds);
+    if (pStore.jumpSeconds !== 5) params["jump"] = String(pStore.jumpSeconds);
 
     // ADD THIS for URL serialization
     if (pStore.sourceUrl) {
@@ -14100,7 +14346,7 @@ export class AudioOrchestrator {
 
   public jump(direction: 1 | -1): void {
     console.log(`[AO-LOG] jump called with direction: ${direction}`);
-    if(!get(playerStore).isPlayable) return;
+    if (!get(playerStore).isPlayable) return;
     audioEngine.jump(direction);
   }
 
@@ -14112,6 +14358,7 @@ export class AudioOrchestrator {
 }
 
 export default AudioOrchestrator.getInstance();
+
 ````
 --- End of File: vibe-player-v2.3/src/lib/services/AudioOrchestrator.service.ts ---
 --- File: vibe-player-v2.3/src/lib/services/dtmf.service.test.ts ---
@@ -16980,7 +17227,6 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       case VAD_WORKER_MSG_TYPE.INIT:
         const initPayload = payload as SileroVadInitPayload;
 
-        // --- ADD THESE ASSERTIONS ---
         assert(
           initPayload && typeof initPayload === "object",
           "INIT payload is missing or not an object.",
@@ -16995,22 +17241,18 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           typeof initPayload.sampleRate === "number",
           "INIT payload is missing `sampleRate`.",
         );
-        // --- END ASSERTIONS ---
 
         sampleRate = initPayload.sampleRate;
         frameSamples = initPayload.frameSamples;
         positiveThreshold = initPayload.positiveThreshold || positiveThreshold;
         negativeThreshold = initPayload.negativeThreshold || negativeThreshold;
 
-        // --- THE FIX ---
         if (!initPayload.origin) {
           throw new Error(
             "SileroVadWorker INIT: `origin` is missing in payload.",
           );
         }
-        // Ensure the path has a trailing slash before ORT uses it.
         ort.env.wasm.wasmPaths = `${initPayload.origin}/`;
-        // --- END FIX ---
 
         if (!initPayload.modelBuffer) {
           throw new Error(
@@ -17050,11 +17292,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         if (!vadSession || !_h || !_c || !srTensor) {
           throw new Error("VAD worker not initialized or tensors not ready.");
         }
-        // This payload is now the full PCM data, not just a frame
         const { pcmData } = payload as { pcmData: Float32Array };
         const allProbabilities: number[] = [];
 
-        // Loop through the entire audio data, frame by frame
         for (let i = 0; i + frameSamples <= pcmData.length; i += frameSamples) {
           const audioFrame = pcmData.subarray(i, i + frameSamples);
           const inputTensor = new ort.Tensor("float32", audioFrame, [
@@ -17085,7 +17325,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
             messageId,
           },
           [resultPayload.probabilities.buffer],
-        ); // Transfer the buffer back
+        );
         break;
 
       case VAD_WORKER_MSG_TYPE.RESET:
@@ -17108,11 +17348,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error(
       `Error in SileroVadWorker (type: ${type}):`,
       errorMessage,
-      errorStack,
+      error instanceof Error ? error.stack : undefined,
     );
     self.postMessage({
       type: `${type}_ERROR` as string,

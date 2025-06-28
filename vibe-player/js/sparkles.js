@@ -1,3 +1,4 @@
+// vibe-player/js/sparkles.js
 // ─────────────────────────────────────────────────────────────────────────────
 //  sparkles.js
 //  A self-contained sparkle/dot effect that you can turn on/off by calling

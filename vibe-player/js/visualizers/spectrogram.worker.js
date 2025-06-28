@@ -1,4 +1,4 @@
-// --- /vibe-player/js/visualizers/spectrogram.worker.js ---
+// vibe-player/js/visualizers/spectrogram.worker.js
 // This worker handles the computationally intensive task of calculating the spectrogram.
 
 // 1. Import Dependencies

@@ -1,5 +1,4 @@
-<!-- /vibe-player/README.md -->
-
+[//]: # ( vibe-player/README.md )
 # Vibe Player
 
 A simple, browser-based audio player designed for analyzing and manipulating audio files, inspired by classic desktop

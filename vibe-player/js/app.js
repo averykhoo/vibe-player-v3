@@ -1,4 +1,4 @@
-// --- /vibe-player/js/app.js ---
+// vibe-player/js/app.js
 // Creates the global namespace and orchestrates the application flow.
 // MUST be loaded AFTER all its dependency modules.
 
