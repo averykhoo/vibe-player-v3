@@ -39,7 +39,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3 # Use latest upload-artifact action
         with:
           # Upload content from the vibe-player directory
-          path: './vibe-player-v2.3/build'
+          path: './vibe-player'
 
       - name: Deploy to GitHub Pages
         id: deployment

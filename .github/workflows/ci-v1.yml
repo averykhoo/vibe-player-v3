@@ -1,0 +1,61 @@
+name: Vibe Player CI
+
+on:
+  push:
+    branches: [ "**" ] # Run on pushes to all branches
+  pull_request:
+    branches: [ "main" ] # Run on PRs targeting main
+
+jobs:
+  test-v1:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    # Set a default working directory for all run steps in this job.
+    # This is the key change to handle the new project structure.
+    defaults:
+      run:
+        working-directory: ./vibe-player
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('vibe-player/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Install Playwright Browsers and dependencies
+        run: npx playwright install --with-deps
+
+      - name: Start test server
+        run: npm run serve-for-test &
+
+      - name: Run E2E tests
+        run: |
+          sleep 5 # Wait for server to start
+          npx playwright test # Using npx is a bit cleaner
+
+      - name: Upload Playwright report
+        if: always() # Run this step even if previous steps fail, to get reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          # Update the path to find the report inside the subdirectory
+          path: vibe-player/playwright-report/
+          retention-days: 7
