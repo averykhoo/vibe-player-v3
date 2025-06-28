@@ -13,7 +13,6 @@ exports.PlayerPage = class PlayerPage {
     this.cptDisplay = page.locator('#cpt-display-content');
     this.chooseFileButton = page.locator('#chooseFileButton');
     this.hiddenFileInput = page.locator('#hiddenAudioFile');
-    // ADDED: Locator for the file info status text
     this.fileInfoStatus = page.locator('#fileInfo');
     this.timeDisplay = page.locator('#timeDisplay');
     this.seekBar = page.locator('#seekBar');
@@ -24,7 +23,6 @@ exports.PlayerPage = class PlayerPage {
 
   // --- Define User Actions Here ---
   async goto() {
-    // Assumes server is running on localhost:8080
     await this.page.goto('http://localhost:8080/');
     // REFACTORED: Wait for a more reliable signal of app initialization.
     // The uiManager sets this text to "No file selected." once it's fully ready.
@@ -38,7 +36,11 @@ exports.PlayerPage = class PlayerPage {
     // the proxy button, which avoids the timeout issue.
     // Playwright's setInputFiles will correctly trigger the 'change' event
     // on the input that the application's uiManager is listening for.
-    await this.hiddenFileInput.setInputFiles(path.join(__dirname, `../test-audio/${fileName}`));
+
+    // CORRECTED: Go up two directories instead of one to find the test-audio folder
+    // from the nested CI path.
+    const audioFilePath = path.join(__dirname, `../../test-audio/${fileName}`);
+    await this.hiddenFileInput.setInputFiles(audioFilePath);
   }
 
   // --- Define Test Assertions Here ---
