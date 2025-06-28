@@ -577,3 +577,87 @@ This ensures that even with frantic, simultaneous input across multiple sliders,
 few clean, final commands after the user's actions have settled.
 
 ---
+
+### **Appendix C: V3 Testing and Quality Assurance Strategy**
+
+This appendix outlines the multi-layered testing and quality assurance strategy for Vibe Player V3. The primary philosophy is to "shift left," enabling the developer to catch as many issues as possible locally with fast, offline tools before relying on the more comprehensive, slower checks in the CI/CD pipeline. This strategy is designed to enforce the architectural principles of V3, prevent regressions, and ensure a high degree of code quality and maintainability.
+
+#### **1. The Testing Pyramid**
+
+Our strategy is structured as a testing pyramid, with a broad base of fast, local checks and a narrow top of slower, end-to-end tests.
+
+| Layer | Tool(s) | Purpose | Runs Locally? | Runs in CI? | Speed |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Static Analysis** | `tsc`, Biome, `dependency-cruiser` | Type safety, code quality, style, architectural rules | **Yes** | **Yes** | Blazing Fast |
+| **Unit Tests** | Vitest / Jest | Test individual hexagons/functions in isolation | **Yes** | **Yes** | Fast |
+| **Integration Tests**| Vitest / Jest | Test how hexagons and adapters collaborate | **Yes** | **Yes** | Fast |
+| **CI Static Analysis**| SonarCloud, GitHub CodeQL | Tech debt, maintainability, deep security scans | No | **Yes** | Slow |
+| **End-to-End Tests**| Playwright | Verify user flows in a real browser | No | **Yes** | Slow |
+| **Visual Tests** | Playwright (`toHaveScreenshot`) | Prevent visual bugs in UI and visualizations | No | **Yes (Future)** | Slow |
+
+---
+
+#### **2. Local Development Checks (The Inner Loop)**
+
+These checks are designed to be run by the developer locally, providing instant feedback. They are fully offline after the initial `npm install`.
+
+*   **Type Safety (`tsc`):**
+    *   **Tool:** The TypeScript compiler running in "checkJs" mode.
+    *   **Command:** `tsc --noEmit --project jsconfig.json`
+    *   **Enforcement:** A `jsconfig.json` file will be configured with `"strict": true` and `"checkJs": true`. This forces every function, parameter, and variable to be explicitly typed via JSDoc. It is the direct equivalent of running `mypy` in a Python project and will fail on any untyped or incorrectly typed code.
+
+*   **Code Quality & Formatting (Biome):**
+    *   **Tool:** Biome.
+    *   **Command:** `npx @biomejs/biome check --apply .`
+    *   **Enforcement:** Biome will replace both ESLint and Prettier. It will be configured with a strict set of rules to catch code smells, enforce best practices (e.g., `no-var`), identify overly complex code, and check for unused variables. Its `--apply` flag will also auto-format the code, ensuring 100% consistency.
+
+*   **Architectural Rules (`dependency-cruiser`):**
+    *   **Tool:** `dependency-cruiser`.
+    *   **Command:** `npx depcruise src`
+    *   **Enforcement:** This is critical for maintaining the Hexagonal Architecture. A `.dependency-cruiser.js` config file will enforce rules such as:
+        *   Hexagons (`src/lib/hexagons/`) **cannot** import from Adapters (`src/lib/adapters/`).
+        *   Adapters **can** import their corresponding Hexagon's port definitions.
+        *   UI-layer adapters **cannot** import from backend adapters (e.g., `DOMAdapter` cannot import `WebAudioAdapter`).
+        This prevents architectural decay over time.
+
+---
+
+#### **3. Automated Testing (Unit & Integration)**
+
+These tests are run locally via a single command (`npm run test`) and are also a mandatory check in the CI pipeline.
+
+*   **Unit Tests & V1 Characterization Testing:**
+    *   **Concept:** For core algorithms (VAD region calculation, DTMF parsing, waveform downsampling), we will use V1 as the "golden master."
+    *   **Process:**
+        1.  **Generate Test Vectors:** We will run the pure logic from the V1 codebase with specific inputs and save the inputs and their exact outputs to JSON files (e.g., `vad-test-vector-01.json`). These vectors will be checked into the repository.
+        2.  **Write V3 Unit Tests:** The unit tests for the V3 hexagons will load these JSON files. They will feed the `input` from the vector into the new V3 function and assert that the `output` is deeply equal to the `expectedOutput`.
+    *   **Benefit:** This proves that the V3 refactor has perfectly preserved the trusted logic of the original working application, dramatically reducing the risk of regressions.
+
+*   **Integration Tests:**
+    *   **Concept:** To verify the collaboration between hexagons and their ports without the overhead of a browser.
+    *   **Example:** A test could instantiate the `AppHexagon` and a real `PlaybackHexagon`, but inject a *mock* `WebAudioAdapter`. The test would then call `AppHexagon.play()` and assert that the mock `WebAudioAdapter` received the correct `{type: 'play'}` command. This validates the entire internal command chain quickly.
+
+---
+
+#### **4. CI/CD Pipeline Checks (The Final Gate)**
+
+The CI pipeline on GitHub Actions runs all of the above checks and adds two final, deeper layers of analysis.
+
+*   **Deep Security Analysis (CodeQL):**
+    *   **Tool:** GitHub CodeQL.
+    *   **Process:** A GitHub Actions workflow will run on every pull request to perform a deep semantic analysis of the code, scanning for a wide range of security vulnerabilities (XSS, injection flaws, etc.). Results are reported directly on the PR.
+
+*   **Code Maintainability Analysis (SonarCloud):**
+    *   **Tool:** SonarCloud, which is free for public repositories.
+    *   **Process:** After a build passes, a workflow will send the code to SonarCloud for analysis. It will report on code smells, complexity, duplication, and technical debt.
+    *   **Developer Feedback Loop:** Since a local SonarLint IDE extension will not be used, the developer's feedback loop for this analysis will be the comments and quality gate status that the SonarCloud bot posts on each GitHub pull request.
+
+*   **End-to-End Testing (Playwright):**
+    *   **Tool:** Playwright.
+    *   **Process:** After all other checks pass, the full application will be built and served, and Playwright will run E2E tests to simulate user flows (loading a file, clicking play, adjusting a slider) in a real browser.
+
+#### **5. Future Testing Additions**
+
+*   **Visual Regression Testing:**
+    *   **Status:** To be implemented after V3 has a stable UI.
+    *   **Plan:** We will use Playwright's built-in `toHaveScreenshot` capability. This will be invaluable for the `<canvas>`-based waveform and spectrogram visualizations, as it is the only way to automatically detect if a code change has unintentionally altered their graphical output. This will catch visual bugs that E2E and unit tests cannot.
