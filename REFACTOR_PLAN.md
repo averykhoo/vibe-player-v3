@@ -229,3 +229,143 @@ Ports and Adapters pattern where each domain of functionality is its own "micro-
   `WorkerManager`'s promise. This rejection will be caught by the service that called it. If the error is unrecoverable,
   the service will reject its own promise, which will be caught by the `AppHexagon`, which will then update the
   `StateStore` to the `Error` status. This provides a clear and traceable path for all errors.
+
+---
+
+### **Appendix A: V3 State Management & Data Flow**
+
+This appendix provides a concrete and detailed implementation guide for the state management and data flow principles of the V3 Hexagonal Architecture. It specifies where each piece of state is owned, the strict communication pathways between components, and the step-by-step flow for every user interaction.
+
+#### **1. The State Store: A Driven Adapter, Not a Hexagon**
+
+A foundational principle of this architecture is the clear separation of business logic (Hexagons) from technology (Adapters). The "State Store" (e.g., a collection of Svelte stores) is a technology choice for enabling reactive UI updates. It is not a hexagon itself.
+
+*   **Role**: The State Store acts as a centralized, write-only message bus for the application's core logic.
+*   **Management**: No single hexagon "manages" the store. Instead, multiple hexagons **drive** it through a `StateStoreAdapter`.
+*   **Data Flow**: A hexagon calculates a new state, calls its driven port (e.g., `IPlayerStatePublisher`), and the `StateStoreAdapter`'s implementation of that port is what actually writes to the Svelte store. The hexagon remains pure, with no knowledge of Svelte.
+
+#### **2. Communication Hierarchy: Who Can Talk to Whom**
+
+To prevent the tight coupling of previous versions, communication follows these strict rules:
+
+| From | Can Call / Drive | CANNOT Call / Drive | Example |
+| :--- | :--- | :--- | :--- |
+| **Driving Adapter** (e.g., UI Component) | A **Hexagon's** driving port. | Another adapter, the State Store, or a worker directly. | The "Play" button component calls `AppHexagon.play()`. |
+| **Hexagon** (e.g., `PlaybackHexagon`) | A **Driven Adapter's** port (e.g., `StateStoreAdapter`, `WebAudioAdapter`). | Another Hexagon directly. | `PlaybackHexagon` calls `this.statePublisher.publish(...)` which the `StateStoreAdapter` implements. |
+| **Technology Adapter** (e.g., `WebAudioAdapter`) | A **Worker** (via the `WorkerManager`) or Browser APIs (`AudioContext`). | A Hexagon. | `WebAudioAdapter` calls `this.workerManager.postRequest(...)` to communicate with the `rubberband.worker`. |
+
+The **`AppHexagon`** is the only exception: it is the orchestrator and is allowed to call the driving ports of other domain hexagons (e.g., `PlaybackHexagon`, `VADHexagon`) to coordinate complex use cases.
+
+#### **3. State Ownership and Pathways**
+
+The following table details every piece of application state, its official "owner," and its location in the central state store.
+
+| State Item | Owning Hexagon | Location in Store | Description |
+| :--- | :--- | :--- | :--- |
+| `status` (`loading`, `ready`, etc.) | `AppHexagon` | `statusStore` | The single source of truth for the application's overall state. |
+| `error` | `AppHexagon` | `statusStore` | The global error message, if any. |
+| `fileName`, `duration`, `isPlayable` | `AppHexagon` | `playerStore` | High-level metadata about the loaded audio, managed by the orchestrator. |
+| `isPlaying`, `isLooping` | `PlaybackHexagon` | `playerStore` | The canonical boolean playback state. |
+| `currentTime` | `PlaybackHexagon` | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
+| `speed`, `pitchShift`, `gain` | `PlaybackHexagon` | `playerStore` | Playback manipulation parameters. |
+| `isSeeking`, `wasPlayingBeforeSeek` | `AppHexagon` | *Internal to `AppHexagon`* | Ephemeral UI state for managing the seek interaction. Not needed by the rest of the app, so it is not published to the store. |
+| `vadProbabilities` | `VADHexagon` | `analysisStore` | The raw frame-by-frame speech probabilities from the ML model. |
+| `vadRegions` | `VADHexagon` | `analysisStore` | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds. |
+| `vadPositiveThreshold`, etc. | `VADHexagon` | `analysisStore` | The tuning parameters for VAD region calculation. |
+| `dtmfResults` | `DTMFHexagon` | `dtmfStore` | The list of detected DTMF tones. |
+| `spectrogramData` | `SpectrogramHexagon` | `analysisStore` | The calculated spectrogram data (frequency-magnitude arrays). |
+| `waveformData` | `WaveformHexagon` | `playerStore` | The calculated peak data for waveform visualization. |
+
+---
+#### **4. Detailed Interaction Flows**
+
+The following sections detail the end-to-end data flow for every user interaction.
+
+##### **4.1 Application Initialization & URL Loading**
+
+This flow describes what happens when a user first loads the page with URL parameters.
+
+1.  **Driving Adapter (`+page.ts`)**: The SvelteKit `load` function reads parameters (`url`, `time`, `speed`, etc.) from the page's URL search params. It bundles these into an `initialState` object.
+2.  **Driving Adapter (UI - `+page.svelte`)**: The `initialState` is passed as a prop. In `onMount`, it checks if `initialState.url` exists.
+3.  **Port Call**: If a URL exists, it calls `AppHexagon.loadAudio(initialState.url, initialState)`.
+4.  **`AppHexagon` (Orchestrator)**: It sets `statusStore` to `loading`. It then drives the `AudioLoaderService` to fetch the URL content.
+5.  **`AudioLoaderService`**: Returns a decoded `AudioBuffer`.
+6.  **`AppHexagon`**: It receives the `AudioBuffer` and begins driving all other hexagons in parallel:
+    *   `PlaybackHexagon.prepare(audioBuffer, initialState)`: Sets the duration, initial seek time, speed, etc.
+    *   `WaveformHexagon.generatePeaks(audioBuffer)`: Generates the waveform visualization data.
+    *   *Fire-and-forget calls:* `VADHexagon.analyze()`, `DTMFHexagon.analyze()`, `SpectrogramHexagon.generate()`.
+7.  **Hexagons Publish State**: As each hexagon completes its task, it publishes its data (`waveformData`, `duration`, `isPlayable=true`, etc.) to the `StateStoreAdapter`.
+8.  **`AppHexagon`**: Once the *critical path* (playback prep and waveform) is complete, it sets `statusStore` to `ready`.
+9.  **UI Reaction**: All components subscribed to the stores (`playerStore`, `statusStore`) update to show the waveform and enable the playback controls. The background analysis results (`vadRegions`, `spectrogramData`) pop in later as they become available.
+
+##### **4.2 Loading Audio (User Interaction)**
+
+This flow is nearly identical to URL loading, but is initiated by a user click.
+
+*   **Load from File**: `FileLoader.svelte` -> `on:change` -> `AppHexagon.loadAudio(file)`. The flow proceeds as in 4.1.
+*   **Load from URL Input**: `FileLoader.svelte` -> `on:click` on "Load" button -> `AppHexagon.loadAudio(url)`. The flow proceeds as in 4.1.
+
+##### **4.3 Playback Control (Cold Path)**
+
+*   **Play/Pause (Button or Keyboard)**
+    1.  **Driving Adapter (UI)**: `Controls.svelte` button click or global keybind fires.
+    2.  **Port Call**: Calls `AppHexagon.togglePlayPause()`.
+    3.  **`AppHexagon`**: Delegates by calling `PlaybackHexagon.togglePlayPause()`.
+    4.  **`PlaybackHexagon`**: Flips its internal `isPlaying` boolean. It then publishes the new state (`isPlaying: true`) via its driven port. It also calls `this.audioOutput.play()`, which is implemented by the `WebAudioAdapter`.
+    5.  **`WebAudioAdapter`**: Starts the `rAF` loop for the "Hot Path" time updates.
+    6.  **`StateStoreAdapter`**: Updates `playerStore`. The UI's play button icon changes.
+
+*   **Stop Button**
+    1.  **Driving Adapter (UI)**: `Controls.svelte` "Stop" button click.
+    2.  **Port Call**: Calls `AppHexagon.stop()`.
+    3.  **`AppHexagon`**: Orchestrates the stop sequence. It calls `PlaybackHexagon.stop()` and `PlaybackHexagon.seek(0)`.
+    4.  **`PlaybackHexagon`**: Pauses playback, sets its internal `currentTime` to 0, and publishes both `isPlaying: false` and `currentTime: 0` to the store.
+    5.  **`WebAudioAdapter`**: The `rAF` loop stops. The `URLWriterAdapter` sees the time is 0 and removes the `t=` parameter from the URL.
+
+*   **Jump Forward/Backward**
+    1.  **Driving Adapter (UI)**: `Controls.svelte` jump button click or keybind fires.
+    2.  **Port Call**: Calls `AppHexagon.jump(direction)`.
+    3.  **`AppHexagon`**: Reads the `jumpSeconds` and `currentTime` from the `playerStore`. It calculates the `newTime` and calls `PlaybackHexagon.seek(newTime)`.
+    4.  **`PlaybackHexagon`**: Updates its internal time and publishes the change. The UI updates.
+
+##### **4.4 Parameter Sliders (Cold Path)**
+
+*   **Speed, Pitch, Gain, VAD Thresholds**
+    1.  **Driving Adapter (UI)**: A slider in `Controls.svelte` is moved.
+    2.  **Port Call**: The `on:input` event triggers a debounced call to `AppHexagon.setSpeed(value)` (or `setPitch`, `setVadThreshold`, etc.).
+    3.  **`AppHexagon`**: Delegates the call to the appropriate domain hexagon (e.g., `PlaybackHexagon.setSpeed(value)`).
+    4.  **`PlaybackHexagon`/`VADHexagon`**: The hexagon updates its internal parameter. It then publishes the new value to the `StateStoreAdapter`. For VAD, it also re-runs its internal region calculation and publishes the new `vadRegions`.
+    5.  **UI/Adapter Reaction**:
+        *   The slider's label, subscribed to the store, updates its text.
+        *   The `WebAudioAdapter`, subscribed to the `playerStore`, sees the new speed and sends a command to the `rubberband.worker`.
+        *   The `Waveform.svelte` component, subscribed to the `analysisStore`, sees the new `vadRegions` and redraws the highlights.
+
+##### **4.5 The Seek Interaction (Special Case)**
+
+The seek bar is unique because it involves a continuous user drag action that must temporarily override the real-time playback updates.
+
+*   **State Owner**: The temporary `isSeeking` and `wasPlayingBeforeSeek` flags are owned internally by the **`AppHexagon`**. They are ephemeral UI orchestration state and do not belong in the `PlaybackHexagon` or the global state store.
+
+*   **Flow**:
+    1.  **`mousedown` / `touchstart`**: The user presses the seek bar.
+        *   **Driving Adapter (UI - `+page.svelte`)**: Calls `AppHexagon.beginSeek()`.
+        *   **`AppHexagon`**: Sets its internal `this.isSeeking = true`. It checks the `playerStore` for the current `isPlaying` status and saves it: `this.wasPlayingBeforeSeek = isPlaying`. If it was playing, it immediately calls `PlaybackHexagon.pause()`.
+    2.  **`input` / `touchmove`**: The user drags the seek bar.
+        *   **Driving Adapter (UI)**: The slider's value changes. It directly updates the "hot" `timeStore` with the new value. The `TimeDisplay` and the slider's thumb update instantly, providing responsive feedback *without* repeatedly commanding the audio engine.
+    3.  **`mouseup` / `touchend`**: The user releases the seek bar.
+        *   **Driving Adapter (UI)**: Calls `AppHexagon.endSeek(finalTime)`.
+        *   **`AppHexagon`**: It calls `PlaybackHexagon.seek(finalTime)`. Then, it checks its internal flag: if `this.wasPlayingBeforeSeek` was true, it calls `PlaybackHexagon.play()`. Finally, it resets its internal flags: `this.isSeeking = false`, `this.wasPlayingBeforeSeek = false`.
+
+*   **Why This Separation?**
+    *   **Decoupling**: The `PlaybackHexagon`'s job is simple: play, pause, seek. It doesn't need to know *why* it's being paused or sought. The complex UI logic of "pause-for-seek-then-resume" is an application-level concern, perfectly suited for the `AppHexagon` orchestrator.
+    *   **Performance**: The `input` events update the UI directly via the `timeStore`, providing a smooth dragging experience without sending dozens of `seek` commands to the audio engine and worker, which would be slow and cause audible glitching.
+
+##### **4.6 Real-time UI Updates (The Hot Path)**
+
+This flow is the high-performance, read-only path for UI elements that must update on every frame.
+
+1.  **Initiator**: The **`WebAudioAdapter`**. When it is told to play by the `PlaybackHexagon`, it starts a `requestAnimationFrame` loop.
+2.  **Calculation**: On each frame, the loop calculates the precise `estimatedTime` based on `AudioContext.currentTime` and the current speed from the `playerStore`.
+3.  **Direct Store Update**: The loop calls `timeStore.set(estimatedTime)`.
+4.  **Targeted UI Reaction**: Only the `SeekBar.svelte` thumb and the `TimeDisplay.svelte` text subscribe to `timeStore`. They are the only components that re-render at 60fps. The rest of the application is unaffected.
+5.  **Termination**: When the `WebAudioAdapter` is told to pause, it cancels the `requestAnimationFrame` loop.
