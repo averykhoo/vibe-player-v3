@@ -48,18 +48,22 @@ if (typeof global.ort === 'undefined') {
 
 // Load FFT script into the global context using JSDOM's script execution
 try {
-    const fftScriptContent = fs.readFileSync(path.resolve(__dirname, 'vibe-player/lib/fft.js'), 'utf-8');
+    // CORRECTED: The path should be relative to this file's location (__dirname).
+    // We don't need to add 'vibe-player' as we are already in that directory.
+    const fftScriptContent = fs.readFileSync(path.join(__dirname, 'lib/fft.js'), 'utf-8');
     const scriptEl = global.document.createElement('script');
     scriptEl.textContent = fftScriptContent;
     global.document.body.appendChild(scriptEl);
-    // console.log('FFT script loaded via JSDOM script tag.');
+    console.log('FFT script loaded via JSDOM script tag.');
 } catch (e) {
     console.error("Failed to load lib/fft.js via JSDOM:", e.message);
 }
 
 
 // --- 2. Load Application Scripts in Order ---
-const appRoot = path.resolve(__dirname, 'vibe-player');
+// CORRECTED: The application root is simply __dirname, as this setup file
+// is located at the root of the project scripts.
+const appRoot = __dirname;
 global.AudioApp = global.AudioApp || {};
 global.__jestLoadedScripts = global.__jestLoadedScripts || new Set(); // To prevent re-execution
 
