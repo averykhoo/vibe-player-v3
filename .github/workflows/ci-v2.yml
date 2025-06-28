@@ -1,6 +1,6 @@
 # .github/workflows/ci-v2.yml
 
-name: Vibe Player CI
+name: Vibe Player V2 CI
 
 on:
   push:

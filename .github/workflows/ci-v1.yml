@@ -1,4 +1,4 @@
-name: Vibe Player CI
+name: Vibe Player V1 CI
 
 on:
   push:
