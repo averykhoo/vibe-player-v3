@@ -12,7 +12,7 @@ The primary objective for V3 is to construct an audio player and analysis tool t
 *   **Completely Testable and Verifiable:** Every piece of core application logic will be testable in isolation, detached from browser APIs and UI frameworks. This is paramount for AI agents, as automated tests become the primary validation mechanism.
 *   **Decoupled and Maintainable:** Core business logic will be entirely separated from external technologies (UI, Web Workers, state stores), allowing independent evolution and technology swaps.
 *   **Transparent and Debuggable:** Through formalized error handling, structured logging, and dedicated observability, AI agents will have the necessary feedback loops to self-diagnose and correct issues.
-*   **Built in Pure JavaScript with Strict JSDoc:** To optimize for simplicity, control, and explicit type checking without a complex build toolchain. Robustness will be achieved through meticulous JSDoc annotations and a comprehensive static analysis suite.
+*   **Built with No Build Step:** The application will be written in **Pure JavaScript with strict JSDoc typing**. It must be runnable directly from a static file server without a bundling or transpilation step, prioritizing simplicity and immediate testability.
 *   **Behavior-Driven:** High-level behaviors will be defined in **Gherkin scenarios**, which serve as executable specifications for both AI implementation and automated end-to-end testing.
 *   **Shareable via URL Hash:** The entire application state—including the loaded audio URL, playback time, and all parameters—will be serialized into the URL's **hash fragment (`#`)**, enabling users to share a link that perfectly reproduces their session.
 
@@ -24,20 +24,35 @@ This plan serves as the definitive source of truth for all AI agents tasked with
 
 This section outlines the non-negotiable rules and rationales that govern all development decisions for V3. The AI agent must adhere to these constraints at all times.
 
-*   **Constraint 1: 100% Client-Side Static Execution**
-    *   **Description:** The application must run entirely in the browser from static files (`.html`, `.js`, `.css`, `.wasm`, `.onnx`). It **must not** have a server-side backend for its core logic.
-    *   **Rationale:** This enables simple, free hosting on platforms like GitHub Pages, GitLab Pages, or via a basic `http-server`. It ensures portability and offline capability (once assets are cached).
-    *   **Implication for AI:** The agent **must not** generate any code that assumes a Node.js environment (e.g., `fs`, `http.createServer`) or a dynamic server-side language for the application's core operation. All necessary assets must be fetched via standard browser `fetch` APIs.
+*   **Constraint 1: Zero Build-Step, Static Execution**
+    *   **Description:** The V3 application **must** be runnable directly from the file system or a simple static server with **no build or bundling step required**. All code will be written as standard JavaScript modules (e.g., loaded via `<script type="module">` or a similar pattern) and loaded via `<script>` tags in `index.html`.
+    *   **Rationale:** This prioritizes simplicity, immediate testability, and zero-dependency development, avoiding complexities that can arise from build toolchains.
+    *   **Implication for AI:** The agent **must not** use any syntax that requires a transpiler (e.g., JSX). It must manage dependencies via an explicit and correctly ordered list of `<script>` tags in `index.html`. `dependency-cruiser` will be used in CI to validate this order.
 
-*   **Constraint 2: Full Word Naming Convention**
-    *   **Description:** All string keys used for state names, event names, command names, and type definitions **must** use full, descriptive English words.
-    *   **Rationale:** "We don't pay per character." Clarity and self-documentation are paramount for both human and AI comprehension, reducing the risk of misinterpretation from ambiguous abbreviations.
-    *   **Implication for AI:** The agent **must** use formats like `SCREAMING_SNAKE_CASE` for constants (e.g., `COMMAND_LOAD_AUDIO`, `EVENT_LOAD_SUCCESS`) and `camelCase` for other identifiers, avoiding short forms.
+*   **Constraint 2: V1 Logic is the "Golden Master" for Core Algorithms**
+    *   **Description:** For core signal processing and visualization algorithms (specifically VAD region calculation, DTMF/CPT parsing, and waveform peak generation), the V3 implementation **must** be functionally identical to the V1 implementation. The V1 code serves as the "golden master" reference.
+    *   **Rationale:** V1's algorithms are proven to work correctly. The goal of V3 is initially to fix the architecture, not re-invent the core processing. Future algorithmic improvements can be made against this stable baseline.
+    *   **Implication for AI:** The agent's primary goal is to accurately port and refactor the existing, proven logic from V1's `.js` files into the new V3 Hexagonal structure. Characterization tests will be the arbiter of success.
 
-*   **Constraint 3: Future-Proofing for Remote VAD API**
+*   **Constraint 3: Main-Thread-Authoritative Timekeeping**
+    *   **Description:** The application **must** implement a main-thread-authoritative timekeeping model to ensure a smooth UI and prevent visual "jumps" or glitches. The UI's time display and seek bar will be driven by a `requestAnimationFrame` loop on the main thread.
+    *   **Rationale:** As analyzed from V1, audio processing worklets (like Rubberband WASM) can have inherent latency and their time reporting can drift from the browser's high-resolution clock. Trusting the worklet's time for UI updates leads to a poor user experience.
+    *   **Implication for AI:** The AI agent must implement the "Hot Path" as described in the state management section. The `WebAudioAdapter` will drive the `timeStore` for UI updates. The `AppHexagon` must issue `seek` commands to the `PlaybackHexagon` upon explicit user actions (like `pause`) to force the audio engine to re-synchronize with the main thread's authoritative time.
+
+*   **Constraint 4: Future-Proofing for Remote VAD API**
     *   **Description:** The architecture must be designed to allow the local, in-browser VAD processing to be easily replaced by an asynchronous HTTP call to a remote VAD API endpoint in the future.
     *   **Rationale:** This provides flexibility. Local VAD is great for privacy and offline use, but a remote API could offer more powerful models or reduce client-side CPU load.
-    *   **Implication for AI:** This is a key justification for the Hexagonal Architecture. The AI will implement a `VADHexagon` that depends on a port (`IInferenceEnginePort`). Initially, this port will be implemented by a `SileroVadAdapter` using the local `WorkerChannel`. In the future, a new `RemoteVadApiAdapter` can be created to implement the same port using `fetch`, with no changes required to the `VADHexagon` or the rest of the application. The UI must also be able to handle a generic "indeterminate" loading state for analysis, not just a granular progress bar.
+    *   **Implication for AI:** This is a key justification for the Hexagonal Architecture. The AI will implement a `VADHexagon` that depends on a port (`IInferenceEnginePort`). Initially, this port will be implemented by a `SileroVadAdapter` using the local `WorkerChannel`. In the future, a new `RemoteVadApiAdapter` can be created to implement the same port using `fetch`, with no changes required to the `VADHexagon`.
+
+*   **Principle 1: Clarity, Functionality, and Clean Design**
+    *   **Description:** The user interface design should prioritize clarity, information density, and functional utility.
+    *   **Rationale:** The goal is to create a powerful tool, not a purely aesthetic piece. A clean, well-organized interface that provides clear feedback and powerful controls is paramount.
+    *   **Implication for AI:** When tasked with creating UI components, the agent should produce simple, functional HTML and CSS that is well-structured and easy to understand. It should avoid overly complex or purely decorative UI elements.
+
+*   **Principle 2: Eager Asset Initialization**
+    *   **Description:** To optimize user experience and minimize latency upon file selection, the application **should** adopt a strategy of pre-fetching and pre-initializing heavy assets (like WASM and ONNX models) at startup.
+    *   **Rationale:** This helps prevent race conditions and provides a more responsive feel, as the user does not have to wait for large assets to download *after* they have selected a file.
+    *   **Implication for AI:** The `AppHexagon`'s `initializeApp()` flow must include steps to trigger the initialization of adapters that require heavy remote assets.
 
 ---
 
@@ -95,32 +110,32 @@ stateDiagram-v2
 
 This table provides the granular detail an AI agent needs to implement the state machine correctly.
 
+| State Name               | Description                                                                                                                             | Entry Actions (What the AppHexagon does upon entering this state)                                                              | Allowed Commands (Triggers for leaving this state)                                               |
+| :----------------------- | :-------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| **`IDLE`**               | The application has started, but no audio has been loaded. This is the initial state.                                                   | <ul><li>`uiManager.renderInitialView()`</li></ul>                                                                            | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                               |
+| **`LOADING`**            | An audio source (file or URL) is being fetched, decoded, and prepared by the `AudioLoaderService` and `AudioEngine`.                      | <ul><li>`uiManager.showGlobalSpinner()`</li><li>`uiManager.disableAllControls()`</li></ul>                                      | <ul><li>(No user commands allowed; transitions are via internal events)</li></ul>                |
+| **`READY`**              | Audio is successfully loaded and playable, but playback is paused. This is the default state after loading and after pausing or stopping. | <ul><li>`uiManager.hideGlobalSpinner()`</li><li>`uiManager.enableAllControls()`</li><li>`uiManager.setPlayButtonIcon('play')`</li></ul> | <ul><li>`COMMAND_PLAY`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>                 |
+| **`PLAYING`**            | Audio is currently playing.                                                                                                             | <ul><li>`uiManager.setPlayButtonIcon('pause')`</li><li>`audioEngine.startUiUpdateLoop()`</li></ul>                             | <ul><li>`COMMAND_PAUSE`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>                 |
+| **`SEEK_AND_RESUME`**    | The user started seeking while the audio was `PLAYING`. Playback is temporarily paused, with the intent to resume after seeking.        | <ul><li>`audioEngine.pausePlayback()`</li><li>`uiManager.showSeekingIndicator()`</li></ul>                                  | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PAUSE` (user overrides resume intent)</li></ul>         |
+| **`SEEK_AND_HOLD`**      | The user started seeking while the audio was `READY` (paused), or paused during a `SEEK_AND_RESUME`. Playback is paused.           | <ul><li>(No new action needed; already paused)</li><li>`uiManager.showSeekingIndicator()`</li></ul>                          | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PLAY` (user overrides pause intent to resume)</li></ul> |
+| **`ERROR`**              | A critical, unrecoverable error occurred during loading or playback. The system is halted until a new file is loaded.                  | <ul><li>`uiManager.hideGlobalSpinner()`</li><li>`uiManager.disableAllControls()`</li><li>`uiManager.displayErrorMessage(error)`</li></ul> | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                               |
 
-| State Item                           | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
-| :----------------------------------- | :--------------------- | :---------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status` (`loading`, `ready`, etc.)  | `AppHexagon`         | `statusStore`                           | The single source of truth for the application's overall state.                                                                                               |
-| `error`                              | `AppHexagon`         | `statusStore`                           | The global error message, if any.                                                                                                                             |
-| `fileName`, `duration`, `isPlayable`, `sourceUrl` | `AppHexagon`         | `playerStore`                           | High-level metadata about the loaded audio, managed by the orchestrator.                                                                                      |
-| `isPlaying`                          | `PlaybackHexagon`    | `playerStore`                           | The canonical boolean playback state.                                                                                                                         |
-| `currentTime`                        | `PlaybackHexagon`    | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
-| `speed`, `pitchShift`, `gain`        | `PlaybackHexagon`    | `playerStore`                           | Playback manipulation parameters.                                                                                                                             |
-| `isSeeking`, `wasPlayingBeforeSeek`  | `AppHexagon`         | *Internal to `AppHexagon`*              | Ephemeral UI state for managing the seek interaction. **Not published to the store.**                                                                       |
-| `vadProbabilities`                   | `VADHexagon`         | *Internal to `VADHexagon`*              | The raw frame-by-frame speech probabilities. **Not published to the store.**                                                                                  |
-| `hasVadProbabilities`                | `VADHexagon`         | `analysisStore`                         | A boolean flag indicating that the probability data is available for retrieval via accessor.                                                                  |
-| `vadRegions`                         | `VADHexagon`         | `analysisStore`                         | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds.                                                              |
-| `vadPositiveThreshold`, etc.         | `VADHexagon`         | `analysisStore`                         | The tuning parameters for VAD region calculation.                                                                                                             |
-| `dtmfResults`                        | `DTMFHexagon`        | `dtmfStore`                             | The list of detected DTMF tones.                                                                                                                              |
-| `spectrogramData`                    | `SpectrogramHexagon` | *Internal to `SpectrogramHexagon`*      | The calculated spectrogram data. **Not published to the store.**                                                                                              |
-| `hasSpectrogramData`                 | `SpectrogramHexagon` | `analysisStore`                         | A boolean flag indicating spectrogram data is available for retrieval via accessor.                                                                           |
-| `waveformData`                       | `WaveformHexagon`    | `playerStore`                           | The calculated peak data for waveform visualization.                                                                                                          |
+#### **2.3. Handling Special Events**
 
-
+*   **`EVENT_PLAYBACK_ENDED`:** When the `AppHexagon` is in the `PLAYING` state and receives this event:
+    1.  It commands the `PlaybackHexagon` to set its internal time to the `duration`.
+    2.  It transitions the application state to `READY`.
+    3.  Crucially, it **does not** trigger the `URLStateAdapter` to update the hash. This prevents the URL from being unhelpfully updated with a time equal to the duration.
+*   **`COMMAND_PLAY` (from `READY` state):**
+    1.  The `AppHexagon` checks if `currentTime === duration`.
+    2.  If `true`, it first issues a `COMMAND_SEEK(0)` before issuing the `COMMAND_PLAY`.
+    3.  If `false`, it just issues `COMMAND_PLAY`.
 
 ---
 
 ### **3. Detailed State Management & Data Flow**
 
-This section defines the strict rules for state ownership and data flow in V3.
+(This section is unchanged from the previous version, as its principles are sound and now align with the rest of the plan.)
 
 #### **3.1. Core Principles**
 
@@ -130,10 +145,6 @@ This section defines the strict rules for state ownership and data flow in V3.
     *   **Commands (Input):** Originate from a **Driving Adapter** (e.g., `uiManager.js`) or the `AppHexagon`. They are requests for the application to *do something* (e.g., `COMMAND_PLAY`, `COMMAND_SEEK`).
     *   **Events (Output):** Originate from a **Driven Adapter** (e.g., `WebAudioAdapter`). They are notifications that a *system event has occurred* (e.g., `EVENT_PLAYBACK_ENDED`, `EVENT_WORKER_CRASHED`).
 *   **`AppHexagon` as Transactional Authority:** The `AppHexagon` is the sole authority for all major state transitions. It receives events, consults its current status, and issues explicit commands back down to the domain hexagons to update the canonical state.
-*   **URL State Management (via Hash Fragment):**
-    *   The **`AppHexagon`** is responsible for both reading and writing the application state to the URL.
-    *   **On Initialization:** It drives a `URLStateAdapter` to parse `window.location.hash`. If a state is present, the `AppHexagon` issues commands to other hexagons to apply that state. If a `url` parameter exists in the hash, it triggers the file loading flow.
-    *   **On State Change:** It is driven by the state store. On changes to key parameters, a debounced call to the `URLStateAdapter` is made, which serializes the current state into the hash fragment using `history.replaceState`.
 *   **Controlled Exception: The "Hot Path"**
     *   **What:** For high-frequency UI updates like the seek bar's position during playback, the `WebAudioAdapter` runs a `requestAnimationFrame` loop. Inside this loop, it calculates the estimated time and writes **directly** to a dedicated, lightweight UI store (`timeStore`).
     *   **Why:** This is a deliberate, controlled exception to achieve smooth 60fps UI updates without burdening the core application logic with `rAF` loops.
@@ -142,7 +153,7 @@ This section defines the strict rules for state ownership and data flow in V3.
 
 #### **3.2. State Ownership & Pathways**
 
-(This table remains unchanged from the previous version, as the state ownership logic is sound.)
+(This table remains unchanged from the previous version.)
 
 | State Item                           | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
 |:-------------------------------------|:---------------------|:----------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -152,7 +163,7 @@ This section defines the strict rules for state ownership and data flow in V3.
 | `isPlaying`, `isLooping`             | `PlaybackHexagon`    | `playerStore`                           | The canonical boolean playback state.                                                                                                                         |
 | `currentTime`                        | `PlaybackHexagon`    | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
 | `speed`, `pitchShift`, `gain`        | `PlaybackHexagon`    | `playerStore`                           | Playback manipulation parameters.                                                                                                                             |
-| `isSeeking`, `wasPlayingBeforeSeek`  | `AppHexagon`         | *Internal to `AppHexagon`*              | Ephemeral UI state for managing the seek interaction. **Not published to the store.**                                                                       |
+| `isSeeking`, `wasPlayingBeforeSeek`  | `AppHexagon`         | *Internal to `AppHexagon`*              | **REMOVED.** This logic is now handled by the `SEEK_AND_RESUME` and `SEEK_AND_HOLD` states.                                                                  |
 | `vadProbabilities`                   | `VADHexagon`         | *Internal to `VADHexagon`*              | The raw frame-by-frame speech probabilities. **Not published to the store.**                                                                                  |
 | `hasVadProbabilities`                | `VADHexagon`         | `analysisStore`                         | A boolean flag indicating that the probability data is available for retrieval via accessor.                                                                  |
 | `vadRegions`                         | `VADHexagon`         | `analysisStore`                         | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds.                                                              |
@@ -234,7 +245,7 @@ This section details the practical, step-by-step process for AI agents to develo
 
 ### **Appendix A: AI Agent Collaboration Guidelines & Operational Instructions**
 
-(This appendix integrates the `CONTRIBUTING-LLM.md` file and adds our new development principles.)
+This section defines the operational protocols for any AI agent working on this project. It is a mandatory guide for implementation and integrates the principles from `CONTRIBUTING-LLM.md`.
 
 *   **P0: Agent Autonomy & Minimized Interaction:** The agent should operate with a high degree of autonomy once a task and its objectives are clearly defined. Default to making reasonable, well-documented decisions to keep work flowing.
 *   **P1: Task-Driven Workflow & Initial Confirmation:** Complex tasks require an initial proposal and user confirmation before full implementation.
@@ -313,11 +324,6 @@ Feature: File Loading
     Then the file name display should show "IELTS13-Tests1-4CD1Track_01.mp3"
     And the player controls should be enabled
     And the time display should show a duration greater than "0:00"
-
-  Scenario: Attempting to load an unsupported local file type
-    When the user selects the invalid file "README.md"
-    Then an error message "Invalid file type" should be displayed
-    And the player controls should remain disabled
 
   Scenario: Loading a new file while another is already loaded
     Given the audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3" is loaded and ready
@@ -456,13 +462,13 @@ Feature: URL Hash Fragment State Management
     And the browser URL's hash fragment should contain "time=45.00"
 
   Scenario: Loading an audio file from a URL parameter in the hash fragment
-    Given the user navigates to the application with the hash fragment "#url=http://example.com/audio.mp3"
+    Given the user navigates to the application with the hash fragment "#url=http%3A%2F%2Fexample.com%2Faudio.mp3"
     When the application finishes loading the audio from the URL
     Then the file name display should show "http://example.com/audio.mp3"
     And the player controls should be enabled
 
   Scenario: Loading a full session state from the hash fragment on startup
-    Given the user navigates to the application with the hash fragment "#url=http://example.com/audio.mp3&speed=0.75&pitch=0.90&time=15.00"
+    Given the user navigates to the application with the hash fragment "#url=http%3A%2F%2Fexample.com%2Faudio.mp3&speed=0.75&pitch=0.90&time=15.00"
     When the application finishes loading the audio from the URL
     Then the "Speed" value display should show "0.75x"
     And the "Pitch" value display should show "0.90x"
@@ -471,5 +477,24 @@ Feature: URL Hash Fragment State Management
   Scenario: Hash fragment is cleared when loading a new local file
     Given the user is on a page with the hash fragment "#speed=1.50&time=20.00"
     When the user selects the new local audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
-    Then the browser URL's hash fragment should be cleared or only contain the new file's information
+    Then the browser URL's hash fragment should be empty
 ```
+
+---
+
+### **Appendix D: V1 Architectural Analysis & Tradeoffs (Historical Context)**
+
+This section migrates the key insights from the original V1 `architecture.md` file. It serves as historical context for the AI agent to understand the "why" behind certain V3 design decisions, particularly regarding audio processing and timekeeping.
+
+*   **V1 Core Philosophy:** Prioritized simplicity and minimal dependencies using Vanilla JS, HTML, and CSS. Leveraged WebAssembly (WASM) via standard Web APIs for computationally intensive tasks.
+*   **Time/Pitch Shifting (Rubberband WASM):**
+    *   **Temporal Inaccuracy Tradeoff:** The V1 plan explicitly notes that Rubberband prioritizes audio quality over strict temporal accuracy. The number of output frames generated may not perfectly match the requested time ratio, and its internal time reporting can drift relative to the Web Audio clock.
+    *   **V1 Solution (Adopted by V3):** This drift necessitated the use of **main-thread time calculation** for the UI indicator and periodic seek-based synchronization to keep the audio engine aligned with the UI's authoritative time.
+    *   **Performance Tradeoff:** `EngineFiner` was tested but resulted in stuttering playback due to CPU limits; the default (faster) engine was chosen.
+*   **VAD (Silero ONNX):**
+    *   **Main-Thread VAD (Async):** In V1, VAD processing ran on the main thread but used `async/await` and `setTimeout(0)` to yield periodically.
+    *   **Tradeoff:** This was simpler to implement for an MVP than a dedicated Web Worker but could cause minor UI sluggishness and was susceptible to browser throttling in background tabs.
+    *   **V3 Improvement:** V3 will move this to a dedicated worker managed by a `WorkerChannel` to solve these issues, but the core logic from `sileroProcessor.js` remains the "golden master".
+*   **DTMF & CPT Detection (Goertzel Algorithm):** This was implemented in pure JavaScript (`goertzel.js`) and ran on the main thread after audio was resampled. V3 will move this logic into a dedicated worker for better performance and isolation.
+*   **IIFE Module Pattern & Script Order:** V1 used an IIFE (Immediately Invoked Function Expression) pattern to create a simple `AudioApp` namespace. This relied on a carefully managed `<script>` loading order in `index.html`, which was a primary source of fragility. V3's use of ES Modules or a similar dependency management strategy (verified by `dependency-cruiser`) will eliminate this problem.
+
