@@ -15,10 +15,13 @@ The vision for V3 is to create a system that is:
 *   **Decoupled and Maintainable:** The application's core business logic will be completely separated from the external "technologies" that drive it (the UI) and that it drives (Web Workers, state stores). This allows any piece of technology to be swapped out without affecting the core application.
 *   **Robust and Predictable:** By enforcing strict boundaries and unidirectional data flow between highly specialized modules, we will eliminate the entire class of race conditions and state management bugs that plagued previous versions. The root cause of V2.3's failure—fragile worker communication—will be solved by a dedicated, reusable, and observable infrastructure utility.
 *   **Built on a Simple, Typed Foundation:** The V3 application will be built as a **new, clean project** using **pure JavaScript**. Type safety and robustness will be enforced through **JSDoc-driven static analysis** via the TypeScript compiler (`tsc --checkJs`) in its strictest mode, avoiding the framework complexity that contributed to the V2.3 failure.
+*   **Shareable via URL:** The entire application state—including the loaded audio URL, playback time, speed/pitch/gain settings, and VAD thresholds—will be serialized into the URL's **hash fragment (`#`)**. This allows users to share a link that perfectly reproduces their session on another machine.
 
 ---
 
 ### **1. Critique of Previous Architectures (Lessons Learned)**
+
+(This section remains unchanged from the previous version, as its analysis is sound.)
 
 To justify this comprehensive redesign, we must first perform a critical analysis of the previous versions, acknowledging what worked and identifying the root causes of what failed.
 
@@ -49,6 +52,8 @@ The V2.3 SvelteKit refactor was a positive step towards modernization, but it fa
 
 ### **2. The V3 Architectural Model: A Federation of Hexagons**
 
+(This section remains unchanged from the previous version.)
+
 V3 will be built as a **federation of collaborating, self-contained hexagons**, driven by **behavioral specifications**. This is an advanced application of the Ports and Adapters pattern where each domain of functionality is its own "micro-application."
 
 *   **The Hexagon (Application Core):** A module containing pure, isolated business logic written in pure JavaScript with JSDoc typing. It has no dependencies on external technologies (like the DOM, Web Workers, or a UI framework).
@@ -60,6 +65,8 @@ V3 will be built as a **federation of collaborating, self-contained hexagons**, 
 ---
 
 ### **3. The V3 System Components**
+
+(This section remains unchanged from the previous version, as the component roles are still correct.)
 
 #### **3.1. The Hexagons (Core Business Logic)**
 
@@ -114,7 +121,7 @@ V3 will be built as a **federation of collaborating, self-contained hexagons**, 
 
 ### **4. Detailed State Management & Data Flow**
 
-This section defines the strict rules for state ownership and data flow in V3, consolidating and clarifying the concepts from the original plan's appendices.
+This section defines the strict rules for state ownership and data flow in V3.
 
 #### **4.1. Core Principles**
 
@@ -123,6 +130,10 @@ This section defines the strict rules for state ownership and data flow in V3, c
     *   **Commands (Input):** Originate from a **Driving Adapter** (e.g., `uiManager.js`) or the `AppHexagon`. They are requests for the application to *do something* (e.g., `play()`, `seek()`).
     *   **Events (Output):** Originate from a **Driven Adapter** (e.g., `WebAudioAdapter`). They are notifications that a *system event has occurred* (e.g., `playbackFinished`, `workerCrashed`).
 *   **`AppHexagon` as Transactional Authority:** The `AppHexagon` is the sole authority for all major state transitions. It receives events, consults its current status, and issues explicit commands back down to the domain hexagons to update the canonical state.
+*   **URL State Management (via Hash Fragment):**
+    *   The **`AppHexagon`** is responsible for both reading and writing the application state to the URL.
+    *   **On Initialization:** It drives a `URLReaderAdapter` to parse `window.location.hash`. If a state is present, the `AppHexagon` issues commands to other hexagons to apply that state. If a `url` parameter exists in the hash, it triggers the file loading flow.
+    *   **On State Change:** It is driven by the state store. On changes to key parameters, a debounced call to a `URLWriterAdapter` is made, which serializes the current state into the hash fragment.
 *   **Controlled Exception: The "Hot Path"**
     *   **What:** For high-frequency UI updates like the seek bar's position during playback, the `WebAudioAdapter` runs a `requestAnimationFrame` loop. Inside this loop, it calculates the estimated time and writes **directly** to a dedicated, lightweight UI store (`timeStore`).
     *   **Why:** This is a deliberate, controlled exception to achieve smooth 60fps UI updates without burdening the core application logic with `rAF` loops.
@@ -130,6 +141,8 @@ This section defines the strict rules for state ownership and data flow in V3, c
 *   **Large Data Handling Protocol:** To maintain UI performance, large, static data payloads (like the `vadProbabilities` array) are **not** stored in reactive state stores. The owning hexagon (`VADHexagon`) holds the data internally. The state store will only hold a boolean flag (e.g., `hasProbabilities: true`), signaling to the UI that it can now call a synchronous accessor method on the hexagon's port (e.g., `VADHexagon.getProbabilityData()`) to retrieve the data for rendering.
 
 #### **4.2. State Ownership & Pathways**
+
+(This table remains unchanged from the previous version.)
 
 | State Item                           | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
 |:-------------------------------------|:---------------------|:----------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -155,41 +168,30 @@ This section defines the strict rules for state ownership and data flow in V3, c
 
 This section outlines key user interactions using **Gherkin scenarios** to define the *what* (external behavior) and a step-by-step internal flow to define the *how* (architectural implementation).
 
-#### **Flow 1: Successful File Load**
+#### **Flow 1: Application Initialization with Hash State**
 
-*   **Gherkin Scenario (`file_loading.feature`):**
+*   **Gherkin Scenario (`url_hash_state.feature`):**
     ```gherkin
-    Scenario: User loads a valid audio file
-      Given the application is idle
-      When the user selects the audio file "C.Noisy_Voice.wav"
-      Then the status message should indicate "Loading C.Noisy_Voice.wav..."
-      And the player controls should be disabled
-      And the waveform and spectrogram should appear in a "loading" state
-      And the status message should eventually indicate "Ready: C.Noisy_Voice.wav"
-      And the player controls should be enabled
-      And the VAD highlights should eventually appear on the waveform
+    Scenario: Load application with audio URL and time in hash fragment
+      Given the user navigates to the application with the hash fragment "#url=http://example.com/audio.mp3&time=15.50"
+      When the application finishes loading the audio from the URL
+      Then the player controls should be enabled
+      And the current time should be approximately "0:15"
     ```
 
 *   **Internal Implementation Flow:**
-    1.  **UI Adapter (`uiManager.js`):** `on:change` event on the file input triggers `AppHexagon.loadAudio(file)`.
-    2.  **`AppHexagon`:**
-        *   Updates `statusStore` to `Status: Loading`.
-        *   Drives `AudioLoaderService` to decode the file into an `AudioBuffer`.
-    3.  **`AudioLoaderService`:** Returns the `AudioBuffer`.
+    1.  **UI Adapter (`app.js`):** On `DOMContentLoaded`, calls `AppHexagon.initializeApp()`.
+    2.  **`AppHexagon`:** Enters `Initializing` state. It drives a `URLReaderAdapter` to read `window.location.hash`.
+    3.  **`URLReaderAdapter`:** Parses the hash fragment into a state object (e.g., `{ url: '...', time: 15.50 }`).
     4.  **`AppHexagon`:**
-        *   Drives `PlaybackHexagon.prepare(audioBuffer)` to set duration.
-        *   Drives `WaveformHexagon.generatePeaks(audioBuffer)`. Result is published to `playerStore`.
-        *   **IMMEDIATELY** updates `statusStore` to `Status: Ready`. UI controls become enabled.
-        *   **In the background (fire-and-forget):**
-            *   Calls `VADHexagon.process(audioBuffer)`.
-            *   Calls `DTMFHexagon.process(audioBuffer)`.
-            *   Calls `SpectrogramHexagon.process(audioBuffer)`.
-    5.  **Analysis Hexagons:** As each background task completes, it publishes its results (`vadRegions`, `dtmfResults`, `hasSpectrogramData`) to the state stores.
-    6.  **UI Reaction:** The UI, subscribed to these stores, updates reactively, "popping in" VAD highlights, DTMF results, and the spectrogram as their data becomes available.
+        *   Receives the state object.
+        *   Dispatches commands to other hexagons to apply the initial state (e.g., `PlaybackHexagon.setInitialSeek(15.50)`).
+        *   If a `url` is present, it triggers the file loading flow (`AppHexagon.loadAudio(...)`).
+        *   If no `url` is present, it finishes initialization and transitions to the `Idle` state.
 
 #### **Flow 2: Playback and Seeking**
 
-*   **Gherkin Scenario (`playback.feature`):**
+*   **Gherkin Scenario (`playback_controls.feature`):**
     ```gherkin
     Scenario: User seeks while audio is playing
       Given the audio file "C.Noisy_Voice.wav" is playing
@@ -228,18 +230,25 @@ The primary philosophy is to "shift left," enabling the AI agent to catch issues
 | **Visual Regression**  | Playwright (`toHaveScreenshot`)         | Prevent visual bugs in UI and visualizations                   | **Yes**       | **Yes**          | Slow         |
 | **CI Static Analysis** | SonarCloud, GitHub CodeQL               | Tech debt, maintainability, deep security scans                | No            | **Yes**          | Slow         |
 
-#### **6.2. Local Development Checks (The Inner Loop)**
+#### **6.2. Gherkin BDD Feature Files**
 
-*   **Type Safety (`tsc`):** A `jsconfig.json` will be configured with `"strict": true` and `"checkJs": true`. `tsc --noEmit` will be the project's official static type-checker, making JSDoc types mandatory.
-*   **Code Quality & Formatting (Biome):** Biome will replace both ESLint and Prettier to enforce a strict set of rules and ensure 100% consistent formatting.
-*   **Architectural Rules (`dependency-cruiser`):** This is **critical**. It will enforce rules such as:
-    *   Hexagons (`src/lib/hexagons/`) **cannot** import from Adapters (`src/lib/adapters/`).
-    *   Adapters **can** import their corresponding Hexagon's port definitions from `src/lib/ports/`.
+A comprehensive set of `.feature` files will define the application's required behavior. These files, located in `tests/features/`, serve as the executable specifications.
+
+**Feature Files:**
+
+1.  `file_loading.feature`: Covers loading audio from local files and URLs.
+2.  `playback_controls.feature`: Details play, pause, stop, seeking, and jumping.
+3.  `parameter_adjustment.feature`: Defines interaction with speed, pitch, and gain sliders.
+4.  `vad_analysis.feature`: Specifies user-facing behavior of the VAD system.
+5.  `tone_analysis.feature`: Covers detection and display of DTMF and CPT.
+6.  `url_hash_state.feature`: **(NEW)** Defines serialization/deserialization of app state to the URL hash fragment.
+
+*See Appendix C for the full Gherkin content of `url_hash_state.feature`.*
 
 #### **6.3. Automated Testing (Unit & Integration)**
 
 *   **Unit Tests & V1 Characterization Testing:** Core algorithms (VAD region calculation, DTMF parsing) will be validated using V1 as the "golden master." We will run V1 logic with specific inputs, save the outputs to JSON "test vectors," and write V3 unit tests that assert the new functions produce identical output.
-*   **Integration Tests:** Will verify collaboration between hexagons and their ports using mock adapters. For example, a test will instantiate `AppHexagon` and a real `PlaybackHexagon` but inject a *mock* `WebAudioAdapter` to assert the correct commands are received.
+*   **Integration Tests:** Will verify collaboration between hexagons and their ports using mock adapters.
 
 #### **6.4. CI/CD Pipeline Checks (The Final Gate)**
 
@@ -251,7 +260,7 @@ The primary philosophy is to "shift left," enabling the AI agent to catch issues
 
 ### **7. V3 Implementation Strategy & Process**
 
-This section details the practical, step-by-step process for developing Vibe Player V3.
+(This section remains unchanged from the previous version.)
 
 #### **7.1. Guiding Principles**
 
@@ -309,6 +318,8 @@ This section details the practical, step-by-step process for developing Vibe Pla
 
 ### **Appendix A: AI Agent Collaboration Guidelines & Operational Instructions**
 
+(This section remains unchanged from the previous version.)
+
 This section defines the operational protocols for any AI agent working on this project. It is a mandatory guide for implementation. It is an integration of the `CONTRIBUTING-LLM.md` file.
 
 *   **P0: Agent Autonomy & Minimized Interaction:** The agent should operate with a high degree of autonomy once a task and its objectives are clearly defined. Default to making reasonable, well-documented decisions to keep work flowing.
@@ -329,6 +340,8 @@ This section defines the operational protocols for any AI agent working on this 
 ---
 
 ### **Appendix B: UI Layout**
+
+(This section remains unchanged from the previous version.)
 
 ```mermaid
 graph TD
@@ -399,4 +412,246 @@ graph TD
     SG --> WV
     WV --> DO
     DO --> F
+```
+
+---
+
+### **Appendix C: Gherkin Scenarios**
+
+These `.feature` files will be placed in the `vibe-player-v3/tests/features/` directory. They serve as the executable specifications for the application's behavior. The AI agent will be tasked with writing both the application code and the necessary test automation code (step definitions) to make these scenarios pass.
+
+---
+
+#### **File: `tests/features/file_loading.feature`**
+
+```gherkin
+Feature: File Loading
+  As a user, I want to load audio files from my computer or a URL
+  so that I can analyze and play them in the application.
+
+  Background:
+    Given the user is on the main application page
+
+  Scenario: Successfully loading a local audio file
+    When the user selects the valid audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
+    Then the file name display should show "IELTS13-Tests1-4CD1Track_01.mp3"
+    And the player controls should be enabled
+    And the time display should show a duration greater than "0:00"
+
+  Scenario: Successfully loading an audio file from a valid URL
+    When the user enters the valid audio URL "http://example.com/audio.mp3" and clicks "Load"
+    Then the file name display should show "http://example.com/audio.mp3"
+    And the player controls should be enabled
+    And the time display should show a duration greater than "0:00"
+
+  Scenario: Attempting to load an unsupported local file type
+    When the user selects the invalid file "README.md"
+    Then an error message "Invalid file type" should be displayed
+    And the player controls should remain disabled
+
+  Scenario: Attempting to load from a broken or invalid URL
+    When the user enters the invalid audio URL "http://example.com/not-found.mp3" and clicks "Load"
+    Then an error message indicating a network or decoding failure should be displayed
+    And the player controls should remain disabled
+
+  Scenario: Loading a new file while another is already loaded
+    Given the audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3" is loaded and ready
+    When the user selects the new valid audio file "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3"
+    Then the file name display should show "dtmf-123A456B789C(star)0(hex)D.mp3"
+    And the player state should be fully reset for the new file
+    And the time display should show the duration of the new file
+```
+
+---
+
+#### **File: `tests/features/playback_controls.feature`**
+
+```gherkin
+Feature: Playback Controls
+  As a user with a loaded audio file, I want to control its playback
+  by playing, pausing, stopping, seeking, and jumping through the audio.
+
+  Background:
+    Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and the player is ready
+
+  Scenario: Play, Pause, and Resume functionality
+    Given the player is paused at "0:00"
+    When the user clicks the "Play" button
+    Then the "Play" button's text should change to "Pause"
+    And after "2" seconds, the current time should be greater than "0:01"
+    When the user clicks the "Pause" button
+    Then the "Pause" button's text should change to "Play"
+    And the current time should stop advancing
+
+  Scenario: Stopping playback
+    Given the audio is playing and the current time is "0:15"
+    When the user clicks the "Stop" button
+    Then the current time should be "0:00"
+    And the "Pause" button's text should change to "Play"
+    And the player should be paused
+
+  Scenario: Seeking with the progress bar
+    When the user drags the seek bar handle to the 50% position
+    Then the current time should be approximately half of the total duration
+
+  Scenario Outline: Jumping forwards and backwards
+    Given the current time is "0:10"
+    When the user jumps <direction> by "5" seconds
+    Then the current time should be "<new_time>"
+
+    Examples:
+      | direction  | new_time |
+      | "forward"  | "0:15"   |
+      | "backward" | "0:05"   |
+
+  Scenario: Jumping past the audio boundaries
+    Given the current time is "0:02"
+    When the user jumps "backward" by "5" seconds
+    Then the current time should be "0:00"
+    Given the current time is "3:58" in a "4:00" long audio file
+    When the user jumps "forward" by "5" seconds
+    Then the current time should be "4:00"
+```
+
+---
+
+#### **File: `tests/features/parameter_adjustment.feature`**
+
+```gherkin
+Feature: Playback Parameter Adjustment
+  As a user, I want to adjust playback parameters like speed, pitch, and gain
+  to change how the audio sounds in real-time.
+
+  Background:
+    Given the audio file "test-audio/LearningEnglishConversations-20250325-TheEnglishWeSpeakTwistSomeonesArm.mp3" is loaded and the player is ready
+
+  Scenario Outline: Adjusting a playback parameter slider
+    When the user sets the "<Parameter>" slider to "<Value>"
+    Then the "<Parameter>" value display should show "<Display>"
+    And the audio playback characteristics should reflect the new "<Parameter>" setting
+
+    Examples:
+      | Parameter | Value | Display    |
+      | "Speed"   | "1.5" | "1.50x"    |
+      | "Speed"   | "0.5" | "0.50x"    |
+      | "Pitch"   | "1.2" | "1.20x"    |
+      | "Pitch"   | "0.8" | "0.80x"    |
+      | "Gain"    | "2.0" | "2.00x"    |
+
+  Scenario: Resetting parameters to default
+    Given the "Speed" slider is at "1.5"
+    And the "Pitch" slider is at "0.8"
+    When the user clicks the "Reset Controls" button
+    Then the "Speed" slider should be at "1.0"
+    And the "Pitch" slider should be at "1.0"
+    And the "Gain" slider should be at "1.0"
+```
+
+---
+
+#### **File: `tests/features/vad_analysis.feature`**
+
+```gherkin
+Feature: Voice Activity Detection (VAD)
+  As a user, I want the application to automatically detect speech in an audio file
+  and allow me to tune the detection parameters.
+
+  Background:
+    Given the audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3" is loaded and the player is ready
+
+  Scenario: VAD highlights appear automatically after analysis
+    Then the VAD progress bar should appear and complete within "15" seconds
+    And the waveform should display one or more speech regions highlighted in yellow
+
+  Scenario: Tuning VAD thresholds updates highlights in real-time
+    Given the VAD analysis is complete and highlights are visible
+    When the user sets the "Positive Threshold" slider to a very high value of "0.95"
+    Then the number of highlighted speech regions on the waveform should decrease or become zero
+    When the user sets the "Positive Threshold" slider to a very low value of "0.20"
+    Then the number of highlighted speech regions on the waveform should increase
+```
+
+---
+
+#### **File: `tests/features/tone_analysis.feature`**
+
+```gherkin
+Feature: Tone Detection
+  As a user analyzing call audio, I want the application to detect and display
+  standard DTMF and Call Progress Tones.
+
+  Scenario: DTMF tones are detected and displayed correctly
+    Given the audio file "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3" is loaded and the player is ready
+    Then the DTMF display should eventually contain the sequence "1, 2, 3, A, 4, 5, 6, B, 7, 8, 9, C, *, 0, #, D"
+
+  Scenario: CPT (Busy Tone) is detected and displayed
+    Given the audio file "test-audio/Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3" is loaded and the player is ready
+    Then the CPT display should eventually contain "Busy Signal"
+
+  Scenario: CPT (Ringing Tone) is detected and displayed
+    Given the audio file "test-audio/Dial DTMF sound _Ringing Tone_ (400Hz+450Hz) [OnlineSound.net].mp3" is loaded and the player is ready
+    Then the CPT display should eventually contain "Ringback Tone"
+```
+
+---
+
+#### **File: `tests/features/url_state.feature`**
+
+```gherkin
+Feature: URL State Management
+  As a user, I want to share a link to the player with specific settings
+  and have those settings automatically applied on load.
+
+  Scenario: Player state is serialized to the browser URL
+    Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and ready
+    When the user sets the "Speed" slider to "1.5"
+    And the user seeks to "0:30" and pauses playback
+    Then the browser URL should contain the parameter "speed=1.50"
+    And the browser URL should contain the parameter "time=30.00"
+
+  Scenario: Player state is deserialized from URL on page load
+    Given the user navigates to the URL with parameters "speed=1.75&url=http://example.com/audio.mp3"
+    When the application finishes loading the audio from the URL
+    Then the "Speed" value display should show "1.75x"
+    And the file name display should show "http://example.com/audio.mp3"
+```
+
+---
+
+#### **File: `tests/features/url_hash_state.feature`**
+
+```gherkin
+Feature: URL Hash Fragment State Management
+  As a user, I want to share a link to the player that includes my exact session state,
+  and have the application automatically load and apply that state.
+
+  Background:
+    Given the application has fully initialized
+
+  Scenario: Application state is serialized to the URL hash fragment
+    Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and ready
+    When the user sets the "Speed" slider to "1.5"
+    And the user sets the "VAD Positive Threshold" slider to "0.8"
+    And the user seeks to "0:45" and then pauses playback
+    Then the browser URL's hash fragment should contain "speed=1.50"
+    And the browser URL's hash fragment should contain "vadPositive=0.80"
+    And the browser URL's hash fragment should contain "time=45.00"
+
+  Scenario: Loading an audio file from a URL parameter in the hash fragment
+    Given the user navigates to the application with the hash fragment "#url=http://example.com/audio.mp3"
+    When the application finishes loading the audio from the URL
+    Then the file name display should show "http://example.com/audio.mp3"
+    And the player controls should be enabled
+
+  Scenario: Loading a full session state from the hash fragment on startup
+    Given the user navigates to the application with the hash fragment "#url=http://example.com/audio.mp3&speed=0.75&pitch=0.90&time=15.00"
+    When the application finishes loading the audio from the URL
+    Then the "Speed" value display should show "0.75x"
+    And the "Pitch" value display should show "0.90x"
+    And the current time should be approximately "0:15"
+
+  Scenario: Hash fragment is cleared when loading a new local file
+    Given the user is on a page with the hash fragment "#speed=1.50&time=20.00"
+    When the user selects the new local audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
+    Then the browser URL's hash fragment should be cleared or only contain the new file's information
 ```
