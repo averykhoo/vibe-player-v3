@@ -105,35 +105,72 @@ This table provides the granular detail an AI agent needs to implement the state
 | **`SEEK_AND_HOLD`**      | The user started seeking while the audio was `READY` (paused), or paused during a `SEEK_AND_RESUME`. Playback is paused.           | <ul><li>(No new action needed; already paused)</li><li>`uiManager.showSeekingIndicator()`</li></ul>                          | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PLAY` (user overrides pause intent to resume)</li></ul> |
 | **`ERROR`**              | A critical, unrecoverable error occurred during loading or playback. The system is halted until a new file is loaded.                  | <ul><li>`uiManager.hideGlobalSpinner()`</li><li>`uiManager.disableAllControls()`</li><li>`uiManager.displayErrorMessage(error)`</li></ul> | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                               |
 
-#### **2.3. Handling Parameter Adjustments (e.g., Speed, Pitch, Gain)**
+---
 
-Adjustments to parameters like speed, pitch, gain, or VAD thresholds are **not** state transitions in the `AppHexagon`'s primary state machine. They are **parameter changes within a state**.
+### **3. Detailed State Management & Data Flow**
 
-*   **Flow:**
-    1.  **UI Adapter (`uiManager.js`):** User moves a slider. A debounced command is dispatched (e.g., `COMMAND_SET_SPEED(1.25)`).
-    2.  **`AppHexagon`:** Receives the command and delegates it to the appropriate domain Hexagon (e.g., `PlaybackHexagon.setSpeed(1.25)`). The `AppHexagon`'s state (`PLAYING`, `READY`, etc.) **does not change**.
-    3.  **Domain Hexagon (`PlaybackHexagon`):** Updates its internal value and drives its output ports, one to update the central state store (which updates the UI label) and another to command the underlying technology adapter (e.g., the `WebAudioAdapter` to message the `rubberband.worker`).
+This section defines the strict rules for state ownership and data flow in V3.
+
+#### **3.1. Core Principles**
+
+*   **Unidirectional Data Flow:** Data flows in one direction: Driving Adapters (UI) -> `AppHexagon` (commands) -> Domain Hexagons (logic) -> Driven Adapters (effects, e.g., worker calls, store updates). Updates then flow back (Driven Adapters -> Store -> Driving UI Adapter).
+*   **State Store as a Write-Only Bus:** The centralized "State Store" (a collection of plain JavaScript objects with a pub/sub mechanism) is a **Driven Adapter**, not a Hexagon. Hexagons **drive** the `StateStoreAdapter` to write state; they do not read from it.
+*   **Command vs. Event Pattern:**
+    *   **Commands (Input):** Originate from a **Driving Adapter** (e.g., `uiManager.js`) or the `AppHexagon`. They are requests for the application to *do something* (e.g., `COMMAND_PLAY`, `COMMAND_SEEK`).
+    *   **Events (Output):** Originate from a **Driven Adapter** (e.g., `WebAudioAdapter`). They are notifications that a *system event has occurred* (e.g., `EVENT_PLAYBACK_ENDED`, `EVENT_WORKER_CRASHED`).
+*   **`AppHexagon` as Transactional Authority:** The `AppHexagon` is the sole authority for all major state transitions. It receives events, consults its current status, and issues explicit commands back down to the domain hexagons to update the canonical state.
+*   **URL State Management (via Hash Fragment):**
+    *   The **`AppHexagon`** is responsible for both reading and writing the application state to the URL.
+    *   **On Initialization:** It drives a `URLStateAdapter` to parse `window.location.hash`. If a state is present, the `AppHexagon` issues commands to other hexagons to apply that state. If a `url` parameter exists in the hash, it triggers the file loading flow.
+    *   **On State Change:** It is driven by the state store. On changes to key parameters, a debounced call to the `URLStateAdapter` is made, which serializes the current state into the hash fragment using `history.replaceState`.
+*   **Controlled Exception: The "Hot Path"**
+    *   **What:** For high-frequency UI updates like the seek bar's position during playback, the `WebAudioAdapter` runs a `requestAnimationFrame` loop. Inside this loop, it calculates the estimated time and writes **directly** to a dedicated, lightweight UI store (`timeStore`).
+    *   **Why:** This is a deliberate, controlled exception to achieve smooth 60fps UI updates without burdening the core application logic with `rAF` loops.
+    *   **Limitations:** This is the *only* such exception. The `timeStore` is treated as a read-only sink for UI display purposes and does not trigger core application logic.
+*   **Large Data Handling Protocol:** To maintain UI performance, large, static data payloads (like the `vadProbabilities` array) are **not** stored in reactive state stores. The owning hexagon (`VADHexagon`) holds the data internally. The state store will only hold a boolean flag (e.g., `hasVadProbabilities: true`), signaling to the UI that it can now call a synchronous accessor method on the hexagon's port (e.g., `VADHexagon.getProbabilityData()`) to retrieve the data for rendering.
+
+#### **3.2. State Ownership & Pathways**
+
+(This table remains unchanged from the previous version, as the state ownership logic is sound.)
+
+| State Item                           | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
+|:-------------------------------------|:---------------------|:----------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `status` (`loading`, `ready`, etc.)  | `AppHexagon`         | `statusStore`                           | The single source of truth for the application's overall state.                                                                                               |
+| `error`                              | `AppHexagon`         | `statusStore`                           | The global error message, if any.                                                                                                                             |
+| `fileName`, `duration`, `isPlayable`, `sourceUrl` | `AppHexagon`         | `playerStore`                           | High-level metadata about the loaded audio, managed by the orchestrator.                                                                                      |
+| `isPlaying`, `isLooping`             | `PlaybackHexagon`    | `playerStore`                           | The canonical boolean playback state.                                                                                                                         |
+| `currentTime`                        | `PlaybackHexagon`    | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
+| `speed`, `pitchShift`, `gain`        | `PlaybackHexagon`    | `playerStore`                           | Playback manipulation parameters.                                                                                                                             |
+| `isSeeking`, `wasPlayingBeforeSeek`  | `AppHexagon`         | *Internal to `AppHexagon`*              | Ephemeral UI state for managing the seek interaction. **Not published to the store.**                                                                       |
+| `vadProbabilities`                   | `VADHexagon`         | *Internal to `VADHexagon`*              | The raw frame-by-frame speech probabilities. **Not published to the store.**                                                                                  |
+| `hasVadProbabilities`                | `VADHexagon`         | `analysisStore`                         | A boolean flag indicating that the probability data is available for retrieval via accessor.                                                                  |
+| `vadRegions`                         | `VADHexagon`         | `analysisStore`                         | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds.                                                              |
+| `vadPositiveThreshold`, etc.         | `VADHexagon`         | `analysisStore`                         | The tuning parameters for VAD region calculation.                                                                                                             |
+| `dtmfResults`                        | `DTMFHexagon`        | `dtmfStore`                             | The list of detected DTMF tones.                                                                                                                              |
+| `spectrogramData`                    | `SpectrogramHexagon` | *Internal to `SpectrogramHexagon`*      | The calculated spectrogram data. **Not published to the store.**                                                                                              |
+| `hasSpectrogramData`                 | `SpectrogramHexagon` | `analysisStore`                         | A boolean flag indicating spectrogram data is available for retrieval via accessor.                                                                           |
+| `waveformData`                       | `WaveformHexagon`    | `playerStore`                           | The calculated peak data for waveform visualization.                                                                                                          |
 
 ---
 
-### **3. V3 Implementation Strategy & Process for AI Agents**
+### **4. V3 Implementation Strategy & Process for AI Agents**
 
 This section details the practical, step-by-step process for AI agents to develop Vibe Player V3. It translates the architectural goals and quality assurances into an actionable workflow.
 
-#### **3.1. Guiding Principles for AI Agent Development**
+#### **4.1. Guiding Principles for AI Agent Development**
 
 *   **Inside-Out Development:** The AI agent **must** build the application from its pure business logic core (the Hexagons) outwards towards the browser-specific technologies (the Adapters and UI). The AI agent **must explicitly avoid** a "GUI-first" approach. Core logic **must** be proven correct before any UI is assembled.
 *   **Test-Driven Development (TDD):** Every new piece of logic **must** begin with a test (unit or integration) that defines its requirements. Code **must** only be written to make a failing test pass. For refactoring existing logic from V1, this **must** take the form of **Characterization Testing**.
 *   **Early & Continuous Integration:** The CI/CD pipeline and its automated quality gates are foundational. The AI agent **must** ensure every commit is validated against strict standards for type safety, code quality, architectural integrity, and documentation.
 *   **Gherkin-Driven Behavior:** For all user-facing features, the AI agent **must** refer to Gherkin scenarios as the source of truth for desired behavior.
-*   **Strict Adherence to `CONTRIBUTING-LLM.md`:** All directives within `CONTRIBUTING-LLM.md` **must be followed rigorously**.
+*   **Strict Adherence to `CONTRIBUTING-LLM.md`:** All directives within `CONTRIBUTING-LLM.md` and **Appendix A** of this document **must be followed rigorously**.
 
-#### **3.2. Phase 1: Project Foundation & CI Setup (The First Commit)**
+#### **4.2. Phase 1: Project Foundation & CI Setup (The First Commit)**
 
 1.  **Initialize Project Structure:**
     *   The AI agent **must** create the `vibe-player-v3/` project directory as a **completely new, clean Pure JavaScript project**. This is not an in-place refactor of `vibe-player-v2.3/`.
     *   The AI agent **must** initialize `package.json` with `npm init -y` and install development dependencies (Vitest, Playwright, Biome, `dependency-cruiser`, `cucumber`, etc.).
-    *   The AI agent **must** create the source directory structure as outlined in **Appendix A**.
+    *   The AI agent **must** create the source directory structure as outlined in **Appendix B**.
 2.  **Configure Core Tooling (Strictly):**
     *   **`jsconfig.json`:** Configure for strict JSDoc type checking (`"strict": true`, `"checkJs": true`, `"noEmit": true`, `"lib": ["es2017", "dom", "webworker"]`).
     *   **`biome.json`:** Configure with a strict set of linting and formatting rules.
@@ -146,48 +183,39 @@ This section details the practical, step-by-step process for AI agents to develo
     *   The `e2e.yml` workflow **must** be configured to run the Playwright/Cucumber.js E2E suite.
 4.  **First Commit:** The AI agent **must** commit this foundational setup to the `main` branch, ensuring a "green" build on an empty but fully configured project.
 
-#### **3.3. Phase 2: The Core Development Loop (Iterative AI Process)**
+#### **4.3. Phase 2: The Core Development Loop (Iterative AI Process)**
 
 1.  **Task Assignment:** A human (or higher-level AI) assigns a feature task (e.g., "Implement PlaybackHexagon and its `IAudioOutputPort` via `WebAudioAdapter`").
 2.  **Gherkin Review (Mandatory for Features):**
     *   The AI agent **must** review the relevant Gherkin scenarios in `tests/features/` that describe the desired external behavior for the task.
-    *   If no relevant Gherkin scenario exists, the AI agent **must halt** and **propose a new Gherkin scenario** for human review and approval, adhering to `CONTRIBUTING-LLM.md` (P2.1).
+    *   If no relevant Gherkin scenario exists, the AI agent **must halt** and **propose a new Gherkin scenario** for human review and approval.
 3.  **Characterization Test (If Applicable):**
     *   If refactoring a feature from V1 (e.g., VAD region calculation, waveform generation), the AI agent **must first generate a "test vector" JSON file** by running the pure logic from the V1 codebase with curated inputs and saving exact outputs. These vectors are the "golden master" standard and are checked into `tests/characterization_vectors/`.
 4.  **Hexagon Implementation (TDD with JSDoc):**
     *   The AI agent **must** create a new `*.test.js` file for the V3 Hexagon (e.g., `PlaybackService.test.js`).
     *   The AI agent **must** write a test that initially fails, defining the Hexagon's behavior (or loads the JSON vector for characterization tests).
     *   The AI agent **must** implement the pure logic inside the Hexagon file (`src/lib/hexagons/`, e.g., `PlaybackService.js`) until the unit test passes. **No browser APIs or platform-specific code are allowed in this step.** All code **must** be fully JSDoc-typed.
-5.  **Interface Discovery & Refinement (JSDoc-Driven):**
-    *   During TDD, the precise methods and data contracts for the Ports (JSDoc `@typedef`s in `src/lib/types/ports.types.js`) will be discovered.
-    *   If the Hexagon needs a new capability from an Adapter, the AI agent **must**:
-        1.  Update the JSDoc `@typedef` for the Port in `src/lib/types/ports.types.js`.
-        2.  Update the Hexagon's unit/integration test to provide the new data/functionality via its mock adapter.
-        3.  Modify the Hexagon's code to use the new interface method.
-        4.  Finally, implement the change in the real Adapter. The `tsc --checkJs` will guide this process, flagging any Adapter that no longer conforms to the Port's contract.
-6.  **Adapter Implementation (Driving & Driven):**
+5.  **Adapter Implementation (Driving & Driven):**
     *   Once a Hexagon's core logic is stable, the AI agent **must** implement its associated Adapters (e.g., `WebAudioAdapter.js` for `PlaybackService`).
     *   This involves interacting with browser APIs (Web Audio, DOM) or `WorkerChannel`.
     *   All Adapter code **must** be fully JSDoc-typed and adhere to strict linting rules.
 
-#### **3.4. Phase 3: Final Application Assembly & E2E Testing**
+#### **4.4. Phase 3: Final Application Assembly & E2E Testing**
 
 1.  **Application Integration (`src/app.js` and `src/main.js`):**
     *   The AI agent **must** implement `src/app.js` as the `AppHexagon` orchestrator. Its role is to perform dependency injection: instantiate all Hexagons and Adapters, plug them into each other, and wire up the final UI event listeners (from `uiManager`).
     *   The `src/main.js` will be the initial entry point, responsible for initializing the `uiManager` and the `AppHexagon`.
-2.  **HTML/CSS Integration:** The AI agent **must** integrate the application logic with `src/index.html` (which will be copied to `public/index.html`), ensuring all UI elements function as expected according to the UI layout sketch.
-3.  **End-to-End & Visual Regression Testing (CI Only):**
-    *   The AI agent **must** run the full Playwright E2E test suite (driven by Cucumber.js) against a production build in the CI pipeline.
-    *   For `<canvas>`-based visualizations (waveform, spectrogram), the AI agent **must** use Playwright's `toHaveScreenshot` capability in the E2E suite to automatically detect if code changes unintentionally altered their graphical output. This is a mandatory check.
+2.  **E2E Testing (CI Only):**
+    *   The AI agent **must** run the full Playwright E2E test suite (driven by Cucumber.js) against a production build in the CI pipeline to simulate user flows defined in Gherkin (`.feature` files).
+    *   For `<canvas>`-based visualizations, the AI agent **must** use Playwright's `toHaveScreenshot` capability in the E2E suite to automatically detect if code changes unintentionally altered their graphical output. This is a mandatory check.
 
-#### **3.5. Phase 4: Documentation & Handover**
+#### **4.5. Phase 4: Documentation & Handover**
 
 1.  **Update Project Documentation:**
     *   Upon completion, the AI agent **must** update the root `README.md` to reflect the new V3 architecture and setup.
     *   The `REFACTOR_PLAN.md` and related appendices **must be moved** to a `docs/` directory to preserve the project's history.
     *   The old `vibe-player` (V1) and `vibe-player-v2.3` directories **must be archived or removed** to ensure `vibe-player-v3` is the sole, definitive codebase.
 2.  **Final Quality Review:** The AI agent **must** perform a final review of the SonarCloud dashboard to identify and address any remaining high-priority issues before the official V3 release.
-3.  **Agent Behavior for Handover:** The AI agent **must** ensure all generated code is accompanied by comprehensive JSDoc, inline comments for complex logic, and adherence to `CONTRIBUTING-LLM.md`, to facilitate future human or AI maintenance.
 
 ---
 **APPENDICES**
@@ -195,7 +223,7 @@ This section details the practical, step-by-step process for AI agents to develo
 
 ### **Appendix A: AI Agent Collaboration Guidelines & Operational Instructions**
 
-This section defines the operational protocols for any AI agent working on this project. It is a mandatory guide for implementation and integrates the principles from `CONTRIBUTING-LLM.md`.
+(This appendix integrates the `CONTRIBUTING-LLM.md` file and adds our new development principles.)
 
 *   **P0: Agent Autonomy & Minimized Interaction:** The agent should operate with a high degree of autonomy once a task and its objectives are clearly defined. Default to making reasonable, well-documented decisions to keep work flowing.
 *   **P1: Task-Driven Workflow & Initial Confirmation:** Complex tasks require an initial proposal and user confirmation before full implementation.
@@ -205,10 +233,10 @@ This section defines the operational protocols for any AI agent working on this 
     *   **P3.2:** Generate high-quality JSDoc comments for all public functions, classes, and types. Preserve existing meaningful comments.
     *   **P3.4 & P3.5:** All full files must include file identification comments at the start and end. Use section headers for long files.
 *   **P4: Guideline Adherence & Conflict Reporting:** The agent must report if its knowledge suggests a guideline is suboptimal for a task, and must report any direct conflicts between user instructions and established guidelines, seeking explicit direction.
-*   **P5: Full Word Naming Convention (NEW):** All string keys for states, events, commands, and types must use full, descriptive English words in `SCREAMING_SNAKE_CASE` for constants and `camelCase` for others.
+*   **P5: Full Word Naming Convention:** All string keys for states, events, commands, and types must use full, descriptive English words in `SCREAMING_SNAKE_CASE` for constants and `camelCase` for other identifiers.
 *   **P6: README Generation Requirement:** The main `README.md` must contain a reference to this collaboration guide.
 *   **P7: Branch-Based Code Submission:** The agent must submit all work by committing to feature branches and pushing to the remote repository.
-*   **P8: Gherkin-Driven Implementation and Testing (NEW):**
+*   **P8: Gherkin-Driven Implementation and Testing:**
     *   When implementing a new feature, the agent **must** consult the relevant Gherkin scenarios (`tests/features/*.feature`) to understand the desired external behavior.
     *   The agent **must** ensure that its generated code passes the automated E2E tests derived from these Gherkin scenarios.
     *   If no relevant Gherkin scenario exists for a new feature, the agent **must first propose a new Gherkin scenario** for human review and approval before proceeding with implementation.
@@ -216,8 +244,6 @@ This section defines the operational protocols for any AI agent working on this 
 ---
 
 ### **Appendix B: Detailed Folder Structure**
-
-(This appendix contains the detailed V3 folder structure, which is also outlined in the main body for clarity.)
 
 ```
 vibe-player-v3/
@@ -236,12 +262,13 @@ vibe-player-v3/
 │   │   ├── types/                     # JSDoc @typedefs
 │   │   └── utils/                     # General Utilities
 │   ├── workers/                       # Actual Web Worker scripts
-│   └── index.html                     # Main application HTML file
+│   └── main.js                        # Main application entry point
 ├── public/                            # Static assets (copied directly to build output)
 │   ├── lib/                           # Third-party JS/WASM
 │   ├── models/
 │   ├── css/
-│   └── fonts/
+│   ├── fonts/
+│   └── index.html                     # Main application HTML file
 ├── tests/                             # All test code
 │   ├── unit/                          # Unit tests
 │   ├── integration/                   # Integration tests
@@ -252,9 +279,8 @@ vibe-player-v3/
 │   └── characterization_vectors/      # JSON files capturing V1 behavior
 ├── CONTRIBUTING-LLM.md                # AI Agent Collaboration Guidelines
 ├── package.json                       # Project dependencies and scripts
-└── ... (config files: jsconfig.json, biome.json, etc.)
+└── ... (config files: jsconfig.json, biome.json, cucumber.js, etc.)
 ```
-
 ---
 
 ### **Appendix C: Gherkin Feature Specifications**
