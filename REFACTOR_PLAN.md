@@ -793,3 +793,80 @@ This phase runs in parallel with Phase 2, providing crucial manual validation th
 
 2.  **Final Quality Review:**
     *   A final review of the SonarCloud dashboard will be conducted to identify and address any remaining high-priority issues before the official V3 release.
+
+---
+
+### Appendix E1: UI layout
+
+```mermaid
+graph TD
+    %% Define all nodes and subgraphs first
+
+    H["Header (Dummy Placeholder)"]
+
+    subgraph FL ["Card: File Loading"]
+        direction TB
+        subgraph FL_L1 [File Input Group]
+            direction LR
+            FL_B1["Choose File Button"] --> FL_S1["File Name Display"]
+        end
+        subgraph FL_L2 [URL Input Group]
+            direction LR
+            FL_I1["URL Input Field"] --> FL_B2["Load URL Button"]
+        end
+        FL_P1["Status/Info/Error Text"]
+        
+        FL_L1 --> FL_L2 --> FL_P1
+    end
+
+    subgraph PP [Card: Playback Parameters]
+        direction LR
+        PP1["Speed Slider"]
+        PP2["Pitch Slider"]
+        PP3["Gain Slider"]
+
+        PP1 --> PP2 --> PP3
+    end
+    
+    SB["Section: Seek Bar & Time Display (Full Width)"]
+
+    subgraph MC ["Card: Master Transport Controls"]
+        direction TB
+        MC_B1["Play/Pause Button"]
+        subgraph JC [Jump Controls]
+            direction LR
+            JC_B1["◀◀ Back Button"] --> JC_I1["Seconds Input"] --> JC_B2["Forward ▶▶ Button"]
+        end
+        MC_B1 --> JC
+    end
+
+    SG["Section: Spectrogram Visualization (Full Width)"]
+    WV["Section: Waveform Visualization with VAD Coloring (Full Width)"]
+    
+    subgraph DO ["Card: Data Output & Tuning"]
+        direction TB
+        subgraph VT [VAD Tuning Sliders]
+            direction LR
+            VT_S1["Positive Threshold Slider"] --> VT_S2["Negative Threshold Slider"]
+        end
+        
+        DO_P2["DTMF Tones Text"]
+        DO_P3["CPT Tones Text"]
+
+        VT --> DO_P2 --> DO_P3
+    end
+
+    F["Footer"]
+
+    %% Now, define the connections to create the main application flow
+    H --> FL
+    FL --> PP
+    PP --> SB
+    SB --> MC
+    MC --> SG
+    SG --> WV
+    WV --> DO
+    DO --> F
+```
+
+---
