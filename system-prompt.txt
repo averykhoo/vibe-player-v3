@@ -1002,16 +1002,37 @@ Development involving LLM assistance should follow the guidelines outlined in `v
 
 # **Vibe Player V3: The Hexagonal Refactoring Plan**
 
-## 0. Context
+### **0. Context & Justification**
 
-The primary impetus for this refactor stems from the architectural weaknesses discovered in the V2.3 implementation.
-Despite using modern tools like Svelte and TypeScript, the V2.3 system suffered from subtle but critical flaws in its
-handling of asynchronous operations, leading to race conditions, deadlocks, and fragile inter-service communication.
-These issues proved difficult to debug and indicated that the architecture, while more modern than V1, had not fully
-escaped V1's monolithic design thinking.
+The primary impetus for this refactor stems from a careful analysis of the project's history: the successes and limitations of the original `vibe-player` (V1), and the architectural failures of the subsequent `vibe-player-v2.3` refactor attempt. V3 is not an incremental fix but a necessary redesign based on the lessons learned from both.
 
-V1 is currently working, while V2 does not work at all - tests fail, the page doesn't load, and the waveform shows equal
-height bars across the entire audio file. Furthermore, V2 has never worked once in its lifetime.
+#### **0.1 Analysis of V1: The Working-but-Fragile Implementation**
+
+The original implementation, located in the `/vibe-player` directory, is the current production version for a reason: **it works.** It successfully integrates complex technologies like the Web Audio API, Rubberband WASM, and ONNX Runtime to deliver all core features. Critically, it correctly offloads intensive tasks like VAD analysis to a Web Worker, as seen in `js/vad/LocalWorkerStrategy.js`.
+
+However, its success is achieved through an architecture that is brittle and difficult to maintain or extend. Its key weaknesses are observable in the code:
+
+*   **Ad-Hoc and Non-Reusable Worker Logic:** While V1 correctly uses a Web Worker for VAD, the implementation is entirely bespoke. The `LocalWorkerStrategy.js` module manually constructs the entire worker's script as a single, monolithic string. This "worker-in-a-string" pattern is difficult to debug, has no syntax highlighting, and the communication protocol (`onmessage` handling a switch-case) is custom-built for this one purpose. It is not a reusable or robust pattern for managing asynchronous, threaded tasks.
+
+*   **The "God Object" Controller:** `vibe-player/js/app.js` acts as a monolithic controller. It directly orchestrates every aspect of the application, from UI event handling (`handlePlayPause`) to kicking off analysis tasks (`runVadInBackground`, `processAudioForTones`) and managing central state. This tight coupling makes it exceedingly difficult to test any single piece of functionality in isolation.
+
+*   **Implicit Dependencies via Script Order:** The entire application's stability relies on the manual `<script>` loading order in `vibe-player/index.html`. Modules attach themselves to the global `AudioApp` namespace and assume their dependencies will be present. A change to this sequence can lead to cascading runtime errors.
+
+*   **Global, Mutable State:** State is managed via properties attached directly to the global `AudioApp` namespace (e.g., `AudioApp.state.runtime.currentAudioBuffer`). This makes it difficult to trace where and when state is being changed, creating a high risk of unpredictable side effects and making state management a source of potential bugs.
+
+#### **0.2 Analysis of V2.3: The Failed Refactor**
+
+The `vibe-player-v2.3` project was a well-intentioned effort to modernize the stack with SvelteKit and TypeScript. However, it is non-functional, suffering from critical flaws that rendered it unusable. The CI pipeline (`.github/workflows/ci-v2.yml`) confirms this, with most build and test steps commented out.
+
+Its failure was not due to the choice of Svelte or TypeScript, but because it **inherited and amplified the architectural weaknesses of V1** instead of solving them.
+
+*   **The Root Failure: Duplication of Fragile Worker Communication:** The core flaw was taking V1's ad-hoc worker communication pattern and duplicating it across the new, service-oriented architecture. As seen in `vibe-player-v2.3/src/lib/services/analysis.service.ts` and `audioEngine.service.ts`, each service independently implemented its own manual, error-prone system for talking to its worker. This involved manually managing promise `resolve`/`reject` callbacks in a `Map` and tracking unique message IDs—a fragile, complex, and repetitive pattern.
+
+*   **The Consequence: Catastrophic, Silent Failures:** This duplicated boilerplate was the direct cause of the project's instability. A simple bug, such as a worker forgetting to echo back a `messageId`, caused its corresponding service's `initialize()` promise to hang forever, silently deadlocking a major part of the application. This exact bug pattern was discovered in multiple services (`sileroVad.worker.ts`, `rubberband.worker.ts`), proving that the architecture itself—which encouraged this pattern—was the problem.
+
+*   **Behavioral Regressions:** The V2.3 refactor also introduced functional regressions. For example, the waveform visualization, defined in `vibe-player-v2.3/src/lib/utils/waveform.ts`, implemented a simple peak-finding algorithm (`maxAmplitude`) instead of the `min/max` peak detection used in V1. This resulted in the observed visual bug where the waveform displayed as incorrect, equal-height bars, losing the visual fidelity of the original.
+
+In summary, V1 proved the features were viable but the architecture was unsustainable. V2.3 proved that modern tools without a sound architecture are insufficient and will amplify existing problems. V3 is the direct response: a ground-up redesign using the **Hexagonal (Ports and Adapters) Architecture** to create a system that is fundamentally testable, decoupled, and robust, with a dedicated, reusable solution for all asynchronous worker communication.
 
 ## 1. Vision & Executive Summary
 
@@ -1577,6 +1598,279 @@ This ensures that even with frantic, simultaneous input across multiple sliders,
 few clean, final commands after the user's actions have settled.
 
 ---
+
+### **Appendix C: V3 Testing and Quality Assurance Strategy**
+
+This appendix outlines the multi-layered testing and quality assurance strategy for Vibe Player V3. The primary philosophy is to "shift left," enabling the developer to catch as many issues as possible locally with fast, offline tools before relying on the more comprehensive, slower checks in the CI/CD pipeline. This strategy is designed to enforce the architectural principles of V3, prevent regressions, and ensure a high degree of code quality and maintainability.
+
+#### **1. The Testing Pyramid**
+
+Our strategy is structured as a testing pyramid, with a broad base of fast, local checks and a narrow top of slower, end-to-end tests.
+
+| Layer | Tool(s) | Purpose | Runs Locally? | Runs in CI? | Speed |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Static Analysis** | `tsc`, Biome, `dependency-cruiser` | Type safety, code quality, style, architectural rules | **Yes** | **Yes** | Blazing Fast |
+| **Unit Tests** | Vitest / Jest | Test individual hexagons/functions in isolation | **Yes** | **Yes** | Fast |
+| **Integration Tests**| Vitest / Jest | Test how hexagons and adapters collaborate | **Yes** | **Yes** | Fast |
+| **CI Static Analysis**| SonarCloud, GitHub CodeQL | Tech debt, maintainability, deep security scans | No | **Yes** | Slow |
+| **End-to-End Tests**| Playwright | Verify user flows in a real browser | No | **Yes** | Slow |
+| **Visual Tests** | Playwright (`toHaveScreenshot`) | Prevent visual bugs in UI and visualizations | No | **Yes (Future)** | Slow |
+
+---
+
+#### **2. Local Development Checks (The Inner Loop)**
+
+These checks are designed to be run by the developer locally, providing instant feedback. They are fully offline after the initial `npm install`.
+
+*   **Type Safety (`tsc`):**
+    *   **Tool:** The TypeScript compiler running in "checkJs" mode.
+    *   **Command:** `tsc --noEmit --project jsconfig.json`
+    *   **Enforcement:** A `jsconfig.json` file will be configured with `"strict": true` and `"checkJs": true`. This forces every function, parameter, and variable to be explicitly typed via JSDoc. It is the direct equivalent of running `mypy` in a Python project and will fail on any untyped or incorrectly typed code.
+
+*   **Code Quality & Formatting (Biome):**
+    *   **Tool:** Biome.
+    *   **Command:** `npx @biomejs/biome check --apply .`
+    *   **Enforcement:** Biome will replace both ESLint and Prettier. It will be configured with a strict set of rules to catch code smells, enforce best practices (e.g., `no-var`), identify overly complex code, and check for unused variables. Its `--apply` flag will also auto-format the code, ensuring 100% consistency.
+
+*   **Architectural Rules (`dependency-cruiser`):**
+    *   **Tool:** `dependency-cruiser`.
+    *   **Command:** `npx depcruise src`
+    *   **Enforcement:** This is critical for maintaining the Hexagonal Architecture. A `.dependency-cruiser.js` config file will enforce rules such as:
+        *   Hexagons (`src/lib/hexagons/`) **cannot** import from Adapters (`src/lib/adapters/`).
+        *   Adapters **can** import their corresponding Hexagon's port definitions.
+        *   UI-layer adapters **cannot** import from backend adapters (e.g., `DOMAdapter` cannot import `WebAudioAdapter`).
+        This prevents architectural decay over time.
+
+---
+
+#### **3. Automated Testing (Unit & Integration)**
+
+These tests are run locally via a single command (`npm run test`) and are also a mandatory check in the CI pipeline.
+
+*   **Unit Tests & V1 Characterization Testing:**
+    *   **Concept:** For core algorithms (VAD region calculation, DTMF parsing, waveform downsampling), we will use V1 as the "golden master."
+    *   **Process:**
+        1.  **Generate Test Vectors:** We will run the pure logic from the V1 codebase with specific inputs and save the inputs and their exact outputs to JSON files (e.g., `vad-test-vector-01.json`). These vectors will be checked into the repository.
+        2.  **Write V3 Unit Tests:** The unit tests for the V3 hexagons will load these JSON files. They will feed the `input` from the vector into the new V3 function and assert that the `output` is deeply equal to the `expectedOutput`.
+    *   **Benefit:** This proves that the V3 refactor has perfectly preserved the trusted logic of the original working application, dramatically reducing the risk of regressions.
+
+*   **Integration Tests:**
+    *   **Concept:** To verify the collaboration between hexagons and their ports without the overhead of a browser.
+    *   **Example:** A test could instantiate the `AppHexagon` and a real `PlaybackHexagon`, but inject a *mock* `WebAudioAdapter`. The test would then call `AppHexagon.play()` and assert that the mock `WebAudioAdapter` received the correct `{type: 'play'}` command. This validates the entire internal command chain quickly.
+
+---
+
+#### **4. CI/CD Pipeline Checks (The Final Gate)**
+
+The CI pipeline on GitHub Actions runs all of the above checks and adds two final, deeper layers of analysis.
+
+*   **Deep Security Analysis (CodeQL):**
+    *   **Tool:** GitHub CodeQL.
+    *   **Process:** A GitHub Actions workflow will run on every pull request to perform a deep semantic analysis of the code, scanning for a wide range of security vulnerabilities (XSS, injection flaws, etc.). Results are reported directly on the PR.
+
+*   **Code Maintainability Analysis (SonarCloud):**
+    *   **Tool:** SonarCloud, which is free for public repositories.
+    *   **Process:** After a build passes, a workflow will send the code to SonarCloud for analysis. It will report on code smells, complexity, duplication, and technical debt.
+    *   **Developer Feedback Loop:** Since a local SonarLint IDE extension will not be used, the developer's feedback loop for this analysis will be the comments and quality gate status that the SonarCloud bot posts on each GitHub pull request.
+
+*   **End-to-End Testing (Playwright):**
+    *   **Tool:** Playwright.
+    *   **Process:** After all other checks pass, the full application will be built and served, and Playwright will run E2E tests to simulate user flows (loading a file, clicking play, adjusting a slider) in a real browser.
+
+#### **5. Future Testing Additions**
+
+*   **Visual Regression Testing:**
+    *   **Status:** To be implemented after V3 has a stable UI.
+    *   **Plan:** We will use Playwright's built-in `toHaveScreenshot` capability. This will be invaluable for the `<canvas>`-based waveform and spectrogram visualizations, as it is the only way to automatically detect if a code change has unintentionally altered their graphical output. This will catch visual bugs that E2E and unit tests cannot.
+
+---
+
+### **Appendix D: V3 Implementation Strategy & Process**
+
+This appendix details the practical, step-by-step process for developing Vibe Player V3. It translates the architectural goals from the main document and the quality assurances from Appendix C into an actionable workflow. This is the definitive implementation plan.
+
+#### **1. Guiding Principles**
+
+The V3 development process is guided by three core principles to ensure a robust, maintainable, and high-quality result.
+
+*   **Inside-Out Development:** We will build the application from its pure business logic core (the hexagons) outwards towards the browser-specific technologies (the adapters). We will explicitly avoid the "GUI-first" approach that leads to tightly-coupled, monolithic architectures. Core logic will be proven correct before any UI is assembled.
+
+*   **Test-Driven Development (TDD):** Every new piece of logic will begin with a test that defines its requirements. Code will only be written to make a failing test pass. For refactoring existing logic from V1, this will take the form of **Characterization Testing**, where we capture the behavior of the old system and test that the new system is identical. This minimizes the risk of regressions.
+
+*   **Early & Continuous Integration:** The CI/CD pipeline and its automated quality gates are not an afterthought; they are a foundational piece of the development environment. Every commit will be validated against strict standards for type safety, code quality, architectural integrity, and documentation.
+
+#### **2. Phase 1: Project Foundation & CI Setup (The First Commit)**
+
+This phase is completed once at the very beginning of the project. The goal is to create a robust development environment where quality is enforced from the start.
+
+1.  **Initialize Project Structure:**
+    *   Create the `vibe-player-v3/` project directory.
+    *   Initialize `package.json` with `npm init -y`.
+    *   Create the source directory structure which makes the hexagonal architecture explicit:
+        ```
+        vibe-player-v3/
+        ├── src/
+        │   ├── lib/
+        │   │   ├── hexagons/  # Core business logic (e.g., VADHexagon.js)
+        │   │   ├── adapters/  # Technology-specific code (e.g., WebAudioAdapter.js)
+        │   │   └── ports/     # JSDoc @typedefs for port interfaces
+        │   ├── app.js         # Main entry point; the final driving adapter
+        │   └── index.html     # The final application shell
+        ├── harnesses/         # For temporary, isolated HTML files for manual validation
+        ├── tests/
+        │   ├── unit/
+        │   ├── integration/
+        │   └── vectors/       # JSON files capturing V1 behavior for characterization tests
+        └── ...
+        ```
+
+2.  **Install & Configure Core Tooling:**
+    *   **Dependencies:** Install all development dependencies: `npm install --save-dev vitest typescript @biomejs/biome dependency-cruiser`.
+    *   **TypeScript Config (`jsconfig.json`):** Create this file to enable `tsc` to type-check Vanilla JS with JSDoc. It will be configured with the strictest settings: `"strict": true` (which implies `"noImplicitAny": true`), `"checkJs": true`, and `"noEmit": true`. This makes `tsc --noEmit` the project's official static type-checker, equivalent to `mypy`.
+    *   **Biome Config (`biome.json`):** Create this file to replace ESLint and Prettier. It will be configured with a strict set of linting rules (`no-var`, `noUnusedVariables`, `eqeqeq`, complexity checks) and formatting rules to ensure 100% code consistency.
+    *   **Architecture Enforcement (`.dependency-cruiser.js`):** Create the configuration file. Its most critical rule will be `{ from: { path: "src/lib/hexagons" }, to: { path: "src/lib/adapters" }, severity: "error" }`, making it impossible for pure business logic to depend on technology-specific code.
+
+3.  **Implement CI/CD Workflows:**
+    *   Create the initial GitHub Actions workflows (`ci.yml`, `codeql.yml`, `sonarcloud.yml`).
+    *   The `ci.yml` workflow will be configured to run `tsc --noEmit`, `biome check .`, and `npm run test` on every pull request.
+    *   The first commit to the `main` branch will contain this foundational setup. The primary goal is to have a "green" build on an empty but fully configured project, proving the toolchain works.
+
+#### **3. Phase 2: The Core Development Loop (Iterative)**
+
+This is the iterative process for building each feature of the application.
+
+1.  **Characterization Test (If Applicable):**
+    *   If refactoring a feature from V1 (e.g., VAD region calculation), first generate a "test vector" JSON file. This involves running the pure logic from the V1 codebase with a curated set of inputs and saving both the inputs and the exact outputs. These vectors are the "golden master" standard and are checked into the repository under `tests/vectors/`.
+
+2.  **Hexagon Implementation (TDD):**
+    *   Create a new `.test.js` file for the V3 hexagon (e.g., `VADHexagon.test.js`).
+    *   Write a test that loads the JSON vector and asserts that the (not-yet-written) V3 function's output `deeplyEquals` the expected V1 output. Run the test and watch it fail.
+    *   Implement the pure logic inside the hexagon file (e.g., `VADHexagon.js`) until the unit test passes. No browser APIs or platform-specific code are allowed in this step.
+
+3.  **Interface Discovery & Refinement:**
+    *   During TDD, the precise methods and data contracts for the ports (interfaces) will be discovered. If the hexagon needs a new capability from an adapter, the developer will:
+        1.  Update the JSDoc `@typedef` for the port in `src/lib/ports/` to reflect the new requirement.
+        2.  Update the hexagon's unit test to provide the new data/functionality via its mock adapter.
+        3.  Modify the hexagon's code to use the new interface method.
+        4.  Finally, implement the change in the real adapter. The type-checker will guide this process, flagging any adapter that no longer conforms to the port's contract.
+
+#### **4. Phase 3: Visual & Interactive Validation (The Human-in-the-Loop)**
+
+This phase runs in parallel with Phase 2, providing crucial manual validation that complements the automated tests.
+
+1.  **Development Harnesses / Storybook:**
+    *   For each major feature, a developer can create a minimal HTML "harness" file (e.g., `harnesses/vad-harness.html`) to visually and manually validate the integrated hexagon and its adapter. This is for quick, scrappy validation.
+    *   Once UI components (`<PlaybackControls>`, etc.) are being built, the project will adopt **Storybook**.
+
+2.  **Storybook Workflow & Quality Gates:**
+    *   **Story Coverage Check:** The CI pipeline will include a script that fails the build if a UI component is committed without a corresponding `.stories.js` file. This enforces Storybook as a **Definition of Done**.
+    *   **PR Integration:** For every pull request, the Storybook instance will be automatically deployed to a preview URL. This URL will be the **single source of truth for design and developer reviews.**
+    *   **Essential Add-on Starter Pack:** The Storybook setup will include a pre-configured set of high-value add-ons:
+        *   `@storybook/addon-essentials`: For interactive prop controls and documentation.
+        *   `@storybook/addon-a11y`: For automated accessibility testing.
+        *   `@storybook/addon-interactions`: For testing component behavior via simulated user input.
+        *   `storybook-addon-pseudo-states`: For testing CSS hover/focus/active states.
+        *   `msw-storybook-addon`: For mocking network requests (e.g., for the "Load from URL" feature).
+        *   `@storybook/addon-performance`: For analyzing component render performance.
+
+#### **5. Phase 4: Final Application Assembly & E2E Testing**
+
+1.  **Application Integration (`app.js`):**
+    *   The main `app.js` file will be the final "driving adapter." Its role is to perform dependency injection: instantiate all hexagons and adapters, plug them into each other, and wire up the final UI event listeners.
+
+2.  **Static Asset Management:**
+    *   Place all static assets like fonts, images, and the final `index.html` in the appropriate static directory (e.g., `/public`). A build tool (like Vite) will be configured to handle these assets.
+
+3.  **End-to-End & Visual Regression Testing (CI Only):**
+    *   **Playwright E2E Tests:** These tests will run against a full production build in the CI pipeline to simulate complete user journeys.
+    *   **Visual Regression (Future):** After the V3 UI is stable, Playwright's `toHaveScreenshot` will be added to the E2E suite to take snapshots of the waveform and spectrogram canvases, preventing visual regressions.
+
+#### **6. Phase 5: Documentation & Handover**
+
+1.  **Update Project Documentation:**
+    *   Upon completion, the root `README.md` will be updated to reflect the new V3 architecture and setup. The `REFACTOR_PLAN.md` and this appendix will be moved to a `/docs` directory to preserve the project's history.
+    *   The `vibe-player` (V1) and `vibe-player-v2.3` directories will be archived or removed.
+
+2.  **Final Quality Review:**
+    *   A final review of the SonarCloud dashboard will be conducted to identify and address any remaining high-priority issues before the official V3 release.
+
+---
+
+### Appendix E1: UI layout
+
+```mermaid
+graph TD
+    %% Define all nodes and subgraphs first
+
+    H["Header (Dummy Placeholder)"]
+
+    subgraph FL ["Card: File Loading"]
+        direction TB
+        subgraph FL_L1 [File Input Group]
+            direction LR
+            FL_B1["Choose File Button"] --> FL_S1["File Name Display"]
+        end
+        subgraph FL_L2 [URL Input Group]
+            direction LR
+            FL_I1["URL Input Field"] --> FL_B2["Load URL Button"]
+        end
+        FL_P1["Status/Info/Error Text"]
+        
+        FL_L1 --> FL_L2 --> FL_P1
+    end
+
+    subgraph PP [Card: Playback Parameters]
+        direction LR
+        PP1["Speed Slider"]
+        PP2["Pitch Slider"]
+        PP3["Gain Slider"]
+
+        PP1 --> PP2 --> PP3
+    end
+    
+    SB["Section: Seek Bar & Time Display (Full Width)"]
+
+    subgraph MC ["Card: Master Transport Controls"]
+        direction TB
+        MC_B1["Play/Pause Button"]
+        subgraph JC [Jump Controls]
+            direction LR
+            JC_B1["◀◀ Back Button"] --> JC_I1["Seconds Input"] --> JC_B2["Forward ▶▶ Button"]
+        end
+        MC_B1 --> JC
+    end
+
+    SG["Section: Spectrogram Visualization (Full Width)"]
+    WV["Section: Waveform Visualization with VAD Coloring (Full Width)"]
+    
+    subgraph DO ["Card: Data Output & Tuning"]
+        direction TB
+        subgraph VT [VAD Tuning Sliders]
+            direction LR
+            VT_S1["Positive Threshold Slider"] --> VT_S2["Negative Threshold Slider"]
+        end
+        
+        DO_P2["DTMF Tones Text"]
+        DO_P3["CPT Tones Text"]
+
+        VT --> DO_P2 --> DO_P3
+    end
+
+    F["Footer"]
+
+    %% Now, define the connections to create the main application flow
+    H --> FL
+    FL --> PP
+    PP --> SB
+    SB --> MC
+    MC --> SG
+    SG --> WV
+    WV --> DO
+    DO --> F
+```
+
+---
+
 ````
 --- End of File: REFACTOR_PLAN.md ---
 --- File: vibe-player/architecture.md ---
