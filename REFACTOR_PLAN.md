@@ -1098,3 +1098,131 @@ This appendix provides a definitive list of all user-interactive or dynamically 
 
 ---
 
+# **Appendix H: Implementation Refinements & Decisions**
+
+This appendix serves as an addendum to the main refactor plan. It provides definitive implementation decisions for key infrastructure components that were identified for further clarification. These decisions are mandatory for all AI agents working on the project.
+
+#### **1. State Store Implementation**
+
+*   **Context:** Section 3.1 identifies the need for a state store with a pub/sub mechanism but leaves the specific implementation open. A DIY approach, while dependency-free, risks introducing subtle bugs and lacks modern state management features.
+*   **Decision:** The project will use **Nano Stores** (`nanostores`) as its state management library.
+*   **Rationale:**
+    *   **Constraint Compliance:** It is extremely lightweight (<1KB), has zero dependencies, and requires **no build step**. It can be loaded directly in `index.html` from a CDN like `esm.sh` via `<script type="module">`.
+    *   **Robustness:** It provides a formal, battle-tested "atomic" state primitive. This prevents common bugs, such as notifying subscribers when a value has not actually changed, and provides a clean `unsubscribe` mechanism to prevent memory leaks.
+    *   **Clarity:** It offers a more explicit and less error-prone API than a generic pub/sub bus. Logic is clearer as components interact with a named store (`playerStore.set()`) rather than publishing to a generic topic.
+*   **Implementation Pattern:**
+
+    **Store Definition (`src/lib/stores/playerStore.js`):**
+    ```javascript
+    // This can be loaded directly from a CDN in a <script type="module">
+    import { atom } from 'https://esm.sh/nanostores';
+
+    /** @typedef {import('../types.js').PlayerState} PlayerState */
+
+    const initialState = { /* ... initial state properties ... */ };
+
+    // The 'atom' is the store. It holds state and manages subscribers.
+    export const playerStore = atom(initialState);
+
+    /**
+     * Updates the player store with new partial state.
+     * This function will be called by the StateStoreAdapter.
+     * @param {Partial<PlayerState>} newState
+     */
+    export function updatePlayerState(newState) {
+      const currentState = playerStore.get();
+      playerStore.set({ ...currentState, ...newState });
+    }
+    ```
+
+    **UI Subscription (`UIManagerAdapter.js`):**
+    ```javascript
+    import { playerStore } from './stores/playerStore.js';
+
+    // The .subscribe method returns an unsubscribe function for cleanup.
+    const unsubscribe = playerStore.subscribe(state => {
+      // Update DOM elements based on the new state
+      document.getElementById('file-name-display').textContent = state.fileName;
+    });
+    ```
+
+---
+
+#### **2. `index.html` Script Management Strategy**
+
+*   **Context:** Constraint 1 ("Zero Build-Step") requires managing `<script>` tags directly in `index.html`. This is a known point of fragility if done manually.
+*   **Decision:** This process will be automated and CI-enforced using a two-part system.
+*   **Part 1: The Generation Script (`scripts/generate-index.js`)**
+    *   **Responsibility:** An AI agent will create and maintain a Node.js script that automatically generates the `public/index.html` file.
+    *   **Process:**
+        1.  Execute `dependency-cruiser` programmatically to get the project's dependency graph as JSON.
+        2.  Perform a **topological sort** on the dependency graph to determine the precise, correct script load order.
+        3.  Read a template file (`public/index.html.template`) containing a placeholder comment (e.g., `<!-- SCRIPT_INJECTION_POINT -->`).
+        4.  Generate the correctly ordered sequence of `<script type="module" src="..."></script>` tags.
+        5.  Replace the placeholder in the template and write the result to `public/index.html`.
+*   **Part 2: The Enforcement Test (`tests/integration/index.test.js`)**
+    *   **Responsibility:** A mandatory integration test will be created to run as part of the `npm test` command in the CI pipeline.
+    *   **Process:**
+        1.  The test will import and run the generation logic from `scripts/generate-index.js` in memory to create the "expected" `index.html` content as a string.
+        2.  It will then read the actual, committed `public/index.html` file from the disk.
+        3.  It will assert that the two strings are identical.
+    *   **Guarantee:** This test will fail if a developer adds or removes a source file but forgets to run the generation script, thereby preventing a stale `index.html` from ever being merged.
+
+---
+
+#### **3. Worker Communication Protocol and Timeout Handling**
+
+*   **Context:** Section 4.3 of Appendix F defines the `WorkerChannel` utility. To ensure system resilience, this utility must be enhanced to handle cases where a Web Worker becomes unresponsive.
+*   **Decision:** The `WorkerChannel` class **must** implement a robust, Promise-based timeout mechanism for all request/response operations.
+*   **Rationale:** This prevents a hanging worker from causing an unhandled state in the application. Centralizing this logic in the `WorkerChannel` keeps the Adapters clean and ensures the behavior is consistent for all worker interactions.
+*   **Implementation Pattern (`WorkerChannel.js`):**
+
+    The `post` method will use `Promise.race` to pit the worker's response against a `setTimeout`.
+
+    ```javascript
+    const DEFAULT_WORKER_TIMEOUT_MS = 15000; // 15 seconds
+
+    export class WorkerTimeoutError extends Error {
+      constructor(message) {
+        super(message);
+        this.name = 'WorkerTimeoutError';
+      }
+    }
+
+    export class WorkerChannel {
+      // ... other class properties ...
+
+      post(message, timeout = DEFAULT_WORKER_TIMEOUT_MS) {
+        return new Promise((resolve, reject) => {
+          const messageId = this.nextMessageId++;
+          let timeoutHandle;
+
+          const listener = (response) => {
+            // Worker responded, so clear the timeout.
+            clearTimeout(timeoutHandle);
+            this.listeners.delete(messageId);
+            if (response.error) {
+              reject(new Error(response.error));
+            } else {
+              resolve(response.payload);
+            }
+          };
+
+          this.listeners.set(messageId, listener);
+
+          // Set up the timeout. If it fires, it will clean up and reject.
+          timeoutHandle = setTimeout(() => {
+            this.listeners.delete(messageId);
+            reject(new WorkerTimeoutError(`Worker operation timed out after ${timeout}ms.`));
+          }, timeout);
+
+          this.worker.postMessage({ id: messageId, payload: message });
+        });
+      }
+    }
+    ```
+*   **Error Propagation Flow:**
+    1.  **Rejection:** If a timeout occurs, the `Promise` returned by `workerChannel.post()` rejects with a `WorkerTimeoutError`.
+    2.  **Adapter Catches:** The calling adapter (e.g., `SileroVadAdapter`) **must** wrap its `.post()` call in a `try...catch` block.
+    3.  **Adapter Dispatches Event:** Inside the `catch` block, the adapter **must not** handle the error. It **must** translate the low-level error into a high-level system event (e.g., `EVENT_ANALYSIS_FAILED`) and dispatch it to the `AppHexagon`.
+    4.  **AppHexagon Handles State:** The `AppHexagon` receives the event and, as the central authority, transitions the application to the `ERROR` state, displaying a user-friendly message.
