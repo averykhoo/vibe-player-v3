@@ -745,3 +745,292 @@ cannot be merged unless all these checks pass.
       visual output and compares it against a known-good "golden" image. The build will fail if there are any visual
       differences. This is the only way to automatically detect if a code change has unintentionally altered the
       graphical output and is considered a critical quality check.
+
+
+---
+
+# **Appendix F: V3 Architecture & Implementation Details**
+
+This appendix provides a complete, detailed walkthrough of the V3 architecture. It serves as the definitive technical specification for how the components interact, the data flows through the system, and how user interactions are handled.
+
+#### **1. Architectural Overview**
+
+The V3 architecture is a **federation of collaborating, self-contained hexagons**, a model based on the Ports and Adapters pattern.
+
+*   **The Hexagon (The Core Logic):** A pure JavaScript module containing isolated business logic. It is entirely decoupled from external technologies like the browser's DOM, Web Audio API, or Web Workers. Its sole purpose is to enforce the rules of its specific domain (e.g., playback, analysis).
+*   **Ports (The Contracts):** Formal interfaces, defined via JSDoc `@typedef`s, that act as the "sockets" on a hexagon. They define how data and commands flow in and out.
+    *   **Driving Ports:** The public API of the hexagon itself, used by the outside world to command it (e.g., `PlaybackHexagon.play()`).
+    *   **Driven Ports:** The interfaces the hexagon depends on to get work done. The hexagon commands an external entity through this port (e.g., `PlaybackHexagon` commands an `IAudioOutputPort`).
+*   **Adapters (The Technology):** The "wires" that connect the pure business logic to the real world. They are the only components that interact with platform-specific APIs.
+    *   **Driving Adapters:** Initiate action *on* a hexagon. The primary example is the **`UIManagerAdapter`**, which translates user clicks into commands.
+    *   **Driven Adapters:** Are driven *by* a hexagon to perform a task. Examples include the **`WebAudioAdapter`** and the **`StateStoreAdapter`**.
+
+---
+
+#### **2. The Hexagons (Core Business Logic)**
+
+##### **2.1. `AppHexagon` (The Central Orchestrator)**
+
+The `AppHexagon` is the brain of the application. It does not contain domain-specific logic but instead orchestrates the other hexagons to fulfill user stories and manages the primary application lifecycle.
+
+*   **Core Responsibility:** To manage the application's primary state machine. It is the only component that can command other hexagons, acting as a central transaction authority.
+*   **Internal Logic & State Management:** The `AppHexagon` implements the state machine detailed in Section 2 of the main plan. **Crucially, it does not use separate boolean flags like `isSeeking`.** Instead, seeking is a first-class citizen of the state machine. When a user initiates a seek, the `AppHexagon` transitions from `READY` or `PLAYING` into dedicated `SEEK_AND_HOLD` or `SEEK_AND_RESUME` states. This ensures the application's state is always explicit, atomic, and predictable.
+*   **Ports & Schema:**
+    *   **Driving Port (`IAppPort`):** The main API for the entire application, exposed to the `UIManagerAdapter`.
+        ```javascript
+        /**
+         * @typedef {object} IAppPort
+         * @property {function(): Promise<void>} initializeApplication
+         * @property {function(import('./types.js').AudioSource): Promise<void>} loadAudio
+         * @property {function(): void} play
+         * @property {function(): void} pause
+         * @property {function(): void} beginSeek
+         * @property {function(number): void} updateSeek
+         * @property {function(number): void} endSeek
+         * @property {function(number): void} setSpeed
+         * @property {function(number): void} setPitch
+         * @property {function(number): void} setGain
+         * @property {function(number): void} setVadPositiveThreshold
+         */
+        ```
+
+##### **2.2. `PlaybackHexagon` (The Player Logic)**
+
+*   **Core Responsibility:** To be the pure state machine for a time-stretchable audio player. It manages `duration`, `currentTime`, `speed`, `pitch`, `gain`, and the `isPlaying` flag.
+*   **Internal Logic:** It enforces playback rules (e.g., cannot seek past `duration`). It only changes its state in response to commands from the `AppHexagon`.
+*   **Ports & Schema:**
+    *   **Driving Port (`IPlaybackPort`):** The API the `AppHexagon` uses to command it.
+        ```javascript
+        /**
+         * @typedef {object} IPlaybackPort
+         * @property {function(AudioBuffer): void} prepare
+         * @property {function(): void} play
+         * @property {function(): void} pause
+         * @property {function(number): void} seek
+         * @property {function(number): void} setSpeed
+         * @property {function(number): void} setPitch
+         * @property {function(number): void} setGain
+         */
+        ```
+    *   **Driven Ports:** The interfaces it needs other components to implement.
+        ```javascript
+        /** @typedef {import('./types.js').PlaybackState} PlaybackState */
+        /**
+         * @typedef {object} IAudioOutputPort
+         * @property {function(AudioBuffer): Promise<void>} initialize
+         * @property {function(): void} play
+         * @property {function(): void} pause
+         * @property {function(number): void} seek
+         * @property {function(PlaybackState): void} updateParameters
+         */
+
+        /**
+         * @typedef {object} IPlayerStatePublisherPort
+         * @property {function(Partial<PlaybackState>): void} publish
+         */
+        ```
+
+##### **2.3. Analysis Hexagons (`VADHexagon`, `DTMFHexagon`)**
+
+*   **Core Responsibility:** To transform an `AudioBuffer` into analysis results (speech regions, detected tones). They also handle re-calculation when tuning parameters change.
+*   **Internal Logic:** They hold the pure algorithms for their domain. Per the **Large Data Handling Protocol**, they hold large data payloads (like the raw VAD probability array) internally, exposing them only via synchronous accessor methods to avoid polluting reactive stores.
+*   **Ports & Schema:**
+    *   **Driving Port (`IAnalysisPort`):**
+        ```javascript
+        /**
+         * @typedef {object} IVADAnalysisPort
+         * @property {function(AudioBuffer): Promise<void>} analyze
+         * @property {function(number): void} setPositiveThreshold
+         * @property {function(number): void} setNegativeThreshold
+         * @property {function(): Float32Array} getRawProbabilityData
+         */
+        ```
+    *   **Driven Ports:**
+        ```javascript
+        /**
+         * The VADHexagon depends on this port to get raw speech probabilities from a model.
+         * @typedef {object} IInferenceEnginePort
+         * @property {function(Float32Array): Promise<Float32Array>} compute
+         */
+        ```
+
+---
+
+#### **3. Adapters & Infrastructure (The Technology Layer)**
+
+##### **3.1. Driving Adapter: `UIManagerAdapter`**
+
+*   **Responsibility:** The bridge from the user to the application. It has two jobs:
+    1.  **Input (User to App):** Listens to DOM events (clicks, slider inputs). Translates these low-level events into high-level, debounced commands, and dispatches them to the `AppHexagon`. For a seek operation, it will call `beginSeek`, then a series of `updateSeek` calls, and finally `endSeek`.
+    2.  **Output (App to User):** Subscribes to the central state stores. When state changes, it directly manipulates the DOM (e.g., changing a button's text, disabling controls, drawing on a canvas).
+
+##### **3.2. Driven Adapters**
+
+*   **`WebAudioAdapter`:** Implements `IAudioOutputPort`. This adapter is the only part of the application that knows about the Web Audio API. It receives commands from the `PlaybackHexagon` and translates them into Web Audio graph setup and communication with the `rubberband.worker` via its `WorkerChannel`. It also runs the `requestAnimationFrame` loop for the "Hot Path" `currentTime` updates, writing directly to `timeStore`.
+*   **`SileroVadAdapter`:** Implements `IInferenceEnginePort`. It is responsible for managing the `silero_vad.worker` via its own `WorkerChannel`. When its `compute()` method is called by the `VADHexagon`, it sends the audio chunk to the worker and returns the resulting probability array.
+*   **`StateStoreAdapter`:** Implements all `...StatePublisherPort` interfaces. A simple facade that takes data from a hexagon and writes it into the correct central state store object, decoupling the hexagons from the specific state management implementation.
+*   **`URLStateAdapter`:** Subscribes to the state stores. On key state changes, a debounced call serializes the state into the URL hash. It also provides a method for the `AppHexagon` to parse the initial hash on startup.
+
+##### **3.3. Infrastructure Utility: The `WorkerChannel`**
+
+*   **Core Responsibility:** A reusable class that provides a generic, robust, Promise-based request/response communication channel over the native Web Worker API. It acts as an **Anti-Corruption Layer (ACL)**, abstracting away the complexities of `postMessage`, `onmessage` handling, message ID correlation, and `Transferable` objects.
+*   **Instantiation:** It is instantiated by driven adapters like `WebAudioAdapter` and `SileroVadAdapter`. Each adapter creates and owns its own `WorkerChannel` instance, which in turn manages a dedicated Web Worker.
+*   **Observability:** It provides a centralized point for cross-cutting observability, automatically handling:
+    *   **Latency Tracing:** Measuring the roundtrip time for every worker operation.
+    *   **Traffic Logging:** Logging message types for debugging.
+    *   **Error Metrics:** Tracking communication failures and worker-side errors.
+
+---
+
+#### **4. Detailed Interaction Flows (English Descriptions)**
+
+##### **4.1. Application Initialization**
+1.  **Entry Point (`main.js`):** Instantiates all hexagons and adapters, performing dependency injection by "plugging" the adapters into the hexagons' ports.
+2.  **`AppHexagon`:** Is commanded to `initializeApplication()`. It transitions to the `LOADING` state and publishes this to the `statusStore`. The `UIManagerAdapter` reacts, showing a global spinner.
+3.  **`AppHexagon`** then commands all relevant adapters (e.g., `WebAudioAdapter`, `SileroVadAdapter`) to initialize their underlying technology (e.g., workers loading WASM/ONNX models).
+4.  **`AppHexagon`** awaits all initialization promises. Upon successful completion, it checks the `URLStateAdapter` for a file to load. If none, it transitions to the `IDLE` state. The `UIManagerAdapter` hides the spinner and enables the initial UI controls.
+
+##### **4.2. Loading an Audio File**
+1.  **`UIManagerAdapter`:** The user selects a file. The adapter calls `AppHexagon.loadAudio(file)`.
+2.  **`AppHexagon`:** Transitions to the `LOADING` state and publishes it. The UI shows a spinner. It drives an `AudioLoaderService` to decode the file into an `AudioBuffer`.
+3.  **`AppHexagon`:** Once the buffer is ready, it orchestrates the next steps in parallel:
+    *   **Critical Path (Awaited):** It commands `PlaybackHexagon.prepare(buffer)` and `WaveformHexagon.generate(buffer)`.
+    *   **Background (Fire-and-Forget):** It commands `VADHexagon.analyze(buffer)` and `DTMFHexagon.analyze(buffer)`.
+4.  **Hexagons:** The `PlaybackHexagon` and `WaveformHexagon` complete their tasks and publish their state (`duration`, `waveformData`).
+5.  **`AppHexagon`:** As soon as the critical path is complete, it transitions to the `READY` state. The `UIManagerAdapter` hides the spinner, enables all controls, and renders the waveform.
+6.  **Background Completion:** Later, as the `VADHexagon` and `DTMFHexagon` complete, they publish their results. The `UIManagerAdapter` reacts by drawing VAD regions and displaying DTMF tones.
+
+##### **4.3. The Seek Interaction (Using the State Machine)**
+1.  **`mousedown`:** The user presses the seek bar handle.
+    *   **`UIManagerAdapter`:** Calls `AppHexagon.beginSeek()`.
+    *   **`AppHexagon`:** Consults its current state.
+        *   If `PLAYING`, it transitions to `SEEK_AND_RESUME`. As part of this state's entry actions, it commands `PlaybackHexagon.pause()`.
+        *   If `READY`, it transitions to `SEEK_AND_HOLD`. No playback command is needed.
+    *   In both cases, it publishes the new state. The `UIManagerAdapter` shows a "seeking" indicator on the UI.
+2.  **`input` (drag):** The user drags the handle.
+    *   **`UIManagerAdapter`:** Calls `AppHexagon.updateSeek(newTime)`.
+    *   **`AppHexagon`:** It drives the `PlaybackHexagon` to update its `currentTime`, which is then published to the *cold* `playerStore`. The `WebAudioAdapter` also directly writes to the *hot* `timeStore` for smooth UI feedback.
+3.  **`mouseup`:** The user releases the handle.
+    *   **`UIManagerAdapter`:** Calls `AppHexagon.endSeek(finalTime)`.
+    *   **`AppHexagon`:** It first commands `PlaybackHexagon.seek(finalTime)`. Then, it consults its current state.
+        *   If `SEEK_AND_RESUME`, it transitions to `PLAYING` by commanding `PlaybackHexagon.play()`.
+        *   If `SEEK_AND_HOLD`, it transitions to `READY`.
+    *   The `UIManagerAdapter` hides the "seeking" indicator. The application is now in a new, stable state.
+
+##### **4.4. Parameter Adjustment (e.g., Speed)**
+This flow does **not** change the `AppHexagon`'s primary state.
+1.  **`UIManagerAdapter`:** The user moves the "Speed" slider. An `on:input` event handler calls a debounced function.
+2.  **Debouncer:** After the user stops moving the slider for ~200ms, the function fires.
+3.  **`UIManagerAdapter`:** Calls `AppHexagon.setSpeed(finalValue)`.
+4.  **`AppHexagon`:** Delegates the command directly to `PlaybackHexagon.setSpeed(finalValue)`.
+5.  **`PlaybackHexagon`:** Updates its internal `speed` property and drives its two output ports:
+    *   `this.statePublisher.publish({ speed: finalValue })` -> The `StateStoreAdapter` updates the store, and the UI label changes.
+    *   `this.audioOutput.updateParameters({ speed: finalValue })` -> The `WebAudioAdapter` receives the new parameter and sends a message to the `rubberband.worker` to adjust the time-stretching.
+
+---
+
+#### **5. Interaction Flows (Sequence Diagrams)**
+
+##### **5.1. Play/Pause Command & Event Flow**
+```mermaid
+sequenceDiagram
+    actor User
+    participant UIMgr as UIManagerAdapter
+    participant AppHex as AppHexagon
+    participant PlayHex as PlaybackHexagon
+    participant WA_Adapter as WebAudioAdapter
+    participant Store as StateStoreAdapter
+
+    User->>UIMgr: Clicks 'Play'
+    UIMgr->>AppHex: play()
+    AppHex->>PlayHex: play()
+    activate PlayHex
+    PlayHex->>WA_Adapter: play()
+    note right of WA_Adapter: Starts Web Audio engine & rAF loop.
+    PlayHex->>Store: publish({ isPlaying: true })
+    deactivate PlayHex
+    Store-->>UIMgr: Notifies of state change
+    UIMgr->>User: Updates UI (icon to 'Pause')
+
+    %% Some time later... Audio ends
+    WA_Adapter-->>PlayHex: onPlaybackEnded() event
+    activate PlayHex
+    note right of PlayHex: Forwards event, does not change own state.
+    PlayHex-->>AppHex: onPlaybackEnded() event
+    deactivate PlayHex
+    activate AppHex
+    note right of AppHex: State machine transitions PLAYING -> READY.
+    AppHex->>PlayHex: pause() command
+    deactivate AppHex
+    activate PlayHex
+    PlayHex->>WA_Adapter: pause()
+    PlayHex->>Store: publish({ isPlaying: false })
+    deactivate PlayHex
+    Store-->>UIMgr: Notifies of state change
+    UIMgr->>User: Updates UI (icon to 'Play')
+```
+
+##### **5.2. Seek Interaction Flow**
+```mermaid
+sequenceDiagram
+    actor User
+    participant UIMgr as UIManagerAdapter
+    participant AppHex as AppHexagon
+    participant PlayHex as PlaybackHexagon
+    participant Store as StateStoreAdapter
+
+    User->>UIMgr: Mousedown on seek bar
+    UIMgr->>AppHex: beginSeek()
+    activate AppHex
+    note right of AppHex: State machine: PLAYING -> SEEK_AND_RESUME
+    AppHex->>PlayHex: pause()
+    AppHex->>Store: publish({ status: 'SEEK_AND_RESUME' })
+    deactivate AppHex
+
+    User->>UIMgr: Drags handle
+    UIMgr->>AppHex: updateSeek(newTime)
+    activate AppHex
+    AppHex->>PlayHex: seek(newTime)
+    deactivate AppHex
+    activate PlayHex
+    PlayHex->>Store: publish({ currentTime: newTime })
+    deactivate PlayHex
+
+    User->>UIMgr: Mouseup on seek bar
+    UIMgr->>AppHex: endSeek(finalTime)
+    activate AppHex
+    note right of AppHex: State machine: SEEK_AND_RESUME -> PLAYING
+    AppHex->>PlayHex: seek(finalTime)
+    AppHex->>PlayHex: play()
+    AppHex->>Store: publish({ status: 'PLAYING' })
+    deactivate AppHex
+```
+
+##### **5.3. Parameter Adjustment Flow (No State Change)**
+```mermaid
+sequenceDiagram
+    actor User
+    participant UIMgr as UIManagerAdapter
+    participant AppHex as AppHexagon
+    participant PlayHex as PlaybackHexagon
+    participant WA_Adapter as WebAudioAdapter
+    participant Store as StateStoreAdapter
+
+    User->>UIMgr: Moves 'Speed' slider
+    note right of UIMgr: Input is debounced.
+
+    UIMgr->>AppHex: setSpeed(1.5)
+    activate AppHex
+    AppHex->>PlayHex: setSpeed(1.5)
+    deactivate AppHex
+
+    activate PlayHex
+    note right of PlayHex: Updates internal state and drives ports.
+    PlayHex->>WA_Adapter: updateParameters({ speed: 1.5 })
+    note right of WA_Adapter: Sends message to worker.
+    PlayHex->>Store: publish({ speed: 1.5 })
+    deactivate PlayHex
+
+    Store-->>UIMgr: Notifies of state change
+    UIMgr->>User: Updates UI ('1.50x' label)
+```
