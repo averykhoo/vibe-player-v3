@@ -455,7 +455,7 @@ Feature: File Loading
 ```gherkin
 Feature: Playback Controls
   As a user with a loaded audio file, I want to control its playback
-  by playing, pausing, stopping, seeking, and jumping through the audio.
+  by playing, pausing, seeking, and jumping through the audio.
 
   Background:
     Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and the player is ready
@@ -469,9 +469,10 @@ Feature: Playback Controls
     Then the "Pause" button's text should change to "Play"
     And the current time should stop advancing
 
-  Scenario: Stopping playback
+  Scenario: Stopping playback resets the playhead to the beginning
     Given the audio is playing and the current time is "0:15"
-    When the user clicks the "Stop" button
+    When the user pauses playback
+    And then seeks to "0:00"
     Then the current time should be "0:00"
     And the "Pause" button's text should change to "Play"
     And the player should be paused
