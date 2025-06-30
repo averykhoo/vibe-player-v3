@@ -1102,49 +1102,42 @@ This appendix provides a definitive list of all user-interactive or dynamically 
 
 This appendix serves as an addendum to the main refactor plan. It provides definitive implementation decisions for key infrastructure components that were identified for further clarification. These decisions are mandatory for all AI agents working on the project.
 
-#### **1. State Store Implementation**
+#### **1. State Store Implementation & Dependency Vendoring Policy**
 
-*   **Context:** Section 3.1 identifies the need for a state store with a pub/sub mechanism but leaves the specific implementation open. A DIY approach, while dependency-free, risks introducing subtle bugs and lacks modern state management features.
-*   **Decision:** The project will use **Nano Stores** (`nanostores`) as its state management library.
+*   **Context:** Section 3.1 identifies the need for a state store with a pub/sub mechanism. The new **"offline, air-gapped"** constraint makes it impossible to rely on CDNs for third-party libraries. Therefore, a strict policy for handling dependencies is required.
+*   **Decision:** The project will adopt a **strict vendoring policy** for all third-party runtime dependencies. **Nano Stores** (`nanostores`) will still be used for state management due to its ideal characteristics, but its source file will be committed directly to the repository instead of being loaded from a CDN.
 *   **Rationale:**
-    *   **Constraint Compliance:** It is extremely lightweight (<1KB), has zero dependencies, and requires **no build step**. It can be loaded directly in `index.html` from a CDN like `esm.sh` via `<script type="module">`.
-    *   **Robustness:** It provides a formal, battle-tested "atomic" state primitive. This prevents common bugs, such as notifying subscribers when a value has not actually changed, and provides a clean `unsubscribe` mechanism to prevent memory leaks.
-    *   **Clarity:** It offers a more explicit and less error-prone API than a generic pub/sub bus. Logic is clearer as components interact with a named store (`playerStore.set()`) rather than publishing to a generic topic.
+    *   **Offline Compliance:** Vendoring is the *only* way to ensure the application can run on an air-gapped network with no internet access. All required code is contained within the project directory.
+    *   **Constraint Compliance:** Nano Stores remains the best choice as it is extremely lightweight (<1KB), has zero dependencies, and requires no build step to use.
+    *   **Robustness & Verifiability:** Committing the library file directly into the repository makes the application fully self-contained and auditable. We are not dependent on the availability or integrity of an external service.
 *   **Implementation Pattern:**
 
-    **Store Definition (`src/lib/stores/playerStore.js`):**
-    ```javascript
-    // This can be loaded directly from a CDN in a <script type="module">
-    import { atom } from 'https://esm.sh/nanostores';
+    1.  **Vendoring the Library:** The `nanostores.js` module file will be downloaded from a trusted source (e.g., `esm.sh`) and placed in the `public/lib/` directory.
 
-    /** @typedef {import('../types.js').PlayerState} PlayerState */
+    2.  **Store Definition (`src/lib/stores/playerStore.js`):** The import path will be updated to a relative path pointing to the local, vendored file.
+        ```javascript
+        // Import from the local, vendored file.
+        import { atom } from '../lib/nanostores.js';
 
-    const initialState = { /* ... initial state properties ... */ };
+        /** @typedef {import('../types.js').PlayerState} PlayerState */
 
-    // The 'atom' is the store. It holds state and manages subscribers.
-    export const playerStore = atom(initialState);
+        const initialState = { /* ... initial state properties ... */ };
 
-    /**
-     * Updates the player store with new partial state.
-     * This function will be called by the StateStoreAdapter.
-     * @param {Partial<PlayerState>} newState
-     */
-    export function updatePlayerState(newState) {
-      const currentState = playerStore.get();
-      playerStore.set({ ...currentState, ...newState });
-    }
-    ```
+        // The 'atom' is the store. It holds state and manages subscribers.
+        export const playerStore = atom(initialState);
 
-    **UI Subscription (`UIManagerAdapter.js`):**
-    ```javascript
-    import { playerStore } from './stores/playerStore.js';
+        /**
+         * Updates the player store with new partial state.
+         * This function will be called by the StateStoreAdapter.
+         * @param {Partial<PlayerState>} newState
+         */
+        export function updatePlayerState(newState) {
+          const currentState = playerStore.get();
+          playerStore.set({ ...currentState, ...newState });
+        }
+        ```
 
-    // The .subscribe method returns an unsubscribe function for cleanup.
-    const unsubscribe = playerStore.subscribe(state => {
-      // Update DOM elements based on the new state
-      document.getElementById('file-name-display').textContent = state.fileName;
-    });
-    ```
+    3.  **Script Management Integration:** The `scripts/generate-index.js` script (defined in Section 2) must be aware of this new local dependency so it can be included correctly in the generated `public/index.html`. It will be added to the dependency graph analysis performed by `dependency-cruiser`.
 
 ---
 
@@ -1160,6 +1153,7 @@ This appendix serves as an addendum to the main refactor plan. It provides defin
         3.  Read a template file (`public/index.html.template`) containing a placeholder comment (e.g., `<!-- SCRIPT_INJECTION_POINT -->`).
         4.  Generate the correctly ordered sequence of `<script type="module" src="..."></script>` tags.
         5.  Replace the placeholder in the template and write the result to `public/index.html`.
+    *   **Rationale:** This eliminates manual script ordering errors, which was a key fragility in V1. It also guarantees a single, self-contained `index.html` file that works offline without modification.
 *   **Part 2: The Enforcement Test (`tests/integration/index.test.js`)**
     *   **Responsibility:** A mandatory integration test will be created to run as part of the `npm test` command in the CI pipeline.
     *   **Process:**
@@ -1192,13 +1186,14 @@ This appendix serves as an addendum to the main refactor plan. It provides defin
     export class WorkerChannel {
       // ... other class properties ...
 
-      post(message, timeout = DEFAULT_WORKER_TIMEOUT_MS) {
+      post(message, transferables = [], timeout = DEFAULT_WORKER_TIMEOUT_MS) {
         return new Promise((resolve, reject) => {
           const messageId = this.nextMessageId++;
           let timeoutHandle;
 
           const listener = (response) => {
-            // Worker responded, so clear the timeout.
+            if (response.id !== messageId) return; // Ignore messages for other requests
+
             clearTimeout(timeoutHandle);
             this.listeners.delete(messageId);
             if (response.error) {
@@ -1210,13 +1205,12 @@ This appendix serves as an addendum to the main refactor plan. It provides defin
 
           this.listeners.set(messageId, listener);
 
-          // Set up the timeout. If it fires, it will clean up and reject.
           timeoutHandle = setTimeout(() => {
             this.listeners.delete(messageId);
-            reject(new WorkerTimeoutError(`Worker operation timed out after ${timeout}ms.`));
+            reject(new WorkerTimeoutError(`Worker operation timed out after ${timeout}ms for message type: ${message.type}.`));
           }, timeout);
 
-          this.worker.postMessage({ id: messageId, payload: message });
+          this.worker.postMessage({ id: messageId, payload: message }, transferables);
         });
       }
     }
