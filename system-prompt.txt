@@ -1455,7 +1455,7 @@ Feature: File Loading
 ```gherkin
 Feature: Playback Controls
   As a user with a loaded audio file, I want to control its playback
-  by playing, pausing, stopping, seeking, and jumping through the audio.
+  by playing, pausing, seeking, and jumping through the audio.
 
   Background:
     Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and the player is ready
@@ -1469,9 +1469,10 @@ Feature: Playback Controls
     Then the "Pause" button's text should change to "Play"
     And the current time should stop advancing
 
-  Scenario: Stopping playback
+  Scenario: Stopping playback resets the playhead to the beginning
     Given the audio is playing and the current time is "0:15"
-    When the user clicks the "Stop" button
+    When the user pauses playback
+    And then seeks to "0:00"
     Then the current time should be "0:00"
     And the "Pause" button's text should change to "Play"
     And the player should be paused
@@ -1746,6 +1747,479 @@ cannot be merged unless all these checks pass.
       differences. This is the only way to automatically detect if a code change has unintentionally altered the
       graphical output and is considered a critical quality check.
 
+
+---
+
+# **Appendix F: V3 Architecture & Implementation Details**
+
+This appendix provides a complete, detailed walkthrough of the V3 architecture. It serves as the definitive technical specification for how the components interact, the data flows through the system, and how user interactions are handled.
+
+#### **1. Architectural Overview**
+
+The V3 architecture is a **federation of collaborating, self-contained hexagons**, a model based on the Ports and Adapters pattern.
+
+*   **The Hexagon (The Core Logic):** A pure JavaScript module containing isolated business logic. It is entirely decoupled from external technologies like the browser's DOM, Web Audio API, or Web Workers. Its sole purpose is to enforce the rules of its specific domain (e.g., playback, analysis).
+*   **Ports (The Contracts):** Formal interfaces, defined via JSDoc `@typedef`s, that act as the "sockets" on a hexagon. They define how data and commands flow in and out.
+    *   **Driving Ports:** The public API of the hexagon itself, used by the outside world to command it (e.g., `PlaybackHexagon.play()`).
+    *   **Driven Ports:** The interfaces the hexagon depends on to get work done. The hexagon commands an external entity through this port (e.g., `PlaybackHexagon` commands an `IAudioOutputPort`).
+*   **Adapters (The Technology):** The "wires" that connect the pure business logic to the real world. They are the only components that interact with platform-specific APIs.
+    *   **Driving Adapters:** Initiate action *on* a hexagon. The primary example is the **`UIManagerAdapter`**, which translates user clicks into commands.
+    *   **Driven Adapters:** Are driven *by* a hexagon to perform a task. Examples include the **`WebAudioAdapter`** and the **`StateStoreAdapter`**.
+
+---
+
+#### **2. The Hexagons (Core Business Logic)**
+
+##### **2.1. `AppHexagon` (The Central Orchestrator)**
+
+The `AppHexagon` is the brain of the application. It does not contain domain-specific logic but instead orchestrates the other hexagons to fulfill user stories and manages the primary application lifecycle.
+
+*   **Core Responsibility:** To manage the application's primary state machine. It is the only component that can command other hexagons, acting as a central transaction authority.
+*   **Internal Logic & State Management:** The `AppHexagon` implements the state machine detailed in Section 2 of the main plan. **Crucially, it does not use separate boolean flags like `isSeeking`.** Instead, seeking is a first-class citizen of the state machine. When a user initiates a seek, the `AppHexagon` transitions from `READY` or `PLAYING` into dedicated `SEEK_AND_HOLD` or `SEEK_AND_RESUME` states. This ensures the application's state is always explicit, atomic, and predictable.
+*   **Ports & Schema:**
+    *   **Driving Port (`IAppPort`):** The main API for the entire application, exposed to the `UIManagerAdapter`.
+        ```javascript
+        /**
+         * @typedef {object} IAppPort
+         * @property {function(): Promise<void>} initializeApplication
+         * @property {function(import('./types.js').AudioSource): Promise<void>} loadAudio
+         * @property {function(): void} play
+         * @property {function(): void} pause
+         * @property {function(): void} beginSeek
+         * @property {function(number): void} updateSeek
+         * @property {function(number): void} endSeek
+         * @property {function(number): void} setSpeed
+         * @property {function(number): void} setPitch
+         * @property {function(number): void} setGain
+         * @property {function(number): void} setVadPositiveThreshold
+         */
+        ```
+
+##### **2.2. `PlaybackHexagon` (The Player Logic)**
+
+*   **Core Responsibility:** To be the pure state machine for a time-stretchable audio player. It manages `duration`, `currentTime`, `speed`, `pitch`, `gain`, and the `isPlaying` flag.
+*   **Internal Logic:** It enforces playback rules (e.g., cannot seek past `duration`). It only changes its state in response to commands from the `AppHexagon`.
+*   **Ports & Schema:**
+    *   **Driving Port (`IPlaybackPort`):** The API the `AppHexagon` uses to command it.
+        ```javascript
+        /**
+         * @typedef {object} IPlaybackPort
+         * @property {function(AudioBuffer): void} prepare
+         * @property {function(): void} play
+         * @property {function(): void} pause
+         * @property {function(number): void} seek
+         * @property {function(number): void} setSpeed
+         * @property {function(number): void} setPitch
+         * @property {function(number): void} setGain
+         */
+        ```
+    *   **Driven Ports:** The interfaces it needs other components to implement.
+        ```javascript
+        /** @typedef {import('./types.js').PlaybackState} PlaybackState */
+        /**
+         * @typedef {object} IAudioOutputPort
+         * @property {function(AudioBuffer): Promise<void>} initialize
+         * @property {function(): void} play
+         * @property {function(): void} pause
+         * @property {function(number): void} seek
+         * @property {function(PlaybackState): void} updateParameters
+         */
+
+        /**
+         * @typedef {object} IPlayerStatePublisherPort
+         * @property {function(Partial<PlaybackState>): void} publish
+         */
+        ```
+
+##### **2.3. Analysis Hexagons (`VADHexagon`, `DTMFHexagon`)**
+
+*   **Core Responsibility:** To transform an `AudioBuffer` into analysis results (speech regions, detected tones). They also handle re-calculation when tuning parameters change.
+*   **Internal Logic:** They hold the pure algorithms for their domain. Per the **Large Data Handling Protocol**, they hold large data payloads (like the raw VAD probability array) internally, exposing them only via synchronous accessor methods to avoid polluting reactive stores.
+*   **Ports & Schema:**
+    *   **Driving Port (`IAnalysisPort`):**
+        ```javascript
+        /**
+         * @typedef {object} IVADAnalysisPort
+         * @property {function(AudioBuffer): Promise<void>} analyze
+         * @property {function(number): void} setPositiveThreshold
+         * @property {function(number): void} setNegativeThreshold
+         * @property {function(): Float32Array} getRawProbabilityData
+         */
+        ```
+    *   **Driven Ports:**
+        ```javascript
+        /**
+         * The VADHexagon depends on this port to get raw speech probabilities from a model.
+         * @typedef {object} IInferenceEnginePort
+         * @property {function(Float32Array): Promise<Float32Array>} compute
+         */
+        ```
+
+---
+
+#### **3. Adapters & Infrastructure (The Technology Layer)**
+
+##### **3.1. Driving Adapter: `UIManagerAdapter`**
+
+*   **Responsibility:** The bridge from the user to the application. It has two jobs:
+    1.  **Input (User to App):** Listens to DOM events (clicks, slider inputs). Translates these low-level events into high-level, debounced commands, and dispatches them to the `AppHexagon`. For a seek operation, it will call `beginSeek`, then a series of `updateSeek` calls, and finally `endSeek`.
+    2.  **Output (App to User):** Subscribes to the central state stores. When state changes, it directly manipulates the DOM (e.g., changing a button's text, disabling controls, drawing on a canvas).
+
+##### **3.2. Driven Adapters**
+
+*   **`WebAudioAdapter`:** Implements `IAudioOutputPort`. This adapter is the only part of the application that knows about the Web Audio API. It receives commands from the `PlaybackHexagon` and translates them into Web Audio graph setup and communication with the `rubberband.worker` via its `WorkerChannel`. It also runs the `requestAnimationFrame` loop for the "Hot Path" `currentTime` updates, writing directly to `timeStore`.
+*   **`SileroVadAdapter`:** Implements `IInferenceEnginePort`. It is responsible for managing the `silero_vad.worker` via its own `WorkerChannel`. When its `compute()` method is called by the `VADHexagon`, it sends the audio chunk to the worker and returns the resulting probability array.
+*   **`StateStoreAdapter`:** Implements all `...StatePublisherPort` interfaces. A simple facade that takes data from a hexagon and writes it into the correct central state store object, decoupling the hexagons from the specific state management implementation.
+*   **`URLStateAdapter`:** Subscribes to the state stores. On key state changes, a debounced call serializes the state into the URL hash. It also provides a method for the `AppHexagon` to parse the initial hash on startup.
+
+##### **3.3. Infrastructure Utility: The `WorkerChannel`**
+
+*   **Core Responsibility:** A reusable class that provides a generic, robust, Promise-based request/response communication channel over the native Web Worker API. It acts as an **Anti-Corruption Layer (ACL)**, abstracting away the complexities of `postMessage`, `onmessage` handling, message ID correlation, and `Transferable` objects.
+*   **Instantiation:** It is instantiated by driven adapters like `WebAudioAdapter` and `SileroVadAdapter`. Each adapter creates and owns its own `WorkerChannel` instance, which in turn manages a dedicated Web Worker.
+*   **Observability:** It provides a centralized point for cross-cutting observability, automatically handling:
+    *   **Latency Tracing:** Measuring the roundtrip time for every worker operation.
+    *   **Traffic Logging:** Logging message types for debugging.
+    *   **Error Metrics:** Tracking communication failures and worker-side errors.
+
+---
+
+#### **4. Detailed Interaction Flows (English Descriptions)**
+
+##### **4.1. Application Initialization**
+1.  **Entry Point (`main.js`):** Instantiates all hexagons and adapters, performing dependency injection by "plugging" the adapters into the hexagons' ports.
+2.  **`AppHexagon`:** Is commanded to `initializeApplication()`. It transitions to the `LOADING` state and publishes this to the `statusStore`. The `UIManagerAdapter` reacts, showing a global spinner.
+3.  **`AppHexagon`** then commands all relevant adapters (e.g., `WebAudioAdapter`, `SileroVadAdapter`) to initialize their underlying technology (e.g., workers loading WASM/ONNX models).
+4.  **`AppHexagon`** awaits all initialization promises. Upon successful completion, it checks the `URLStateAdapter` for a file to load. If none, it transitions to the `IDLE` state. The `UIManagerAdapter` hides the spinner and enables the initial UI controls.
+
+##### **4.2. Loading an Audio File**
+1.  **`UIManagerAdapter`:** The user selects a file. The adapter calls `AppHexagon.loadAudio(file)`.
+2.  **`AppHexagon`:** Transitions to the `LOADING` state and publishes it. The UI shows a spinner. It drives an `AudioLoaderService` to decode the file into an `AudioBuffer`.
+3.  **`AppHexagon`:** Once the buffer is ready, it orchestrates the next steps in parallel:
+    *   **Critical Path (Awaited):** It commands `PlaybackHexagon.prepare(buffer)` and `WaveformHexagon.generate(buffer)`.
+    *   **Background (Fire-and-Forget):** It commands `VADHexagon.analyze(buffer)` and `DTMFHexagon.analyze(buffer)`.
+4.  **Hexagons:** The `PlaybackHexagon` and `WaveformHexagon` complete their tasks and publish their state (`duration`, `waveformData`).
+5.  **`AppHexagon`:** As soon as the critical path is complete, it transitions to the `READY` state. The `UIManagerAdapter` hides the spinner, enables all controls, and renders the waveform.
+6.  **Background Completion:** Later, as the `VADHexagon` and `DTMFHexagon` complete, they publish their results. The `UIManagerAdapter` reacts by drawing VAD regions and displaying DTMF tones.
+
+##### **4.3. The Seek Interaction (Using the State Machine)**
+1.  **`mousedown`:** The user presses the seek bar handle.
+    *   **`UIManagerAdapter`:** Calls `AppHexagon.beginSeek()`.
+    *   **`AppHexagon`:** Consults its current state.
+        *   If `PLAYING`, it transitions to `SEEK_AND_RESUME`. As part of this state's entry actions, it commands `PlaybackHexagon.pause()`.
+        *   If `READY`, it transitions to `SEEK_AND_HOLD`. No playback command is needed.
+    *   In both cases, it publishes the new state. The `UIManagerAdapter` shows a "seeking" indicator on the UI.
+2.  **`input` (drag):** The user drags the handle.
+    *   **`UIManagerAdapter`:** Calls `AppHexagon.updateSeek(newTime)`.
+    *   **`AppHexagon`:** It drives the `PlaybackHexagon` to update its `currentTime`, which is then published to the *cold* `playerStore`. The `WebAudioAdapter` also directly writes to the *hot* `timeStore` for smooth UI feedback.
+3.  **`mouseup`:** The user releases the handle.
+    *   **`UIManagerAdapter`:** Calls `AppHexagon.endSeek(finalTime)`.
+    *   **`AppHexagon`:** It first commands `PlaybackHexagon.seek(finalTime)`. Then, it consults its current state.
+        *   If `SEEK_AND_RESUME`, it transitions to `PLAYING` by commanding `PlaybackHexagon.play()`.
+        *   If `SEEK_AND_HOLD`, it transitions to `READY`.
+    *   The `UIManagerAdapter` hides the "seeking" indicator. The application is now in a new, stable state.
+
+##### **4.4. Parameter Adjustment (e.g., Speed)**
+This flow does **not** change the `AppHexagon`'s primary state.
+1.  **`UIManagerAdapter`:** The user moves the "Speed" slider. An `on:input` event handler calls a debounced function.
+2.  **Debouncer:** After the user stops moving the slider for ~200ms, the function fires.
+3.  **`UIManagerAdapter`:** Calls `AppHexagon.setSpeed(finalValue)`.
+4.  **`AppHexagon`:** Delegates the command directly to `PlaybackHexagon.setSpeed(finalValue)`.
+5.  **`PlaybackHexagon`:** Updates its internal `speed` property and drives its two output ports:
+    *   `this.statePublisher.publish({ speed: finalValue })` -> The `StateStoreAdapter` updates the store, and the UI label changes.
+    *   `this.audioOutput.updateParameters({ speed: finalValue })` -> The `WebAudioAdapter` receives the new parameter and sends a message to the `rubberband.worker` to adjust the time-stretching.
+
+---
+
+#### **5. Interaction Flows (Sequence Diagrams)**
+
+##### **5.1. Play/Pause Command & Event Flow**
+```mermaid
+sequenceDiagram
+    actor User
+    participant UIMgr as UIManagerAdapter
+    participant AppHex as AppHexagon
+    participant PlayHex as PlaybackHexagon
+    participant WA_Adapter as WebAudioAdapter
+    participant Store as StateStoreAdapter
+
+    User->>UIMgr: Clicks 'Play'
+    UIMgr->>AppHex: play()
+    AppHex->>PlayHex: play()
+    activate PlayHex
+    PlayHex->>WA_Adapter: play()
+    note right of WA_Adapter: Starts Web Audio engine & rAF loop.
+    PlayHex->>Store: publish({ isPlaying: true })
+    deactivate PlayHex
+    Store-->>UIMgr: Notifies of state change
+    UIMgr->>User: Updates UI (icon to 'Pause')
+
+    %% Some time later... Audio ends
+    WA_Adapter-->>PlayHex: onPlaybackEnded() event
+    activate PlayHex
+    note right of PlayHex: Forwards event, does not change own state.
+    PlayHex-->>AppHex: onPlaybackEnded() event
+    deactivate PlayHex
+    activate AppHex
+    note right of AppHex: State machine transitions PLAYING -> READY.
+    AppHex->>PlayHex: pause() command
+    deactivate AppHex
+    activate PlayHex
+    PlayHex->>WA_Adapter: pause()
+    PlayHex->>Store: publish({ isPlaying: false })
+    deactivate PlayHex
+    Store-->>UIMgr: Notifies of state change
+    UIMgr->>User: Updates UI (icon to 'Play')
+```
+
+##### **5.2. Seek Interaction Flow**
+```mermaid
+sequenceDiagram
+    actor User
+    participant UIMgr as UIManagerAdapter
+    participant AppHex as AppHexagon
+    participant PlayHex as PlaybackHexagon
+    participant Store as StateStoreAdapter
+
+    User->>UIMgr: Mousedown on seek bar
+    UIMgr->>AppHex: beginSeek()
+    activate AppHex
+    note right of AppHex: State machine: PLAYING -> SEEK_AND_RESUME
+    AppHex->>PlayHex: pause()
+    AppHex->>Store: publish({ status: 'SEEK_AND_RESUME' })
+    deactivate AppHex
+
+    User->>UIMgr: Drags handle
+    UIMgr->>AppHex: updateSeek(newTime)
+    activate AppHex
+    AppHex->>PlayHex: seek(newTime)
+    deactivate AppHex
+    activate PlayHex
+    PlayHex->>Store: publish({ currentTime: newTime })
+    deactivate PlayHex
+
+    User->>UIMgr: Mouseup on seek bar
+    UIMgr->>AppHex: endSeek(finalTime)
+    activate AppHex
+    note right of AppHex: State machine: SEEK_AND_RESUME -> PLAYING
+    AppHex->>PlayHex: seek(finalTime)
+    AppHex->>PlayHex: play()
+    AppHex->>Store: publish({ status: 'PLAYING' })
+    deactivate AppHex
+```
+
+##### **5.3. Parameter Adjustment Flow (No State Change)**
+```mermaid
+sequenceDiagram
+    actor User
+    participant UIMgr as UIManagerAdapter
+    participant AppHex as AppHexagon
+    participant PlayHex as PlaybackHexagon
+    participant WA_Adapter as WebAudioAdapter
+    participant Store as StateStoreAdapter
+
+    User->>UIMgr: Moves 'Speed' slider
+    note right of UIMgr: Input is debounced.
+
+    UIMgr->>AppHex: setSpeed(1.5)
+    activate AppHex
+    AppHex->>PlayHex: setSpeed(1.5)
+    deactivate AppHex
+
+    activate PlayHex
+    note right of PlayHex: Updates internal state and drives ports.
+    PlayHex->>WA_Adapter: updateParameters({ speed: 1.5 })
+    note right of WA_Adapter: Sends message to worker.
+    PlayHex->>Store: publish({ speed: 1.5 })
+    deactivate PlayHex
+
+    Store-->>UIMgr: Notifies of state change
+    UIMgr->>User: Updates UI ('1.50x' label)
+```
+
+#### **6. Additional Implementation Clarifications**
+
+This section provides explicit rules for specific implementation scenarios to remove ambiguity.
+
+##### **6.1. Detailed Error Propagation from Workers**
+
+To ensure robust and predictable error handling, the following flow is mandatory for all worker interactions:
+
+1.  **Error in Worker:** If a Web Worker encounters a fatal error (e.g., WASM memory corruption, unhandled exception), its global error handler must post a special error message back to the main thread.
+2.  **`WorkerChannel` Rejection:** The `WorkerChannel` instance on the main thread, upon receiving this error message or experiencing a communication timeout, **must** reject the outstanding Promise for the current operation. The rejected reason **must** be a custom `WorkerError` object containing details about the failure (e.g., type, message, worker name).
+3.  **Adapter Catches Error:** The calling adapter (e.g., `WebAudioAdapter`, `SileroVadAdapter`) **must** have a `.catch()` block to handle this `WorkerError`.
+4.  **Adapter Dispatches System Event:** The adapter **must not** handle the error itself. Instead, it **must** translate the low-level `WorkerError` into a high-level system event (e.g., `EVENT_PLAYBACK_FAILURE`, `EVENT_ANALYSIS_FAILED`) and dispatch this event to the `AppHexagon`.
+5.  **`AppHexagon` Handles State Transition:** The `AppHexagon` receives the system event and is the sole authority to decide what to do. It **must** transition the application into the `ERROR` state, providing the error details to be displayed by the `UIManagerAdapter`.
+
+##### **6.2. URL Hash State Loading Rules**
+
+The handling of the URL hash fragment (`#`) on application startup is governed by the following explicit rules:
+
+*   **Rule 1: Loading a Local File.** When a user loads a new audio file from their local machine via the `<input type="file">`, any existing hash fragment in the URL **must be cleared**. This ensures that the state from a previous shared session does not "leak" into a new, unrelated session. The `URLStateAdapter` will be responsible for calling `history.replaceState` to set the hash to an empty string.
+*   **Rule 2: Loading from a `url` Parameter.** When the application starts and the hash fragment contains a `url` parameter (e.g., `#url=http://.../audio.mp3&speed=1.5`), the `AppHexagon` **must** proceed as follows:
+    1.  Initiate the loading of the audio from the specified URL.
+    2.  Simultaneously, parse and apply all *other valid parameters* found in the hash (like `speed`, `pitch`, `time`, `vadPositive`, etc.) to the application's state stores.
+    3.  The hash fragment **must not** be cleared in this case. It should be preserved so the user can see and copy the state-sharing URL. The application state will simply load *on top of* the values specified in the URL.
+
+---
+
+# **Appendix G: UI Element Contracts**
+
+This appendix provides a definitive list of all user-interactive or dynamically updated HTML elements managed by the `UIManagerAdapter`. It serves as a stable contract between the HTML structure (`public/index.html`) and the application logic, ensuring that UI manipulation is consistent and testable. All `id` attributes are considered mandatory.
+
+| Component Group          | Element ID                  | HTML Element(s)             | Description                                                                                                                              |
+|:-------------------------|:----------------------------|:----------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------|
+| **Global State**         | `global-spinner`            | `<div>` or `<span>`         | A loading indicator (e.g., a spinner) shown during critical operations like initial loading. Managed by `uiManager.showGlobalSpinner()`.     |
+|                          | `global-error-container`    | `<div>`                     | A prominent, non-modal container at the top of the page to display critical, unrecoverable errors. Managed by `uiManager.displayErrorMessage()`. |
+| **File Handling**        | `file-input`                | `<input type="file">`       | The file selector button/input that the user interacts with to load a local audio file.                                                  |
+|                          | `file-name-display`         | `<span>` or `<div>`         | Displays the name of the currently loaded audio file or URL.                                                                             |
+|                          | `file-error-message`        | `<span>` or `<p>`           | A small, inline message displayed near the file input for non-critical errors like selecting an invalid file type.                     |
+| **Playback Controls**    | `play-pause-button`         | `<button>`                  | The main button for toggling between play and pause states. Its icon/text is updated by the `UIManagerAdapter`.                          |
+|                          | `seek-bar`                  | `<input type="range">`      | The main progress/seek slider for the audio track.                                                                                       |
+|                          | `time-current-display`      | `<span>`                    | Displays the current playback time (e.g., "01:23"). Updated on the "Hot Path".                                                            |
+|                          | `time-duration-display`     | `<span>`                    | Displays the total duration of the audio file (e.g., "04:56").                                                                           |
+|                          | `jump-forward-button`       | `<button>`                  | Button to jump the playback time forward by a fixed amount.                                                                              |
+|                          | `jump-backward-button`      | `<button>`                  | Button to jump the playback time backward by a fixed amount.                                                                             |
+| **Parameter Controls**   | `speed-slider`              | `<input type="range">`      | Slider to control the playback speed.                                                                                                    |
+|                          | `speed-value-display`       | `<span>`                    | Displays the current speed value (e.g., "1.50x").                                                                                        |
+|                          | `pitch-slider`              | `<input type="range">`      | Slider to control the pitch shift.                                                                                                       |
+|                          | `pitch-value-display`       | `<span>`                    | Displays the current pitch value (e.g., "1.20x").                                                                                        |
+|                          | `gain-slider`               | `<input type="range">`      | Slider to control the output volume/gain.                                                                                                |
+|                          | `gain-value-display`        | `<span>`                    | Displays the current gain value (e.g., "2.00x").                                                                                         |
+|                          | `reset-controls-button`     | `<button>`                  | A button to reset speed, pitch, and gain to their default values (1.0).                                                                  |
+| **Analysis Controls**    | `vad-positive-threshold-slider` | `<input type="range">`  | Slider to adjust the VAD positive (speech start) threshold.                                                                              |
+|                          | `vad-positive-threshold-display`| `<span>`                | Displays the current VAD positive threshold value (e.g., "0.80").                                                                        |
+|                          | `vad-negative-threshold-slider` | `<input type="range">`  | Slider to adjust the VAD negative (speech end) threshold.                                                                                |
+|                          | `vad-negative-threshold-display`| `<span>`                | Displays the current VAD negative threshold value (e.g., "0.50").                                                                        |
+| **Analysis Displays**    | `vad-progress-bar`          | `<progress>` or `<div>`     | A progress bar shown while the initial VAD analysis is running in the background.                                                        |
+|                          | `dtmf-results-container`    | `<div>` or `<ul>`           | The container where detected DTMF tones will be displayed as a list or sequence.                                                         |
+|                          | `cpt-results-container`     | `<div>`                     | The container where detected Call Progress Tones (e.g., "Busy Signal") will be displayed.                                                |
+| **Visualizations**       | `waveform-canvas`           | `<canvas>`                  | The canvas element used for drawing the main audio waveform and VAD region highlights.                                                   |
+|                          | `spectrogram-canvas`        | `<canvas>`                  | The canvas element used for drawing the audio spectrogram.                                                                               |
+
+---
+
+# **Appendix H: Implementation Refinements & Decisions**
+
+This appendix serves as an addendum to the main refactor plan. It provides definitive implementation decisions for key infrastructure components that were identified for further clarification. These decisions are mandatory for all AI agents working on the project.
+
+#### **1. State Store Implementation & Dependency Vendoring Policy**
+
+*   **Context:** Section 3.1 identifies the need for a state store with a pub/sub mechanism. The new **"offline, air-gapped"** constraint makes it impossible to rely on CDNs for third-party libraries. Therefore, a strict policy for handling dependencies is required.
+*   **Decision:** The project will adopt a **strict vendoring policy** for all third-party runtime dependencies. **Nano Stores** (`nanostores`) will still be used for state management due to its ideal characteristics, but its source file will be committed directly to the repository instead of being loaded from a CDN.
+*   **Rationale:**
+    *   **Offline Compliance:** Vendoring is the *only* way to ensure the application can run on an air-gapped network with no internet access. All required code is contained within the project directory.
+    *   **Constraint Compliance:** Nano Stores remains the best choice as it is extremely lightweight (<1KB), has zero dependencies, and requires no build step to use.
+    *   **Robustness & Verifiability:** Committing the library file directly into the repository makes the application fully self-contained and auditable. We are not dependent on the availability or integrity of an external service.
+*   **Implementation Pattern:**
+
+    1.  **Vendoring the Library:** The `nanostores.js` module file will be downloaded from a trusted source (e.g., `esm.sh`) and placed in the `public/lib/` directory.
+
+    2.  **Store Definition (`src/lib/stores/playerStore.js`):** The import path will be updated to a relative path pointing to the local, vendored file.
+        ```javascript
+        // Import from the local, vendored file.
+        import { atom } from '../lib/nanostores.js';
+
+        /** @typedef {import('../types.js').PlayerState} PlayerState */
+
+        const initialState = { /* ... initial state properties ... */ };
+
+        // The 'atom' is the store. It holds state and manages subscribers.
+        export const playerStore = atom(initialState);
+
+        /**
+         * Updates the player store with new partial state.
+         * This function will be called by the StateStoreAdapter.
+         * @param {Partial<PlayerState>} newState
+         */
+        export function updatePlayerState(newState) {
+          const currentState = playerStore.get();
+          playerStore.set({ ...currentState, ...newState });
+        }
+        ```
+
+    3.  **Script Management Integration:** The `scripts/generate-index.js` script (defined in Section 2) must be aware of this new local dependency so it can be included correctly in the generated `public/index.html`. It will be added to the dependency graph analysis performed by `dependency-cruiser`.
+
+---
+
+#### **2. `index.html` Script Management Strategy**
+
+*   **Context:** Constraint 1 ("Zero Build-Step") requires managing `<script>` tags directly in `index.html`. This is a known point of fragility if done manually.
+*   **Decision:** This process will be automated and CI-enforced using a two-part system.
+*   **Part 1: The Generation Script (`scripts/generate-index.js`)**
+    *   **Responsibility:** An AI agent will create and maintain a Node.js script that automatically generates the `public/index.html` file.
+    *   **Process:**
+        1.  Execute `dependency-cruiser` programmatically to get the project's dependency graph as JSON.
+        2.  Perform a **topological sort** on the dependency graph to determine the precise, correct script load order.
+        3.  Read a template file (`public/index.html.template`) containing a placeholder comment (e.g., `<!-- SCRIPT_INJECTION_POINT -->`).
+        4.  Generate the correctly ordered sequence of `<script type="module" src="..."></script>` tags.
+        5.  Replace the placeholder in the template and write the result to `public/index.html`.
+    *   **Rationale:** This eliminates manual script ordering errors, which was a key fragility in V1. It also guarantees a single, self-contained `index.html` file that works offline without modification.
+*   **Part 2: The Enforcement Test (`tests/integration/index.test.js`)**
+    *   **Responsibility:** A mandatory integration test will be created to run as part of the `npm test` command in the CI pipeline.
+    *   **Process:**
+        1.  The test will import and run the generation logic from `scripts/generate-index.js` in memory to create the "expected" `index.html` content as a string.
+        2.  It will then read the actual, committed `public/index.html` file from the disk.
+        3.  It will assert that the two strings are identical.
+    *   **Guarantee:** This test will fail if a developer adds or removes a source file but forgets to run the generation script, thereby preventing a stale `index.html` from ever being merged.
+
+---
+
+#### **3. Worker Communication Protocol and Timeout Handling**
+
+*   **Context:** Section 4.3 of Appendix F defines the `WorkerChannel` utility. To ensure system resilience, this utility must be enhanced to handle cases where a Web Worker becomes unresponsive.
+*   **Decision:** The `WorkerChannel` class **must** implement a robust, Promise-based timeout mechanism for all request/response operations.
+*   **Rationale:** This prevents a hanging worker from causing an unhandled state in the application. Centralizing this logic in the `WorkerChannel` keeps the Adapters clean and ensures the behavior is consistent for all worker interactions.
+*   **Implementation Pattern (`WorkerChannel.js`):**
+
+    The `post` method will use `Promise.race` to pit the worker's response against a `setTimeout`.
+
+    ```javascript
+    const DEFAULT_WORKER_TIMEOUT_MS = 15000; // 15 seconds
+
+    export class WorkerTimeoutError extends Error {
+      constructor(message) {
+        super(message);
+        this.name = 'WorkerTimeoutError';
+      }
+    }
+
+    export class WorkerChannel {
+      // ... other class properties ...
+
+      post(message, transferables = [], timeout = DEFAULT_WORKER_TIMEOUT_MS) {
+        return new Promise((resolve, reject) => {
+          const messageId = this.nextMessageId++;
+          let timeoutHandle;
+
+          const listener = (response) => {
+            if (response.id !== messageId) return; // Ignore messages for other requests
+
+            clearTimeout(timeoutHandle);
+            this.listeners.delete(messageId);
+            if (response.error) {
+              reject(new Error(response.error));
+            } else {
+              resolve(response.payload);
+            }
+          };
+
+          this.listeners.set(messageId, listener);
+
+          timeoutHandle = setTimeout(() => {
+            this.listeners.delete(messageId);
+            reject(new WorkerTimeoutError(`Worker operation timed out after ${timeout}ms for message type: ${message.type}.`));
+          }, timeout);
+
+          this.worker.postMessage({ id: messageId, payload: message }, transferables);
+        });
+      }
+    }
+    ```
+*   **Error Propagation Flow:**
+    1.  **Rejection:** If a timeout occurs, the `Promise` returned by `workerChannel.post()` rejects with a `WorkerTimeoutError`.
+    2.  **Adapter Catches:** The calling adapter (e.g., `SileroVadAdapter`) **must** wrap its `.post()` call in a `try...catch` block.
+    3.  **Adapter Dispatches Event:** Inside the `catch` block, the adapter **must not** handle the error. It **must** translate the low-level error into a high-level system event (e.g., `EVENT_ANALYSIS_FAILED`) and dispatch it to the `AppHexagon`.
+    4.  **AppHexagon Handles State:** The `AppHexagon` receives the event and, as the central authority, transitions the application to the `ERROR` state, displaying a user-friendly message.
 ````
 --- End of File: REFACTOR_PLAN.md ---
 --- File: vibe-player/architecture.md ---
