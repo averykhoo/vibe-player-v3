@@ -1035,3 +1035,66 @@ sequenceDiagram
     Store-->>UIMgr: Notifies of state change
     UIMgr->>User: Updates UI ('1.50x' label)
 ```
+
+#### **6. Additional Implementation Clarifications**
+
+This section provides explicit rules for specific implementation scenarios to remove ambiguity.
+
+##### **6.1. Detailed Error Propagation from Workers**
+
+To ensure robust and predictable error handling, the following flow is mandatory for all worker interactions:
+
+1.  **Error in Worker:** If a Web Worker encounters a fatal error (e.g., WASM memory corruption, unhandled exception), its global error handler must post a special error message back to the main thread.
+2.  **`WorkerChannel` Rejection:** The `WorkerChannel` instance on the main thread, upon receiving this error message or experiencing a communication timeout, **must** reject the outstanding Promise for the current operation. The rejected reason **must** be a custom `WorkerError` object containing details about the failure (e.g., type, message, worker name).
+3.  **Adapter Catches Error:** The calling adapter (e.g., `WebAudioAdapter`, `SileroVadAdapter`) **must** have a `.catch()` block to handle this `WorkerError`.
+4.  **Adapter Dispatches System Event:** The adapter **must not** handle the error itself. Instead, it **must** translate the low-level `WorkerError` into a high-level system event (e.g., `EVENT_PLAYBACK_FAILURE`, `EVENT_ANALYSIS_FAILED`) and dispatch this event to the `AppHexagon`.
+5.  **`AppHexagon` Handles State Transition:** The `AppHexagon` receives the system event and is the sole authority to decide what to do. It **must** transition the application into the `ERROR` state, providing the error details to be displayed by the `UIManagerAdapter`.
+
+##### **6.2. URL Hash State Loading Rules**
+
+The handling of the URL hash fragment (`#`) on application startup is governed by the following explicit rules:
+
+*   **Rule 1: Loading a Local File.** When a user loads a new audio file from their local machine via the `<input type="file">`, any existing hash fragment in the URL **must be cleared**. This ensures that the state from a previous shared session does not "leak" into a new, unrelated session. The `URLStateAdapter` will be responsible for calling `history.replaceState` to set the hash to an empty string.
+*   **Rule 2: Loading from a `url` Parameter.** When the application starts and the hash fragment contains a `url` parameter (e.g., `#url=http://.../audio.mp3&speed=1.5`), the `AppHexagon` **must** proceed as follows:
+    1.  Initiate the loading of the audio from the specified URL.
+    2.  Simultaneously, parse and apply all *other valid parameters* found in the hash (like `speed`, `pitch`, `time`, `vadPositive`, etc.) to the application's state stores.
+    3.  The hash fragment **must not** be cleared in this case. It should be preserved so the user can see and copy the state-sharing URL. The application state will simply load *on top of* the values specified in the URL.
+
+---
+
+# **Appendix G: UI Element Contracts**
+
+This appendix provides a definitive list of all user-interactive or dynamically updated HTML elements managed by the `UIManagerAdapter`. It serves as a stable contract between the HTML structure (`public/index.html`) and the application logic, ensuring that UI manipulation is consistent and testable. All `id` attributes are considered mandatory.
+
+| Component Group          | Element ID                  | HTML Element(s)             | Description                                                                                                                              |
+|:-------------------------|:----------------------------|:----------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------|
+| **Global State**         | `global-spinner`            | `<div>` or `<span>`         | A loading indicator (e.g., a spinner) shown during critical operations like initial loading. Managed by `uiManager.showGlobalSpinner()`.     |
+|                          | `global-error-container`    | `<div>`                     | A prominent, non-modal container at the top of the page to display critical, unrecoverable errors. Managed by `uiManager.displayErrorMessage()`. |
+| **File Handling**        | `file-input`                | `<input type="file">`       | The file selector button/input that the user interacts with to load a local audio file.                                                  |
+|                          | `file-name-display`         | `<span>` or `<div>`         | Displays the name of the currently loaded audio file or URL.                                                                             |
+|                          | `file-error-message`        | `<span>` or `<p>`           | A small, inline message displayed near the file input for non-critical errors like selecting an invalid file type.                     |
+| **Playback Controls**    | `play-pause-button`         | `<button>`                  | The main button for toggling between play and pause states. Its icon/text is updated by the `UIManagerAdapter`.                          |
+|                          | `seek-bar`                  | `<input type="range">`      | The main progress/seek slider for the audio track.                                                                                       |
+|                          | `time-current-display`      | `<span>`                    | Displays the current playback time (e.g., "01:23"). Updated on the "Hot Path".                                                            |
+|                          | `time-duration-display`     | `<span>`                    | Displays the total duration of the audio file (e.g., "04:56").                                                                           |
+|                          | `jump-forward-button`       | `<button>`                  | Button to jump the playback time forward by a fixed amount.                                                                              |
+|                          | `jump-backward-button`      | `<button>`                  | Button to jump the playback time backward by a fixed amount.                                                                             |
+| **Parameter Controls**   | `speed-slider`              | `<input type="range">`      | Slider to control the playback speed.                                                                                                    |
+|                          | `speed-value-display`       | `<span>`                    | Displays the current speed value (e.g., "1.50x").                                                                                        |
+|                          | `pitch-slider`              | `<input type="range">`      | Slider to control the pitch shift.                                                                                                       |
+|                          | `pitch-value-display`       | `<span>`                    | Displays the current pitch value (e.g., "1.20x").                                                                                        |
+|                          | `gain-slider`               | `<input type="range">`      | Slider to control the output volume/gain.                                                                                                |
+|                          | `gain-value-display`        | `<span>`                    | Displays the current gain value (e.g., "2.00x").                                                                                         |
+|                          | `reset-controls-button`     | `<button>`                  | A button to reset speed, pitch, and gain to their default values (1.0).                                                                  |
+| **Analysis Controls**    | `vad-positive-threshold-slider` | `<input type="range">`  | Slider to adjust the VAD positive (speech start) threshold.                                                                              |
+|                          | `vad-positive-threshold-display`| `<span>`                | Displays the current VAD positive threshold value (e.g., "0.80").                                                                        |
+|                          | `vad-negative-threshold-slider` | `<input type="range">`  | Slider to adjust the VAD negative (speech end) threshold.                                                                                |
+|                          | `vad-negative-threshold-display`| `<span>`                | Displays the current VAD negative threshold value (e.g., "0.50").                                                                        |
+| **Analysis Displays**    | `vad-progress-bar`          | `<progress>` or `<div>`     | A progress bar shown while the initial VAD analysis is running in the background.                                                        |
+|                          | `dtmf-results-container`    | `<div>` or `<ul>`           | The container where detected DTMF tones will be displayed as a list or sequence.                                                         |
+|                          | `cpt-results-container`     | `<div>`                     | The container where detected Call Progress Tones (e.g., "Busy Signal") will be displayed.                                                |
+| **Visualizations**       | `waveform-canvas`           | `<canvas>`                  | The canvas element used for drawing the main audio waveform and VAD region highlights.                                                   |
+|                          | `spectrogram-canvas`        | `<canvas>`                  | The canvas element used for drawing the audio spectrogram.                                                                               |
+
+---
+
