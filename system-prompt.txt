@@ -1000,640 +1000,640 @@ Development involving LLM assistance should follow the guidelines outlined in `v
 ````markdown
 [//]: # ( REFACTOR_PLAN.md )
 
-# **Vibe Player V3: The Hexagonal Refactoring Plan**
+# **Vibe Player V3: The Hexagonal Architecture Blueprint**
 
-### **0. Context & Justification**
+### **0. Context & Executive Summary: Building with Unwavering Precision**
 
-The primary impetus for this refactor stems from a careful analysis of the project's history: the successes and
-limitations of the original `vibe-player` (V1), and the architectural failures of the subsequent `vibe-player-v2.3`
-refactor attempt. V3 is not an incremental fix but a necessary redesign based on the lessons learned from both.
+This document outlines the complete architectural blueprint and detailed implementation strategy for Vibe Player V3. It
+represents a fundamental, ground-up redesign, moving beyond incremental fixes, driven by a rigorous analysis of past
+architectural failures and the explicit commitment to **AI/LLM-driven development**.
 
-#### **0.1 Analysis of V1: The Working-but-Fragile Implementation**
+The primary objective for V3 is to construct an audio player and analysis tool that is:
 
-The original implementation, located in the `/vibe-player` directory, is the current production version for a reason: *
-*it works.** It successfully integrates complex technologies like the Web Audio API, Rubberband WASM, and ONNX Runtime
-to deliver all core features. Critically, it correctly offloads intensive tasks like VAD analysis to a Web Worker, as
-seen in `js/vad/LocalWorkerStrategy.js`.
+* **Fundamentally Robust and Predictable:** By enforcing strict boundaries, formal contracts, and unidirectional data
+  flow, we will eliminate classes of bugs related to race conditions, inconsistent state, and fragile inter-module
+  communication.
+* **Completely Testable and Verifiable:** Every piece of core application logic will be testable in isolation, detached
+  from browser APIs and UI frameworks. This is paramount for AI agents, as automated tests become the primary validation
+  mechanism.
+* **Decoupled and Maintainable:** Core business logic will be entirely separated from external technologies (UI, Web
+  Workers, state stores), allowing independent evolution and technology swaps.
+* **Transparent and Debuggable:** Through formalized error handling, structured logging, and dedicated observability, AI
+  agents will have the necessary feedback loops to self-diagnose and correct issues.
+* **Built with No Build Step:** The application will be written in **Pure JavaScript with strict JSDoc typing**. It must
+  be runnable directly from a static file server without a bundling or transpilation step, prioritizing simplicity and
+  immediate testability.
+* **Behavior-Driven:** High-level behaviors will be defined in **Gherkin scenarios**, which serve as executable
+  specifications for both AI implementation and automated end-to-end testing.
+* **Shareable via URL Hash:** The entire application state—including the loaded audio URL, playback time, and all
+  parameters—will be serialized into the URL's **hash fragment (`#`)**, enabling users to share a link that perfectly
+  reproduces their session.
 
-However, its success is achieved through an architecture that is brittle and difficult to maintain or extend. Its key
-weaknesses are observable in the code:
-
-* **Ad-Hoc and Non-Reusable Worker Logic:** While V1 correctly uses a Web Worker for VAD, the implementation is entirely
-  bespoke. The `LocalWorkerStrategy.js` module manually constructs the entire worker's script as a single, monolithic
-  string. This "worker-in-a-string" pattern is difficult to debug, has no syntax highlighting, and the communication
-  protocol (`onmessage` handling a switch-case) is custom-built for this one purpose. It is not a reusable or robust
-  pattern for managing asynchronous, threaded tasks.
-
-* **The "God Object" Controller:** `vibe-player/js/app.js` acts as a monolithic controller. It directly orchestrates
-  every aspect of the application, from UI event handling (`handlePlayPause`) to kicking off analysis tasks (
-  `runVadInBackground`, `processAudioForTones`) and managing central state. This tight coupling makes it exceedingly
-  difficult to test any single piece of functionality in isolation.
-
-* **Implicit Dependencies via Script Order:** The entire application's stability relies on the manual `<script>` loading
-  order in `vibe-player/index.html`. Modules attach themselves to the global `AudioApp` namespace and assume their
-  dependencies will be present. A change to this sequence can lead to cascading runtime errors.
-
-* **Global, Mutable State:** State is managed via properties attached directly to the global `AudioApp` namespace (e.g.,
-  `AudioApp.state.runtime.currentAudioBuffer`). This makes it difficult to trace where and when state is being changed,
-  creating a high risk of unpredictable side effects and making state management a source of potential bugs.
-
-#### **0.2 Analysis of V2.3: The Failed Refactor**
-
-The `vibe-player-v2.3` project was a well-intentioned effort to modernize the stack with SvelteKit and TypeScript.
-However, it is non-functional, suffering from critical flaws that rendered it unusable. The CI pipeline (
-`.github/workflows/ci-v2.yml`) confirms this, with most build and test steps commented out.
-
-Its failure was not due to the choice of Svelte or TypeScript, but because it **inherited and amplified the
-architectural weaknesses of V1** instead of solving them.
-
-* **The Root Failure: Duplication of Fragile Worker Communication:** The core flaw was taking V1's ad-hoc worker
-  communication pattern and duplicating it across the new, service-oriented architecture. As seen in
-  `vibe-player-v2.3/src/lib/services/analysis.service.ts` and `audioEngine.service.ts`, each service independently
-  implemented its own manual, error-prone system for talking to its worker. This involved manually managing promise
-  `resolve`/`reject` callbacks in a `Map` and tracking unique message IDs—a fragile, complex, and repetitive pattern.
-
-* **The Consequence: Catastrophic, Silent Failures:** This duplicated boilerplate was the direct cause of the project's
-  instability. A simple bug, such as a worker forgetting to echo back a `messageId`, caused its corresponding service's
-  `initialize()` promise to hang forever, silently deadlocking a major part of the application. This exact bug pattern
-  was discovered in multiple services (`sileroVad.worker.ts`, `rubberband.worker.ts`), proving that the architecture
-  itself—which encouraged this pattern—was the problem.
-
-* **Behavioral Regressions:** The V2.3 refactor also introduced functional regressions. For example, the waveform
-  visualization, defined in `vibe-player-v2.3/src/lib/utils/waveform.ts`, implemented a simple peak-finding algorithm (
-  `maxAmplitude`) instead of the `min/max` peak detection used in V1. This resulted in the observed visual bug where the
-  waveform displayed as incorrect, equal-height bars, losing the visual fidelity of the original.
-
-In summary, V1 proved the features were viable but the architecture was unsustainable. V2.3 proved that modern tools
-without a sound architecture are insufficient and will amplify existing problems. V3 is the direct response: a ground-up
-redesign using the **Hexagonal (Ports and Adapters) Architecture** to create a system that is fundamentally testable,
-decoupled, and robust, with a dedicated, reusable solution for all asynchronous worker communication.
-
-## 1. Vision & Executive Summary
-
-This document outlines the complete architectural blueprint for Vibe Player V3. It is not an incremental fix, but a
-ground-up redesign based on the principles of **Hexagonal (Ports and Adapters) Architecture**.
-
-The vision for V3 is to create a system that is:
-
-* **Fundamentally Testable:** Every piece of core application logic must be testable in complete isolation, without
-  depending on a UI framework, browser APIs, or live Web Workers. This will be achieved by treating every major domain
-  of functionality as its own independent, self-contained hexagon.
-* **Decoupled and Maintainable:** The application's core business logic will be completely separated from the external "
-  technologies" that drive it (the UI) and that it drives (Web Workers, state stores). This allows any piece of
-  technology to be swapped out without affecting the core application.
-* **Framework Agnostic:** The core application will be written in pure, platform-agnostic TypeScript. The UI will be
-  treated as just one of many possible "adapters," allowing for a future migration to React, Vanilla JS, or any other
-  view layer with minimal effort.
-* **Robust and Predictable:** By enforcing strict boundaries and unidirectional data flow between highly specialized
-  modules, we will eliminate the entire class of race conditions and state management bugs that plagued previous
-  versions.
-
-## 2. Critique of Previous Architectures (V1 & V2)
-
-To justify this comprehensive redesign, we must first perform a critical analysis of the previous versions,
-acknowledging what worked and identifying the root causes of what failed.
-
-### 2.1. Analysis of V1 (The Working-but-Brittle Monolith)
-
-The original `vibe-player` in Vanilla JS was functionally complete and, importantly, **it worked**.
-
-* **What Worked:** It successfully integrated complex technologies like the Web Audio API, ONNX Runtime, and Rubberband
-  WASM. Its "analyze once, tune in real-time" model for VAD was highly effective.
-* **Tradeoffs & Flaws:**
-    * **Tight Coupling:** Its success was dependent on a fragile, manually-enforced script loading order in
-      `index.html`. A change in this order would break the entire application.
-    * **Monolithic Controller:** `app.js` was a "God Object" that knew about and controlled every other module, from UI
-      management to audio processing to VAD analysis. This made it extremely difficult to test or modify any single
-      piece of functionality in isolation.
-    * **Global State:** State was managed via properties on the global `AudioApp` namespace, making it difficult to
-      track when and where state was being changed.
-    * **Main-Thread Blocking:** Intensive tasks like VAD and Spectrogram analysis were performed on the main thread with
-      `async/await` and `setTimeout` hacks to yield control. While this worked for moderately sized files, it was not a
-      truly non-blocking solution and could lead to UI stuttering.
-
-### 2.2. Analysis of V2.3 (The Flawed Refactor)
-
-The V2.3 SvelteKit refactor was a positive step towards modernization, but it failed to address the core architectural
-problems, instead "porting the monolith" into a new framework.
-
-* **What Improved:** It introduced a proper build system, TypeScript for type safety, and a reactive UI layer with
-  Svelte. It correctly moved intensive tasks into dedicated Web Workers.
-* **The Architectural Failure:** The core flaw was the **decentralized and fragile worker communication contract**. Each
-  service (`audioEngine.service`, `analysis.service`, etc.) independently implemented its own manual, error-prone system
-  for managing asynchronous communication with its worker. This involved:
-    1. Manually creating and storing promise `resolve`/`reject` callbacks.
-    2. Manually generating unique message IDs.
-    3. Manually managing a `Map` of pending requests.
-    4. Requiring the worker to perfectly echo back the message ID.
-* **The Consequence:** This fragile, duplicated boilerplate was the direct cause of the bugs we chased. A missing
-  `messageId` in `sileroVad.worker.ts` caused its `initialize()` promise to hang forever. When we fixed that, we
-  immediately discovered the *exact same bug* in `rubberband.worker.ts`. This pattern of repeated, identical bugs is a
-  clear sign that the architecture itself, not the implementation, is the problem.
-
-## 3. The V3 Architectural Model: A Federation of Hexagons
-
-V3 will be built as a **federation of collaborating, self-contained hexagons**. This is an advanced application of the
-Ports and Adapters pattern where each domain of functionality is its own "micro-application."
-
-* **The Hexagon (Application Core):** A module containing pure, isolated business logic with no dependencies on external
-  technologies.
-* **Ports:** The formal interfaces (e.g., TypeScript `interface` or public class methods) that define how data and
-  commands flow into or out of the hexagon.
-* **Adapters:** The "pluggable" pieces of technology that connect to the ports.
-    * **Driving Adapters:** Initiate action *on* the hexagon (e.g., the UI, a test suite).
-    * **Driven Adapters:** Are driven *by* the hexagon to perform a task (e.g., a Web Worker, a state store, the
-      browser's URL bar).
-
-## 4. The V3 System Components (The Hexagons)
-
-### 4.1. The `AppHexagon` (The Orchestrator)
-
-* **Core Responsibility:** Manages the application's top-level state machine (`Initializing`, `Idle`, `Loading`,
-  `Ready`, `Error`) and defines the high-level user stories. It is the primary client of all other domain hexagons.
-* **Inside (`AppService`):** Contains the logic for coordinating services to fulfill use cases like `initializeApp()`
-  and `loadAudio(source)`.
-* **Ports:**
-    * **Driving (`IAppDriver`):** The public methods of the `AppService`.
-    * **Driven (`ILoaderPort`, `IPlaybackPort`, `IAnalysisPort`):** Interfaces used to command the other hexagons.
-* **Adapters:**
-    * **Driving:** The UI Framework Adapter, Keyboard Input Adapter.
-    * **Driven:** The other Hexagons (`PlaybackHexagon`, `VADHexagon`, etc.) are the adapters that plug into this
-      hexagon's driven ports.
-
-### 4.2. The `UIHexagon`
-
-* **Core Responsibility:** To translate the application's central state into a pure, framework-agnostic view model, and
-  to map raw user inputs into formal application commands.
-* **Inside (`UIViewLogic`):** Contains pure presentation logic (e.g., "if status is 'loading', the play button view
-  model should have an `isDisabled` property set to `true`"). It produces a virtual representation of the UI.
-* **Ports:**
-    * **Driving (`IStateProvider`):** A port that receives state updates from the outside world.
-    * **Driven (`ICommandPort`, `IRenderPort`):** Ports used to send application commands out and to send rendering
-      instructions to the DOM.
-* **Adapters:**
-    * **Driving:** The `StateStoreAdapter` pushes state changes *into* the UIHexagon.
-    * **Driven:**
-        * The `AppHexagon` implements the `ICommandPort`.
-        * The **`DOMAdapter` (Svelte/React/VanillaJS)** implements the `IRenderPort`, translating the view model into
-          actual HTML/CSS.
-
-### 4.3. The `PlaybackHexagon`
-
-* **Core Responsibility:** The pure state machine for a time-stretchable audio player. It knows nothing of the Web Audio
-  API.
-* **Inside (`PlaybackService`):** Manages properties like `duration`, `currentTime`, `speed`, and states like `playing`
-  or `paused`.
-* **Ports:**
-    * **Driving (`IPlaybackDriver`):** Public methods like `play()`, `pause()`, `seek()`.
-    * **Driven (`IAudioOutput`, `IPlayerStatePublisher`):** Interfaces to command an audio backend and to publish state
-      updates.
-* **Adapters:**
-    * **Driven:**
-        * **`WebAudioAdapter`**: The implementation of `IAudioOutput` that manages the `AudioContext` and the
-          `rubberband.worker` via a `WorkerManager`. This is the *only* place with Web Audio API code.
-        * **`StateStoreAdapter`**: The implementation of `IPlayerStatePublisher`.
-
-### 4.4. The Visualization Hexagons (`WaveformHexagon`, `SpectrogramHexagon`)
-
-* **Core Responsibility:** Pure data transformation.
-* **Inside (`WaveformService`, `SpectrogramService`):** Contain the algorithms to convert an `AudioBuffer` into visual
-  data (peak arrays or frequency-magnitude arrays).
-* **Ports:**
-    * **Driven (`IFFTEngine`):** The `SpectrogramService` depends on a port to perform FFT calculations.
-* **Adapters:**
-    * **Driven:**
-        * **`FFTJsWorkerAdapter`**: An adapter for the `IFFTEngine` port that uses a `WorkerManager` to run `fft.js` in
-          a background thread.
-        * **Canvas Adapters (`Waveform.svelte`, `Spectrogram.svelte`):** These are now "dumb" driven adapters that only
-          know how to render the data they receive.
-
-### 4.5. The Analysis Hexagons (`VADHexagon`, `DTMFHexagon`)
-
-* **Core Responsibility:** Pure signal processing and analysis logic.
-* **Inside (`VADService`, `DTMFService`):** Contain the algorithms for VAD region merging and Goertzel-based tone
-  detection.
-* **Ports:**
-    * **Driven (`IInferenceEngine`):** The `VADService` depends on a port to get raw speech probabilities.
-* **Adapters:**
-    * **Driven:**
-        * **`SileroVadWorkerAdapter`**: Implements `IInferenceEngine`, managing the `sileroVad.worker`.
-        * **`DTMFWorkerAdapter`**: Manages the `dtmf.worker`.
-
-### 4.6. The Infrastructure Hexagon (`WorkerManagerHexagon`)
-
-* **Core Responsibility:** To provide a robust, promise-based request/response communication channel.
-* **Inside (`WorkerManagerService`):** The logic for managing pending promises, IDs, and timeouts.
-* **Ports & Adapters:** It is driven by the application services and drives the browser's `Worker` API. This isolates
-  all other services from the mechanics of `postMessage`.
+This plan serves as the definitive source of truth for all AI agents tasked with V3 development. **Every instruction
+within this document is a mandatory directive.**
 
 ---
 
-## 5. Detailed State Sequences & Event Flows
+### **1. Architectural Principles & Design Constraints**
 
-### Flow 1: Application Initialization
+This section outlines the non-negotiable rules and rationales that govern all development decisions for V3. The AI agent
+must adhere to these constraints at all times.
 
-1. **UI Adapter** (`main.ts` or equivalent) -> calls `AppHexagon.initializeApp()`.
-2. **AppHexagon** -> updates `StateStore` to `Status: Initializing`.
-3. **AppHexagon** -> calls `initialize()` on all domain hexagons (`Playback`, `VAD`, `DTMF`, etc.) in parallel.
-4. Each **Domain Hexagon** -> creates its required **Driven Adapters** (e.g., `WebAudioAdapter`,
-   `SileroVadWorkerAdapter`).
-5. Each **Adapter** -> creates its `WorkerManager` and sends an `INIT` message to its respective **Worker**.
-6. Each **Worker** -> performs its setup (loading WASM/models).
-7. Each **Worker** -> posts `INIT_SUCCESS` back to its `WorkerManager`.
-8. Each **WorkerManager** -> resolves the promise its service is awaiting.
-9. **AppHexagon** -> The `Promise.all` resolves.
-10. **AppHexagon** -> checks the **URL Adapter**. If a source URL exists, it proceeds to Flow 2. Otherwise, it updates
-    `StateStore` to `Status: Idle`.
+* **Constraint 1: Zero Build-Step, Static Execution**
+    * **Description:** The V3 application **must** be runnable directly from the file system or a simple static server
+      with **no build or bundling step required**. All code will be written as standard JavaScript modules (e.g., loaded
+      via `<script type="module">` or a similar pattern) and loaded via `<script>` tags in `index.html`.
+    * **Rationale:** This prioritizes simplicity, immediate testability, and zero-dependency development, avoiding
+      complexities that can arise from build toolchains.
+    * **Implication for AI:** The agent **must not** use any syntax that requires a transpiler (e.g., JSX). It must
+      manage dependencies via an explicit and correctly ordered list of `<script>` tags in `index.html`.
+      `dependency-cruiser` will be used in CI to validate this order.
 
-### Flow 2: Successful File Load
+* **Constraint 2: V1 Logic is the "Golden Master" for Core Algorithms**
+    * **Description:** For core signal processing and visualization algorithms (specifically VAD region calculation,
+      DTMF/CPT parsing, and waveform peak generation), the V3 implementation **must** be functionally identical to the
+      V1 implementation. The V1 code serves as the "golden master" reference.
+    * **Rationale:** V1's algorithms are proven to work correctly. The goal of V3 is initially to fix the architecture,
+      not re-invent the core processing. Future algorithmic improvements can be made against this stable baseline.
+    * **Implication for AI:** The agent's primary goal is to accurately port and refactor the existing, proven logic
+      from V1's `.js` files into the new V3 Hexagonal structure. Characterization tests will be the arbiter of success.
 
-1. **UI Adapter** (e.g., File input) -> calls `AppHexagon.loadAudio(source)`.
-2. **AppHexagon** -> updates `StateStore` to `Status: Loading`.
-3. **AppHexagon** -> `await`s **AudioLoaderService** `decode(source)`.
-4. **AudioLoaderService** -> returns the `AudioBuffer`.
-5. **AppHexagon** -> `await`s **PlaybackHexagon** `prepare(audioBuffer)`.
-6. **AppHexagon** -> `await`s **WaveformHexagon** `generatePeaks(audioBuffer)`. The result is published to the
-   `StateStore`.
-7. **AppHexagon** -> **IMMEDIATELY** updates `StateStore` to `Status: Ready` and `isPlayable: true`.
-8. **UI** -> Controls become enabled. The waveform appears instantly.
-9. **AppHexagon** -> In the background (not awaited), calls `process()` on the `VADHexagon`, `DTMFHexagon`, and
-   `SpectrogramHexagon`.
-10. As each of these hexagons completes, they update their respective parts of the `StateStore`.
-11. **UI** -> VAD highlights, DTMF results, and the spectrogram "pop in" as their data becomes available.
+* **Constraint 3: Main-Thread-Authoritative Timekeeping**
+    * **Description:** The application **must** implement a main-thread-authoritative timekeeping model to ensure a
+      smooth UI and prevent visual "jumps" or glitches. The UI's time display and seek bar will be driven by a
+      `requestAnimationFrame` loop on the main thread.
+    * **Rationale:** As analyzed from V1, audio processing worklets (like Rubberband WASM) can have inherent latency and
+      their time reporting can drift from the browser's high-resolution clock. Trusting the worklet's time for UI
+      updates leads to a poor user experience.
+    * **Implication for AI:** The AI agent must implement the "Hot Path" as described in the state management section.
+      The `WebAudioAdapter` will drive the `timeStore` for UI updates. The `AppHexagon` must issue `COMMAND_SEEK` to the
+      `PlaybackHexagon` upon explicit user actions (like `COMMAND_PAUSE` or parameter changes) to force the audio engine
+      to re-synchronize with the main thread's authoritative time.
 
-### Flow 3: Seeking
+* **Constraint 4: Future-Proofing for Remote VAD API**
+    * **Description:** The architecture must be designed to allow the local, in-browser VAD processing to be easily
+      replaced by an asynchronous HTTP call to a remote VAD API endpoint in the future.
+    * **Rationale:** This provides flexibility. Local VAD is great for privacy and offline use, but a remote API could
+      offer more powerful models or reduce client-side CPU load.
+    * **Implication for AI:** This is a key justification for the Hexagonal Architecture. The AI will implement a
+      `VADHexagon` that depends on a port (`IInferenceEnginePort`). Initially, this port will be implemented by a
+      `SileroVadAdapter` using the local `WorkerChannel`. In the future, a new `RemoteVadApiAdapter` can be created to
+      implement the same port using `fetch`, with no changes required to the `VADHexagon`.
 
-1. **UI Adapter** `mousedown` on seek bar -> calls `AppHexagon.beginSeek()`.
-2. **AppHexagon** -> checks `StateStore`. If `Player.isPlaying` is true, it saves this fact (`wasPlaying = true`).
-3. **AppHexagon** -> calls `PlaybackHexagon.pause()`.
-4. **AppHexagon** -> updates `StateStore` to `Status: Seeking`.
-5. **UI Adapter** `input` on seek bar -> updates `StateStore` with new `Player.currentTime`.
-6. **UI Adapter** `mouseup` on seek bar -> calls `AppHexagon.endSeek(finalTime)`.
-7. **AppHexagon** -> calls `PlaybackHexagon.seek(finalTime)`.
-8. **AppHexagon** -> if `wasPlaying` was true, calls `PlaybackHexagon.play()`.
-9. **AppHexagon** -> updates `StateStore` to `Status: Playing` or `Status: Paused`.
+* **Principle 1: Clarity, Functionality, and Clean Design**
+    * **Description:** The user interface design should prioritize clarity, information density, and functional utility.
+    * **Rationale:** The goal is to create a powerful tool, not a purely aesthetic piece. A clean, well-organized
+      interface that provides clear feedback and powerful controls is paramount.
+    * **Implication for AI:** When tasked with creating UI components, the agent should produce simple, functional HTML
+      and CSS that is well-structured and easy to understand. It should avoid overly complex or purely decorative UI
+      elements.
 
----
-
-## 6. Other Key Architectural Decisions & V1 Tradeoff Analysis
-
-* **Waveform Rendering Fix:** The `WaveformHexagon`'s `generatePeaks` method will explicitly implement the V1 `min/max`
-  peak detection algorithm. V1's tradeoff was doing this calculation on the main thread, which was acceptable because
-  it's a very fast, single-pass operation. V3 will keep this synchronous logic, as moving it to a worker would add
-  unnecessary complexity for little performance gain. This is a pragmatic choice inspired by V1's success.
-* **URL State Management:** The `URLAdapter` (on init) and `URLWriterAdapter` (on state change) formalize this process.
-  The `URLWriterAdapter` will subscribe to the `StateStore` and, using a `debounce` function, will update the browser's
-  URL bar. This decouples the application core from the browser's History API.
-* **Unified Status:** The single `Status` object in the `StateStore` provides a single source of truth for the UI's
-  state, preventing conflicts between different "isLoading" or "error" flags.
-* **Error Handling:** Errors will propagate up through the promise chain. An error in a worker will reject the
-  `WorkerManager`'s promise. This rejection will be caught by the service that called it. If the error is unrecoverable,
-  the service will reject its own promise, which will be caught by the `AppHexagon`, which will then update the
-  `StateStore` to the `Error` status. This provides a clear and traceable path for all errors.
-
----
-
-### **Appendix A: V3 State Management & Data Flow**
-
-This appendix provides a concrete and detailed implementation guide for the state management and data flow principles of
-the V3 Hexagonal Architecture. It specifies where each piece of state is owned, the strict communication pathways
-between components, and the step-by-step flow for every user interaction.
-
-#### **1. The State Store: A Driven Adapter, Not a Hexagon**
-
-A foundational principle of this architecture is the clear separation of business logic (Hexagons) from technology (
-Adapters). The "State Store" (e.g., a collection of Svelte stores) is a technology choice for enabling reactive UI
-updates. It is not a hexagon itself.
-
-* **Role**: The State Store acts as a centralized, write-only message bus for the application's core logic.
-* **Management**: No single hexagon "manages" the store. Instead, multiple hexagons **drive** it through a
-  `StateStoreAdapter`.
-* **Data Flow**: A hexagon calculates a new state, calls its driven port (e.g., `IPlayerStatePublisher`), and the
-  `StateStoreAdapter`'s implementation of that port is what actually writes to the Svelte store. The hexagon remains
-  pure, with no knowledge of Svelte.
-
-#### **2. Communication Hierarchy: Who Can Talk to Whom**
-
-To prevent the tight coupling of previous versions, communication follows these strict rules:
-
-| From                                             | Can Call / Drive                                                            | CANNOT Call / Drive                                     | Example                                                                                                    |
-|:-------------------------------------------------|:----------------------------------------------------------------------------|:--------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------|
-| **Driving Adapter** (e.g., UI Component)         | A **Hexagon's** driving port.                                               | Another adapter, the State Store, or a worker directly. | The "Play" button component calls `AppHexagon.play()`.                                                     |
-| **Hexagon** (e.g., `PlaybackHexagon`)            | A **Driven Adapter's** port (e.g., `StateStoreAdapter`, `WebAudioAdapter`). | Another Hexagon directly.                               | `PlaybackHexagon` calls `this.statePublisher.publish(...)` which the `StateStoreAdapter` implements.       |
-| **Technology Adapter** (e.g., `WebAudioAdapter`) | A **Worker** (via the `WorkerManager`) or Browser APIs (`AudioContext`).    | A Hexagon.                                              | `WebAudioAdapter` calls `this.workerManager.postRequest(...)` to communicate with the `rubberband.worker`. |
-
-The **`AppHexagon`** is the only exception: it is the orchestrator and is allowed to call the driving ports of other
-domain hexagons (e.g., `PlaybackHexagon`, `VADHexagon`) to coordinate complex use cases.
-
-#### **3. State Ownership and Pathways**
-
-The following table details every piece of application state, its official "owner," and its location in the central
-state store.
-
-| State Item                           | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
-|:-------------------------------------|:---------------------|:----------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `status` (`loading`, `ready`, etc.)  | `AppHexagon`         | `statusStore`                           | The single source of truth for the application's overall state.                                                                                               |
-| `error`                              | `AppHexagon`         | `statusStore`                           | The global error message, if any.                                                                                                                             |
-| `fileName`, `duration`, `isPlayable` | `AppHexagon`         | `playerStore`                           | High-level metadata about the loaded audio, managed by the orchestrator.                                                                                      |
-| `isPlaying`, `isLooping`             | `PlaybackHexagon`    | `playerStore`                           | The canonical boolean playback state.                                                                                                                         |
-| `currentTime`                        | `PlaybackHexagon`    | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
-| `speed`, `pitchShift`, `gain`        | `PlaybackHexagon`    | `playerStore`                           | Playback manipulation parameters.                                                                                                                             |
-| `isSeeking`, `wasPlayingBeforeSeek`  | `AppHexagon`         | *Internal to `AppHexagon`*              | Ephemeral UI state for managing the seek interaction. Not needed by the rest of the app, so it is not published to the store.                                 |
-| `vadProbabilities`                   | `VADHexagon`         | `analysisStore`                         | The raw frame-by-frame speech probabilities from the ML model.                                                                                                |
-| `vadRegions`                         | `VADHexagon`         | `analysisStore`                         | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds.                                                              |
-| `vadPositiveThreshold`, etc.         | `VADHexagon`         | `analysisStore`                         | The tuning parameters for VAD region calculation.                                                                                                             |
-| `dtmfResults`                        | `DTMFHexagon`        | `dtmfStore`                             | The list of detected DTMF tones.                                                                                                                              |
-| `spectrogramData`                    | `SpectrogramHexagon` | `analysisStore`                         | The calculated spectrogram data (frequency-magnitude arrays).                                                                                                 |
-| `waveformData`                       | `WaveformHexagon`    | `playerStore`                           | The calculated peak data for waveform visualization.                                                                                                          |
+* **Principle 2: Eager Asset Initialization**
+    * **Description:** To optimize user experience and minimize latency upon file selection, the application **should**
+      adopt a strategy of pre-fetching and pre-initializing heavy assets (like WASM and ONNX models) at startup.
+    * **Rationale:** This helps prevent race conditions and provides a more responsive feel, as the user does not have
+      to wait for large assets to download *after* they have selected a file.
+    * **Implication for AI:** The `AppHexagon`'s `INITIALIZE_APPLICATION` flow must include steps to trigger the
+      initialization of adapters that require heavy remote assets.
 
 ---
 
-#### **4. Detailed Interaction Flows**
+### **2. The `AppHexagon` State Machine**
 
-The following sections detail the end-to-end data flow for every user interaction.
+The `AppHexagon` orchestrates the application's primary lifecycle. Its state transitions are strictly defined to ensure
+predictable behavior.
 
-##### **4.1 Application Initialization & URL Loading**
+#### **2.1. State Diagram**
 
-This flow describes what happens when a user first loads the page with URL parameters.
+```mermaid
+stateDiagram-v2
+    direction LR
 
-1. **Driving Adapter (`+page.ts`)**: The SvelteKit `load` function reads parameters (`url`, `time`, `speed`, etc.) from
-   the page's URL search params. It bundles these into an `initialState` object.
-2. **Driving Adapter (UI - `+page.svelte`)**: The `initialState` is passed as a prop. In `onMount`, it checks if
-   `initialState.url` exists.
-3. **Port Call**: If a URL exists, it calls `AppHexagon.loadAudio(initialState.url, initialState)`.
-4. **`AppHexagon` (Orchestrator)**: It sets `statusStore` to `loading`. It then drives the `AudioLoaderService` to fetch
-   the URL content.
-5. **`AudioLoaderService`**: Returns a decoded `AudioBuffer`.
-6. **`AppHexagon`**: It receives the `AudioBuffer` and begins driving all other hexagons in parallel:
-    * `PlaybackHexagon.prepare(audioBuffer, initialState)`: Sets the duration, initial seek time, speed, etc.
-    * `WaveformHexagon.generatePeaks(audioBuffer)`: Generates the waveform visualization data.
-    * *Fire-and-forget calls:* `VADHexagon.analyze()`, `DTMFHexagon.analyze()`, `SpectrogramHexagon.generate()`.
-7. **Hexagons Publish State**: As each hexagon completes its task, it publishes its data (`waveformData`, `duration`,
-   `isPlayable=true`, etc.) to the `StateStoreAdapter`.
-8. **`AppHexagon`**: Once the *critical path* (playback prep and waveform) is complete, it sets `statusStore` to
-   `ready`.
-9. **UI Reaction**: All components subscribed to the stores (`playerStore`, `statusStore`) update to show the waveform
-   and enable the playback controls. The background analysis results (`vadRegions`, `spectrogramData`) pop in later as
-   they become available.
+    [*] --> IDLE
+    IDLE --> LOADING: COMMAND_LOAD_AUDIO
 
-##### **4.2 Loading Audio (User Interaction)**
+    LOADING --> READY: EVENT_LOAD_SUCCESS
+    LOADING --> ERROR: EVENT_LOAD_FAILURE
 
-This flow is nearly identical to URL loading, but is initiated by a user click.
+    READY --> PLAYING: COMMAND_PLAY
+    READY --> SEEK_AND_HOLD: COMMAND_BEGIN_SEEK
+    READY --> LOADING: COMMAND_LOAD_AUDIO
 
-* **Load from File**: `FileLoader.svelte` -> `on:change` -> `AppHexagon.loadAudio(file)`. The flow proceeds as in 4.1.
-* **Load from URL Input**: `FileLoader.svelte` -> `on:click` on "Load" button -> `AppHexagon.loadAudio(url)`. The flow
-  proceeds as in 4.1.
+    PLAYING --> READY: COMMAND_PAUSE
+    PLAYING --> READY: EVENT_PLAYBACK_ENDED
+    PLAYING --> SEEK_AND_RESUME: COMMAND_BEGIN_SEEK
+    PLAYING --> LOADING: COMMAND_LOAD_AUDIO
+    PLAYING --> ERROR: EVENT_PLAYBACK_FAILURE
 
-##### **4.3 Playback Control (Cold Path)**
+    SEEK_AND_RESUME --> PLAYING: COMMAND_END_SEEK
+    SEEK_AND_RESUME --> SEEK_AND_HOLD: COMMAND_PAUSE
 
-* **Play/Pause (Button or Keyboard)**
-    1. **Driving Adapter (UI)**: `Controls.svelte` button click or global keybind fires.
-    2. **Port Call**: Calls `AppHexagon.togglePlayPause()`.
-    3. **`AppHexagon`**: Delegates by calling `PlaybackHexagon.togglePlayPause()`.
-    4. **`PlaybackHexagon`**: Flips its internal `isPlaying` boolean. It then publishes the new state (
-       `isPlaying: true`) via its driven port. It also calls `this.audioOutput.play()`, which is implemented by the
-       `WebAudioAdapter`.
-    5. **`WebAudioAdapter`**: Starts the `rAF` loop for the "Hot Path" time updates.
-    6. **`StateStoreAdapter`**: Updates `playerStore`. The UI's play button icon changes.
+    SEEK_AND_HOLD --> READY: COMMAND_END_SEEK
+    SEEK_AND_HOLD --> SEEK_AND_RESUME: COMMAND_PLAY
 
-* **Stop Button**
-    1. **Driving Adapter (UI)**: `Controls.svelte` "Stop" button click.
-    2. **Port Call**: Calls `AppHexagon.stop()`.
-    3. **`AppHexagon`**: Orchestrates the stop sequence. It calls `PlaybackHexagon.stop()` and
-       `PlaybackHexagon.seek(0)`.
-    4. **`PlaybackHexagon`**: Pauses playback, sets its internal `currentTime` to 0, and publishes both
-       `isPlaying: false` and `currentTime: 0` to the store.
-    5. **`WebAudioAdapter`**: The `rAF` loop stops. The `URLWriterAdapter` sees the time is 0 and removes the `t=`
-       parameter from the URL.
+    ERROR --> LOADING: COMMAND_LOAD_AUDIO
 
-* **Jump Forward/Backward**
-    1. **Driving Adapter (UI)**: `Controls.svelte` jump button click or keybind fires.
-    2. **Port Call**: Calls `AppHexagon.jump(direction)`.
-    3. **`AppHexagon`**: Reads the `jumpSeconds` and `currentTime` from the `playerStore`. It calculates the `newTime`
-       and calls `PlaybackHexagon.seek(newTime)`.
-    4. **`PlaybackHexagon`**: Updates its internal time and publishes the change. The UI updates.
+    note for READY
+      State: Audio is loaded, playable, and paused.
+      (Covers both initial "ready" and subsequent "paused" conditions.)
+    end note
 
-##### **4.4 Parameter Sliders (Cold Path)**
+    note for SEEK_AND_RESUME
+        State: Paused for seeking.
+        Intent: Resume playback after seek.
+    end note
 
-* **Speed, Pitch, Gain, VAD Thresholds**
-    1. **Driving Adapter (UI)**: A slider in `Controls.svelte` is moved.
-    2. **Port Call**: The `on:input` event triggers a debounced call to `AppHexagon.setSpeed(value)` (or `setPitch`,
-       `setVadThreshold`, etc.).
-    3. **`AppHexagon`**: Delegates the call to the appropriate domain hexagon (e.g., `PlaybackHexagon.setSpeed(value)`).
-    4. **`PlaybackHexagon`/`VADHexagon`**: The hexagon updates its internal parameter. It then publishes the new value
-       to the `StateStoreAdapter`. For VAD, it also re-runs its internal region calculation and publishes the new
-       `vadRegions`.
-    5. **UI/Adapter Reaction**:
-        * The slider's label, subscribed to the store, updates its text.
-        * The `WebAudioAdapter`, subscribed to the `playerStore`, sees the new speed and sends a command to the
-          `rubberband.worker`.
-        * The `Waveform.svelte` component, subscribed to the `analysisStore`, sees the new `vadRegions` and redraws the
-          highlights.
+    note for SEEK_AND_HOLD
+        State: Paused for seeking.
+        Intent: Remain paused (in READY state) after seek.
+    end note
+```
 
-##### **4.5 The Seek Interaction (Special Case)**
+#### **2.2. State Definition Table**
 
-The seek bar is unique because it involves a continuous user drag action that must temporarily override the real-time
-playback updates.
+This table provides the granular detail an AI agent needs to implement the state machine correctly.
 
-* **State Owner**: The temporary `isSeeking` and `wasPlayingBeforeSeek` flags are owned internally by the **`AppHexagon`
-  **. They are ephemeral UI orchestration state and do not belong in the `PlaybackHexagon` or the global state store.
+| State Name            | Description                                                                                                                               | Entry Actions (What the AppHexagon does upon entering this state)                                                                         | Allowed Commands (Triggers for leaving this state)                                                  |
+|:----------------------|:------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------|
+| **`IDLE`**            | The application has started, but no audio has been loaded. This is the initial state.                                                     | <ul><li>`uiManager.renderInitialView()`</li></ul>                                                                                         | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                              |
+| **`LOADING`**         | An audio source (file or URL) is being fetched, decoded, and prepared by the `AudioLoaderService` and `AudioEngine`.                      | <ul><li>`uiManager.showGlobalSpinner()`</li><li>`uiManager.disableAllControls()`</li></ul>                                                | <ul><li>(No user commands allowed; transitions are via internal events)</li></ul>                   |
+| **`READY`**           | Audio is successfully loaded and playable, but playback is paused. This is the default state after loading and after pausing or stopping. | <ul><li>`uiManager.hideGlobalSpinner()`</li><li>`uiManager.enableAllControls()`</li><li>`uiManager.setPlayButtonIcon('play')`</li></ul>   | <ul><li>`COMMAND_PLAY`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>          |
+| **`PLAYING`**         | Audio is currently playing.                                                                                                               | <ul><li>`uiManager.setPlayButtonIcon('pause')`</li><li>`audioEngine.startUiUpdateLoop()`</li></ul>                                        | <ul><li>`COMMAND_PAUSE`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>         |
+| **`SEEK_AND_RESUME`** | The user started seeking while the audio was `PLAYING`. Playback is temporarily paused, with the intent to resume after seeking.          | <ul><li>`audioEngine.pausePlayback()`</li><li>`uiManager.showSeekingIndicator()`</li></ul>                                                | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PAUSE` (user overrides resume intent)</li></ul>         |
+| **`SEEK_AND_HOLD`**   | The user started seeking while the audio was `READY` (paused), or paused during a `SEEK_AND_RESUME`. Playback is paused.                  | <ul><li>(No new action needed; already paused)</li><li>`uiManager.showSeekingIndicator()`</li></ul>                                       | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PLAY` (user overrides pause intent to resume)</li></ul> |
+| **`ERROR`**           | A critical, unrecoverable error occurred during loading or playback. The system is halted until a new file is loaded.                     | <ul><li>`uiManager.hideGlobalSpinner()`</li><li>`uiManager.disableAllControls()`</li><li>`uiManager.displayErrorMessage(error)`</li></ul> | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                              |
 
-* **Flow**:
-    1. **`mousedown` / `touchstart`**: The user presses the seek bar.
-        * **Driving Adapter (UI - `+page.svelte`)**: Calls `AppHexagon.beginSeek()`.
-        * **`AppHexagon`**: Sets its internal `this.isSeeking = true`. It checks the `playerStore` for the current
-          `isPlaying` status and saves it: `this.wasPlayingBeforeSeek = isPlaying`. If it was playing, it immediately
-          calls `PlaybackHexagon.pause()`.
-    2. **`input` / `touchmove`**: The user drags the seek bar.
-        * **Driving Adapter (UI)**: The slider's value changes. It directly updates the "hot" `timeStore` with the new
-          value. The `TimeDisplay` and the slider's thumb update instantly, providing responsive feedback *without*
-          repeatedly commanding the audio engine.
-    3. **`mouseup` / `touchend`**: The user releases the seek bar.
-        * **Driving Adapter (UI)**: Calls `AppHexagon.endSeek(finalTime)`.
-        * **`AppHexagon`**: It calls `PlaybackHexagon.seek(finalTime)`. Then, it checks its internal flag: if
-          `this.wasPlayingBeforeSeek` was true, it calls `PlaybackHexagon.play()`. Finally, it resets its internal
-          flags: `this.isSeeking = false`, `this.wasPlayingBeforeSeek = false`.
+#### **2.3. Handling Special Events**
 
-* **Why This Separation?**
-    * **Decoupling**: The `PlaybackHexagon`'s job is simple: play, pause, seek. It doesn't need to know *why* it's being
-      paused or sought. The complex UI logic of "pause-for-seek-then-resume" is an application-level concern, perfectly
-      suited for the `AppHexagon` orchestrator.
-    * **Performance**: The `input` events update the UI directly via the `timeStore`, providing a smooth dragging
-      experience without sending dozens of `seek` commands to the audio engine and worker, which would be slow and cause
-      audible glitching.
-
-##### **4.6 Real-time UI Updates (The Hot Path)**
-
-This flow is the high-performance, read-only path for UI elements that must update on every frame.
-
-1. **Initiator**: The **`WebAudioAdapter`**. When it is told to play by the `PlaybackHexagon`, it starts a
-   `requestAnimationFrame` loop.
-2. **Calculation**: On each frame, the loop calculates the precise `estimatedTime` based on `AudioContext.currentTime`
-   and the current speed from the `playerStore`.
-3. **Direct Store Update**: The loop calls `timeStore.set(estimatedTime)`.
-4. **Targeted UI Reaction**: Only the `SeekBar.svelte` thumb and the `TimeDisplay.svelte` text subscribe to `timeStore`.
-   They are the only components that re-render at 60fps. The rest of the application is unaffected.
-5. **Termination**: When the `WebAudioAdapter` is told to pause, it cancels the `requestAnimationFrame` loop.
+* **`EVENT_PLAYBACK_ENDED`:** When the `AppHexagon` is in the `PLAYING` state and receives this event:
+    1. It commands the `PlaybackHexagon` to set its internal time to the `duration`.
+    2. It transitions the application state to `READY`.
+    3. Crucially, it **does not** trigger the `URLStateAdapter` to update the hash. This prevents the URL from being
+       unhelpfully updated with a time equal to the duration.
+* **`COMMAND_PLAY` (from `READY` state):**
+    1. The `AppHexagon` checks if `currentTime === duration`.
+    2. If `true`, it first issues a `COMMAND_SEEK(0)` before issuing the `COMMAND_PLAY`.
+    3. If `false`, it just issues `COMMAND_PLAY`.
 
 ---
 
-## Appendix B: Advanced State Protocol & Edge Case Handling
+### **3. Detailed State Management & Data Flow**
 
-This appendix provides a concrete and detailed implementation guide for the state management and data flow principles of
-the V3 Hexagonal Architecture. It specifies where each piece of state is owned, the strict communication pathways
-between components, and the step-by-step flow for every user interaction, including edge case handling.
+#### **3.1. Core Principles**
 
-### 1. Architectural Principles
+* **Unidirectional Data Flow:** Data flows in one direction: Driving Adapters (UI) -> `AppHexagon` (commands) -> Domain
+  Hexagons (logic) -> Driven Adapters (effects, e.g., worker calls, store updates). Updates then flow back (Driven
+  Adapters -> Store -> Driving UI Adapter).
+* **State Store as a Write-Only Bus:** The centralized "State Store" (a collection of plain JavaScript objects with a
+  pub/sub mechanism) is a **Driven Adapter**, not a Hexagon. Hexagons **drive** the `StateStoreAdapter` to write state;
+  they do not read from it.
+* **Command vs. Event Pattern:**
+    * **Commands (Input):** Originate from a **Driving Adapter** (e.g., `uiManager.js`) or the `AppHexagon`. They are
+      requests for the application to *do something* (e.g., `COMMAND_PLAY`, `COMMAND_SEEK`).
+    * **Events (Output):** Originate from a **Driven Adapter** (e.g., `WebAudioAdapter`). They are notifications that a
+      *system event has occurred* (e.g., `EVENT_PLAYBACK_ENDED`, `EVENT_WORKER_CRASHED`).
+* **`AppHexagon` as Transactional Authority:** The `AppHexagon` is the sole authority for all major state transitions.
+  It receives events, consults its current status, and issues explicit commands back down to the domain hexagons to
+  update the canonical state.
+* **URL State Management (via Hash Fragment):**
+    * The **`AppHexagon`** is responsible for both reading and writing the application state to the URL.
+    * **On Initialization:** It drives a `URLStateAdapter` to parse `window.location.hash`. If a state is present, the
+      `AppHexagon` issues commands to other hexagons to apply that state. If a `url` parameter exists in the hash, it
+      triggers the file loading flow.
+    * **On State Change:** It is driven by the state store. On changes to key parameters, a debounced call to the
+      `URLStateAdapter` is made, which serializes the current state into the hash fragment using `history.replaceState`.
+* **Controlled Exception: The "Hot Path"**
+    * **What:** For high-frequency UI updates like the seek bar's position during playback, the `WebAudioAdapter` runs a
+      `requestAnimationFrame` loop. Inside this loop, it calculates the estimated time and writes **directly** to a
+      dedicated, lightweight UI store (`timeStore`).
+    * **Why:** This is a deliberate, controlled exception to achieve smooth 60fps UI updates without burdening the core
+      application logic with `rAF` loops.
+    * **Limitations:** This is the *only* such exception. The `timeStore` is treated as a read-only sink for UI display
+      purposes and does not trigger core application logic.
+* **Large Data Handling Protocol:** To maintain UI performance, large, static data payloads (like the `vadProbabilities`
+  array) are **not** stored in reactive state stores. The owning hexagon (`VADHexagon`) holds the data internally. The
+  state store will only hold a boolean flag (e.g., `hasVadProbabilities: true`), signaling to the UI that it can now
+  call a synchronous accessor method on the hexagon's port (e.g., `VADHexagon.getProbabilityData()`) to retrieve the
+  data for rendering.
 
-#### 1.1. The Command vs. Event Pattern
+#### **3.2. State Ownership & Pathways**
 
-To eliminate race conditions and enforce a predictable, sequential flow of logic, the system adheres to a strict
-Command/Event pattern:
-
-* **Commands (Input):** Originate from a **Driving Adapter** (e.g., the UI). They are requests for the application to
-  *do something* (e.g., `play()`, `seek()`, `setSpeed()`). The flow is always `UI -> AppHexagon -> Domain Hexagon`.
-* **Events (Output):** Originate from a **Driven Adapter** (e.g., `WebAudioAdapter`) or a worker. They are notifications
-  that a *system event has occurred* (e.g., `playbackFinished`, `workerCrashed`). The flow is always
-  `Adapter -> Domain Hexagon -> AppHexagon`.
-
-#### 1.2. The `AppHexagon`: A Transactional State Machine
-
-The `AppHexagon` is the sole authority for all major state transitions. Domain hexagons (like `PlaybackHexagon`) do not
-change their own state based on system events. They report these events up to the `AppHexagon`, which then consults its
-current state (`this.status`) and issues explicit commands back down to the domain hexagons to update their canonical
-state. This makes the system robust and transactional.
-
-#### 1.3. The "Hot Path" Reflex Arc
-
-For high-frequency UI updates (e.g., the seek bar position during playback), a controlled bypass mechanism is used.
-This "hot path" is a **read-only, UI-specific data flow** that does not alter the core application state.
-
-* The `WebAudioAdapter` runs a `requestAnimationFrame` loop during playback.
-* Inside the loop, it calculates the estimated time and writes **directly** to a dedicated, lightweight UI store (
-  `timeStore`).
-* Only UI components that need 60fps updates subscribe to this "hot" store.
-* The application's core hexagons are not involved or burdened by this loop.
-
-#### 1.4. Debouncing at the Adapter Layer
-
-To prevent flooding the application core with commands from continuous user input (e.g., wiggling a slider), debouncing
-is handled at the **Driving Adapter** layer. The UI component (`Controls.svelte`) is responsible for debouncing the
-user's input before sending a final, clean command to the `AppHexagon`.
-
-#### 1.5. Large Data Handling
-
-To maintain UI performance, large, static data payloads (like the VAD probabilities array) are **not** stored in
-reactive Svelte stores. Instead, the owning hexagon (`VADHexagon`) holds the data internally and provides a synchronous
-accessor method on its port (`getProbabilityData()`). The store will only hold a boolean flag (
-`hasProbabilities: true`), which signals to the relevant UI component that it can now call the accessor to retrieve the
-data for rendering.
-
-### 2. Communication Hierarchy
-
-Communication follows these strict rules to maintain decoupling:
-
-| From                                             | Can Call / Drive                                                            | CANNOT Call / Drive                                     | Example                                                                                                    |
-|:-------------------------------------------------|:----------------------------------------------------------------------------|:--------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------|
-| **Driving Adapter** (e.g., UI Component)         | A **Hexagon's** driving port.                                               | Another adapter, the State Store, or a worker directly. | The "Play" button component calls `AppHexagon.play()`.                                                     |
-| **Hexagon** (e.g., `PlaybackHexagon`)            | A **Driven Adapter's** port (e.g., `StateStoreAdapter`, `WebAudioAdapter`). | Another Hexagon directly. (Exception: `AppHexagon`).    | `PlaybackHexagon` calls `this.statePublisher.publish(...)` which the `StateStoreAdapter` implements.       |
-| **Technology Adapter** (e.g., `WebAudioAdapter`) | A **Worker** (via the `WorkerManager`) or Browser APIs (`AudioContext`).    | A Hexagon.                                              | `WebAudioAdapter` calls `this.workerManager.postRequest(...)` to communicate with the `rubberband.worker`. |
-
-### 3. State Ownership and Pathways
-
-| State Item                                  | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
-|:--------------------------------------------|:---------------------|:----------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `status` (`loading`, `ready`, etc.)         | `AppHexagon`         | `statusStore`                           | The single source of truth for the application's overall state.                                                                                               |
-| `error`                                     | `AppHexagon`         | `statusStore`                           | The global error message, if any.                                                                                                                             |
-| `fileName`, `duration`, `isPlayable`        | `AppHexagon`         | `playerStore`                           | High-level metadata about the loaded audio, managed by the orchestrator.                                                                                      |
-| `isPlaying`, `isLooping`                    | `PlaybackHexagon`    | `playerStore`                           | The canonical boolean playback state.                                                                                                                         |
-| `currentTime`                               | `PlaybackHexagon`    | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
-| `speed`, `pitchShift`, `gain`               | `PlaybackHexagon`    | `playerStore`                           | Playback manipulation parameters.                                                                                                                             |
-| **`isSeeking`**, **`wasPlayingBeforeSeek`** | **`AppHexagon`**     | **Internal to `AppHexagon`**            | Ephemeral UI state for managing the seek interaction. **Not published to the store.**                                                                         |
-| **`vadProbabilities`**                      | **`VADHexagon`**     | **Internal to `VADHexagon`**            | The raw frame-by-frame speech probabilities. **Not published to the store.**                                                                                  |
-| `hasVadProbabilities`                       | `VADHexagon`         | `analysisStore`                         | A boolean flag indicating that the probability data is available for retrieval.                                                                               |
-| `vadRegions`                                | `VADHexagon`         | `analysisStore`                         | The calculated speech time segments.                                                                                                                          |
-| `vadPositiveThreshold`, etc.                | `VADHexagon`         | `analysisStore`                         | The tuning parameters for VAD region calculation.                                                                                                             |
-| `dtmfResults`                               | `DTMFHexagon`        | `dtmfStore`                             | The list of detected DTMF tones.                                                                                                                              |
-| `spectrogramData`                           | `SpectrogramHexagon` | `analysisStore`                         | The calculated spectrogram data.                                                                                                                              |
-| `waveformData`                              | `WaveformHexagon`    | `playerStore`                           | The calculated peak data for waveform visualization.                                                                                                          |
-
-### 4. Detailed Interaction Flows & Edge Case Handling
-
-#### 4.1. File Loading (with Cancellation)
-
-1. **Initiation**: User selects a new file. `UI` -> `AppHexagon.loadAudio(file)`.
-2. **`AppHexagon` (Cancellation)**:
-    * It immediately calls its internal `this.cancelCurrentOperation()`. This dispatches a cancellation signal down to
-      all adapters via an `AbortController`. Any ongoing `fetch` or long worker task is aborted.
-    * It transitions the application state: `this.status = 'loading'`. It publishes this to the `statusStore`. The UI
-      shows a global spinner and disables controls.
-3. **`AppHexagon` (Orchestration)**: It proceeds with the standard loading sequence (driving `AudioLoaderService`, then
-   other hexagons in parallel).
-4. **Completion/Error**:
-    * On success, once critical path hexagons complete, `AppHexagon` sets `this.status = 'ready'`.
-    * If any critical step (e.g., decoding, `rubberband.worker` init) fails, the error propagates up to the
-      `AppHexagon`. It sets `this.status = 'error'`, publishes a descriptive error message to the `statusStore`, and
-      ensures all UI controls are in a safe, disabled state.
-
-#### 4.2. Playback Control (Command/Event Pattern)
-
-* **Play Command**:
-    1. `UI` -> `AppHexagon.play()`.
-    2. `AppHexagon` Gatekeeper: Checks `this.status`. If `'ready'`, it proceeds.
-    3. `AppHexagon` -> `PlaybackHexagon.play()`.
-    4. `PlaybackHexagon` -> `WebAudioAdapter.play()`.
-    5. `WebAudioAdapter` **activates the "Hot Path" `rAF` loop**.
-    6. `PlaybackHexagon` publishes `{ isPlaying: true }` to `playerStore`.
-
-* **Playback Finished Event (System-Generated)**:
-    1. `WebAudioAdapter` detects the stream has ended. It **emits an event**: `playbackFinished`.
-    2. `PlaybackHexagon` receives this event and **forwards it** to the `AppHexagon.onPlaybackFinished()`.
-    3. `AppHexagon` Gatekeeper: Checks `this.status`. If `'playing'`, it transitions `this.status = 'ready'`.
-    4. `AppHexagon` **issues a command**: `PlaybackHexagon.updateState({ isPlaying: false, currentTime: [duration] })`.
-    5. `PlaybackHexagon` obeys, updates its internal state, and publishes the final state to the `playerStore`. The
-       `WebAudioAdapter`'s `rAF` loop is already stopped.
-
-#### 4.3. The Seek Interaction (Stateful Orchestration)
-
-1. **`mousedown`**:
-    * `UI` -> `AppHexagon.beginSeek()`.
-    * **`AppHexagon`**:
-        * Sets its internal state: `this.isSeeking = true`.
-        * Reads `isPlaying` from `playerStore` and sets `this.wasPlayingBeforeSeek`.
-        * If `wasPlayingBeforeSeek` is true, it commands `PlaybackHexagon.pause()`. The `WebAudioAdapter` stops its
-          `rAF` loop upon receiving the pause command.
-
-2. **`input`**:
-    * `UI` -> `timeStore.set(newValue)`. The seek bar thumb and time display update instantly via the **Hot Path**. The
-      application core is not involved.
-
-3. **`mouseup`**:
-    * `UI` -> `AppHexagon.endSeek(finalTime)`.
-    * **`AppHexagon`**:
-        * Issues command: `PlaybackHexagon.seek(finalTime)`.
-        * Checks internal state: `if (this.wasPlayingBeforeSeek) { AppHexagon.play(); }`.
-        * Resets internal state: `this.isSeeking = false; this.wasPlayingBeforeSeek = false;`.
-
-#### 4.4. Slider Input (Debounced)
-
-1. **User Action**: User wiggles the "Speed" slider.
-2. **Driving Adapter (`Controls.svelte`)**:
-    * The slider's value is bound to a local variable, `localSpeed`.
-    * A reactive statement (`$:`) watches `localSpeed` and calls a **debounced function**:
-      `debouncedSetSpeed(localSpeed)`.
-    * The debouncer is configured with a 200-300ms wait time.
-3. **Command Path**: After the user stops wiggling the slider for the configured wait time, the debounced function
-   finally executes.
-    * `debouncedSetSpeed` -> `AppHexagon.setSpeed(finalValue)`.
-    * The command proceeds cleanly down the chain: `AppHexagon` -> `PlaybackHexagon` -> `StateStoreAdapter` and
-      `WebAudioAdapter`.
-
-This ensures that even with frantic, simultaneous input across multiple sliders, the core application only receives a
-few clean, final commands after the user's actions have settled.
+| State Item                                        | Owning Hexagon       | Location in Store                       | Description                                                                                                                                                   |
+|:--------------------------------------------------|:---------------------|:----------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `status` (`loading`, `ready`, etc.)               | `AppHexagon`         | `statusStore`                           | The single source of truth for the application's overall state.                                                                                               |
+| `error`                                           | `AppHexagon`         | `statusStore`                           | The global error message, if any.                                                                                                                             |
+| `fileName`, `duration`, `isPlayable`, `sourceUrl` | `AppHexagon`         | `playerStore`                           | High-level metadata about the loaded audio, managed by the orchestrator.                                                                                      |
+| `isPlaying`, `isLooping`                          | `PlaybackHexagon`    | `playerStore`                           | The canonical boolean playback state.                                                                                                                         |
+| `currentTime`                                     | `PlaybackHexagon`    | `timeStore` (Hot), `playerStore` (Cold) | The canonical playback time. Updated on the "hot path" by the `WebAudioAdapter` for UI, and synced on the "cold path" by the `PlaybackHexagon` on pause/seek. |
+| `speed`, `pitchShift`, `gain`                     | `PlaybackHexagon`    | `playerStore`                           | Playback manipulation parameters.                                                                                                                             |
+| `vadProbabilities`                                | `VADHexagon`         | *Internal to `VADHexagon`*              | The raw frame-by-frame speech probabilities. **Not published to the store.**                                                                                  |
+| `hasVadProbabilities`                             | `VADHexagon`         | `analysisStore`                         | A boolean flag indicating that the probability data is available for retrieval via accessor.                                                                  |
+| `vadRegions`                                      | `VADHexagon`         | `analysisStore`                         | The calculated speech time segments, derived from `vadProbabilities` and the current thresholds.                                                              |
+| `vadPositiveThreshold`, etc.                      | `VADHexagon`         | `analysisStore`                         | The tuning parameters for VAD region calculation.                                                                                                             |
+| `dtmfResults`                                     | `DTMFHexagon`        | `dtmfStore`                             | The list of detected DTMF tones.                                                                                                                              |
+| `spectrogramData`                                 | `SpectrogramHexagon` | *Internal to `SpectrogramHexagon`*      | The calculated spectrogram data (frequency-magnitude arrays). **Not published to the store.**                                                                 |
+| `hasSpectrogramData`                              | `SpectrogramHexagon` | `analysisStore`                         | A boolean flag indicating spectrogram data is available for retrieval via accessor.                                                                           |
+| `waveformData`                                    | `WaveformHexagon`    | `playerStore`                           | The calculated peak data for waveform visualization.                                                                                                          |
 
 ---
 
-### **Appendix C: V3 Testing and Quality Assurance Strategy**
+### **4. V3 Implementation Strategy & Process for AI Agents**
+
+This section details the practical, step-by-step process for AI agents to develop Vibe Player V3. It translates the
+architectural goals and quality assurances into an actionable workflow.
+
+#### **4.1. Guiding Principles for AI Agent Development**
+
+* **Inside-Out Development:** The AI agent **must** build the application from its pure business logic core (the
+  Hexagons) outwards towards the browser-specific technologies (the Adapters and UI). The AI agent **must explicitly
+  avoid** a "GUI-first" approach. Core logic **must** be proven correct before any UI is assembled.
+* **Test-Driven Development (TDD):** Every new piece of logic **must** begin with a test (unit or integration) that
+  defines its requirements. Code **must** only be written to make a failing test pass. For refactoring existing logic
+  from V1, this **must** take the form of **Characterization Testing**.
+* **Early & Continuous Integration:** The CI/CD pipeline and its automated quality gates are foundational. The AI agent
+  **must** ensure every commit is validated against strict standards for type safety, code quality, architectural
+  integrity, and documentation.
+* **Gherkin-Driven Behavior:** For all user-facing features, the AI agent **must** refer to Gherkin scenarios as the
+  source of truth for desired behavior.
+* **Strict Adherence to `CONTRIBUTING-LLM.md`:** All directives within `CONTRIBUTING-LLM.md` and **Appendix A** of this
+  document **must be followed rigorously**.
+
+#### **4.2. Phase 1: Project Foundation & CI Setup (The First Commit)**
+
+1. **Initialize Project Structure:**
+    * The AI agent **must** create the `vibe-player-v3/` project directory as a **completely new, clean Pure JavaScript
+      project**. This is not an in-place refactor of `vibe-player-v2.3/`.
+    * The AI agent **must** initialize `package.json` with `npm init -y` and install development dependencies (Vitest,
+      Playwright, Biome, `dependency-cruiser`, `cucumber`, etc.).
+    * The AI agent **must** create the source directory structure as outlined in **Appendix B**.
+2. **Configure Core Tooling (Strictly):**
+    * **`jsconfig.json`:** Configure for strict JSDoc type checking (`"strict": true`, `"checkJs": true`,
+      `"noEmit": true`, `"lib": ["es2017", "dom", "webworker"]`).
+    * **`biome.json`:** Configure with a strict set of linting and formatting rules.
+    * **`.dependency-cruiser.js`:** Configure to enforce the Hexagonal Architecture rules defined in the testing
+      strategy.
+    * **`cucumber.js`:** Configure to work with Playwright for running `.feature` files.
+    * **Component Isolation Tool:** Set up a simple "Component Explorer" (e.g., using HTML files in `harnesses/`) for
+      isolated UI development.
+3. **Implement CI/CD Workflows:**
+    * The AI agent **must** create initial GitHub Actions workflows (`ci.yml`, `e2e.yml`, CodeQL, SonarCloud).
+    * The `ci.yml` workflow **must** be configured to run all static analysis checks and unit/integration tests on every
+      pull request.
+    * The `e2e.yml` workflow **must** be configured to run the Playwright/Cucumber.js E2E suite.
+4. **First Commit:** The AI agent **must** commit this foundational setup to the `main` branch, ensuring a "green" build
+   on an "empty but fully configured" project (meaning no application logic yet, but all tooling and CI pass).
+
+#### **4.3. Phase 2: The Core Development Loop (Iterative AI Process)**
+
+1. **Task Assignment:** A human (or higher-level AI) assigns a feature task (e.g., "Implement PlaybackHexagon and its
+   `IAudioOutputPort` via `WebAudioAdapter`").
+2. **Gherkin Review (Mandatory for Features):**
+    * The AI agent **must** review the relevant Gherkin scenarios in `tests/features/` that describe the desired
+      external behavior for the task.
+    * If no relevant Gherkin scenario exists, the AI agent **must halt** and **propose a new Gherkin scenario** for
+      human review and approval.
+3. **Characterization Test (If Applicable):**
+    * If refactoring a feature from V1 (e.g., VAD region calculation, waveform generation), the AI agent **must first
+      generate a "test vector" JSON file** by running the pure logic from the V1 codebase with curated inputs and saving
+      exact outputs. These vectors are the "golden master" standard and are checked into
+      `tests/characterization_vectors/`.
+4. **Hexagon Implementation (TDD with JSDoc):**
+    * The AI agent **must** create a new `*.test.js` file for the V3 Hexagon (e.g., `PlaybackService.test.js`).
+    * The AI agent **must** write a test that initially fails, defining the Hexagon's behavior (or loads the JSON vector
+      for characterization tests).
+    * The AI agent **must** implement the pure logic inside the Hexagon file (`src/lib/hexagons/`, e.g.,
+      `PlaybackService.js`) until the unit test passes. **No browser APIs or platform-specific code are allowed in this
+      step.** All code **must** be fully JSDoc-typed.
+5. **Adapter Implementation (Driving & Driven):**
+    * Once a Hexagon's core logic is stable, the AI agent **must** implement its associated Adapters (e.g.,
+      `WebAudioAdapter.js` for `PlaybackService`).
+    * This involves interacting with browser APIs (Web Audio, DOM) or `WorkerChannel`.
+    * All Adapter code **must** be fully JSDoc-typed and adhere to strict linting rules.
+
+#### **4.4. Phase 3: Final Application Assembly & E2E Testing**
+
+1. **Application Integration (`src/app.js` and `src/main.js`):**
+    * The AI agent **must** implement `src/app.js` as the `AppHexagon` orchestrator. Its role is to perform dependency
+      injection: instantiate all Hexagons and Adapters, plug them into each other, and wire up the final UI event
+      listeners (from `uiManager`).
+    * The `src/main.js` will be the initial entry point, responsible for initializing the `uiManager` and the
+      `AppHexagon`.
+2. **E2E Testing (CI Only):**
+    * The AI agent **must** run the full Playwright E2E test suite (driven by Cucumber.js) against a production build in
+      the CI pipeline to simulate user flows defined in Gherkin (`.feature` files`).
+    * For `<canvas>`-based visualizations, the AI agent **must** use Playwright's `toHaveScreenshot` capability in the
+      E2E suite to automatically detect if code changes unintentionally altered their graphical output. This is a
+      mandatory check.
+
+#### **4.5. Phase 4: Documentation & Handover**
+
+1. **Update Project Documentation:**
+    * Upon completion, the AI agent **must** update the root `README.md` to reflect the new V3 architecture and setup.
+    * The `REFACTOR_PLAN.md` and related appendices **must be moved** to a `docs/` directory to preserve the project's
+      history.
+    * The old `vibe-player` (V1) and `vibe-player-v2.3` directories **must be archived or removed** to ensure
+      `vibe-player-v3` is the sole, definitive codebase.
+2. **Final Quality Review:** The AI agent **must** perform a final review of the SonarCloud dashboard to identify and
+   address any remaining high-priority issues before the official V3 release.
+
+---
+**APPENDICES**
+---
+
+# **Appendix A: AI Agent Collaboration Guidelines & Operational Instructions**
+
+This section defines the operational protocols for any AI agent working on this project. It is a mandatory guide for
+implementation and integrates the principles from `CONTRIBUTING-LLM.md`.
+
+* **P0: Agent Autonomy & Minimized Interaction:** The agent should operate with a high degree of autonomy once a task
+  and its objectives are clearly defined. Default to making reasonable, well-documented decisions to keep work flowing.
+* **P1: Task-Driven Workflow & Initial Confirmation:** Complex tasks require an initial proposal and user confirmation
+  before full implementation.
+* **P2: Clarity & Explicit Communication:** Proactively seek clarification for ambiguous tasks. Explain all changes and
+  their rationale in a structured manner (e.g., commit messages).
+* **P3: Maintainability & Consistency:**
+    * **P3.1:** Strictly adhere to the V3 architectural patterns defined in this document.
+    * **P3.2:** Generate high-quality JSDoc comments for all public functions, classes, and types. Preserve existing
+      meaningful comments.
+    * **P3.4 & P3.5:** All full files must include file identification comments at the start and end. Use section
+      headers for long files.
+* **P4: Guideline Adherence & Conflict Reporting:** The agent must report if its knowledge suggests a guideline is
+  suboptimal for a task, and must report any direct conflicts between user instructions and established guidelines,
+  seeking explicit direction.
+* **P5: Full Word Naming Convention:** All string keys for states, events, commands, and types must use full,
+  descriptive English words in `SCREAMING_SNAKE_CASE` for constants and `camelCase` for other identifiers.
+* **P6: README Generation Requirement:** The main `README.md` must contain a reference to this collaboration guide.
+* **P7: Branch-Based Code Submission:** The agent must submit all work by committing to feature branches and pushing to
+  the remote repository.
+* **P8: Gherkin-Driven Implementation and Testing:**
+    * When implementing a new feature, the agent **must** consult the relevant Gherkin scenarios (
+      `tests/features/*.feature`) to understand the desired external behavior.
+    * The agent **must** ensure that its generated code passes the automated E2E tests derived from these Gherkin
+      scenarios.
+    * If no relevant Gherkin scenario exists for a new feature, the agent **must first propose a new Gherkin scenario**
+      for human review and approval before proceeding with implementation.
+
+---
+
+# **Appendix B: Detailed Folder Structure**
+
+```
+vibe-player-v3/
+├── .github/                           # CI/CD Workflows
+│   └── workflows/
+│       ├── ci.yml                     # Main CI (static analysis, unit/integration tests)
+│       └── e2e.yml                    # E2E & Visual Regression Tests (Gherkin-driven)
+├── docs/                              # Project history and detailed explanations
+│   └── architecture/
+├── src/                               # Main application source code (Pure JS + JSDoc)
+│   ├── lib/
+│   │   ├── hexagons/                  # Pure Business Logic Modules (Hexagons)
+│   │   ├── adapters/                  # Technology-Specific Code (Driven & Driving)
+│   │   ├── infrastructure/            # Core Infrastructure Utilities
+│   │   ├── stores/                    # Central Application State
+│   │   ├── types/                     # JSDoc @typedefs
+│   │   └── utils/                     # General Utilities
+│   ├── workers/                       # Actual Web Worker scripts
+│   └── main.js                        # Main application entry point
+├── public/                            # Static assets (copied directly to build output)
+│   ├── lib/                           # Third-party JS/WASM
+│   ├── models/
+│   ├── css/
+│   ├── fonts/
+│   └── index.html                     # Main application HTML file
+├── tests/                             # All test code
+│   ├── unit/                          # Unit tests
+│   ├── integration/                   # Integration tests
+│   ├── e2e/                           # End-to-End Tests (Gherkin-driven, Playwright)
+│   │   ├── features/                  # Gherkin .feature files
+│   │   ├── step_definitions/          # JavaScript files mapping Gherkin steps to Playwright
+│   │   └── page_objects/              # Playwright Page Object Models
+│   └── characterization_vectors/      # JSON files capturing V1 behavior
+├── CONTRIBUTING-LLM.md                # AI Agent Collaboration Guidelines
+├── package.json                       # Project dependencies and scripts
+└── ... (config files: jsconfig.json, biome.json, cucumber.js, etc.)
+```
+
+---
+
+# **Appendix C: Gherkin Feature Specifications**
+
+This appendix contains the executable specifications that define the application's behavior. The AI agent **must**
+ensure the implemented code passes tests derived from these scenarios.
+
+#### **File: `tests/features/file_loading.feature`**
+
+```gherkin
+Feature: File Loading
+  As a user, I want to load audio files from my computer or a URL
+  so that I can analyze and play them in the application.
+
+  Background:
+    Given the user is on the main application page
+
+  Scenario: Successfully loading a local audio file
+    When the user selects the valid audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
+    Then the file name display should show "IELTS13-Tests1-4CD1Track_01.mp3"
+    And the player controls should be enabled
+    And the time display should show a duration greater than "0:00"
+
+  Scenario: Attempting to load an unsupported local file type
+    When the user selects the invalid file "README.md"
+    Then an error message "Invalid file type" should be displayed
+    And the player controls should remain disabled
+
+  Scenario: Loading a new file while another is already loaded
+    Given the audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3" is loaded and ready
+    When the user selects the new valid audio file "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3"
+    Then the file name display should show "dtmf-123A456B789C(star)0(hex)D.mp3"
+    And the player state should be fully reset for the new file
+    And the time display should show the duration of the new file
+```
+
+#### **File: `tests/features/playback_controls.feature`**
+
+```gherkin
+Feature: Playback Controls
+  As a user with a loaded audio file, I want to control its playback
+  by playing, pausing, stopping, seeking, and jumping through the audio.
+
+  Background:
+    Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and the player is ready
+
+  Scenario: Play, Pause, and Resume functionality
+    Given the player is paused at "0:00"
+    When the user clicks the "Play" button
+    Then the "Play" button's text should change to "Pause"
+    And after "2" seconds, the current time should be greater than "0:01"
+    When the user clicks the "Pause" button
+    Then the "Pause" button's text should change to "Play"
+    And the current time should stop advancing
+
+  Scenario: Stopping playback
+    Given the audio is playing and the current time is "0:15"
+    When the user clicks the "Stop" button
+    Then the current time should be "0:00"
+    And the "Pause" button's text should change to "Play"
+    And the player should be paused
+
+  Scenario: Seeking with the progress bar
+    When the user drags the seek bar handle to the 50% position
+    Then the current time should be approximately half of the total duration
+
+  Scenario Outline: Jumping forwards and backwards
+    Given the current time is "0:10"
+    When the user jumps <direction> by "5" seconds
+    Then the current time should be "<new_time>"
+
+    Examples:
+      | direction  | new_time |
+      | "forward"  | "0:15"   |
+      | "backward" | "0:05"   |
+```
+
+#### **File: `tests/features/parameter_adjustment.feature`**
+
+```gherkin
+Feature: Playback Parameter Adjustment
+  As a user, I want to adjust playback parameters like speed, pitch, and gain
+  to change how the audio sounds in real-time.
+
+  Background:
+    Given the audio file "test-audio/LearningEnglishConversations-20250325-TheEnglishWeSpeakTwistSomeonesArm.mp3" is loaded and the player is ready
+
+  Scenario Outline: Adjusting a playback parameter slider
+    When the user sets the "<Parameter>" slider to "<Value>"
+    Then the "<Parameter>" value display should show "<Display>"
+    And the audio playback characteristics should reflect the new "<Parameter>" setting
+
+    Examples:
+      | Parameter | Value | Display    |
+      | "Speed"   | "1.5" | "1.50x"    |
+      | "Pitch"   | "1.2" | "1.20x"    |
+      | "Gain"    | "2.0" | "2.00x"    |
+
+  Scenario: Resetting parameters to default
+    Given the "Speed" slider is at "1.5"
+    And the "Pitch" slider is at "0.8"
+    When the user clicks the "Reset Controls" button
+    Then the "Speed" slider should be at "1.0"
+    And the "Pitch" slider should be at "1.0"
+    And the "Gain" slider should be at "1.0"
+```
+
+#### **File: `tests/features/vad_analysis.feature`**
+
+```gherkin
+Feature: Voice Activity Detection (VAD)
+  As a user, I want the application to automatically detect speech in an audio file
+  and allow me to tune the detection parameters.
+
+  Background:
+    Given the audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3" is loaded and the player is ready
+
+  Scenario: VAD highlights appear automatically after analysis
+    Then the VAD progress bar should appear and complete within "15" seconds
+    And the waveform should display one or more speech regions highlighted in yellow
+
+  Scenario: Tuning VAD thresholds updates highlights in real-time
+    Given the VAD analysis is complete and highlights are visible
+    When the user sets the "VAD Positive Threshold" slider to a very high value of "0.95"
+    Then the number of highlighted speech regions on the waveform should decrease or become zero
+    When the user sets the "VAD Positive Threshold" slider to a very low value of "0.20"
+    Then the number of highlighted speech regions on the waveform should increase
+```
+
+#### **File: `tests/features/tone_analysis.feature`**
+
+```gherkin
+Feature: Tone Detection
+  As a user analyzing call audio, I want the application to detect and display
+  standard DTMF and Call Progress Tones.
+
+  Scenario: DTMF tones are detected and displayed correctly
+    Given the audio file "test-audio/dtmf-123A456B789C(star)0(hex)D.mp3" is loaded and the player is ready
+    Then the DTMF display should eventually contain the sequence "1, 2, 3, A, 4, 5, 6, B, 7, 8, 9, C, *, 0, #, D"
+
+  Scenario: CPT (Busy Tone) is detected and displayed
+    Given the audio file "test-audio/Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3" is loaded and the player is ready
+    Then the CPT display should eventually contain "Busy Signal"
+```
+
+#### **File: `tests/features/url_hash_state.feature`**
+
+```gherkin
+Feature: URL Hash Fragment State Management
+  As a user, I want to share a link to the player that includes my exact session state,
+  and have the application automatically load and apply that state from the URL hash.
+
+  Background:
+    Given the application has fully initialized
+
+  Scenario: Application state is serialized to the URL hash fragment
+    Given the audio file "test-audio/Michael Jackson - Bad.mp3" is loaded and ready
+    When the user sets the "Speed" slider to "1.5"
+    And the user sets the "VAD Positive Threshold" slider to "0.8"
+    And the user seeks to "0:45" and then pauses playback
+    Then the browser URL's hash fragment should contain "speed=1.50"
+    And the browser URL's hash fragment should contain "vadPositive=0.80"
+    And the browser URL's hash fragment should contain "time=45.00"
+
+  Scenario: Loading an audio file from a URL parameter in the hash fragment
+    Given the user navigates to the application with the hash fragment "#url=http%3A%2F%2Fexample.com%2Faudio.mp3"
+    When the application finishes loading the audio from the URL
+    Then the file name display should show "http://example.com/audio.mp3"
+    And the player controls should be enabled
+
+  Scenario: Loading a full session state from the hash fragment on startup
+    Given the user navigates to the application with the hash fragment "#url=http%3A%2F%2Fexample.com%2Faudio.mp3&speed=0.75&pitch=0.90&time=15.00"
+    When the application finishes loading the audio from the URL
+    Then the "Speed" value display should show "0.75x"
+    And the "Pitch" value display should show "0.90x"
+    And the current time should be approximately "0:15"
+
+  Scenario: Hash fragment is cleared when loading a new local file
+    Given the user is on a page with the hash fragment "#speed=1.50&time=20.00"
+    When the user selects the new local audio file "test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
+    Then the browser URL's hash fragment should be empty
+```
+
+---
+
+# **Appendix D: V1 Architectural Analysis & Tradeoffs (Historical Context)**
+
+This section migrates the key insights from the original V1 `architecture.md` file. It serves as historical context for
+the AI agent to understand the "why" behind certain V3 design decisions, particularly regarding audio processing and
+timekeeping.
+
+* **V1 Core Philosophy:** Prioritized simplicity and minimal dependencies using Vanilla JS, HTML, and CSS. Leveraged
+  WebAssembly (WASM) via standard Web APIs for computationally intensive tasks.
+* **Time/Pitch Shifting (Rubberband WASM):**
+    * **Temporal Inaccuracy Tradeoff:** The V1 plan explicitly notes that Rubberband prioritizes audio quality over
+      strict temporal accuracy. The number of output frames generated may not perfectly match the requested time ratio,
+      and its internal time reporting can drift relative to the Web Audio clock.
+    * **V1 Solution (Adopted by V3):** This drift necessitated the use of **main-thread time calculation** for the UI
+      indicator and periodic seek-based synchronization to keep the audio engine aligned with the UI's authoritative
+      time.
+    * **Performance Tradeoff:** `EngineFiner` was tested but resulted in stuttering playback due to CPU limits; the
+      default (faster) engine was chosen.
+* **VAD (Silero ONNX):**
+    * **Main-Thread VAD (Async):** In V1, VAD processing ran on the main thread but used `async/await` and
+      `setTimeout(0)` to yield periodically.
+    * **Tradeoff:** This was simpler to implement for an MVP than a dedicated Web Worker but could cause minor UI
+      sluggishness and was susceptible to browser throttling in background tabs.
+    * **V3 Improvement:** V3 will move this to a dedicated worker managed by a `WorkerChannel` to solve these issues,
+      but the core logic from `sileroProcessor.js` remains the "golden master".
+* **DTMF & CPT Detection (Goertzel Algorithm):** This was implemented in pure JavaScript (`goertzel.js`) and ran on the
+  main thread after audio was resampled. V3 will move this logic into a dedicated worker for better performance and
+  isolation.
+* **IIFE Module Pattern & Script Order:** V1 used an IIFE (Immediately Invoked Function Expression) pattern to create a
+  simple `AudioApp` namespace. This relied on a carefully managed `<script>` loading order in `index.html`, which was a
+  primary source of fragility. V3's use of ES Modules or a similar dependency management strategy (verified by
+  `dependency-cruiser`) will eliminate this problem.
+
+---
+
+# **Appendix E: V3 Testing and Quality Assurance Strategy**
 
 This appendix outlines the multi-layered testing and quality assurance strategy for Vibe Player V3. The primary
 philosophy is to "shift left," enabling the developer to catch as many issues as possible locally with fast, offline
@@ -1644,79 +1644,82 @@ maintainability.
 #### **1. The Testing Pyramid**
 
 Our strategy is structured as a testing pyramid, with a broad base of fast, local checks and a narrow top of slower,
-end-to-end tests.
+end-to-end tests. Every layer is mandatory.
 
-| Layer                  | Tool(s)                            | Purpose                                               | Runs Locally? | Runs in CI?      | Speed        |
-|:-----------------------|:-----------------------------------|:------------------------------------------------------|:--------------|:-----------------|:-------------|
-| **Static Analysis**    | `tsc`, Biome, `dependency-cruiser` | Type safety, code quality, style, architectural rules | **Yes**       | **Yes**          | Blazing Fast |
-| **Unit Tests**         | Vitest / Jest                      | Test individual hexagons/functions in isolation       | **Yes**       | **Yes**          | Fast         |
-| **Integration Tests**  | Vitest / Jest                      | Test how hexagons and adapters collaborate            | **Yes**       | **Yes**          | Fast         |
-| **CI Static Analysis** | SonarCloud, GitHub CodeQL          | Tech debt, maintainability, deep security scans       | No            | **Yes**          | Slow         |
-| **End-to-End Tests**   | Playwright                         | Verify user flows in a real browser                   | No            | **Yes**          | Slow         |
-| **Visual Tests**       | Playwright (`toHaveScreenshot`)    | Prevent visual bugs in UI and visualizations          | No            | **Yes (Future)** | Slow         |
+| Layer                       | Tool(s)                            | Purpose                                                                   | Runs Locally? | Runs in CI? | Speed        |
+|:----------------------------|:-----------------------------------|:--------------------------------------------------------------------------|:--------------|:------------|:-------------|
+| **Static Analysis**         | `tsc`, Biome, `dependency-cruiser` | Type safety, code quality, style, architectural rule enforcement          | **Yes**       | **Yes**     | Blazing Fast |
+| **Unit Tests**              | Vitest                             | Test individual hexagons/functions/algorithms in complete isolation       | **Yes**       | **Yes**     | Fast         |
+| **Integration Tests**       | Vitest                             | Test how hexagons and their adapters collaborate without a full browser   | **Yes**       | **Yes**     | Fast         |
+| **End-to-End (E2E) Tests**  | Playwright & Cucumber.js           | Verify complete user flows defined in Gherkin scenarios in a real browser | **Yes**       | **Yes**     | Slow         |
+| **Visual Regression Tests** | Playwright (`toHaveScreenshot`)    | Prevent unintended visual bugs in UI and `<canvas>`-based visualizations  | No            | **Yes**     | Slow         |
+| **CI Static Analysis**      | SonarCloud, GitHub CodeQL          | Deep security, tech debt, and maintainability scans                       | No            | **Yes**     | Slow         |
 
 ---
 
 #### **2. Local Development Checks (The Inner Loop)**
 
 These checks are designed to be run by the developer locally, providing instant feedback. They are fully offline after
-the initial `npm install`.
+the initial `npm install` and are the first line of defense against bugs.
 
 * **Type Safety (`tsc`):**
-    * **Tool:** The TypeScript compiler running in "checkJs" mode.
-    * **Command:** `tsc --noEmit --project jsconfig.json`
+    * **Tool:** The TypeScript compiler (`tsc`) running in "checkJs" mode.
+    * **Command:** `npm run types:check` (which will execute `tsc --noEmit --project jsconfig.json`).
     * **Enforcement:** A `jsconfig.json` file will be configured with `"strict": true` and `"checkJs": true`. This
       forces every function, parameter, and variable to be explicitly typed via JSDoc. It is the direct equivalent of
-      running `mypy` in a Python project and will fail on any untyped or incorrectly typed code.
+      running `mypy` in a Python project and will fail the build on any untyped or incorrectly typed code.
 
 * **Code Quality & Formatting (Biome):**
     * **Tool:** Biome.
-    * **Command:** `npx @biomejs/biome check --apply .`
+    * **Command:** `npm run lint` (which will execute `npx @biomejs/biome check --apply .`).
     * **Enforcement:** Biome will replace both ESLint and Prettier. It will be configured with a strict set of rules to
       catch code smells, enforce best practices (e.g., `no-var`), identify overly complex code, and check for unused
-      variables. Its `--apply` flag will also auto-format the code, ensuring 100% consistency.
+      variables. The `--apply` flag will also auto-format the code, ensuring 100% consistency across the codebase.
 
 * **Architectural Rules (`dependency-cruiser`):**
     * **Tool:** `dependency-cruiser`.
-    * **Command:** `npx depcruise src`
-    * **Enforcement:** This is critical for maintaining the Hexagonal Architecture. A `.dependency-cruiser.js` config
-      file will enforce rules such as:
-        * Hexagons (`src/lib/hexagons/`) **cannot** import from Adapters (`src/lib/adapters/`).
-        * Adapters **can** import their corresponding Hexagon's port definitions.
-        * UI-layer adapters **cannot** import from backend adapters (e.g., `DOMAdapter` cannot import
+    * **Command:** `npm run arch:check` (which will execute `npx depcruise src`).
+    * **Enforcement:** This is **critical** for maintaining the Hexagonal Architecture. A `.dependency-cruiser.js`
+      config file will enforce rules such as:
+        * Hexagons (`src/lib/hexagons/`) **must not** import from Adapters (`src/lib/adapters/`).
+        * Adapters **can** import their corresponding Hexagon's port definitions (`src/lib/types/`).
+        * UI-layer adapters **must not** import from backend adapters (e.g., `uiManager` cannot import
           `WebAudioAdapter`).
-          This prevents architectural decay over time.
+        * This test prevents architectural decay over time, which was a key failure mode of previous versions.
 
 ---
 
 #### **3. Automated Testing (Unit & Integration)**
 
-These tests are run locally via a single command (`npm run test`) and are also a mandatory check in the CI pipeline.
+These tests are run locally via a single command (`npm test`) and are a mandatory check in the CI pipeline.
 
 * **Unit Tests & V1 Characterization Testing:**
-    * **Concept:** For core algorithms (VAD region calculation, DTMF parsing, waveform downsampling), we will use V1 as
-      the "golden master."
+    * **Concept:** For core algorithms (VAD region calculation, DTMF parsing, waveform downsampling), we will use the V1
+      implementation as the "golden master" to prevent regressions.
     * **Process:**
         1. **Generate Test Vectors:** We will run the pure logic from the V1 codebase with specific inputs and save the
            inputs and their exact outputs to JSON files (e.g., `vad-test-vector-01.json`). These vectors will be checked
-           into the repository.
+           into the repository at `tests/characterization_vectors/`.
         2. **Write V3 Unit Tests:** The unit tests for the V3 hexagons will load these JSON files. They will feed the
            `input` from the vector into the new V3 function and assert that the `output` is deeply equal to the
-           `expectedOutput`.
+           `expectedOutput` from the vector.
     * **Benefit:** This proves that the V3 refactor has perfectly preserved the trusted logic of the original working
       application, dramatically reducing the risk of regressions.
 
 * **Integration Tests:**
-    * **Concept:** To verify the collaboration between hexagons and their ports without the overhead of a browser.
-    * **Example:** A test could instantiate the `AppHexagon` and a real `PlaybackHexagon`, but inject a *mock*
-      `WebAudioAdapter`. The test would then call `AppHexagon.play()` and assert that the mock `WebAudioAdapter`
-      received the correct `{type: 'play'}` command. This validates the entire internal command chain quickly.
+    * **Concept:** To verify the collaboration between hexagons and their ports without the overhead of a full browser
+      environment.
+    * **Example:** A test will instantiate the `AppHexagon` and a real `PlaybackHexagon`, but inject a *mock*
+      `WebAudioAdapter` that conforms to the `IAudioOutputPort`. The test will then call `AppHexagon.play()` and assert
+      that the mock `WebAudioAdapter`'s `play` method was called correctly. This validates the entire internal command
+      chain quickly and efficiently.
 
 ---
 
 #### **4. CI/CD Pipeline Checks (The Final Gate)**
 
-The CI pipeline on GitHub Actions runs all of the above checks and adds two final, deeper layers of analysis.
+The CI pipeline on GitHub Actions runs all the above checks and adds final, deeper layers of analysis. A pull request
+cannot be merged unless all these checks pass.
 
 * **Deep Security Analysis (CodeQL):**
     * **Tool:** GitHub CodeQL.
@@ -1725,598 +1728,23 @@ The CI pipeline on GitHub Actions runs all of the above checks and adds two fina
       directly on the PR.
 
 * **Code Maintainability Analysis (SonarCloud):**
-    * **Tool:** SonarCloud, which is free for public repositories.
+    * **Tool:** SonarCloud.
     * **Process:** After a build passes, a workflow will send the code to SonarCloud for analysis. It will report on
       code smells, complexity, duplication, and technical debt.
-    * **Developer Feedback Loop:** Since a local SonarLint IDE extension will not be used, the developer's feedback loop
-      for this analysis will be the comments and quality gate status that the SonarCloud bot posts on each GitHub pull
-      request.
-
-* **End-to-End Testing (Playwright):**
-    * **Tool:** Playwright.
-    * **Process:** After all other checks pass, the full application will be built and served, and Playwright will run
-      E2E tests to simulate user flows (loading a file, clicking play, adjusting a slider) in a real browser.
-
-#### **5. Future Testing Additions**
-
-* **Visual Regression Testing:**
-    * **Status:** To be implemented after V3 has a stable UI.
-    * **Plan:** We will use Playwright's built-in `toHaveScreenshot` capability. This will be invaluable for the
-      `<canvas>`-based waveform and spectrogram visualizations, as it is the only way to automatically detect if a code
-      change has unintentionally altered their graphical output. This will catch visual bugs that E2E and unit tests
-      cannot.
-
----
-
-### **Appendix D: V3 Implementation Strategy & Process**
-
-This appendix details the practical, step-by-step process for developing Vibe Player V3. It translates the architectural
-goals from the main document and the quality assurances from Appendix C into an actionable workflow. This is the
-definitive implementation plan.
-
-#### **1. Guiding Principles**
-
-The V3 development process is guided by three core principles to ensure a robust, maintainable, and high-quality result.
-
-* **Inside-Out Development:** We will build the application from its pure business logic core (the hexagons) outwards
-  towards the browser-specific technologies (the adapters). We will explicitly avoid the "GUI-first" approach that leads
-  to tightly-coupled, monolithic architectures. Core logic will be proven correct before any UI is assembled.
-
-* **Test-Driven Development (TDD):** Every new piece of logic will begin with a test that defines its requirements. Code
-  will only be written to make a failing test pass. For refactoring existing logic from V1, this will take the form of *
-  *Characterization Testing**, where we capture the behavior of the old system and test that the new system is
-  identical. This minimizes the risk of regressions.
-
-* **Early & Continuous Integration:** The CI/CD pipeline and its automated quality gates are not an afterthought; they
-  are a foundational piece of the development environment. Every commit will be validated against strict standards for
-  type safety, code quality, architectural integrity, and documentation.
-
-#### **2. Phase 1: Project Foundation & CI Setup (The First Commit)**
-
-This phase is completed once at the very beginning of the project. The goal is to create a robust development
-environment where quality is enforced from the start.
-
-1. **Initialize Project Structure:**
-    * Create the `vibe-player-v3/` project directory.
-    * Initialize `package.json` with `npm init -y`.
-    * Create the source directory structure which makes the hexagonal architecture explicit:
-      ```
-      vibe-player-v3/
-      ├── src/
-      │   ├── lib/
-      │   │   ├── hexagons/  # Core business logic (e.g., VADHexagon.js)
-      │   │   ├── adapters/  # Technology-specific code (e.g., WebAudioAdapter.js)
-      │   │   └── ports/     # JSDoc @typedefs for port interfaces
-      │   ├── app.js         # Main entry point; the final driving adapter
-      │   └── index.html     # The final application shell
-      ├── harnesses/         # For temporary, isolated HTML files for manual validation
-      ├── tests/
-      │   ├── unit/
-      │   ├── integration/
-      │   └── vectors/       # JSON files capturing V1 behavior for characterization tests
-      └── ...
-      ```
-
-2. **Install & Configure Core Tooling:**
-    * **Dependencies:** Install all development dependencies:
-      `npm install --save-dev vitest typescript @biomejs/biome dependency-cruiser`.
-    * **TypeScript Config (`jsconfig.json`):** Create this file to enable `tsc` to type-check Vanilla JS with JSDoc. It
-      will be configured with the strictest settings: `"strict": true` (which implies `"noImplicitAny": true`),
-      `"checkJs": true`, and `"noEmit": true`. This makes `tsc --noEmit` the project's official static type-checker,
-      equivalent to `mypy`.
-    * **Biome Config (`biome.json`):** Create this file to replace ESLint and Prettier. It will be configured with a
-      strict set of linting rules (`no-var`, `noUnusedVariables`, `eqeqeq`, complexity checks) and formatting rules to
-      ensure 100% code consistency.
-    * **Architecture Enforcement (`.dependency-cruiser.js`):** Create the configuration file. Its most critical rule
-      will be `{ from: { path: "src/lib/hexagons" }, to: { path: "src/lib/adapters" }, severity: "error" }`, making it
-      impossible for pure business logic to depend on technology-specific code.
-
-3. **Implement CI/CD Workflows:**
-    * Create the initial GitHub Actions workflows (`ci.yml`, `codeql.yml`, `sonarcloud.yml`).
-    * The `ci.yml` workflow will be configured to run `tsc --noEmit`, `biome check .`, and `npm run test` on every pull
-      request.
-    * The first commit to the `main` branch will contain this foundational setup. The primary goal is to have a "green"
-      build on an empty but fully configured project, proving the toolchain works.
-
-#### **3. Phase 2: The Core Development Loop (Iterative)**
-
-This is the iterative process for building each feature of the application.
-
-1. **Characterization Test (If Applicable):**
-    * If refactoring a feature from V1 (e.g., VAD region calculation), first generate a "test vector" JSON file. This
-      involves running the pure logic from the V1 codebase with a curated set of inputs and saving both the inputs and
-      the exact outputs. These vectors are the "golden master" standard and are checked into the repository under
-      `tests/vectors/`.
-
-2. **Hexagon Implementation (TDD):**
-    * Create a new `.test.js` file for the V3 hexagon (e.g., `VADHexagon.test.js`).
-    * Write a test that loads the JSON vector and asserts that the (not-yet-written) V3 function's output `deeplyEquals`
-      the expected V1 output. Run the test and watch it fail.
-    * Implement the pure logic inside the hexagon file (e.g., `VADHexagon.js`) until the unit test passes. No browser
-      APIs or platform-specific code are allowed in this step.
-
-3. **Interface Discovery & Refinement:**
-    * During TDD, the precise methods and data contracts for the ports (interfaces) will be discovered. If the hexagon
-      needs a new capability from an adapter, the developer will:
-        1. Update the JSDoc `@typedef` for the port in `src/lib/ports/` to reflect the new requirement.
-        2. Update the hexagon's unit test to provide the new data/functionality via its mock adapter.
-        3. Modify the hexagon's code to use the new interface method.
-        4. Finally, implement the change in the real adapter. The type-checker will guide this process, flagging any
-           adapter that no longer conforms to the port's contract.
-
-#### **4. Phase 3: Visual & Interactive Validation (The Human-in-the-Loop)**
-
-This phase runs in parallel with Phase 2, providing crucial manual validation that complements the automated tests.
-
-1. **Development Harnesses / Storybook:**
-    * For each major feature, a developer can create a minimal HTML "harness" file (e.g., `harnesses/vad-harness.html`)
-      to visually and manually validate the integrated hexagon and its adapter. This is for quick, scrappy validation.
-    * Once UI components (`<PlaybackControls>`, etc.) are being built, the project will adopt **Storybook**.
-
-2. **Storybook Workflow & Quality Gates:**
-    * **Story Coverage Check:** The CI pipeline will include a script that fails the build if a UI component is
-      committed without a corresponding `.stories.js` file. This enforces Storybook as a **Definition of Done**.
-    * **PR Integration:** For every pull request, the Storybook instance will be automatically deployed to a preview
-      URL. This URL will be the **single source of truth for design and developer reviews.**
-    * **Essential Add-on Starter Pack:** The Storybook setup will include a pre-configured set of high-value add-ons:
-        * `@storybook/addon-essentials`: For interactive prop controls and documentation.
-        * `@storybook/addon-a11y`: For automated accessibility testing.
-        * `@storybook/addon-interactions`: For testing component behavior via simulated user input.
-        * `storybook-addon-pseudo-states`: For testing CSS hover/focus/active states.
-        * `msw-storybook-addon`: For mocking network requests (e.g., for the "Load from URL" feature).
-        * `@storybook/addon-performance`: For analyzing component render performance.
-
-#### **5. Phase 4: Final Application Assembly & E2E Testing**
-
-1. **Application Integration (`app.js`):**
-    * The main `app.js` file will be the final "driving adapter." Its role is to perform dependency injection:
-      instantiate all hexagons and adapters, plug them into each other, and wire up the final UI event listeners.
-
-2. **Static Asset Management:**
-    * Place all static assets like fonts, images, and the final `index.html` in the appropriate static directory (e.g.,
-      `/public`). A build tool (like Vite) will be configured to handle these assets.
-
-3. **End-to-End & Visual Regression Testing (CI Only):**
-    * **Playwright E2E Tests:** These tests will run against a full production build in the CI pipeline to simulate
-      complete user journeys.
-    * **Visual Regression (Future):** After the V3 UI is stable, Playwright's `toHaveScreenshot` will be added to the
-      E2E suite to take snapshots of the waveform and spectrogram canvases, preventing visual regressions.
-
-#### **6. Phase 5: Documentation & Handover**
-
-1. **Update Project Documentation:**
-    * Upon completion, the root `README.md` will be updated to reflect the new V3 architecture and setup. The
-      `REFACTOR_PLAN.md` and this appendix will be moved to a `/docs` directory to preserve the project's history.
-    * The `vibe-player` (V1) and `vibe-player-v2.3` directories will be archived or removed.
-
-2. **Final Quality Review:**
-    * A final review of the SonarCloud dashboard will be conducted to identify and address any remaining high-priority
-      issues before the official V3 release.
-
----
-
-### Appendix E1: UI layout
-
-```mermaid
-graph TD
-    %% Define all nodes and subgraphs first
-
-    H["Header (Dummy Placeholder)"]
-
-    subgraph FL ["Card: File Loading"]
-        direction TB
-        subgraph FL_L1 [File Input Group]
-            direction LR
-            FL_B1["Choose File Button"] --> FL_S1["File Name Display"]
-        end
-        subgraph FL_L2 [URL Input Group]
-            direction LR
-            FL_I1["URL Input Field"] --> FL_B2["Load URL Button"]
-        end
-        FL_P1["Status/Info/Error Text"]
-        
-        FL_L1 --> FL_L2 --> FL_P1
-    end
-
-    subgraph PP [Card: Playback Parameters]
-        direction LR
-        PP1["Speed Slider"]
-        PP2["Pitch Slider"]
-        PP3["Gain Slider"]
-
-        PP1 --> PP2 --> PP3
-    end
-    
-    SB["Section: Seek Bar & Time Display (Full Width)"]
-
-    subgraph MC ["Card: Master Transport Controls"]
-        direction TB
-        MC_B1["Play/Pause Button"]
-        subgraph JC [Jump Controls]
-            direction LR
-            JC_B1["◀◀ Back Button"] --> JC_I1["Seconds Input"] --> JC_B2["Forward ▶▶ Button"]
-        end
-        MC_B1 --> JC
-    end
-
-    SG["Section: Spectrogram Visualization (Full Width)"]
-    WV["Section: Waveform Visualization with VAD Coloring (Full Width)"]
-    
-    subgraph DO ["Card: Data Output & Tuning"]
-        direction TB
-        subgraph VT [VAD Tuning Sliders]
-            direction LR
-            VT_S1["Positive Threshold Slider"] --> VT_S2["Negative Threshold Slider"]
-        end
-        
-        DO_P2["DTMF Tones Text"]
-        DO_P3["CPT Tones Text"]
-
-        VT --> DO_P2 --> DO_P3
-    end
-
-    F["Footer"]
-
-    %% Now, define the connections to create the main application flow
-    H --> FL
-    FL --> PP
-    PP --> SB
-    SB --> MC
-    MC --> SG
-    SG --> WV
-    WV --> DO
-    DO --> F
-```
-
----
-
-# CORRECTIONS
-
-### **1. Architectural Clarity & Pragmatism**
-
-#### **Problem 1.1: Over-engineered UI Layer (`UIHexagon`) for a Pure JavaScript Application.**
-
-* **What is the problem?**
-  The current refactor plan proposes a distinct `UIHexagon` layer responsible for pure presentation logic, generating
-  a "view model" that a `DOMAdapter` then translates to actual DOM manipulations. While conceptually aligned with a
-  strict Hexagonal pattern, for a **pure JavaScript application with JSDoc-driven type checking** (as V3 is now
-  defined), this layer introduces unnecessary complexity and boilerplate. It requires manually implementing a
-  reactive-like synchronization mechanism between the `UIHexagon`'s output and the DOM, which can lead to its *own*
-  class of "silly bugs" related to manual DOM updates, state reconciliation, and potential race conditions. It
-  essentially asks us to hand-roll a mini-framework, negating the simplicity of pure JS.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Section 4.2: "The `UIHexagon`"**: This entire section is the primary target. It should either be removed or
-      fundamentally re-conceptualized.
-    * **Section 4.1: "The `AppHexagon`"**: Any descriptions of `AppHexagon` communicating with (or "driving") the
-      `UIHexagon`'s ports will need to be updated.
-    * **Section 5: "Detailed State Sequences & Event Flows"**: Any flow diagrams or textual descriptions that depict the
-      `UIHexagon` as an active processing layer between the stores and the DOM require revision.
-    * **Appendix A (or its consolidated version): "State Management & Data Flow"**: The communication hierarchy and
-      state pathways should reflect the revised UI architecture.
-    * **Appendix D: "V3 Implementation Strategy & Process"**: Phase 3 (`Visual & Interactive Validation`) will be
-      directly impacted by this shift.
-
-* **What needs to be changed (Details):**
-    * **Primary Change: Eliminate the `UIHexagon` as a separate code unit.** Section 4.2 should be removed entirely from
-      the plan.
-    * **Redefine `uiManager`'s Role:** The existing concept of a `uiManager` (as seen in V1, which will be refactored
-      for V3) should be explicitly designated as the **"Driving UI Adapter"**. This adapter's responsibilities will be
-      clearly defined as:
-        * **Direct State Consumption:** It will directly **subscribe to** and **read state from** the application's
-          centralized stores (e.g., `playerStore`, `statusStore`, `analysisStore`).
-        * **Embedded Presentation Logic:** The logic for transforming application state into visual properties (e.g.,
-          `if isPlaying then button.textContent = 'Pause' else button.textContent = 'Play'`) will reside directly within
-          the `uiManager`'s methods.
-        * **Direct DOM Manipulation:** It will directly **manipulate the DOM elements** (e.g., setting `textContent`,
-          `disabled` attributes, updating styles, `canvas` drawing commands).
-        * **Command Dispatch:** It will be responsible for translating raw user interactions (e.g., button clicks,
-          slider inputs) into high-level **commands** that it dispatches directly to the `AppHexagon`'s driving ports.
-    * **Update Flow Descriptions:** All architectural flow diagrams and accompanying text in Section 5, Appendix A, and
-      Appendix B must be revised to illustrate this direct relationship: `Stores (State)` -> `UI Adapter (uiManager)` ->
-      `DOM` for rendering, and `DOM (User Input)` -> `UI Adapter (uiManager)` -> `AppHexagon (Commands)` for user
-      interactions.
-    * **Add Pragmatic Justification:** Include a clear explanation in the plan's architectural overview (e.g., Section 1
-      or a new subsection in Section 3) for this pragmatic choice, explicitly stating that for a *pure JavaScript
-      context*, the overhead of a separate `UIHexagon` layer outweighs its benefits, and that robustness will be
-      achieved through:
-        * Strict **unidirectional data flow** from stores to the `uiManager`.
-        * Relying on **JSDoc-driven static type checking** (`tsc --checkJs`) to catch type-related bugs.
-        * Comprehensive **unit and integration tests** specifically for the `uiManager` against a mocked DOM.
-
-* **Why these changes are necessary:** This adjustment ensures the architecture remains pragmatic for the chosen pure
-  JavaScript environment. It reduces code complexity, minimizes boilerplate, and avoids the manual re-implementation of
-  reactive UI patterns. By leveraging strong typing and targeted testing, it prevents "silly bugs" more effectively than
-  an overly indirect and manually synchronized UI layer.
-
-#### **Problem 1.2: Mis-classification and Vague Naming of the `WorkerManagerHexagon`.**
-
-* **What is the problem?**
-  The current plan categorizes `WorkerManagerHexagon` as a "Hexagon" and dedicates Section 4.6 to it. However, its
-  described function (abstracting Web Worker communication into a Promise-based API) is purely technical infrastructure,
-  not a business domain. This miscategorization violates the core principle of Hexagonal Architecture (separating domain
-  logic from technical details) and uses an overly generic name ("Manager") that doesn't convey its precise role as a
-  communication intermediary.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Section 4.6: "The Infrastructure Hexagon (`WorkerManagerHexagon`)"**: This section's title and entire content
-      must be revised.
-    * **Section 3: "The V3 Architectural Model"**: Any general definitions of "Hexagon" or "Driven Adapter" should align
-      with this reclassification.
-    * **Section 4: "The V3 System Components (The Hexagons)"**: The overall list needs to remove `WorkerManagerHexagon`
-      and potentially include a new section for infrastructure utilities.
-    * **Descriptions of other Hexagons (e.g., `PlaybackHexagon`, `VADHexagon`, `SpectrogramHexagon`) and their
-      corresponding Adapters (e.g., `WebAudioAdapter`, `SileroVadWorkerAdapter`):** These mention "driving" or "
-      managing" a worker, so their wording must be updated to reflect that they *use* the newly defined `WorkerChannel`.
-
-* **What needs to be changed (Details):**
-    * **Rename and Reclassify:** Change the name to **`WorkerChannel`**. Reclassify it from a "Hexagon" to an **"
-      Infrastructure Utility"** or **"Infrastructure Proxy/Facade"**.
-    * **Update Section 4.6 Title:** Change it to something like "**Infrastructure Utility: The `WorkerChannel` (Web
-      Worker Communication Layer)**".
-    * **Refine Core Responsibility:** Explicitly state its core responsibility as: "To provide a generic, robust,
-      Promise-based (`async/await`) request/response communication channel *over the native Web Worker API* to a *single
-      dedicated worker instance*. It acts as an **Anti-Corruption Layer (ACL)**, abstracting away the low-level
-      complexities of `postMessage`, `onmessage` handling, message ID correlation, and `Transferable` object
-      management."
-    * **Emphasize Reusability and Instantiation:** Clarify that `WorkerChannel` is a **reusable class** that is *
-      *instantiated by *driven adapters*** (e.g., `SileroVadWorkerAdapter`, `RubberbandWorkerAdapter`), not by the core
-      Hexagons themselves. Each adapter instance will manage its own `WorkerChannel` instance and its dedicated worker
-      instance (1:1 relationship between adapter-instance/worker-channel-instance/worker-instance).
-    * **Add "Sidecar" Analogy:** Explicitly integrate the "sidecar" analogy to describe its relationship to the driven
-      adapters: it runs "alongside" the adapter, providing a dedicated communication pipeline.
-    * **Update Adapter Descriptions:** Ensure that the descriptions of driven adapters (`SileroVadWorkerAdapter`,
-      `RubberbandWorkerAdapter`) clearly state that they **instantiate and use** an instance of `WorkerChannel` to
-      fulfill their communication needs with their respective workers.
-
-* **Why these changes are necessary:** This reclassification correctly aligns the component with true Hexagonal
-  Architecture principles by clearly separating domain logic from technical infrastructure. The precise naming (
-  `WorkerChannel`) more accurately conveys its specialized communication function and avoids the ambiguity of a
-  generic "Manager." Defining it as an Anti-Corruption Layer highlights its critical architectural benefit: isolating
-  the application from the messy details of Web Worker APIs, which was the root cause of V2.3's failure. The "sidecar"
-  analogy makes its co-located helper role clear.
-
----
-
-### **2. Consistency & Accuracy**
-
-#### **Problem 2.1: Inconsistent and Ambiguous State Management Strategy.**
-
-* **What is the problem?**
-  The plan currently presents two partially overlapping but distinct descriptions of state management: one in Appendix
-  A (`V3 State Management & Data Flow`) and a more advanced one in Appendix B (
-  `Advanced State Protocol & Edge Case Handling`). Appendix B introduces crucial concepts like the Command/Event
-  pattern, the `AppHexagon` as a transactional state machine, and specific handling of large data payloads, which are
-  more robust. Having both creates redundancy and potential confusion for implementers.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Appendix A: "V3 State Management & Data Flow"**: This entire appendix should be consolidated into or replaced by
-      Appendix B.
-    * **Appendix B: "Advanced State Protocol & Edge Case Handling"**: This will become the definitive section on state
-      management.
-    * **Section 5: "Detailed State Sequences & Event Flows"**: All flow descriptions in this section must strictly
-      adhere to the unified model.
-
-* **What needs to be changed (Details):**
-    * **Consolidate to a Single Source:** **Remove Appendix A entirely.** Rename Appendix B to become the primary
-      detailed section on state management (e.g., "Appendix A: Detailed State Management & Data Flow" or a new main
-      section if it's considered foundational enough).
-    * **Explicitly Define Core Concepts:** Within this consolidated section, clearly and definitively define:
-        * **State Ownership:** Reiterate the table detailing which Hexagon (or the `AppHexagon` orchestrator) is the
-          sole "owner" of each piece of application state.
-        * **Communication Hierarchy:** Re-state the strict rules about who can call/drive whom (e.g., Driving Adapters
-          call Hexagon driving ports; Hexagons call Driven Adapter ports; `AppHexagon` orchestrates other domain
-          Hexagons).
-        * **Command vs. Event Pattern:** Provide a clear and concise definition of this pattern, emphasizing that "
-          Commands" are requests for action (originating from Driving Adapters or the `AppHexagon`) and "Events" are
-          notifications of occurrences (originating from Driven Adapters or the `AppHexagon`).
-        * **`AppHexagon` as Transactional Authority:** Reinforce that the `AppHexagon` is the sole orchestrator
-          responsible for all major state transitions, receiving events from driven adapters, deciding on appropriate
-          state updates, and issuing commands back down to domain hexagons.
-        * **"Large Data Handling" Protocol:** Formally define the protocol for handling large, static data payloads (
-          e.g., `vadProbabilities`, `spectrogramData`). This means these large arrays are *not* stored directly within
-          reactive stores. Instead, the "owning" Hexagon holds the data internally, and the reactive store will only
-          contain a simple flag (e.g., `hasProbabilities: true`) indicating data availability. An explicit synchronous
-          accessor method (e.g., `vadHexagon.getProbabilities()`) would be exposed on the Hexagon's port for UIs or
-          other components to retrieve the data when the flag indicates it's ready.
-    * **Review and Update Flow Diagrams:** Ensure all "Detailed State Sequences & Event Flows" (Section 5) strictly
-      follow the rules and patterns laid out in the consolidated state management appendix, particularly the
-      Command/Event pattern and the precise role of the `AppHexagon`.
-
-* **Why these changes are necessary:** A single, consistent, and unambiguous source of truth for state management and
-  data flow is paramount for a successful and maintainable implementation. It eliminates developer confusion, enforces
-  consistent patterns across the codebase, and directly addresses the root causes of state-related "silly bugs" and race
-  conditions that plagued previous versions. The advanced patterns from Appendix B are crucial for building a robust and
-  predictable asynchronous application.
-
-#### **Problem 2.2: Insufficient Acknowledgment of the "Hot Path" Exception.**
-
-* **What is the problem?**
-  The plan correctly identifies and implements a "hot path" for `currentTime` updates, where the `WebAudioAdapter`
-  directly writes to the `timeStore` at high frequency (e.g., using `requestAnimationFrame`). This is a necessary
-  performance optimization. However, this action implicitly violates the general architectural rule that "Adapters
-  cannot directly write to stores (they must only publish via driven ports to Hexagons, which then update stores)". This
-  deviation, while justified, is not explicitly acknowledged as a deliberate exception in the architectural rules.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * Within the consolidated "State Management & Data Flow" appendix (from Problem 2.1).
-    * **Flow "4.6 Real-time UI Updates (The Hot Path)"** (in the original Appendix B, now part of the consolidated state
-      management section).
-
-* **What needs to be changed (Details):**
-    * **Explicit Exception Definition:** Add a prominent note or a dedicated subsection within the main "State
-      Management & Data Flow" section (e.g., under "Communication Hierarchy") to explicitly define the "Hot Path" for
-      time updates as a **"Controlled Exception"** to the general data flow rules.
-    * **Justify and Limit Scope:** Clearly explain *why* this exception is necessary (e.g., to achieve smooth,
-      high-frequency UI updates without burdening the core application logic, avoiding `requestAnimationFrame` within
-      Hexagons, minimizing overhead from full state store updates).
-    * **Strict Limitations:** Emphasize that this is the *only* such exception, that the `timeStore` is treated as a *
-      *read-only, UI-specific sink** for this purpose, and that its updates do not trigger core application logic. This
-      reinforces that the exception is tightly controlled and not a license for arbitrary direct store manipulation by
-      adapters.
-
-* **Why these changes are necessary:** A robust architectural plan not only defines rules but also explicitly
-  acknowledges and justifies necessary deviations from those rules. This clarity is vital for future developers,
-  preventing confusion and ensuring that this specific pattern is not misapplied to other scenarios where it's not truly
-  justified, which could lead to architectural decay and new classes of bugs.
-
----
-
-### **3. Testing Strategy Enhancement**
-
-#### **Problem 3.1: Deferred Prioritization of Visual Regression Testing.**
-
-* **What is the problem?**
-  The plan currently categorizes "Visual Regression Testing" for canvas-based visualizations (waveform, spectrogram) as
-  a "Future Testing Addition" (Priority 5). However, for an application where core features involve complex graphical
-  output, the visual correctness is paramount. Standard unit tests cannot verify pixels, and traditional end-to-end
-  tests only verify interactivity, not graphical fidelity. Deferring this critical testing exposes the most user-facing
-  aspects of the application to significant visual regressions.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Appendix C: "V3 Testing and Quality Assurance Strategy"**: Specifically, **Section 1 ("The Testing Pyramid")**
-      and **Section 5 ("Future Testing Additions")**.
-    * **Section 4 ("CI/CD Pipeline Checks")**: This section should also incorporate visual regression testing.
-
-* **What needs to be changed (Details):**
-    * **Elevate Priority:** Move Visual Regression Testing from "Future Testing Additions" (Section 5) to a mandatory,
-      higher-priority layer within the **Testing Pyramid (Section 1)**. It should be given its own distinct row/column
-      in the table to signify its importance alongside E2E tests.
-    * **Integrate into CI/CD:** Explicitly list Visual Regression Testing as a mandatory check that runs in the **CI/CD
-      Pipeline (Section 4)**. This means Playwright's `toHaveScreenshot` capability should be actively used and its
-      results reviewed for all relevant UI/canvas changes.
-    * **Emphasize Importance:** Add text in Appendix C to highlight that visual regression testing is crucial for:
-        * Detecting subtle rendering bugs in the `<canvas>`-based waveform and spectrogram visualizations.
-        * Ensuring the visual fidelity of the application's primary outputs remains consistent across changes.
-        * Catching graphical regressions that cannot be identified by other automated test types.
-
-* **Why these changes are necessary:** The visual output is a core value proposition of Vibe Player. Without automated
-  visual regression tests, any changes to rendering algorithms, color schemes, scaling, or data processing for
-  visualizations could introduce subtle, hard-to-spot visual bugs that directly impact the user experience. Making this
-  a mandatory and integrated part of the CI pipeline ensures continuous visual quality and prevents regressions in key
-  user-facing features, directly addressing the potential for "silly visual bugs."
-
----
-
-### **4. Implementation Process Refinements**
-
-#### **Problem 4.1: Ambiguous Project Setup (In-place Refactor vs. Fresh Start).**
-
-* **What is the problem?**
-  The plan discusses the development of V3 but is ambiguous about its starting point: will it be an in-place refactor of
-  the existing (broken and largely commented out) `vibe-player-v2.3` directory, or a completely fresh project? Given
-  `v2.3`'s non-functional status, its broken CI pipeline, and the shift from SvelteKit back to pure JavaScript, an
-  in-place refactor is highly risky. It risks inheriting hidden configuration issues, residual technical debt, and
-  problematic dependencies that could undermine the V3 architecture before it even starts.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Appendix D: "V3 Implementation Strategy & Process"**: Specifically, **Section
-      2 (`Phase 1: Project Foundation & CI Setup`)**.
-    * **Section 0. Context & Justification**: A brief, high-level statement here to set the context for the entire plan.
-
-* **What needs to be changed (Details):**
-    * **Explicit Fresh Start:** In Section 2 (Phase 1), add a clear, unambiguous statement at the very beginning that *
-      *Vibe Player V3 will be built as a completely new, clean pure JavaScript project with JSDoc-based type checking**.
-      This means:
-        * Starting development in a new, empty directory (e.g., `vibe-player-v3/` which will then be renamed to
-          `vibe-player` upon completion).
-        * Initializing with a minimal `package.json`.
-        * Manually setting up `tsconfig.json` for `checkJs`.
-        * Meticulously migrating *only necessary assets* (e.g., `silero_vad.onnx` model, `rubberband.wasm`, `fft.js`
-          files) and *proven core logic* from the *original V1* (`vibe-player`) or newly written pure logic.
-    * **Deprecate V2.3:** Explicitly state that the `vibe-player-v2.3` directory and its contents will be deprecated,
-      archived, or entirely removed upon V3's completion, rather than attempting to fix or build upon its existing
-      structure.
-
-* **Why these changes are necessary:** A fresh start provides a clean slate, ensuring that the V3 architecture can be
-  implemented purely as designed without being contaminated by previous failures, hidden configurations, or broken
-  dependencies from `v2.3`. This is the safest and most efficient path to avoid inheriting technical debt and to
-  establish a robust, known-good foundation for development.
-
-#### **Problem 4.2: Deferred and Under-emphasized Component Isolation.**
-
-* **What is the problem?**
-  The current plan suggests starting UI validation with informal HTML "harnesses" and only "adopting Storybook" (or an
-  equivalent) later in Phase 3. Even in a pure JavaScript context, building UI components in isolation (outside the full
-  application context) is a best practice. Relying on ad-hoc harnesses is inefficient, provides inconsistent testing
-  environments, and delays the benefits of a structured component development and documentation workflow.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Appendix D: "V3 Implementation Strategy & Process"**: Specifically, **Section
-      2 (`Phase 1: Project Foundation & CI Setup`)** and **Section 3 (`Phase 3: Visual & Interactive Validation`)**.
-
-* **What needs to be changed (Details):**
-    * **Early Integration:** Move the integration of a component isolation and documentation tool (e.g., Storybook if
-      its pure JS support is adequate, or a simpler custom "component explorer" setup) to **Phase 1: Project Foundation
-      **. This means it should be set up alongside the initial CI, type checking, and linting tools.
-    * **Mandatory Component Stories/Docs:** Add a strict requirement that "Every UI component developed must have
-      corresponding isolated story files (or equivalent documentation/test files demonstrating its states and
-      interactions) as part of its 'Definition of Done'."
-    * **Primary Review Tool:** State that this isolated component environment will serve as the **primary review tool**
-      for all UI-related development. This allows designers and other developers to review, test, and provide feedback
-      on individual components in isolation, before they are integrated into the full application.
-    * **CI Enforcement:** If applicable, specify that the CI pipeline will enforce story coverage (e.g., a build should
-      fail if a UI component is committed without its corresponding isolated story/documentation file).
-    * **Replace Harnesses:** Remove any mention of temporary HTML harnesses; the dedicated component isolation
-      environment fulfills this need more robustly and systematically.
-
-* **Why these changes are necessary:** Integrating component isolation early in the development lifecycle (Phase 1)
-  fosters better component design, accelerates UI development by allowing parallel work, simplifies debugging, and
-  creates living documentation. It is a fundamental shift towards a more modular and maintainable UI codebase, directly
-  contributing to preventing "silly bugs" in the presentation layer by enabling focused, isolated testing.
-
----
-
-### **5. Integration of `WorkerChannel` Observability & Schema Responsibility**
-
-#### **Problem 5.1: Missing Observability for `WorkerChannel` & Undefined Schema Responsibility.**
-
-* **What is the problem?**
-  While the `WorkerChannel` is correctly identified as a critical abstraction for worker communication, the plan doesn't
-  explicitly mandate its role in cross-cutting **observability concerns** (such as latency tracing, traffic logging, and
-  error metrics). Furthermore, the crucial responsibility for message schema definition and runtime validation between
-  the main thread and workers remains implicitly handled, which can lead to runtime errors or miscommunications that
-  bypass static type checking.
-
-* **Where in `REFACTOR_PLAN.md`:**
-    * **Section 4.6 (The `WorkerChannel` description):** This is the primary location for adding these responsibilities.
-    * **Appendix A (or its consolidated version): "State Management & Data Flow"**: A small note or subsection can
-      reinforce schema responsibilities.
-    * **Appendix C: "V3 Testing and Quality Assurance Strategy"**: This section should mention testing the observability
-      features.
-
-* **What needs to be changed (Details):**
-    * **Add "Observability Hook" Responsibility to `WorkerChannel`:** In the `WorkerChannel`'s responsibilities (within
-      its section, e.g., 4.6), add a new, explicit point:
-        * "**Observability Hook:** Provide a transparent, centralized point to inject cross-cutting observability
-          concerns for all worker communications. This includes:
-            * **Latency Tracing:** Automatically measure and log the roundtrip time (request sent to response received)
-              for every worker operation, providing fine-grained performance data.
-            * **Traffic Logging:** Optionally log the `type` and (sanitized) `payload` of messages sent to and received
-              from the worker (e.g., `[WORKER_COMM] Sent INIT to VAD Worker`,
-              `[WORKER_COMM] Received PROCESS_RESULT from RB Worker`), invaluable for debugging.
-            * **Error Metrics:** Automatically track and report communication failures, worker-side errors, and
-              unhandled rejections/exceptions."
-    * **Define Message Schema Responsibility:** Explicitly state where message schemas are defined and validated:
-        * "The `WorkerChannel` itself **does not implement a message type or schema registry**, nor does it perform
-          content validation of the payloads."
-        * "**TypeScript interfaces** (defined via JSDoc in `src/lib/types/worker.types.js`) serve as the compile-time
-          schema for all worker messages. This is the primary mechanism for ensuring type safety."
-        * "The **driven adapters** are responsible for constructing message `payload`s that strictly conform to these
-          JSDoc-defined types when sending requests to the `WorkerChannel`."
-        * "The **workers** themselves (the ultimate consumers of the messages) are responsible for parsing and, if
-          necessary, implementing light-weight runtime validation of critical incoming message fields to ensure
-          robustness against unexpected inputs."
-    * **Update Testing Plan:** Ensure Appendix C (Testing Strategy) includes explicit tests for the `WorkerChannel`'s
-      observability features (e.g., verifying log outputs for messages, checking that latency is recorded, testing error
-      handling paths).
-
-* **Why these changes are necessary:** Mandating observability within the `WorkerChannel` provides invaluable diagnostic
-  capabilities for debugging complex asynchronous interactions, identifying performance bottlenecks, and quickly
-  pinpointing the source of subtle communication bugs. Clearly defining message schema responsibility and its location
-  in `src/lib/types/worker.types.js` ensures robust type safety across thread boundaries (even with `checkJs`), reduces
-  runtime errors, and maintains consistent data contracts, directly addressing the core "fragile worker communication"
-  problem that plagued V2.3.
+    * **Quality Gate:** A quality gate will be configured in SonarCloud to fail the check if new code introduces
+      high-priority issues or decreases coverage, preventing the merging of low-quality code.
+
+* **End-to-End & Visual Regression Testing (Playwright):**
+    * **Tool:** Playwright, driven by Cucumber.js.
+    * **Process:** After all other checks pass, the full application will be built and served, and Playwright will run a
+      comprehensive test suite.
+    * **E2E:** The suite will simulate complete user journeys as defined in the Gherkin `.feature` files (loading a
+      file, clicking play, adjusting a slider, verifying URL hash updates).
+    * **Visual Regression (Mandatory):** For the `<canvas>`-based waveform and spectrogram visualizations, the test
+      suite **must** use Playwright's built-in `toHaveScreenshot` capability. This takes a pixel-perfect snapshot of the
+      visual output and compares it against a known-good "golden" image. The build will fail if there are any visual
+      differences. This is the only way to automatically detect if a code change has unintentionally altered the
+      graphical output and is considered a critical quality check.
 
 ````
 --- End of File: REFACTOR_PLAN.md ---
