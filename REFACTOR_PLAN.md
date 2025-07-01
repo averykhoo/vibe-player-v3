@@ -301,7 +301,7 @@ stateDiagram-v2
 ## **Chapter 6: Quality Assurance & Testing Strategy**
 
 ### **6.1. The Testing Pyramid Layers**
-
+<!--
 | Layer | Tool(s) | Purpose | Runs Locally? | Runs in CI? | Speed |
 |:---|:---|:--- |:---:|:---:|:---|
 | **Static Analysis** | ESLint, Svelte-Check | Type safety, code quality, style, architectural rules | **Yes** | **Yes** | Blazing Fast |
@@ -309,13 +309,31 @@ stateDiagram-v2
 | **Unit Tests** | Vitest | Test individual functions/methods in isolation (includes V1 Characterization) | **Yes** | **Yes** | Fast |
 | **Integration Tests** | Vitest | Test collaboration between modules (e.g., service + mocked worker) | **Yes** | **Yes** | Fast |
 | **End-to-End (E2E) Tests** | Playwright | Verify complete user flows defined in Gherkin scenarios | **Yes** | **Yes** | Slow |
-| **Visual Regression Tests** | Playwright (`toHaveScreenshot`) | Prevent unintended visual bugs in UI and canvases | No | **Yes** | Slow |
+| **Visual Regression Tests** | Playwright (`toHaveScreenshot`) | Prevent unintended visual bugs in UI and canvases | No | **Yes** | Slow | 
+-->
+
+| Layer                       | Tool(s)                            | Purpose                                                                   | Runs Locally? | Runs in CI? | Speed        |
+|:----------------------------|:-----------------------------------|:--------------------------------------------------------------------------|:--------------|:------------|:-------------|
+| **Static Analysis**         | ESLint, Svelte-Check               | Type safety, code quality, style, architectural rules                     | **Yes**       | **Yes**     | Blazing Fast |
+| **Component Testing**       | Storybook                          | Visually inspect and document every component in isolation                | **Yes**       | No          | Interactive  |
+| **Unit Tests**              | Vitest                             | Test individual functions/methods in isolation (includes V1 Characterization) | **Yes**       | **Yes**     | Fast         |
+| **Integration Tests**       | Vitest                             | Test collaboration between modules (e.g., service + mocked worker)        | **Yes**       | **Yes**     | Fast         |
+| **End-to-End (E2E) Tests**  | Playwright                         | Verify complete user flows defined in Gherkin scenarios                    | **Yes**       | **Yes**     | Slow         |
+| **Visual Regression Tests** | Playwright (`toHaveScreenshot`)    | Prevent unintended visual bugs in UI and canvases                         | No            | **Yes**     | Slow         |
+| **CI Static Analysis**      | **GitHub CodeQL, SonarCloud**      | **Deep security, tech debt, and maintainability scans**                   | **No**        | **Yes**     | **Slow**     |
 
 ### **6.2. Local Development Checks (The Inner Loop)**
 
 *   **Type Safety (`svelte-check`):** Enforces strict typing for all `.ts` and `.svelte` files.
 *   **Code Quality & Formatting (ESLint & Prettier):** Enforces best practices and consistent code style.
+<!--
 *   **Architectural Rules (ESLint):** ESLint plugins will be configured to enforce architectural boundaries (e.g., services must not import from UI components).
+-->
+
+*   **Architectural Rules (ESLint):** This is **critical** for maintaining the Hexagonal Architecture. ESLint, with the `eslint-plugin-import` package, **must** be configured to enforce strict architectural boundaries. This check prevents architectural decay over time and is a mandatory quality gate. The rules must enforce:
+    *   UI Components (`src/lib/components/`) **must not** directly import from other technology-specific adapters (e.g., a UI component cannot import a Web Worker module).
+    *   Core Services (`src/lib/services/`) **must not** import from UI Components (`src/lib/components/`) or page routes (`src/routes/`).
+    *   Services can only depend on other services, stores, types, and their own adapters.
 
 ### **6.3. Automated Testing**
 
@@ -349,6 +367,17 @@ This section defines mandatory `data-testid` attributes for all interactive or d
 | | | `cpt-display` | Displays detected Call Progress Tones. |
 | **Visualizations** | `<Waveform.svelte>` | `waveform-canvas` | The `<canvas>` for the audio waveform. |
 | | `<Spectrogram.svelte>` | `spectrogram-canvas` | The `<canvas>` for the spectrogram. |
+
+Todo merge this
+
+
+| Component Group          | Svelte Component (File)         | Test ID                 | Description                                    |
+|:-------------------------|:--------------------------------|:------------------------|:-----------------------------------------------|
+| **Parameter Controls**   | `<CustomRangeSlider.svelte>`    | `speed-slider-input`    | Controls playback speed.                       |
+|                          |                                 | `pitch-slider-input`    | Controls pitch shift.                          |
+|                          |                                 | `gain-slider-input`     | Controls output gain.                          |
+|                          | **`<Controls.svelte>`**         | **`reset-controls-button`** | **Resets speed, pitch, and gain to defaults.** |
+
 
 ***
 
@@ -448,6 +477,16 @@ Feature: Playback Parameter Adjustment
       | "Speed"   | "1.5" | "1.50x"           | "speed=1.50"       |
       | "Pitch"   | "-3"  | "-3.0 semitones"  | "pitch=-3.00"      |
       | "Gain"    | "2.0" | "2.00x"           | "gain=2.00"        |
+
+
+  Scenario: Resetting parameters to default
+    Given the "Speed" slider is at "1.5"
+    And the "Pitch" slider is at "-3"
+    When the user clicks the "Reset Controls" button
+    Then the "Speed" slider should be at "1.0"
+    And the "Pitch" slider should be at "0"
+    And the "Gain" slider should be at "1.0"
+
 ```
 
 ### **File: `tests/e2e/features/vad_analysis.feature`**
@@ -733,6 +772,15 @@ export class WorkerChannel {
   }
 }
 ```
+
+
+### G.4. Mandatory Observability
+
+To ensure the system is transparent and debuggable, the `WorkerChannel` class **must** provide hooks or be instrumented to track the following metrics for all operations. This is a non-negotiable requirement for production-level robustness.
+
+*   **Latency Tracing:** It must measure and log the roundtrip time (from `post` call to promise resolution/rejection) for every worker message to identify performance bottlenecks.
+*   **Traffic Logging:** It must provide a mechanism to log the `messageType` and payload size of requests for debugging communication issues.
+*   **Error Metrics:** It must track the count and type of errors, including timeouts and worker-side exceptions, to monitor the health of background processes.
 
 ---
 
