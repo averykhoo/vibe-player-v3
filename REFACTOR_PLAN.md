@@ -1008,3 +1008,175 @@ This section defines the operational protocols for any AI agent working on this 
 *   **P6: README Generation Requirement:** The main `README.md` must contain a reference to these collaboration guidelines.
 *   **P7: Branch-Based Code Submission:** The agent must submit all work by committing to feature branches and pushing to the remote repository. Commits should represent logical units of work.
 *   **P8: Gherkin-Driven Implementation and Testing:** When implementing a new feature, the agent **must** consult the relevant Gherkin scenarios (`tests/e2e/features/*.feature`). The agent **must** ensure that its generated code passes the automated Playwright E2E tests derived from these Gherkin scenarios. If no relevant Gherkin scenario exists for a new feature, the agent **must first propose a new Gherkin scenario** for human review and approval before proceeding with implementation.
+
+---
+
+## **Appendix D: UI/UX Design Philosophy**
+
+This appendix restores the explicit UI/UX philosophy that underpins the component design choices mentioned in the main document.
+
+### **D.1. Core Principle: Clarity, Functionality, and Clean Design**
+
+*   **Description:** The user interface design **must** prioritize clarity, information density, and functional utility above all else. The goal is to create a powerful tool for analysis, not a purely aesthetic piece. A clean, well-organized interface that provides clear feedback and powerful, predictable controls is paramount.
+*   **Rationale:** Users of this tool are often analyzing audio for specific technical details. The UI should facilitate this task by presenting information clearly and making controls intuitive, not by obscuring functionality with decorative or overly complex elements.
+*   **Implication for Component Development:**
+    *   **Simplicity:** When tasked with creating UI components, the developer should produce simple, functional Svelte components that render standard, accessible HTML elements.
+    *   **Avoid Abstraction for Core Controls:** For core interactive elements like sliders and buttons, the developer **must** build custom Svelte components that directly wrap `<input type="range">` and `<button>` elements. This avoids using complex third-party UI libraries (e.g., Skeleton UI) for these critical parts, ensuring:
+        1.  **Full Control:** We have complete control over the component's DOM structure, styling, and event handling.
+        2.  **Testability:** E2E tests using Playwright can reliably interact with standard HTML elements without fighting against a library's custom DOM manipulation.
+    *   **Information Density:** The UI should present relevant information (e.g., current time, parameter values, analysis results) in a way that is easy to scan and understand at a glance.
+
+---
+
+## **Appendix E: State Machine Edge Case Logic**
+
+This appendix provides explicit, mandatory logic for handling specific edge cases within the main application state machine managed by the `AudioOrchestratorService`.
+
+### **E.1. Handling `EVENT_PLAYBACK_ENDED`**
+
+When the `AudioEngineService` detects that playback has naturally reached the end of the audio track, it must notify the `AudioOrchestratorService`. The orchestrator's state machine, currently in the `PLAYING` state, must execute the following sequence:
+
+1.  **Command `AudioEngineService`:** Command the `AudioEngineService` to set its internal playback time to exactly match the `duration` of the audio file. This ensures the UI seek bar moves to the very end.
+2.  **Transition State:** Transition the application state from `PLAYING` to `READY`. This will correctly update the `playerStore` and cause the UI to change the play button's icon from "Pause" to "Play".
+3.  **Prevent URL Update:** Crucially, the orchestrator **must not** trigger the `URLStateAdapter` to update the URL hash/query string. This is a deliberate exception to prevent the URL from being unhelpfully updated with a `time=` parameter equal to the audio's duration, which would cause the track to be "stuck" at the end if the link were shared.
+
+### **E.2. Handling `COMMAND_PLAY` from `READY` state at End of Track**
+
+When the user clicks the "Play" button while the application is in the `READY` state, the `AudioOrchestratorService` must check for a specific condition before issuing the play command:
+
+1.  **Check Time:** The orchestrator must check if `currentTime` is equal to (or within a small epsilon of) the `duration`.
+2.  **Conditional Seek:**
+    *   If `true`, it means the track has finished and the user wants to play it again. The orchestrator must first issue a **seek command to `0`** to the `AudioEngineService`. Only after the seek is acknowledged should it issue the `play` command.
+    *   If `false`, it can immediately issue the `play` command to the `AudioEngineService`.
+3.  **Rationale:** This two-step process ensures that clicking "Play" on a finished track correctly restarts it from the beginning, which is the universally expected behavior for a media player.
+
+---
+
+## **Appendix F: Core Data Flow & State Management Principles**
+
+This appendix formalizes the core data flow principles that govern how services, stores, and the UI interact. While Svelte and Vite provide the tools, these principles provide the architectural discipline.
+
+### **F.1. Unidirectional Data Flow**
+
+Data and commands flow in one primary direction, creating a predictable and debuggable system:
+
+1.  **User Interaction -> Service Command:** A user interacts with a Svelte component (e.g., clicks a button). The component's event handler calls a method on a singleton service instance (e.g., `audioOrchestrator.play()`). This is a **Command**.
+2.  **Service Logic -> Store Update:** The service executes its business logic. Upon completion, it updates one or more Svelte stores with the new state (e.g., `playerStore.update(s => ({ ...s, isPlaying: true }))`).
+3.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies any subscribed UI components that the store's value has changed. The components re-render to reflect the new state (e.g., a `{#if $playerStore.isPlaying}` block updates).
+
+### **F.2. Controlled Exception: The "Hot Path"**
+
+*   **What:** For the high-frequency `currentTime` update during playback, the `AudioEngineService` runs a `requestAnimationFrame` loop. Inside this loop, it calculates the estimated time and writes **directly** to the dedicated `timeStore` (a Svelte `writable` store).
+*   **Why:** This is a deliberate, controlled exception to the standard flow. It is the only way to achieve smooth, 60fps UI updates for the seek bar and time display without burdening the entire application with constant, heavy re-render calculations that would be triggered by updating the main `playerStore` on every frame.
+*   **Limitations:** This is the *only* such exception. The `timeStore` is treated as a read-only "display" value by the UI. Changes to the `timeStore` **must not** trigger any other application logic. The canonical `currentTime` for logical operations (like saving state to the URL) is always read from the main `playerStore`, which is only updated by the `AudioEngineService` during "cold" events like `pause` or `seek`.
+
+### **F.3. Large Data Handling Protocol**
+
+To maintain UI performance and prevent large, static data payloads from causing performance issues in Svelte's reactivity system, the following protocol is mandatory:
+
+1.  **Internal Storage:** A service that generates a large, static data payload (e.g., the `vadProbabilities` `Float32Array` from the `AnalysisService`) **must** hold this data in a private internal property. It **must not** be published to a Svelte store.
+2.  **State Store Flag:** The service will instead publish a simple boolean flag to the relevant store to indicate that the data is ready (e.g., `analysisStore.update(s => ({ ...s, hasVadProbabilities: true }))`).
+3.  **Synchronous Accessor:** The service **must** expose a public, synchronous accessor method (e.g., `getVadProbabilityData(): Float32Array`) that returns the internal data.
+4.  **UI Retrieval:** UI components that need to render this data (e.g., a canvas visualizer) will subscribe to the boolean flag. When the flag becomes `true`, they will then call the service's accessor method directly to retrieve the data for rendering.
+
+This pattern ensures that large data is only passed around when explicitly requested for rendering, avoiding unnecessary overhead in the reactive state management system.
+
+---
+
+## **Appendix G: Worker Communication Protocol & Timeout Handling**
+
+This appendix provides a definitive implementation contract for the `WorkerChannel` utility proposed in Chapter 3. This utility is mandatory for all Web Worker interactions to ensure robustness, resilience, and consistent error handling.
+
+### **G.1. The `WorkerChannel` Utility Class**
+
+The developer **must** create a reusable TypeScript class named `WorkerChannel` in `src/lib/utils/workerChannel.ts`. This class provides a generic, Promise-based request/response communication layer on top of the native Web Worker API. It acts as an **Anti-Corruption Layer (ACL)**, abstracting away the complexities of `postMessage`, `onmessage` handling, and message ID correlation.
+
+### **G.2. Mandatory Timeout Mechanism**
+
+The `WorkerChannel` class **must** implement a robust, Promise-based timeout mechanism for all request/response operations to prevent a hung or unresponsive worker from deadlocking the application.
+
+### **G.3. Reference Implementation Pattern**
+
+The `post` method of the `WorkerChannel` class must follow this implementation pattern, using `Promise.race` to compete the worker's response against a `setTimeout` timer.
+
+```typescript
+// src/lib/utils/workerChannel.ts
+
+const DEFAULT_WORKER_TIMEOUT_MS = 30000; // 30 seconds
+
+export class WorkerTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkerTimeoutError';
+  }
+}
+
+export class WorkerChannel {
+  private worker: Worker;
+  private nextMessageId = 0;
+  private listeners = new Map<number, (response: any) => void>();
+
+  constructor(worker: Worker) {
+    this.worker = worker;
+    this.worker.onmessage = (event) => {
+      const { id, payload, error } = event.data;
+      const listener = this.listeners.get(id);
+      if (listener) {
+        listener({ payload, error });
+      }
+    };
+  }
+
+  public post<T>(
+    messageType: string,
+    payload: any,
+    transferables: Transferable[] = [],
+    timeout = DEFAULT_WORKER_TIMEOUT_MS
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const messageId = this.nextMessageId++;
+      let timeoutHandle: number;
+
+      const responseListener = (response: { payload: T; error?: string }) => {
+        clearTimeout(timeoutHandle);
+        this.listeners.delete(messageId);
+        if (response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response.payload);
+        }
+      };
+
+      this.listeners.set(messageId, responseListener);
+
+      timeoutHandle = window.setTimeout(() => {
+        this.listeners.delete(messageId);
+        reject(
+          new WorkerTimeoutError(
+            `Worker operation timed out after ${timeout}ms for message type: ${messageType}.`
+          )
+        );
+      }, timeout);
+
+      this.worker.postMessage(
+        { id: messageId, type: messageType, payload },
+        transferables
+      );
+    });
+  }
+
+  // Method to terminate the worker
+  public terminate() {
+    this.worker.terminate();
+  }
+}
+```
+
+### **G.4. Error Propagation Flow (Mandatory)**
+
+The detailed error propagation flow defined in Chapter 3 (`Section 3.5. Detailed Error Propagation from Workers`) is re-iterated here in the context of this specific implementation:
+
+1.  **Rejection:** If a timeout occurs, the `Promise` returned by `workerChannel.post()` **must** reject with a `WorkerTimeoutError`.
+2.  **Service Catches:** The calling service (e.g., `AnalysisService`) **must** wrap its `workerChannel.post()` call in a `try...catch` block.
+3.  **Service Re-throws:** Inside the `catch` block, the service **must** catch the `WorkerTimeoutError` (or any other error), wrap it in a more context-specific high-level `Error` if necessary, and **re-throw** it.
+4.  **Orchestrator Handles State:** The `AudioOrchestratorService` is the final backstop. It catches the error re-thrown by the service and, as the sole authority, transitions the application to the `ERROR` state by updating the `playerStore`.
