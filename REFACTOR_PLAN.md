@@ -867,3 +867,58 @@ This appendix provides the definitive, mandatory patterns for implementing the H
       expect(mockPlay).toHaveBeenCalledOnce();
     });
     ```
+
+
+
+---
+
+
+
+## **Appendix I: Core Interaction Flows**
+
+    This appendix provides detailed visual and procedural descriptions of key application interactions to eliminate ambiguity.
+
+### I.1. Play/Pause Command Flow (Sequence Diagram)
+
+ This diagram shows how a user's "play" command propagates through the system and how a subsequent `playback_ended` event is handled.
+
+    ```mermaid
+    sequenceDiagram
+        actor User
+        participant UI as Svelte Component
+        participant Orchestrator as AudioOrchestratorService
+        participant Engine as AudioEngineService
+        participant Store as Svelte Stores
+
+        User->>UI: Clicks 'Play' Button
+        UI->>Orchestrator: play()
+        activate Orchestrator
+        Orchestrator->>Engine: play()
+        deactivate Orchestrator
+        activate Engine
+        note right of Engine: Starts Web Audio & rAF loop.
+        Engine->>Store: playerStore.update({ isPlaying: true })
+        deactivate Engine
+        Store-->>UI: Reactively updates UI (icon to 'Pause')
+
+        %% Some time later... Audio ends
+        Engine-->>Orchestrator: onPlaybackEnded() event
+        activate Orchestrator
+        note right of Orchestrator: State machine: PLAYING -> READY
+        Orchestrator->>Engine: pause() command
+        Orchestrator->>Engine: seek(duration) command
+        Orchestrator->>Store: playerStore.update({ isPlaying: false, status: 'ready' })
+        deactivate Orchestrator
+        Store-->>UI: Reactively updates UI (icon to 'Play')
+    ```
+
+    ### I.2. Loading an Audio File (English Description)
+
+    1.  **UI Component:** The user selects a file. The component's event handler calls `AudioOrchestratorService.loadAudio(file)`.
+    2.  **`AudioOrchestratorService`:** Transitions its state machine to `LOADING` and updates the `playerStore`. The UI reacts by showing a global spinner. It drives an `AudioEngineService` to decode the file into an `AudioBuffer`.
+    3.  **`AudioOrchestratorService`:** Once the buffer is ready, it orchestrates the next steps in parallel:
+        *   **Critical Path (Awaited):** It commands `AudioEngineService` to prepare the buffer and generates the `waveformData`.
+        *   **Background (Fire-and-Forget):** It commands `AnalysisService.analyze(buffer)` and `DtmfService.analyze(buffer)`.
+    4.  **Critical Path Completion:** As soon as the critical path is complete, the `AudioOrchestratorService` transitions to the `READY` state. The UI hides the spinner, enables controls, and renders the waveform.
+    5.  **Background Completion:** Later, as the `AnalysisService` and `DtmfService` complete, they update their respective stores. The UI reacts by drawing VAD regions and displaying DTMF tones.
+    ```
