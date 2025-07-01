@@ -301,16 +301,6 @@ stateDiagram-v2
 ## **Chapter 6: Quality Assurance & Testing Strategy**
 
 ### **6.1. The Testing Pyramid Layers**
-<!--
-| Layer | Tool(s) | Purpose | Runs Locally? | Runs in CI? | Speed |
-|:---|:---|:--- |:---:|:---:|:---|
-| **Static Analysis** | ESLint, Svelte-Check | Type safety, code quality, style, architectural rules | **Yes** | **Yes** | Blazing Fast |
-| **Component Testing** | Storybook | Visually inspect and document every component in isolation | **Yes** | No | Interactive |
-| **Unit Tests** | Vitest | Test individual functions/methods in isolation (includes V1 Characterization) | **Yes** | **Yes** | Fast |
-| **Integration Tests** | Vitest | Test collaboration between modules (e.g., service + mocked worker) | **Yes** | **Yes** | Fast |
-| **End-to-End (E2E) Tests** | Playwright | Verify complete user flows defined in Gherkin scenarios | **Yes** | **Yes** | Slow |
-| **Visual Regression Tests** | Playwright (`toHaveScreenshot`) | Prevent unintended visual bugs in UI and canvases | No | **Yes** | Slow | 
--->
 
 | Layer                       | Tool(s)                            | Purpose                                                                   | Runs Locally? | Runs in CI? | Speed        |
 |:----------------------------|:-----------------------------------|:--------------------------------------------------------------------------|:--------------|:------------|:-------------|
@@ -326,10 +316,6 @@ stateDiagram-v2
 
 *   **Type Safety (`svelte-check`):** Enforces strict typing for all `.ts` and `.svelte` files.
 *   **Code Quality & Formatting (ESLint & Prettier):** Enforces best practices and consistent code style.
-<!--
-*   **Architectural Rules (ESLint):** ESLint plugins will be configured to enforce architectural boundaries (e.g., services must not import from UI components).
--->
-
 *   **Architectural Rules (ESLint):** This is **critical** for maintaining the Hexagonal Architecture. ESLint, with the `eslint-plugin-import` package, **must** be configured to enforce strict architectural boundaries. This check prevents architectural decay over time and is a mandatory quality gate. The rules must enforce:
     *   UI Components (`src/lib/components/`) **must not** directly import from other technology-specific adapters (e.g., a UI component cannot import a Web Worker module).
     *   Core Services (`src/lib/services/`) **must not** import from UI Components (`src/lib/components/`) or page routes (`src/routes/`).
@@ -358,25 +344,16 @@ This section defines mandatory `data-testid` attributes for all interactive or d
 | | | `jump-forward-button` | Jumps playback forward. |
 | | `<CustomRangeSlider.svelte>` | `seek-slider-input` | The `<input type="range">` for seeking. |
 | | `+page.svelte` | `time-display` | Displays current time and duration. |
-| **Parameter Controls** | `<CustomRangeSlider.svelte>` | `speed-slider-input` | Controls playback speed. |
-| | | `pitch-slider-input` | Controls pitch shift. |
-| | | `gain-slider-input` | Controls output gain. |
+| **Parameter Controls**   | `<CustomRangeSlider.svelte>`    | `speed-slider-input`    | Controls playback speed.                       |
+|                          |                                 | `pitch-slider-input`    | Controls pitch shift.                          |
+|                          |                                 | `gain-slider-input`     | Controls output gain.                          |
+|                          | **`<Controls.svelte>`**         | **`reset-controls-button`** | **Resets speed, pitch, and gain to defaults.** |
 | **Analysis Controls** | `<CustomRangeSlider.svelte>` | `vad-positive-slider-input` | Adjusts VAD positive threshold. |
 | | | `vad-negative-slider-input` | Adjusts VAD negative threshold. |
 | **Analysis Displays** | `<ToneDisplay.svelte>` | `dtmf-display` | Displays detected DTMF tones. |
 | | | `cpt-display` | Displays detected Call Progress Tones. |
 | **Visualizations** | `<Waveform.svelte>` | `waveform-canvas` | The `<canvas>` for the audio waveform. |
 | | `<Spectrogram.svelte>` | `spectrogram-canvas` | The `<canvas>` for the spectrogram. |
-
-Todo merge this
-
-
-| Component Group          | Svelte Component (File)         | Test ID                 | Description                                    |
-|:-------------------------|:--------------------------------|:------------------------|:-----------------------------------------------|
-| **Parameter Controls**   | `<CustomRangeSlider.svelte>`    | `speed-slider-input`    | Controls playback speed.                       |
-|                          |                                 | `pitch-slider-input`    | Controls pitch shift.                          |
-|                          |                                 | `gain-slider-input`     | Controls output gain.                          |
-|                          | **`<Controls.svelte>`**         | **`reset-controls-button`** | **Resets speed, pitch, and gain to defaults.** |
 
 
 ***
