@@ -1013,8 +1013,9 @@ toolchain powered by Vite and SvelteKit.** This decision allows us to leverage t
 UI framework, and a rich plugin ecosystem (for PWA support) while still achieving the core goal of producing a simple,
 self-contained, and offline-capable static application.
 
-The core principles of testability, decoupling, and maintainability remain paramount. The Hexagonal Architecture for our
-business logic is preserved, providing a clean separation of concerns.
+The core principles of testability, decoupling, and maintainability are paramount. We will implement a clear Hexagonal
+Architecture for our business logic, an event-driven communication model between services, and a component-driven UI
+development workflow.
 
 This plan is designed to be followed with **100% detail**. All information required for development is contained within
 this document. Deviations from this plan are strictly forbidden unless explicitly approved by a higher authority after a
@@ -1028,13 +1029,14 @@ formal review process.
 
 The primary objective for Vibe Player V3 is to construct an audio player and analysis tool that is:
 
-* **Fundamentally Robust:** By enforcing strict boundaries between the UI layer, application services, and core business
-  logic, preventing architectural decay.
-* **Completely Testable:** Through a multi-layered testing strategy including unit, integration, end-to-end (E2E), and
-  isolated component tests. Automated tests are the primary validation mechanism.
-* **Highly Maintainable:** By leveraging a modern, strongly-typed language (TypeScript) and a reactive, component-based
-  UI architecture (Svelte).
-* **Performant:** Using a compiled UI framework (Svelte) and offloading computationally intensive tasks to
+* **Fundamentally Robust:** By enforcing strict boundaries between the UI, application services, and core business
+  logic, preventing architectural decay. This is achieved through a Hexagonal Architecture and an event-driven
+  communication model.
+* **Completely Testable:** Through a multi-layered testing strategy including unit, integration, and end-to-end (E2E)
+  tests. We will leverage Dependency Injection to make UI components perfectly testable in isolation.
+* **Highly Maintainable:** By leveraging a modern, strongly-typed language (TypeScript), a reactive, component-based UI
+  architecture (Svelte), and a centralized configuration system.
+* **Performant:** Using a compiled UI framework (Svelte) and offloading all computationally intensive tasks to
   single-threaded Web Workers, ensuring a smooth and responsive user experience.
 * **Offline-Capable & Installable:** Built as a Progressive Web App (PWA) that can be installed on user devices and run
   reliably without an internet connection.
@@ -1075,14 +1077,13 @@ developer must adhere to these constraints at all times.
       tooling support. Svelte's compile-time framework approach results in minimal runtime overhead, small bundle sizes,
       and highly performant UI updates.
 
-* **Constraint 4: Component-Driven UI with Storybook**
-    * **Description:** The user interface will be composed of small, single-purpose, and highly testable Svelte
-      components. These components will be developed and rigorously verified in **Storybook** in complete isolation
-      before integration into the main application. Complex, third-party UI libraries will be avoided for core
-      interactive elements to ensure full control.
-    * **Rationale:** This guarantees that our UI components render standard HTML elements, making them 100% reliably
-      testable by E2E tools like Playwright. It also provides a dedicated environment for visual regression testing and
-      component documentation.
+* **Constraint 4: Component-Driven UI with Dependency Injection & Storybook**
+    * **Description:** The UI will be composed of small, single-purpose Svelte components. Services and stores will be
+      provided to components via **Svelte's Context API (Dependency Injection)**, not via direct imports. All components
+      **must** be developed and verified in isolation in **Storybook** before integration.
+    * **Rationale:** Dependency Injection decouples UI components from concrete service implementations, making them
+      highly portable and easy to test. The Storybook-first workflow ensures components are robust and handles all their
+      states correctly before they enter the main application.
 
 * **Constraint 5: V1 Logic is the "Golden Master" for Core Algorithms**
     * **Description:** For core signal processing and analysis algorithms (specifically VAD region calculation, DTMF/CPT
@@ -1112,6 +1113,22 @@ developer must adhere to these constraints at all times.
       assets (like WASM and ONNX models) at startup.
     * **Rationale:** This prevents race conditions and provides a more responsive feel, as the user does not have to
       wait for large assets to download *after* they have selected a file.
+
+* **Constraint 9: Centralized & Typed Configuration**
+    * **Description:** All tunable parameters, magic numbers, and environmental constants (e.g., VAD thresholds, FFT
+      sizes, API keys) **must** be defined in a central `src/lib/config.ts` file. Modules must import configuration from
+      this single source of truth.
+    * **Rationale:** This eliminates hard-coded values scattered throughout the codebase, making the system transparent
+      and easy to reconfigure or A/B test in the future.
+
+* **Constraint 10: Decoupled Services via Event Emitter**
+    * **Description:** Services **must not** call each other's methods directly. Communication between services will be
+      handled by a **type-safe event emitter**. For example, the `AudioEngineService` will `emit('playbackEnded')`
+      instead of calling a method on the orchestrator.
+    * **Rationale:** This enforces a true Hexagonal Architecture where core services are completely decoupled from each
+      other, improving maintainability and testability.
+
+---
 
 * **Principle 1: Clarity, Functionality, and Clean Design**
     * **Description:** The user interface design **must** prioritize clarity, information density, and functional
@@ -1147,7 +1164,8 @@ developer must adhere to these constraints at all times.
 │   │   ├── stores/               # Central Application State (Svelte Stores) (.ts)
 │   │   ├── types/                # TypeScript Interfaces and Type Definitions (Ports) (.ts)
 │   │   ├── utils/                # General Utilities and Helpers (.ts)
-│   │   └── workers/              # Web Worker scripts (.ts)
+│   │   ├── workers/              # Web Worker scripts (.ts)
+│   │   └── config.ts             # Central application configuration
 │   ├── routes/                   # SvelteKit page routes (e.g., +page.svelte)
 │   ├── app.html                  # SvelteKit main HTML template
 │   └── app.css                   # Global CSS styles
@@ -1166,15 +1184,20 @@ developer must adhere to these constraints at all times.
 
 ### **2.2. Key Hexagons (Services) and Their Responsibilities**
 
-All services are implemented as **Singleton TypeScript Classes** that `implement` a formal Port `interface`. This
-enforces the Hexagonal Architecture and ensures a single instance manages the domain logic.
+All services are implemented as **Singleton TypeScript Classes**. They are instantiated once at the application root and
+provided to the UI via Svelte's Context API.
+
+* **`appEmitter` (`src/lib/services/emitter.service.ts`)**
+    * **Role:** The application's central nervous system. A type-safe event bus for inter-service communication.
+    * **Responsibility:** To decouple services from one another. Services emit events to the bus, and other services
+      subscribe to those events.
 
 * **`AudioOrchestratorService` (`src/lib/services/audioOrchestrator.service.ts`)**
-    * **Role:** The central application orchestrator (the AppHexagon), implementing the `IAudioOrchestratorPort`
-      interface.
-    * **Responsibility:** Manages the overall application lifecycle state machine (see Chapter 4). Coordinates other
-      domain services. Manages global errors.
-    * **Key State:** `status` (overall app state), `fileName`, `duration`, `isPlayable`, `sourceUrl`, `waveformData`.
+    * **Role:** The central application coordinator.
+    * **Responsibility:** Listens for events from the UI and other services. Manages the overall application state
+      machine (see Chapter 4). Dispatches commands to other services based on state transitions. Manages global error
+      state. **It does not contain any business logic itself.**
+    * **Key State:** `status` (overall app state), `fileName`, `duration`, `isPlayable`, `sourceUrl`.
 
 * **`AudioEngineService` (`src/lib/services/audioEngine.service.ts`)**
     * **Role:** The core playback engine (the PlaybackHexagon), implementing the `IAudioEnginePort`.
@@ -1199,6 +1222,12 @@ enforces the Hexagonal Architecture and ensures a single instance manages the do
     * **Responsibility:** Communicates with the `spectrogram.worker` to perform FFT calculations.
     * **Key State:** `spectrogramData`.
 
+* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
+    * **Role:** Manages all data generation for the waveform.
+    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` for the waveform display. Updates
+      the relevant stores with visualization data.
+    * **Key State:**  `waveformData`
+
 ---
 
 ## **Chapter 3: Adapters, Infrastructure & Data Flow**
@@ -1208,15 +1237,16 @@ enforces the Hexagonal Architecture and ensures a single instance manages the do
 These components initiate commands *on* the core services.
 
 * **Svelte UI Components (`src/lib/components/` & `src/routes/`):**
-    * **Role:** The primary driving adapter. Svelte components handle DOM events and call methods on the singleton
-      service instances (e.g., `audioEngine.togglePlayPause()`). They depend on the service's Port `interface`, not its
-      concrete class.
+    * **Role:** The primary driving adapter. Components receive service instances via `getContext`. They handle DOM
+      events and either call methods on the `AudioOrchestratorService` (for state-changing commands) or emit events to
+      the `appEmitter`.
     * **Key Example (`RangeSlider.svelte`):** This custom component wraps a standard `<input type="range">`. It attaches
       `on:mousedown`, `on:input`, and `on:mouseup` event handlers that dispatch commands like
       `AudioOrchestratorService.beginSeek()`, `updateSeek()`, and `endSeek()`.
 
 * **URL State Listener (`src/routes/+page.ts`):**
-    * **Role:** On startup, it parses URL query parameters to retrieve initial application state.
+    * **Role:** On startup, the SvelteKit `load` function parses URL query parameters and provides an `initialState`
+      object to the main page component.
     * **Implementation:** The SvelteKit `load` function in `src/routes/+page.ts` parses `url.searchParams` and provides
       an `initialState` object to the main page component, which then passes it to the `AudioOrchestratorService`.
 
@@ -1233,14 +1263,18 @@ These components are driven *by* the core services to perform a task.
       `WorkerChannel` utility.
 
 * **`WorkerChannel` Utility (`src/lib/utils/workerChannel.ts`):**
-    * **Role:** A mandatory, reusable class providing a robust, Promise-based request/response communication channel
-      over the native Web Worker API. It abstracts away `postMessage`/`onmessage` complexities and **must** implement a
-      robust timeout mechanism to handle unresponsive workers.
+    * **Role:** A mandatory, reusable class providing a **type-safe, Promise-based request/response communication
+      channel** over the native Web Worker API. It will use TypeScript discriminated unions to ensure type safety of
+      message payloads and implement robust timeout and observability mechanisms.
 
 * **URL State Adapter (`src/lib/utils/urlState.ts`):**
     * **Role:** Serializes key application state into the URL's query string.
     * **Implementation:** The `AudioOrchestratorService` subscribes to relevant Svelte Stores. On changes to key
       parameters, it calls a debounced function in `urlState.ts` to update `window.history.replaceState()`.
+
+* **Toast Notifications:**
+    * **Role:** A top-level component will subscribe to the `statusStore`. When it detects a new error object, it will
+      display a user-friendly toast notification.
 
 ### **3.3. Core Data Flow Principles**
 
@@ -1267,7 +1301,7 @@ These components are driven *by* the core services to perform a task.
 | State Item                                                       | Owning Service/Hexagon     | Location in Store                        | Description                                                                                                     |
 |:-----------------------------------------------------------------|:---------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------|
 | `status` (`loading`, `ready`, etc.)                              | `AudioOrchestratorService` | `playerStore` (`status` property)        | The single source of truth for the application's overall state.                                                 |
-| `error`                                                          | `AudioOrchestratorService` | `playerStore` (`error` property)         | The global error message, if any.                                                                               |
+| `error` (Structured Error Object)                                | `AudioOrchestratorService` | `statusStore`                            | A structured object with details for user-facing toasts and technical logs.                                     |
 | `fileName`, `duration`, `isPlayable`, `sourceUrl`, `audioBuffer` | `AudioOrchestratorService` | `playerStore`                            | High-level metadata about the loaded audio. `audioBuffer` is stored here for main-thread access by visualizers. |
 | `isPlaying`                                                      | `AudioEngineService`       | `playerStore`                            | The canonical boolean playback state.                                                                           |
 | `currentTime`                                                    | `AudioEngineService`       | `timeStore` (Hot) & `playerStore` (Cold) | Canonical time. Updated on `rAF` (`timeStore`) for UI, and synced to `playerStore` on pause/seek.               |
@@ -1360,11 +1394,14 @@ stateDiagram-v2
 
 ### **5.1. Guiding Principles for Development**
 
-* **Component-First UI (Storybook):** All Svelte UI components will be developed and verified in isolation within
-  Storybook.
-* **Test-Driven Logic (Vitest):** All core business logic within services will be developed using a strict TDD workflow.
-* **Behavior-Driven Features (Gherkin & Playwright):** User-facing features will be defined by Gherkin scenarios and
-  verified with Playwright E2E tests.
+* **Storybook-First UI:** All Svelte UI components **must** be developed, documented, and visually verified in isolation
+  within Storybook *before* being integrated into the main application.
+* **Test-Driven Logic:** All core business logic within services will be developed using a strict TDD workflow with
+  Vitest.
+* **Behavior-Driven Features:** User-facing features will be defined by Gherkin scenarios and verified with Playwright
+  E2E tests.
+* **Dependency Injection for Testing:** All tests for UI components will inject mock services via Svelte's Context API,
+  ensuring tests are fast and reliable.
 * **Formal Command & Event Naming:** Adhere to a formal distinction between **Commands** (user-initiated actions telling
   the app to do something, e.g., `audioEngine.play()`) and **Events** (system notifications that something has happened,
   e.g., a worker message).
@@ -1375,27 +1412,24 @@ stateDiagram-v2
 ### **5.2. Project Setup & Initial Configuration**
 
 1. **Initialize SvelteKit Project:** Use `npm create svelte@latest vibe-player-v3`.
-2. **Install Dev Dependencies:**
-   `npm install -D vitest @testing-library/jest-dom @playwright/test @storybook/svelte vite-plugin-pwa`.
-3. **Configure `vite.config.ts`:** Add `adapter-static`, `vite-plugin-pwa`, and `viteStaticCopy` for copying WASM/ONNX
-   assets to the `build/` directory.
-4. **Configure `svelte.config.js`:** Ensure `adapter-static` is configured for a single-page application (
-   `fallback: 'index.html'`).
-5. **Configure `tsconfig.json`:** Ensure `lib` includes `webworker` and `target` is `es2020`.
-6. **Configure Storybook:** Run `npx storybook@latest init`.
+2. **Copy Configurations:** Copy `package.json` (for dependencies), `vite.config.ts`, `svelte.config.js`, and
+   `tsconfig.json` from the `v2.3` reference project. Run `npm install`.
+3. **Configure Storybook:** Run `npx storybook@latest init`. Configure it to work with the Svelte Context API for
+   providing mock services in stories.
+4. **Create Directory Structure:** Manually create the `services`, `stores`, `workers`, `types`, and `config` folders
+   inside `src/lib`.
 
 ### **5.3. The Core Development Loop (Iterative Process)**
 
-1. **Task & Gherkin Review:** Review the relevant `.feature` file. If none exists, propose one.
+1. **Task & Gherkin Review:** Review the relevant `.feature` file that defines the user-facing behavior.
 2. **UI Component Dev (Storybook):** Create/update the `.svelte` component and its `.stories.ts` file. Build it in
-   isolation until visually and functionally correct.
-3. **Core Logic Dev (Vitest):** Create/update the `.test.ts` file for the relevant service. Write a failing test (or
-   load a characterization vector). Implement the pure TypeScript logic in the service until the test passes. Mock
-   service singletons using `vi.mock` for true unit testing.
-4. **Application Integration:** Integrate the verified Svelte component into the main application page. Wire up its
-   events to call service methods and bind its props to Svelte stores.
-5. **E2E Verification (Playwright):** Write a Playwright test to automate the Gherkin scenario. Use `toHaveScreenshot`
-   for visual regression testing of canvases.
+   isolation, creating stories for all its visual states (disabled, loading, etc.). Use the Context API to provide mock
+   services and data.
+3. **Core Logic Dev (Vitest):** Create/update the `.test.ts` file for the relevant service. Write a failing test.
+   Implement the pure TypeScript logic in the service until the test passes.
+4. **Application Integration:** In the main application (`+page.svelte`), provide the real service instances via
+   `setContext`. Use the verified Svelte component from Storybook. Wire up its events to the `appEmitter`.
+5. **E2E Verification (Playwright):** Write a Playwright test to automate the Gherkin scenario.
 
 ---
 
@@ -1403,15 +1437,15 @@ stateDiagram-v2
 
 ### **6.1. The Testing Pyramid Layers**
 
-| Layer                       | Tool(s)                         | Purpose                                                                       | Runs Locally? | Runs in CI? | Speed        |
-|:----------------------------|:--------------------------------|:------------------------------------------------------------------------------|:--------------|:------------|:-------------|
-| **Static Analysis**         | ESLint, Svelte-Check            | Type safety, code quality, style, architectural rules                         | **Yes**       | **Yes**     | Blazing Fast |
-| **Component Testing**       | Storybook                       | Visually inspect and document every component in isolation                    | **Yes**       | No          | Interactive  |
-| **Unit Tests**              | Vitest                          | Test individual functions/methods in isolation (includes V1 Characterization) | **Yes**       | **Yes**     | Fast         |
-| **Integration Tests**       | Vitest                          | Test collaboration between modules (e.g., service + mocked worker)            | **Yes**       | **Yes**     | Fast         |
-| **End-to-End (E2E) Tests**  | Playwright                      | Verify complete user flows defined in Gherkin scenarios                       | **Yes**       | **Yes**     | Slow         |
-| **Visual Regression Tests** | Playwright (`toHaveScreenshot`) | Prevent unintended visual bugs in UI and canvases                             | No            | **Yes**     | Slow         |
-| **CI Static Analysis**      | **GitHub CodeQL, SonarCloud**   | **Deep security, tech debt, and maintainability scans**                       | **No**        | **Yes**     | **Slow**     |
+| Layer                       | Tool(s)                            | Purpose                                                                        |
+|:----------------------------|:-----------------------------------|:-------------------------------------------------------------------------------|
+| **Static Analysis**         | ESLint, Svelte-Check, TypeScript   | Enforce type safety, code quality, style, and architectural rules.             |
+| **Component Testing**       | Storybook, Vitest, Testing Library | Visually inspect and unit test every component in complete isolation.          |
+| **Unit Tests**              | Vitest                             | Test individual functions/methods in isolation (includes V1 Characterization). |
+| **Integration Tests**       | Vitest                             | Test collaboration between services via the event emitter.                     |
+| **End-to-End (E2E) Tests**  | Playwright                         | Verify complete user flows defined in Gherkin scenarios.                       |
+| **Visual Regression Tests** | Playwright (`toHaveScreenshot`)    | Prevent unintended visual bugs in UI and canvases in CI.                       |
+| **CI Static Analysis**      | **GitHub CodeQL, SonarCloud**      | **Deep security, tech debt, and maintainability scans**                        | **No**        | **Yes**     | **Slow**     |
 
 ### **6.2. Local Development Checks (The Inner Loop)**
 
@@ -1430,6 +1464,8 @@ stateDiagram-v2
 
 * **Unit Tests & V1 Characterization Testing:** Pure logic from V1 is ported and tested against "golden master" JSON
   test vectors to prevent regressions.
+* **Component Tests:** UI components will be rendered with mock services provided via the Context API. Tests will assert
+  that components render correctly and dispatch the correct events on user interaction.
 * **Integration Tests:** Verify collaboration between modules by mocking out the lowest-level dependencies.
 * **End-to-End (E2E) Tests:** Simulated user journeys ensure the entire application functions correctly.
 
@@ -1455,7 +1491,8 @@ stable E2E testing with Playwright.
 |                        |                              | `pitch-slider-input`        | Controls pitch shift.                          |
 |                        |                              | `gain-slider-input`         | Controls output gain.                          |
 |                        | **`<Controls.svelte>`**      | **`reset-controls-button`** | **Resets speed, pitch, and gain to defaults.** |
-| **Analysis Controls**  | `<CustomRangeSlider.svelte>` | `vad-positive-slider-input` | Adjusts VAD positive  threshold.               || | | `       vad-negative-slider-input` | Adjusts VAD negative threshold. |
+| **Analysis Controls**  | `<CustomRangeSlider.svelte>` | `vad-positive-slider-input` | Adjusts VAD positive threshold.                |
+|                        |                              | `vad-negative-slider-input` | Adjusts VAD negative threshold.                |
 | **Analysis Displays**  | `<ToneDisplay.svelte>`       | `dtmf-display`              | Displays detected DTMF tones.                  |
 |                        |                              | `cpt-display`               | Displays detected Call Progress Tones.         |
 | **Visualizations**     | `<Waveform.svelte>`          | `waveform-canvas`           | The `<canvas>` for the audio waveform.         |
