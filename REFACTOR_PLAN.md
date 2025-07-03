@@ -386,15 +386,15 @@ stateDiagram-v2
 
 ### **4.2. State Definition Table**
 
-| State Name            | Description                               | Entry Actions (What the Orchestrator commands)                                                                                        | Allowed Commands (Triggers for leaving)                                                     |
-|:----------------------|:------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------|
-| **`IDLE`**            | Application started, no audio loaded.     | <ul><li>Update `playerStore` status to 'idle'.</li><li>Eagerly initialize background services.</li></ul>                              | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                      |
-| **`LOADING`**         | Fetching/decoding audio source.           | <ul><li>Update `playerStore` status to 'loading'.</li><li>Show global spinner, disable controls.</li></ul>                            | <ul><li>(Internal events only)</li></ul>                                                    |
-| **`READY`**           | Audio loaded, playback is paused.         | <ul><li>Update `playerStore` status to 'ready'.</li><li>Hide spinner, enable controls.</li><li>Trigger background analysis.</li></ul> | <ul><li>`COMMAND_PLAY`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>  |
-| **`PLAYING`**         | Audio is currently playing.               | <ul><li>Update `playerStore` status to 'playing'.</li><li>Start `AudioEngineService` UI update loop.</li></ul>                        | <ul><li>`COMMAND_PAUSE`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul> |
-| **`SEEK_AND_RESUME`** | User seeking while `PLAYING`.             | <ul><li>Update `playerStore` status to 'seeking'.</li><li>Command `AudioEngineService` to pause.</li></ul>                            | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PAUSE`</li></ul>                                |
-| **`SEEK_AND_HOLD`**   | User seeking while `READY`.               | <ul><li>Update `playerStore` status to 'seeking'.</li></ul>                                                                           | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PLAY`</li></ul>                                 |
-| **`ERROR`**           | A critical, unrecoverable error occurred. | <ul><li>Update `playerStore` status to 'error', `error` with message.</li><li>Disable controls, display error.</li></ul>              | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                      |
+| State Name            | Description                               | Entry Actions (What the Orchestrator commands)                                                                                     | Allowed Commands (Triggers for leaving)                                                     |
+|:----------------------|:------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------|
+| **`IDLE`**            | Application started, no audio loaded.     | <ul><li>Update `playerStore` status to 'idle'.</li><li>Eagerly initialize background services.</li></ul>                           | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                      |
+| **`LOADING`**         | Fetching/decoding audio source.           | <ul><li>Update `playerStore` status to 'loading'.</li><li>Show global spinner, disable controls.</li></ul>                         | <ul><li>(Internal events only)</li></ul>                                                    |
+| **`READY`**           | Audio loaded, playback is paused.         | <ul><li>Update `playerStore` status to 'ready'.</li><li>Hide spinner, enable controls.</li><li>Trigger background analysis.</li></ul>  | <ul><li>`COMMAND_PLAY`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>  |
+| **`PLAYING`**         | Audio is currently playing.               | <ul><li>Update `playerStore` status to **'playing'**.</li><li>The `isPlaying` derived store will now automatically evaluate to `true`.</li><li>Command `AudioEngineService` to start playback and its `rAF` loop.</li></ul> | <ul><li>`COMMAND_PAUSE`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>  |
+| **`SEEK_AND_RESUME`** | User seeking while `PLAYING`.             | <ul><li>Update `playerStore` status to 'seeking'.</li><li>Command `AudioEngineService` to pause.</li></ul>                         | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PAUSE`</li></ul>                                 |
+| **`SEEK_AND_HOLD`**   | User seeking while `READY`.               | <ul><li>Update `playerStore` status to 'seeking'.</li></ul>                                                                        | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PLAY`</li></ul>                                  |
+| **`ERROR`**           | A critical, unrecoverable error occurred. | <ul><li>Update `playerStore` status to 'error', `error` with message.</li><li>Disable controls, display error.</li></ul>           | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                      |
 
 ### **4.3. Handling Special Events & Edge Cases**
 
@@ -1025,17 +1025,11 @@ This appendix formalizes the data flow principles that govern how services, stor
 
 Data and commands flow in a predictable, unidirectional manner:
 
-1. **User Interaction -> UI Event:** A user interacts with a Svelte component. The component's event handler **emits a
-   type-safe event** to the `appEmitter` (e.g., `appEmitter.emit('ui:seekRequested', { time: 30 })`).
-2. **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates
-   the response. It calls methods on the appropriate service (e.g., `audioEngine.seek(30)`).
-3. **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with
-   the new state (e.g., `playerStore.update(s => ({ ...s, currentTime: 30 }))`).
-4. **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which
-   re-render to reflect the new state.
-5. **Service-to-Service Communication:** Services **do not** call each other directly. They communicate via the
-   `appEmitter`. For example, `AudioEngineService` emits an `audioEngine:playbackEnded` event, which the
-   `AudioOrchestratorService` listens for.
+1.  **User Interaction -> UI Event:** A user interacts with a Svelte component. The component's event handler **emits a type-safe event** to the `appEmitter` (e.g., `appEmitter.emit('ui:seekRequested', { time: 30 })`).
+2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response. It calls methods on the appropriate service (e.g., `audioEngine.seek(30)`).
+3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state (e.g., `playerStore.update(s => ({ ...s, status: 'playing' }))`).
+4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state. For example, a component subscribed to the `isPlaying` **derived store** will see its value change from `false` to `true` when the `status` becomes `'playing'`.
+5.  **Service-to-Service Communication:** Services **do not** call each other directly. They communicate via the `appEmitter`. For example, `AudioEngineService` emits an `audioEngine:playbackEnded` event, which the `AudioOrchestratorService` listens for.
 
 #### **F.2. Controlled Exception: The "Hot Path"**
 
@@ -1272,15 +1266,15 @@ sequenceDiagram
     
     activate Orchestrator
     note right of Orchestrator: State Machine: READY -> PLAYING
+    Orchestrator->>Store: playerStore.update({ status: 'playing' })
     Orchestrator->>Engine: play()
     deactivate Orchestrator
 
     activate Engine
     note right of Engine: Starts Web Audio & rAF loop.
-    Engine->>Store: playerStore.update({ isPlaying: true })
     deactivate Engine
     
-    Store-->>UI: Reactively updates UI (icon to 'Pause')
+    Store-->>UI: Reactively updates. The derived `isPlaying` store is now true, so the UI icon changes to 'Pause'.
 ```
 
 ### I.2. File Loading & Analysis Flow
