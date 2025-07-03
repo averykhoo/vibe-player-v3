@@ -1145,6 +1145,22 @@ developer must adhere to these constraints at all times.
     * **Implication:** Constants should use `SCREAMING_SNAKE_CASE` (e.g., `URL_PARAM_SPEED`), and property keys should
       use `camelCase` (e.g., `speed`).
 
+* **Principle 3: Stable Selectors for E2E Testing**
+    * **Description:** All UI elements that are interactive (e.g., buttons, inputs) or that display dynamic data subject
+      to assertions in tests (e.g., time displays, file names) **must** be assigned a unique `data-testid` attribute.
+    * **Rationale:** This decouples automated tests from fragile implementation details like CSS class names or DOM
+      structure. It creates a stable, explicit contract between the application's view and its test suite, dramatically
+      increasing the reliability and maintainability of E2E tests.
+    * **Implication:** Developers are required to add these attributes during component creation. E2E tests **must** use
+      `getByTestId()` selectors as their primary method for locating elements.
+
+* **Principle 4: End-to-End Traceability**
+    * **Description:** All user-initiated operations **must** be traceable across services, event emitters, and workers.
+      This is a non-negotiable requirement for debugging the decoupled architecture.
+    * **Implication:** A unique `traceId` **must** be generated at the start of any new operation (e.g., loading a file,
+      playing). This `traceId` must be propagated through all subsequent service calls, event payloads, and worker
+      messages related to that operation. The full implementation contract is defined in **Appendix K**.
+
 ---
 
 ## **Chapter 2: Core Components & Folder Structure**
@@ -1217,16 +1233,16 @@ provided to the UI via Svelte's Context API.
     * **Responsibility:** Communicates with the `dtmf.worker` to perform tone detection.
     * **Key State:** `dtmfResults`, `cptResults`.
 
+* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
+    * **Role:** Manages all data generation for the waveform visualization.
+    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` (peak data) for the waveform
+      display.
+    * **Key State:**  `waveformData` (internal).
+
 * **`SpectrogramService` (`src/lib/services/spectrogram.service.ts`)**
     * **Role:** Manages spectrogram computation (the SpectrogramHexagon), implementing the `ISpectrogramPort`.
     * **Responsibility:** Communicates with the `spectrogram.worker` to perform FFT calculations.
-    * **Key State:** `spectrogramData`.
-
-* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
-    * **Role:** Manages all data generation for the waveform.
-    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` for the waveform display. Updates
-      the relevant stores with visualization data.
-    * **Key State:**  `waveformData`
+    * **Key State:** `spectrogramData` (internal).
 
 ---
 
@@ -1286,9 +1302,10 @@ These components are driven *by* the core services to perform a task.
       `requestAnimationFrame` loop and writes **directly** to the dedicated `timeStore`.
     * **Why:** This is a deliberate exception to achieve smooth 60fps UI updates for the seek bar and time display
       without burdening the entire application with constant re-renders.
-    * **Limitations:** This is the *only* such exception. The `timeStore` is for display purposes only and does not
-      trigger application logic. The canonical `currentTime` for logic is read from the main `playerStore` during "cold"
-      events like `pause` or `seek`.
+    * **Synchronization:** This is the *only* such exception. The `timeStore` is for display purposes only. To maintain
+      a single source of truth, when a "cold" event occurs (e.g., `pause`, `endSeek`), the `AudioOrchestratorService` *
+      *must** command the `AudioEngineService` to report its final authoritative time. The orchestrator then commits
+      this value to the main `playerStore`, ensuring the canonical application state is always correct.
 
 * **Large Data Handling Protocol**
     * **What:** Services generating large, static data (e.g., `vadProbabilities`) **must** hold it internally. They
@@ -1298,20 +1315,21 @@ These components are driven *by* the core services to perform a task.
 
 ### **3.4. State Ownership & Data Pathways**
 
-| State Item                                                       | Owning Service/Hexagon     | Location in Store                        | Description                                                                                                     |
-|:-----------------------------------------------------------------|:---------------------------|:-----------------------------------------|:----------------------------------------------------------------------------------------------------------------|
-| `status` (`loading`, `ready`, etc.)                              | `AudioOrchestratorService` | `playerStore` (`status` property)        | The single source of truth for the application's overall state.                                                 |
-| `error` (Structured Error Object)                                | `AudioOrchestratorService` | `statusStore`                            | A structured object with details for user-facing toasts and technical logs.                                     |
-| `fileName`, `duration`, `isPlayable`, `sourceUrl`, `audioBuffer` | `AudioOrchestratorService` | `playerStore`                            | High-level metadata about the loaded audio. `audioBuffer` is stored here for main-thread access by visualizers. |
-| `isPlaying`                                                      | `AudioEngineService`       | `playerStore`                            | The canonical boolean playback state.                                                                           |
-| `currentTime`                                                    | `AudioEngineService`       | `timeStore` (Hot) & `playerStore` (Cold) | Canonical time. Updated on `rAF` (`timeStore`) for UI, and synced to `playerStore` on pause/seek.               |
-| `speed`, `pitchShift`, `gain`                                    | `AudioEngineService`       | `playerStore`                            | Playback manipulation parameters.                                                                               |
-| `vadProbabilities`                                               | `AnalysisService`          | *Internal to `AnalysisService`*          | Raw VAD data. **Not published to the store** per Large Data Handling Protocol.                                  |
-| `vadRegions`                                                     | `AnalysisService`          | `analysisStore`                          | Calculated speech time segments.                                                                                |
-| `vadPositiveThreshold`, `vadNegativeThreshold`                   | `AnalysisService`          | `analysisStore`                          | Tuning parameters for VAD calculation.                                                                          |
-| `dtmfResults`, `cptResults`                                      | `DtmfService`              | `dtmfStore`                              | Detected DTMF and Call Progress Tones.                                                                          |
-| `spectrogramData`                                                | `SpectrogramService`       | `analysisStore`                          | Calculated spectrogram data.                                                                                    |
-| `waveformData`                                                   | `AudioOrchestratorService` | `playerStore`                            | Peak data for waveform visualization.                                                                           |
+| State Item                                        | Owning Service/Hexagon     | Location in Store                        | Description                                                                                       |
+|:--------------------------------------------------|:---------------------------|:-----------------------------------------|:--------------------------------------------------------------------------------------------------|
+| `status` (`loading`, `ready`, etc.)               | `AudioOrchestratorService` | `playerStore` (`status` property)        | The single source of truth for the application's overall state.                                   |
+| `error` (Structured Error Object)                 | `AudioOrchestratorService` | `statusStore`                            | A structured object with details for user-facing toasts and technical logs.                       |
+| `fileName`, `duration`, `isPlayable`, `sourceUrl` | `AudioOrchestratorService` | `playerStore`                            | High-level metadata about the loaded audio.                                                       |
+| **`audioBuffer`**                                 | **`AudioEngineService`**   | **_Internal to `AudioEngineService`_**   | Raw decoded audio data. **Not in a store.** Provided to other services on request.                |
+| `isPlaying`                                       | `AudioEngineService`       | `playerStore`                            | The canonical boolean playback state.                                                             |
+| `currentTime`                                     | `AudioEngineService`       | `timeStore` (Hot) & `playerStore` (Cold) | Canonical time. Updated on `rAF` (`timeStore`) for UI, and synced to `playerStore` on pause/seek. |
+| `speed`, `pitchShift`, `gain`                     | `AudioEngineService`       | `playerStore`                            | Playback manipulation parameters.                                                                 |
+| `vadProbabilities`                                | `AnalysisService`          | _Internal to `AnalysisService`_          | Raw VAD data. **Not in a store** per Large Data Handling Protocol.                                |
+| `vadRegions`                                      | `AnalysisService`          | `analysisStore`                          | Calculated speech time segments.                                                                  |
+| `vadPositiveThreshold`, `vadNegativeThreshold`    | `AnalysisService`          | `analysisStore`                          | Tuning parameters for VAD calculation.                                                            |
+| `dtmfResults`, `cptResults`                       | `DtmfService`              | `dtmfStore`                              | Detected DTMF and Call Progress Tones.                                                            |
+| **`spectrogramData`**                             | **`SpectrogramService`**   | **_Internal to `SpectrogramService`_**   | Calculated spectrogram data. **Not in a store.** Readiness signaled by a flag.                    |
+| **`waveformData`**                                | **`WaveformService`**      | **_Internal to `WaveformService`_**      | Peak data for waveform visualization. **Not in a store.** Readiness signaled by a flag.           |
 
 ### **3.5. Detailed Error Propagation from Workers**
 
@@ -1337,6 +1355,9 @@ These components are driven *by* the core services to perform a task.
 ## **Chapter 4: The Application State Machine**
 
 The `AudioOrchestratorService` implements the following state machine to manage the application's lifecycle.
+
+Note: there are two seek states because if you are playing, start seeking (playback should pause while seeking), hit the
+spacebar (toggle pause), then stop seeking, playback should be paused - and vice versa.
 
 ### **4.1. State Diagram**
 
@@ -1437,15 +1458,17 @@ stateDiagram-v2
 
 ### **6.1. The Testing Pyramid Layers**
 
-| Layer                       | Tool(s)                            | Purpose                                                                        |
-|:----------------------------|:-----------------------------------|:-------------------------------------------------------------------------------|
-| **Static Analysis**         | ESLint, Svelte-Check, TypeScript   | Enforce type safety, code quality, style, and architectural rules.             |
-| **Component Testing**       | Storybook, Vitest, Testing Library | Visually inspect and unit test every component in complete isolation.          |
-| **Unit Tests**              | Vitest                             | Test individual functions/methods in isolation (includes V1 Characterization). |
-| **Integration Tests**       | Vitest                             | Test collaboration between services via the event emitter.                     |
-| **End-to-End (E2E) Tests**  | Playwright                         | Verify complete user flows defined in Gherkin scenarios.                       |
-| **Visual Regression Tests** | Playwright (`toHaveScreenshot`)    | Prevent unintended visual bugs in UI and canvases in CI.                       |
-| **CI Static Analysis**      | **GitHub CodeQL, SonarCloud**      | **Deep security, tech debt, and maintainability scans**                        | **No**        | **Yes**     | **Slow**     |
+### 6.1. The Testing Pyramid Layers
+
+| Layer                       | Tool(s)                          | Purpose                                                                        | Run on PR? | Is Fast? |
+|:----------------------------|:---------------------------------|:-------------------------------------------------------------------------------|:----------:|:--------:|
+| **Static Analysis**         | ESLint, Svelte-Check, TypeScript | Enforce type safety, code quality, style, and architectural rules.             |    Yes     | Blazing  |
+| **Component Testing**       | Storybook, Vitest, Testing Lib   | Visually inspect and unit test every component in complete isolation.          |    Yes     |   Fast   |
+| **Unit Tests**              | Vitest                           | Test individual functions/methods in isolation (includes V1 Characterization). |    Yes     |   Fast   |
+| **Integration Tests**       | Vitest                           | Test collaboration between services via the event emitter.                     |    Yes     |   Fast   |
+| **End-to-End (E2E) Tests**  | Playwright                       | Verify complete user flows defined in Gherkin scenarios.                       |    Yes     |   Slow   |
+| **Visual Regression Tests** | Playwright (`toHaveScreenshot`)  | Prevent unintended visual bugs in UI and canvases in CI.                       |  Optional  |   Slow   |
+| **CI Static Analysis**      | GitHub CodeQL, SonarCloud        | Deep security, tech debt, and maintainability scans.                           |    Yes     |  Medium  |
 
 ### **6.2. Local Development Checks (The Inner Loop)**
 
@@ -1459,6 +1482,9 @@ stateDiagram-v2
     * Core Services (`src/lib/services/`) **must not** import from UI Components (`src/lib/components/`) or page
       routes (`src/routes/`).
     * Services can only depend on other services, stores, types, and their own adapters.
+* **Traceability for Debugging:** All logical operations must be traceable via a `traceId` passed through all events and
+  service calls. This allows developers to easily filter logs and debug complex, asynchronous flows. **(See Appendix K
+  for the full implementation contract).**
 
 ### **6.3. Automated Testing**
 
@@ -1473,30 +1499,33 @@ stateDiagram-v2
 
 ## **Chapter 7: UI Element Contract**
 
-This section defines mandatory `data-testid` attributes for all interactive or dynamically updated elements to ensure
-stable E2E testing with Playwright.
+In accordance with **Principle 3 (Stable Selectors for E2E Testing)**, this chapter defines the mandatory `data-testid`
+attributes that serve as a stable contract between the application's UI and the automated test suite. These IDs are the
+single source of truth for locating elements in Playwright tests. All interactive or dynamically updated elements
+relevant to a user flow must be included here.
 
-| Component Group        | Svelte Component (File)      | Test ID                     | Description                                    |
-|:-----------------------|:-----------------------------|:----------------------------|:-----------------------------------------------|
-| **File Handling**      | `<FileLoader.svelte>`        | `file-input`                | The `<input type="file">` element.             |
-|                        |                              | `url-input`                 | The `<input type="text">` for audio URLs.      |
-|                        |                              | `file-name-display`         | Displays the name of the loaded file.          |
-| **Playback Controls**  | `<Controls.svelte>`          | `play-button`               | The main play/pause toggle button.             |
-|                        |                              | `stop-button`               | The stop playback button.                      |
-|                        |                              | `jump-back-button`          | Jumps playback backward.                       |
-|                        |                              | `jump-forward-button`       | Jumps playback forward.                        |
-|                        | `<CustomRangeSlider.svelte>` | `seek-slider-input`         | The `<input type="range">` for seeking.        |
-|                        | `+page.svelte`               | `time-display`              | Displays current time and duration.            |
-| **Parameter Controls** | `<CustomRangeSlider.svelte>` | `speed-slider-input`        | Controls playback speed.                       |
-|                        |                              | `pitch-slider-input`        | Controls pitch shift.                          |
-|                        |                              | `gain-slider-input`         | Controls output gain.                          |
-|                        | **`<Controls.svelte>`**      | **`reset-controls-button`** | **Resets speed, pitch, and gain to defaults.** |
-| **Analysis Controls**  | `<CustomRangeSlider.svelte>` | `vad-positive-slider-input` | Adjusts VAD positive threshold.                |
-|                        |                              | `vad-negative-slider-input` | Adjusts VAD negative threshold.                |
-| **Analysis Displays**  | `<ToneDisplay.svelte>`       | `dtmf-display`              | Displays detected DTMF tones.                  |
-|                        |                              | `cpt-display`               | Displays detected Call Progress Tones.         |
-| **Visualizations**     | `<Waveform.svelte>`          | `waveform-canvas`           | The `<canvas>` for the audio waveform.         |
-|                        | `<Spectrogram.svelte>`       | `spectrogram-canvas`        | The `<canvas>` for the spectrogram.            |
+| Component Group        | Svelte Component (File)                    | Test ID                     | Description                                                  |
+|:-----------------------|:-------------------------------------------|:----------------------------|:-------------------------------------------------------------|
+| **File Handling**      | `<FileLoader.svelte>`                      | `file-input`                | The `<input type="file">` element.                           |
+|                        |                                            | `url-input`                 | The `<input type="text">` for audio URLs.                    |
+|                        |                                            | `file-name-display`         | Displays the name of the loaded file.                        |
+| **Playback Controls**  | `<Controls.svelte>`                        | `play-button`               | The main play/pause toggle button.                           |
+|                        |                                            | `stop-button`               | The stop playback button.                                    |
+|                        |                                            | `jump-back-button`          | Jumps playback backward.                                     |
+|                        |                                            | `jump-forward-button`       | Jumps playback forward.                                      |
+|                        | `<CustomRangeSlider.svelte>`               | `seek-slider-input`         | The `<input type="range">` for seeking.                      |
+|                        | `+page.svelte`                             | `time-display`              | Displays current time and duration.                          |
+| **Parameter Controls** | `<CustomRangeSlider.svelte>`               | `speed-slider-input`        | Controls playback speed.                                     |
+|                        |                                            | `pitch-slider-input`        | Controls pitch shift.                                        |
+|                        |                                            | `gain-slider-input`         | Controls output gain.                                        |
+|                        | `<Controls.svelte>`                        | `reset-controls-button`     | Resets speed, pitch, and gain to defaults.                   |
+| **Analysis Controls**  | `<CustomRangeSlider.svelte>`               | `vad-positive-slider-input` | Adjusts VAD positive threshold.                              |
+|                        |                                            | `vad-negative-slider-input` | Adjusts VAD negative threshold.                              |
+| **Analysis Displays**  | `<ToneDisplay.svelte>`                     | `dtmf-display`              | Displays detected DTMF tones.                                |
+|                        |                                            | `cpt-display`               | Displays detected Call Progress Tones.                       |
+| **Visualizations**     | `<Waveform.svelte>`                        | `waveform-canvas`           | The `<canvas>` for the audio waveform.                       |
+|                        | `<Spectrogram.svelte>`                     | `spectrogram-canvas`        | The `<canvas>` for the spectrogram.                          |
+| **Application State**  | `+layout.svelte` or `GlobalSpinner.svelte` | `loading-spinner`           | The global spinner element shown during the `LOADING` state. |
 
 ***
 
@@ -1729,38 +1758,205 @@ why" behind certain V3 design decisions.
 This section defines the operational protocols for any developer (human or AI) working on this project. It is a
 mandatory guide for implementation.
 
-* **P0: Agent Autonomy & Minimized Interaction:** Operate with a high degree of autonomy once a task and its objectives
-  are clearly defined. Default to making reasonable, well-documented decisions to keep work flowing.
-* **P1: Task-Driven Workflow & Initial Confirmation:** Complex tasks require an initial proposal and user confirmation
-  before full implementation.
-* **P2: Clarity & Explicit Communication:**
-    * **P2.1: Proactive Clarification Seeking:** Seek clarification for ambiguous tasks by halting and asking questions.
-    * **P2.2: Explanation of Changes (Structured Output):** Explain actions and rationale in a structured manner (e.g.,
-      in a commit message draft or task report).
-* **P3: Maintainability & Consistency:**
-    * **P3.1: Adherence to Existing Patterns:** Strictly adhere to existing project patterns (style, structure, naming
-      conventions) as defined in this plan.
-    * **P3.2: High-Quality Documentation & Comments:** Generate comprehensive TypeScript Doc comments (JSDoc-style) for
-      all public functions, classes, and types. Preserve existing meaningful comments.
-    * **P3.3: Conciseness:** Documentation should be concise and non-redundant.
-    * **P3.4: File Identification Comments (Full Files Only):** Full file content must include file identification
-      comments at the absolute start and end (e.g., `// path/to/file.ts`).
-    * **P3.5: Logical Sectioning (Long Files):** Long files should be logically sectioned using clear section header
-      comments (e.g., `// --- SECTION: Core Logic ---`).
-* **P4: Guideline Adherence & Conflict Reporting:**
-    * **P4.1: Proactive Viability Check:** Report if knowledge suggests a guideline is suboptimal for a task, awaiting
-      instruction.
-    * **P4.2: Identify and Report Conflicts:** Identify any conflict between user instructions and established
-      guidelines, referencing the specific rule, and asking for direction.
-* **P5: Full Word Naming Convention:** All string keys for states, events, commands, and types must use full,
-  descriptive English words in `SCREAMING_SNAKE_CASE` for constants and `camelCase` for other identifiers.
-* **P6: README Generation Requirement:** The main `README.md` must contain a reference to these collaboration
-  guidelines.
-* **P7: Branch-Based Code Submission:** Submit all work by committing to feature branches and pushing to the remote
-  repository. Commits should represent logical units of work.
-* **P8: Gherkin-Driven Implementation and Testing:** When implementing a new feature, **must** consult the relevant
-  Gherkin scenarios. The generated code **must** pass the automated Playwright E2E tests derived from these scenarios.
-  If no relevant scenario exists, **must first propose a new Gherkin scenario** for review before implementation.
+### **P0: Agent Autonomy & Minimized Interaction**
+
+**Principle Statement:** The agent should operate with a high degree of autonomy once a task and its objectives are
+clearly defined.
+
+* **Reason:** To improve development velocity, reduce unnecessary user interruptions, and allow the agent to perform
+  comprehensive tasks efficiently.
+* **Context:** After the initial plan or task has been approved by the user, or for routine tasks that align with
+  established patterns and guidelines.
+* **Action:**
+    * The agent must proceed with task implementation without seeking confirmation for intermediate steps, unless a step
+      involves significant architectural deviation, conflicts with core guidelines, or encounters critical ambiguity not
+      solvable with P2.1 (Proactive Clarification Seeking).
+    * Confirmation should primarily be reserved for: initial plan approval, major changes to agreed-upon plans,
+      situations explicitly requiring user choice, or when critical information is missing after an attempt to clarify.
+    * The agent should default to making reasonable, well-documented decisions to keep work flowing, reporting these
+      decisions in its task summary or commit messages.
+
+### **P1: Task-Driven Workflow & Initial Confirmation**
+
+**Principle Statement:** Complex tasks or those initiating significant changes require an initial proposal and user
+confirmation before full implementation.
+
+* **Reason:** Ensures user alignment on scope and approach for major work, prevents wasted effort on undesired
+  solutions, and maintains user oversight on architectural decisions.
+* **Context:** When initiating any non-trivial change (new features, significant refactoring, extensive documentation
+  rewrites) or when explicitly requested by the user.
+* **Action:** The agent first analyzes the task, then outlines a proposed solution (e.g., affected files, high-level
+  logic changes, key components to be developed/modified). This proposal is presented to the user for explicit
+  confirmation. Only after confirmation should the agent proceed with the detailed implementation of that proposal.
+  Minor, clearly defined sub-tasks within an approved plan generally do not require re-confirmation (see P0).
+
+### **P2: Clarity & Explicit Communication**
+
+#### **P2.1: Proactive Clarification Seeking**
+
+**Principle Statement:** The agent must seek clarification for ambiguous tasks or requirements.
+
+* **Reason:** Avoids incorrect assumptions and wasted effort. Leverages user's domain/project knowledge.
+* **Context:** Whenever requirements, existing code, constraints, or user intent seem ambiguous or underspecified.
+* **Action:** The agent **must halt and ask** clarifying questions before making assumptions or generating potentially
+  incorrect output.
+
+#### **P2.2: Explanation of Changes (Structured Output)**
+
+**Principle Statement:** The agent must explain its actions and rationale in a structured manner.
+
+* **Reason:** Provides a clear record of actions and rationale, especially regarding design choices or non-obvious
+  logic. Aids user review and architectural oversight.
+* **Context:** When providing any generated code, text block, or completing a task.
+* **Action:** The agent explains *what* it did and *why* the specific approach was taken (e.g., in a commit message
+  draft, task report, or logs), especially if there were alternatives.
+
+### **P3: Maintainability & Consistency**
+
+#### **P3.1: Adherence to Existing Patterns & Controlled Refactoring**
+
+**Principle Statement:** The agent must adhere to existing project patterns by default and propose refactoring only with
+explicit user approval.
+
+* **Reason:** Ensures codebase remains cohesive and allows for controlled improvements. Reduces cognitive load.
+* **Context:** When adding or modifying code or documentation.
+* **Action:**
+    * The agent **must analyze and strictly adhere** to existing project patterns (style, structure, naming conventions)
+      as defined in this plan. This is the default operational mode.
+    * If the agent identifies areas where deviation from existing patterns could significantly improve code health,
+      maintainability, performance, or align better with best practices, it **may propose these refactoring changes** to
+      the user, explaining the rationale clearly. Such refactoring requires explicit user approval and activation of a "
+      Refactor phase" before implementation.
+
+#### **P3.2: High-Quality Documentation & Comments**
+
+**Principle Statement:** The agent must generate high-quality documentation and comments for the code it produces and
+preserve existing relevant comments.
+
+* **Reason:** Critical for future agent understanding and maintenance (including historical context), aids human
+  comprehension, enables IDE features.
+* **Context:** When generating or modifying functions, classes, complex variables, modules, or significant logic blocks.
+* **Action:**
+    * The agent generates comprehensive TypeScript Doc comments (JSDoc-style) for all public functions, classes, and
+      types. Include descriptions, parameters, returns, types, and potentially exceptions/raises.
+    * Use inline comments for complex logic steps.
+    * **Crucially, preserve existing meaningful comments unless the code they refer to is removed. These comments serve
+      as a historical log for future agent context to understand *why* code evolved.** Maintain documentation alongside
+      code.
+
+#### **P3.3: Conciseness and Non-Redundancy in Documentation**
+
+**Principle Statement:** All generated documentation and explanations should be concise and non-redundant.
+
+* **Reason:** Optimizes agent processing time/cost, reduces noise for human readers, improves maintainability of the
+  documentation itself.
+* **Context:** When generating or updating *any* documentation, including this `CONTRIBUTING-LLM.md`, `README.md`, or
+  code comments/docstrings.
+* **Action:** The agent should strive for concise language in all generated text. Avoid redundancy. Use precise
+  terminology. However, when explaining complex logic or design choices, **prioritize the clarity needed for both human
+  and future agent understanding**, even if it requires slightly more detail than absolute minimum brevity would allow.
+
+#### **P3.4: File Identification Comments (Full Files Only)**
+
+**Principle Statement:** Full file content generated by the agent must include file identification comments.
+
+* **Reason:** Allows agent to identify file context when receiving pasted content; allows user to verify paste location.
+* **Context:** When generating the *entire content* of a file.
+* **Action:** The agent includes file path comments at the **absolute start and end** of the generated file content (
+  e.g., `// path/to/file.ts`, `<!-- /path/to/file.html -->`). Use the appropriate comment style for the file type. Not
+  needed for partial replacements.
+
+#### **P3.5: Logical Sectioning (Long Files)**
+
+**Principle Statement:** Long files should be logically sectioned using comments.
+
+* **Reason:** Improves readability and navigation for humans and agents. Facilitates targeted section replacements.
+* **Context:** When working with files containing multiple distinct logical parts.
+* **Action:** The agent uses clear section header comments (e.g., `# --- Initialization ---`,
+  `/* === API Handlers === */`) to delineate logical blocks. Use the appropriate comment style.
+
+### **P4: Guideline Adherence & Conflict Reporting**
+
+#### **P4.1: Proactive Viability Check & Reporting**
+
+**Principle Statement:** The agent should report if its knowledge suggests a guideline or constraint is suboptimal for a
+task.
+
+* **Reason:** To proactively identify guidelines or constraints that might be outdated or conflict with best practices,
+  based on the agent's internal knowledge.
+* **Context:** When a task relates to specific guidelines or constraints.
+* **Action:** If the agent's internal knowledge suggests a guideline might be outdated or conflict with best practices
+  for the given task, it **must report** this to the user as part of its analysis or proposal. It should not
+  independently act against the guideline but await user instruction.
+
+#### **P4.2: Identify and Report Guideline Conflicts**
+
+**Principle Statement:** The agent must identify and report conflicts between user instructions and established
+guidelines, seeking explicit direction.
+
+* **Reason:** To resolve discrepancies when user instructions contradict established guidelines, ensuring consistent
+  application or conscious deviation.
+* **Context:** When a direct user instruction conflicts with a specific rule in these guidelines.
+* **Action:** The agent **must** identify and clearly point out any conflict between user instructions and established
+  guidelines, referencing the specific rule. It must then report this conflict and ask the user for explicit instruction
+  on how to proceed for that instance.
+
+### **P5: Full Word Naming Convention**
+
+**Principle Statement:** All string keys for states, events, commands, and types must use full, descriptive English
+words in `SCREAMING_SNAKE_CASE` for constants and `camelCase` for other identifiers.
+
+* **Reason:** This makes the system transparent and easy to debug. Obscure keys are forbidden.
+
+### **P6: README Generation Requirement**
+
+**Principle Statement:** A reference to these coding agent collaboration guidelines must be included in the project's
+main `README.md`.
+
+* **Reason:** Ensures project users and future agents are aware these collaboration guidelines exist and should be
+  followed for consistency.
+* **Action:** The agent **must** include a statement in the `README.md` advising that development involving agent
+  assistance should follow the rules outlined in this document, and instructing them to request it if it was not
+  provided.
+
+### **P7: Branch-Based Code Submission**
+
+**Principle Statement:** The agent submits work by committing to feature branches and pushing to the remote repository,
+enabling review and CI/CD.
+
+* **Reason:** Ensures code changes are visible for review, allows CI/CD integration, facilitates collaboration, and
+  avoids inaccessible local code.
+* **Action:** The agent commits changes with clear, descriptive messages to a dedicated feature branch and pushes it to
+  the remote repository.
+
+### **P8: Refined V3 Development Workflow**
+
+**Principle Statement:** All feature development must follow a specific, multi-stage workflow that prioritizes isolation
+and testability.
+
+* **Reason:** To enforce the architectural principles of the V3 rewrite, ensure components are decoupled and robust, and
+  maintain a high standard of quality.
+* **Action:** When implementing a new feature, the agent **must** adhere to the following sequence:
+    1. **Gherkin & Plan Review:** Consult the relevant Gherkin `.feature` file to understand the user-facing
+       requirements.
+    2. **Storybook-First Component Development:**
+        * Create or update the required Svelte components in isolation within Storybook.
+        * Develop stories that cover all visual states (e.g., default, disabled, loading, error).
+        * Use Svelte's **Context API** to provide mock services and stores directly to the component within its stories.
+          **Do not** import services directly into components.
+    3. **Test-Driven Service Logic:**
+        * Write unit tests (using Vitest) for any new or modified business logic within the relevant services (
+          `/src/lib/services/`).
+        * Implement the service logic only after a failing test has been written.
+    4. **Application Integration:**
+        * In the main application layout (`+page.svelte` or `+layout.svelte`), provide the real service instances via
+          `setContext`.
+        * Integrate the verified Svelte components from Storybook.
+        * Wire up component events to the global `appEmitter` or `AudioOrchestratorService` as appropriate.
+    5. **E2E Test Verification:**
+        * Write or update the Playwright E2E tests to automate the Gherkin scenario.
+        * The final implementation **must** pass these E2E tests. If a relevant scenario does not exist, a new one must
+          be proposed and approved before implementation.
 
 ---
 
@@ -1787,15 +1983,16 @@ This appendix restores the explicit UI/UX philosophy that underpins the componen
 
 ---
 
-## **Appendix E: State Machine Edge Case Logic**
+### **Appendix E: State Machine Edge Case Logic**
 
 This appendix provides explicit, mandatory logic for handling specific edge cases within the `AudioOrchestratorService`
 state machine.
 
-### **E.1. Handling `EVENT_PLAYBACK_ENDED`**
+#### **E.1. Handling `audioEngine:playbackEnded` Event**
 
-When the `AudioEngineService` detects that playback has naturally reached the end, it notifies the
-`AudioOrchestratorService`. The orchestrator **must** execute the following sequence:
+When the `AudioEngineService` detects that playback has naturally reached the end, it **emits** an
+`audioEngine:playbackEnded` event. The `AudioOrchestratorService`, which subscribes to this event, **must** execute the
+following sequence:
 
 1. **Command `AudioEngineService`:** Command the `AudioEngineService` to set its internal playback time to exactly match
    the `duration`. This ensures the UI seek bar moves to the very end.
@@ -1804,9 +2001,10 @@ When the `AudioEngineService` detects that playback has naturally reached the en
 3. **Prevent URL Update:** The orchestrator **must not** trigger the `urlState.ts` utility. This is a deliberate
    exception to prevent sharing a URL with a `time=` parameter equal to the duration.
 
-### **E.2. Handling `COMMAND_PLAY` from `READY` state at End of Track**
+#### **E.2. Handling `ui:playToggled` Event from `READY` state**
 
-When the user clicks "Play" while the application is `READY`, the `AudioOrchestratorService` must:
+When the user clicks "Play" while the application is in the `READY` state, the UI emits a `ui:playToggled` event. The
+`AudioOrchestratorService` must:
 
 1. **Check Time:** Check if `currentTime` is equal to (or within a small epsilon of) the `duration`.
 2. **Conditional Seek:**
@@ -1818,126 +2016,137 @@ When the user clicks "Play" while the application is `READY`, the `AudioOrchestr
 
 ---
 
-## **Appendix F: Core Data Flow & State Management Principles**
+### **Appendix F: Core Data Flow & State Management Principles**
 
 This appendix formalizes the data flow principles that govern how services, stores, and the UI interact.
 
-### **F.1. Unidirectional Data Flow**
+#### **F.1. Event-Driven & Unidirectional Data Flow**
 
-Data and commands flow in one primary direction:
+Data and commands flow in a predictable, unidirectional manner:
 
-1. **User Interaction -> Service Command:** A user interacts with a Svelte component. The component's event handler
-   calls a method on a singleton service instance (e.g., `audioOrchestrator.play()`). This is a **Command**.
-2. **Service Logic -> Store Update:** The service executes its logic and updates one or more Svelte stores with the new
-   state (e.g., `playerStore.update(s => ({ ...s, isPlaying: true }))`).
-3. **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which
+1. **User Interaction -> UI Event:** A user interacts with a Svelte component. The component's event handler **emits a
+   type-safe event** to the `appEmitter` (e.g., `appEmitter.emit('ui:seekRequested', { time: 30 })`).
+2. **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates
+   the response. It calls methods on the appropriate service (e.g., `audioEngine.seek(30)`).
+3. **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with
+   the new state (e.g., `playerStore.update(s => ({ ...s, currentTime: 30 }))`).
+4. **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which
    re-render to reflect the new state.
+5. **Service-to-Service Communication:** Services **do not** call each other directly. They communicate via the
+   `appEmitter`. For example, `AudioEngineService` emits an `audioEngine:playbackEnded` event, which the
+   `AudioOrchestratorService` listens for.
 
-### **F.2. Controlled Exception: The "Hot Path"**
+#### **F.2. Controlled Exception: The "Hot Path"**
 
 * **What:** For the high-frequency `currentTime` update during playback, the `AudioEngineService` runs a
   `requestAnimationFrame` loop and writes **directly** to the dedicated `timeStore` (a Svelte `writable` store).
-* **Why:** This is a deliberate exception to achieve smooth, 60fps UI updates for the seek bar and time display without
-  burdening the application with constant, heavy re-renders.
+* **Why:** This is a deliberate exception to achieve smooth, 60fps UI updates for the seek bar and time display.
 * **Limitations:** This is the *only* such exception. The `timeStore` is for display purposes only. Changes to it **must
   not** trigger any other application logic.
 
-### **F.3. Large Data Handling Protocol**
+#### **F.3. Strict Large Data Handling Protocol**
 
-To maintain performance, the following protocol is mandatory:
+To maintain performance, the following protocol for large, static binary data is mandatory:
 
-1. **Internal Storage:** A service that generates a large, static data payload (e.g., `vadProbabilities`) **must** hold
-   this data in a private internal property, not in a Svelte store.
-2. **State Store Flag:** The service publishes a simple boolean flag to the relevant store to indicate data readiness (
-   e.g., `analysisStore.update(s => ({ ...s, hasVadProbabilities: true }))`).
-3. **Synchronous Accessor:** The service **must** expose a public, synchronous accessor method (e.g.,
-   `getVadProbabilityData(): Float32Array`) that returns the internal data.
-4. **UI Retrieval:** UI components subscribe to the flag. When `true`, they call the service's accessor method to get
-   the data for rendering.
+1. **No Stores:** Large data payloads **must not** be placed in any Svelte store.
+2. **Exclusive Ownership:** Each large data object has a single, exclusive owner.
+    * The **`AudioBuffer`** is owned exclusively by the **`AudioEngineService`**.
+    * The **VAD Probability Array** is owned exclusively by the **`AnalysisService`**.
+3. **Data on Request:** When another service needs access to this data (e.g., the `AnalysisService` needing the
+   `AudioBuffer`), it must request it from the owner service.
+4. **Readiness Flags:** Services publish simple boolean flags to the stores to indicate data readiness (e.g.,
+   `playerStore.update(s => ({ ...s, isPlayable: true }))`). UI components react to these flags to enable functionality.
 
 ---
 
-## **Appendix G: Worker Communication Protocol & Timeout Handling**
+### **Appendix G: Worker Communication Protocol & Timeout Handling**
 
 This appendix provides a definitive implementation contract for the mandatory `WorkerChannel` utility.
 
-### **G.1. The `WorkerChannel` Utility Class**
+#### **G.1. The Type-Safe `WorkerChannel` Utility Class**
 
 A reusable TypeScript class named `WorkerChannel` **must** be created in `src/lib/utils/workerChannel.ts`. This class
-provides a generic, Promise-based request/response communication layer on top of the native Web Worker API, abstracting
-away the complexities of `postMessage` and `onmessage`.
+provides a generic, **fully type-safe**, Promise-based request/response communication layer.
 
-### **G.2. Mandatory Timeout Mechanism**
+#### **G.2. Mandatory Mechanisms**
 
-The `WorkerChannel` class **must** implement a robust, Promise-based timeout mechanism for all operations to prevent a
-hung worker from deadlocking the application.
+The `WorkerChannel` class **must** implement:
 
-### **G.3. Reference Implementation Pattern**
+1. **Type Safety:** Use TypeScript generics and discriminated unions for message and payload types to prevent errors.
+2. **Timeout Mechanism:** A robust, Promise-based timeout for all operations to prevent hung workers.
+3. **Observability:** Hooks or logging for latency tracing, traffic logging, and error metrics for debugging and
+   monitoring.
+
+#### **G.3. Type-Safe Reference Implementation Pattern**
 
 ```typescript
+// src/lib/types/worker.events.ts
+// Example for a specific worker (e.g., VAD)
+export type VadWorkerRequest =
+    | { type: 'INIT'; payload: { model: ArrayBuffer }; }
+    | { type: 'PROCESS'; payload: { pcmData: Float32Array }; };
+
+export type VadWorkerResponse =
+    | { type: 'INIT_COMPLETE'; }
+    | { type: 'PROCESS_COMPLETE'; payload: { probabilities: Float32Array }; };
+
 // src/lib/utils/workerChannel.ts
 
-const DEFAULT_WORKER_TIMEOUT_MS = 30000; // 30 seconds
+const DEFAULT_WORKER_TIMEOUT_MS = 30000;
 
-export class WorkerTimeoutError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'WorkerTimeoutError';
-    }
+export class WorkerTimeoutError extends Error { /* ... */
 }
 
-export class WorkerChannel {
+// Generic class, typed for a specific worker's message contract
+export class WorkerChannel<Req, Res> {
     private worker: Worker;
-    private nextMessageId = 0;
-    private listeners = new Map<number, (response: any) => void>();
+    private messageIdCounter = 0;
+    private pendingRequests = new Map<number, { resolve: (res: Res) => void, reject: (err: Error) => void }>();
 
     constructor(worker: Worker) {
         this.worker = worker;
-        this.worker.onmessage = (event) => {
-            const {id, payload, error} = event.data;
-            const listener = this.listeners.get(id);
-            if (listener) {
-                listener({payload, error});
+        this.worker.onmessage = (event: MessageEvent<{ id: number, response: Res }>) => {
+            const {id, response} = event.data;
+            const request = this.pendingRequests.get(id);
+            if (request) {
+                request.resolve(response);
+                this.pendingRequests.delete(id);
             }
         };
+        // Add onerror handling
     }
 
-    public post<T>(
-        messageType: string,
-        payload: any,
-        transferables: Transferable[] = [],
-        timeout = DEFAULT_WORKER_TIMEOUT_MS
-    ): Promise<T> {
-        return new Promise<T>((resolve, reject) => {
-            const messageId = this.nextMessageId++;
-            let timeoutHandle: number;
+    public post(request: Req, transferables: Transferable[] = []): Promise<Res> {
+        const messageId = this.messageIdCounter++;
+        // Start performance mark for latency tracing
+        performance.mark(`worker_req_${messageId}_start`);
 
-            const responseListener = (response: { payload: T; error?: string }) => {
-                clearTimeout(timeoutHandle);
-                this.listeners.delete(messageId);
-                if (response.error) {
-                    reject(new Error(response.error));
-                } else {
-                    resolve(response.payload);
+        const promise = new Promise<Res>((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new WorkerTimeoutError(`Worker request ${messageId} timed out.`));
+            }, DEFAULT_WORKER_TIMEOUT_MS);
+
+            this.pendingRequests.set(messageId, {
+                resolve: (response) => {
+                    clearTimeout(timeoutId);
+                    resolve(response);
+                },
+                reject: (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
                 }
-            };
+            });
 
-            this.listeners.set(messageId, responseListener);
-
-            timeoutHandle = window.setTimeout(() => {
-                this.listeners.delete(messageId);
-                reject(
-                    new WorkerTimeoutError(
-                        `Worker operation timed out after ${timeout}ms for message type: ${messageType}.`
-                    )
-                );
-            }, timeout);
-
-            this.worker.postMessage(
-                {id: messageId, type: messageType, payload},
-                transferables
-            );
+            this.worker.postMessage({id: messageId, request}, transferables);
         });
+
+        // Add logging and complete performance mark in .finally()
+        promise.finally(() => {
+            performance.mark(`worker_req_${messageId}_end`);
+            performance.measure(`Worker Request: ${request.type}`, `worker_req_${messageId}_start`, `worker_req_${messageId}_end`);
+        });
+
+        return promise;
     }
 
     public terminate() {
@@ -1946,166 +2155,341 @@ export class WorkerChannel {
 }
 ```
 
-### G.4. Mandatory Observability
-
-To ensure the system is transparent and debuggable, the `WorkerChannel` class **must** provide hooks or be instrumented
-to track the following metrics for all operations. This is a non-negotiable requirement for production-level robustness.
-
-* **Latency Tracing:** It must measure and log the roundtrip time (from `post` call to promise resolution/rejection) for
-  every worker message to identify performance bottlenecks.
-* **Traffic Logging:** It must provide a mechanism to log the `messageType` and payload size of requests for debugging
-  communication issues.
-* **Error Metrics:** It must track the count and type of errors, including timeouts and worker-side exceptions, to
-  monitor the health of background processes.
-
 ---
 
-## **Appendix H: Hexagonal Architecture Implementation in TypeScript**
+### **Appendix H: Hexagonal Architecture Implementation in TypeScript**
 
-This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture within TypeScript
-and SvelteKit.
+This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture using Dependency
+Injection with Svelte's Context API.
 
-### **H.1. Ports as Explicit TypeScript `interface`s**
+#### **H.1. Ports as Explicit TypeScript `interface`s**
 
-* **Rule:** For every core service (Hexagon), there **must** be a corresponding `interface` file defining its public
-  methods. This is its "Driving Port."
+* **Rule:** Every core service (Hexagon) **must** have a corresponding `interface` file defining its public API (its "
+  Driving Port").
 * **Location:** Interfaces must reside in `src/lib/types/` to create a neutral dependency location.
-* **Rationale:** This is the cornerstone of Dependency Inversion. Other application parts will depend on the
+* **Rationale:** This is the cornerstone of Dependency Inversion. Components and other services will depend on the
   *interface*, not the concrete implementation, allowing for easy mocking and swapping.
 
-#### **Example: `AudioEngineService`**
+#### **H.2. Dependency Injection with Svelte's Context API**
 
-1. **Define the Port (the Interface):**
-   ```typescript
-   // src/lib/types/audioEngine.d.ts
-   export interface IAudioEnginePort {
-     initialize(): Promise<void>;
-     decodeAudioData(audioData: ArrayBuffer): Promise<AudioBuffer>;
-     play(): void;
-     pause(): void;
-     // ... and so on for all public methods
-   }
+This pattern replaces direct imports of services within components, enforcing decoupling.
+
+1. **Instantiate & Provide Services at the Root:**
+   In the main application layout (`+layout.svelte` or `+page.svelte`), all singleton services are instantiated and
+   provided to the component tree using `setContext`.
+
+   ```svelte
+   <!-- src/routes/+layout.svelte -->
+   <script lang="ts">
+     import { setContext } from 'svelte';
+     import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+     import { AudioEngineService } from '$lib/services/audioEngine.service';
+     
+     // Instantiate the service
+     const audioEngine = new AudioEngineService();
+
+     // Provide the instance to all child components under a specific key
+     setContext<IAudioEnginePort>('audio-engine', audioEngine);
+   </script>
+   
+   <slot />
    ```
 
-2. **Implement the Hexagon (the Service):** The service class **must** use `implements` to guarantee it adheres to the
-   contract.
-   ```typescript
-   // src/lib/services/audioEngine.service.ts
-   import type { IAudioEnginePort } from '$lib/types/audioEngine';
-   export class AudioEngineService implements IAudioEnginePort {
-     public async initialize(): Promise<void> { /* ... */ }
-     public async decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer> { /* ... */ }
-     public play(): void { /* ... */ }
-     public pause(): void { /* ... */ }
-     // ... all other methods from IAudioEnginePort must be implemented
-   }
-   ```
+2. **Consume Services in Components:**
+   Components use `getContext` to retrieve a service instance. They only need to know the context *key* and the service
+   *interface*, not the concrete implementation or file path.
 
-### **H.2. Dependency Management: Singletons & Mocking**
-
-* **Rule:** All services **must** be implemented as singletons by instantiating the class once within its own module and
-  exporting the instance.
-* **Rationale:** This ensures a single, consistent source of truth for each domain.
-* **Testability:** This pattern is highly testable using Vitest's `vi.mock` functionality.
-
-#### **Example: Singleton Instantiation and Testing**
-
-1. **Instantiate the Singleton:**
-   ```typescript
-   // src/lib/services/audioEngine.service.ts
-   // ... (imports and class definition)
-   // Instantiate and export the single instance
-   export const audioEngine = new AudioEngineService();
-   ```
-
-2. **Using the Singleton in a Component:**
    ```svelte
    <!-- src/lib/components/Controls.svelte -->
    <script lang="ts">
-     import { audioEngine } from '$lib/services/audioEngine.service';
+     import { getContext } from 'svelte';
+     import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+
+     // Retrieve the service using its key and type interface
+     const engine = getContext<IAudioEnginePort>('audio-engine');
    </script>
-   <button on:click={() => audioEngine.play()}>Play</button>
+
+   <button on:click={() => engine.play()}>Play</button>
    ```
 
-3. **Mocking the Singleton in a Test:**
+3. **Mocking Services in Tests (Simplified):**
+   Component tests become incredibly simple. You provide a mock object using `setContext` during the render call. **This
+   completely replaces the need for `vi.mock` for component tests.**
+
    ```typescript
    // tests/unit/components/Controls.test.ts
-   import { vi, test, expect } from 'vitest';
-   import { render, fireEvent } from '@testing-library/svelte';
+   import { test, expect, vi } from 'vitest';
+   import { render, fireEvent, getContext, setContext } from '@testing-library/svelte';
    import Controls from '$lib/components/Controls.svelte';
+   import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
 
-   // Mock the entire service module BEFORE importing the component
-   const mockPlay = vi.fn();
-   vi.mock('$lib/services/audioEngine.service', () => ({
-     audioEngine: {
-       play: mockPlay,
-     },
-   }));
+   test('clicking play calls the audio engine service from context', async () => {
+     // 1. Create a simple mock object that conforms to the service interface
+     const mockEngine: IAudioEnginePort = {
+       play: vi.fn(),
+       // ... mock other methods as needed
+     };
 
-   test('clicking play calls the audio engine service', async () => {
-     const { getByText } = render(Controls);
+     // 2. Render the component and provide the mock via setContext
+     const { getByText } = render(Controls, {
+       context: new Map([
+         ['audio-engine', mockEngine]
+       ])
+     });
+
+     // 3. Interact and assert
      await fireEvent.click(getByText('Play'));
-     expect(mockPlay).toHaveBeenCalledOnce();
+     expect(mockEngine.play).toHaveBeenCalledOnce();
    });
    ```
 
 ---
 
-## **Appendix I: Core Interaction Flows**
+### **Appendix I: Core Interaction Flows**
 
-    This appendix provides detailed visual and procedural descriptions of key application interactions to eliminate ambiguity.
+This appendix provides a detailed visual description of a key application interaction.
 
-### I.1. Play/Pause Command Flow (Sequence Diagram)
+#### **I.1. Play/Pause Command Flow with Event Emitter (Sequence Diagram)**
 
-This diagram shows how a user's "play" command propagates through the system and how a subsequent `playback_ended` event
-is handled.
+This diagram shows how a user's "play" command propagates through the decoupled system.
 
 ```mermaid
 sequenceDiagram
     actor User
     participant UI as Svelte Component
+    participant Emitter as appEmitter
     participant Orchestrator as AudioOrchestratorService
     participant Engine as AudioEngineService
     participant Store as Svelte Stores
 
     User->>UI: Clicks 'Play' Button
-    UI->>Orchestrator: play()
+    UI->>Emitter: emit('ui:playToggled')
+    
+    activate Emitter
+    Emitter->>Orchestrator: (on 'ui:playToggled')
+    deactivate Emitter
+    
     activate Orchestrator
+    note right of Orchestrator: State Machine: READY -> PLAYING
     Orchestrator->>Engine: play()
     deactivate Orchestrator
+
     activate Engine
     note right of Engine: Starts Web Audio & rAF loop.
     Engine->>Store: playerStore.update({ isPlaying: true })
     deactivate Engine
+    
     Store-->>UI: Reactively updates UI (icon to 'Pause')
+```
 
-    %% Some time later... Audio ends
-    Engine-->>Orchestrator: onPlaybackEnded() event
+### I.2. File Loading & Analysis Flow
+
+This diagram shows how loading a new file triggers decoding and parallel background analysis tasks.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Analysis as AnalysisService
+    participant Waveform as WaveformService
+    participant Store as Svelte Stores
+
+    User->>UI: Selects local audio file
+    UI->>Orchestrator: COMMAND_LOAD_AUDIO(file)
+    
     activate Orchestrator
-    note right of Orchestrator: State machine: PLAYING -> READY
-    Orchestrator->>Engine: pause() command
-    Orchestrator->>Engine: seek(duration) command
-    Orchestrator->>Store: playerStore.update({ isPlaying: false, status: 'ready' })
+    Orchestrator->>Store: playerStore.update({ status: 'loading' })
+    Orchestrator->>Engine: decodeAudio(file)
     deactivate Orchestrator
-    Store-->>UI: Reactively updates UI (icon to 'Play')
+
+    activate Engine
+    Note over Engine: Decodes file into an AudioBuffer
+    Engine-->>Orchestrator: EVENT_LOAD_SUCCESS(audioBuffer, duration)
+    deactivate Engine
+
+    activate Orchestrator
+    Orchestrator->>Store: playerStore.update({ status: 'ready', duration, isPlayable: true })
+    Note right of Orchestrator: Kick off background analysis tasks in parallel
+    Orchestrator->>Analysis: startVadAnalysis(audioBuffer)
+    Orchestrator->>Waveform: generatePeakData(audioBuffer)
+    deactivate Orchestrator
+
+    activate Analysis
+    Note over Analysis: Posts buffer to VAD worker
+    Analysis-->>Store: analysisStore.update({ vadRegions: [...] })
+    deactivate Analysis
+
+    activate Waveform
+    Note over Waveform: Computes peak data for visualization
+    Waveform-->>Store: waveformStore.update({ hasData: true })
+    deactivate Waveform
 ```
 
-### I.2. Loading an Audio File (English Description)
+### I.3. Seek Command Flow
 
-1. **UI Component:** The user selects a file. The component's event handler calls
-   `AudioOrchestratorService.loadAudio(file)`.
-2. **`AudioOrchestratorService`:** Transitions its state machine to `LOADING` and updates the `playerStore`. The UI
-   reacts by showing a global spinner. It drives an `AudioEngineService` to decode the file into an `AudioBuffer`.
-3. **`AudioOrchestratorService`:** Once the buffer is ready, it orchestrates the next steps in parallel:
-    * **Critical Path (Awaited):** It commands `AudioEngineService` to prepare the buffer and generates the
-      `waveformData`.
-    * **Background (Fire-and-Forget):** It commands `AnalysisService.analyze(buffer)` and `DtmfService.analyze(buffer)`.
-4. **Critical Path Completion:** As soon as the critical path is complete, the `AudioOrchestratorService` transitions to
-   the `READY` state. The UI hides the spinner, enables controls, and renders the waveform.
-5. **Background Completion:** Later, as the `AnalysisService` and `DtmfService` complete, they update their respective
-   stores. The UI reacts by drawing VAD regions and displaying DTMF tones.
+This diagram illustrates the two-phase seek operation (begin/end) and how state is managed to ensure correct playback
+resumption.
 
+```mermaid
+sequenceDiagram
+    actor User
+    participant Slider as Seek Slider UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Store as Svelte Stores
+
+    User->>Slider: Mousedown on handle
+    Slider->>Orchestrator: COMMAND_BEGIN_SEEK
+    
+    activate Orchestrator
+    Note right of Orchestrator: State: PLAYING -> SEEK_AND_RESUME
+    Orchestrator->>Store: playerStore.update({ status: 'seeking' })
+    Orchestrator->>Engine: pauseWhileSeeking()
+    deactivate Orchestrator
+    
+    User->>Slider: Drags handle (oninput event)
+    Slider->>Orchestrator: COMMAND_UPDATE_SEEK(newTime)
+    activate Orchestrator
+    Orchestrator->>Engine: seek(newTime)
+    deactivate Orchestrator
+
+    activate Engine
+    Note over Engine: Updates internal playhead, UI timeStore reflects change
+    deactivate Engine
+    
+    User->>Slider: Mouseup (releases handle)
+    Slider->>Orchestrator: COMMAND_END_SEEK
+    
+    activate Orchestrator
+    Note right of Orchestrator: State: SEEK_AND_RESUME -> PLAYING
+    Orchestrator->>Store: playerStore.update({ status: 'playing' })
+    Orchestrator->>Engine: play()
+    deactivate Orchestrator
 ```
+
+---
+
+### **Appendix J: V3 Implementation Refinements Summary**
+
+This appendix summarizes the key architectural decisions and refinements adopted for the V3 rewrite, superseding any
+conflicting information in the main body or older appendices.
+
+1. **Architecture:**
+    * **Dependency Injection:** Services are provided to UI components via Svelte's Context API, not direct imports.
+      This enforces decoupling and dramatically simplifies component testing.
+    * **Event-Driven Services:** Services are decoupled and communicate via a type-safe global event emitter (
+      `appEmitter`). They do not hold direct references to each other, preventing tangled dependencies.
+    * **Strict Data Ownership:** To ensure high performance, large binary data payloads **are not placed in reactive
+      Svelte stores**. They are held as internal properties of their single, exclusive owner service. This includes:
+        * `AudioBuffer`: Owned by `AudioEngineService`.
+        * VAD `probabilities`: Owned by `AnalysisService`.
+        * `waveformData`: Owned by `WaveformService`.
+        * `spectrogramData`: Owned by `SpectrogramService`.
+    * **Service Responsibility & Specialization:** The `AudioOrchestratorService` is a pure coordinator, managing state
+      transitions only. To adhere to the Single Responsibility Principle, logic for generating visual data has been
+      delegated to specialized services: the **`WaveformService`** and **`SpectrogramService`**. These services
+      encapsulate the heavy computation required to generate peak and FFT data, respectively.
+
+2. **Infrastructure & Tooling:**
+    * **Static Hosting First:** The application must be deployable on any static host without special headers, meaning *
+      *no `SharedArrayBuffer` or threaded WASM**. This guarantees maximum portability and simplifies deployment.
+    * **Type-Safe Workers:** Communication with Web Workers will be managed by a robust, type-safe `WorkerChannel`
+      utility that includes mandatory timeout handling and observability hooks.
+    * **Centralized Configuration:** All tunable parameters and constants are managed in a single `src/lib/config.ts`
+      file to eliminate magic numbers and simplify reconfiguration.
+
+3. **User Experience & Workflow:**
+    * **Structured Error Handling:** Errors are managed as structured objects in the `statusStore` and displayed to the
+      user via non-blocking toast notifications, separating error state from core application state.
+    * **Storybook-First Development:** UI components must be fully developed and verified in Storybook, using the
+      Context API for mock injection, before being integrated into the main application. This de-risks UI development
+      and ensures components are robust and reusable.
+
+---
+
+### **Appendix K: Local Debugging & Tracing Strategy**
+
+This appendix defines the mandatory, in-code strategy for tracing operations within the application. This is a critical
+tool for debugging the flow of commands and events through the decoupled, event-driven architecture.
+
+#### **K.1. The Challenge: Tracing Decoupled Systems**
+
+In a traditional monolithic call stack, debugging is straightforward. In an event-driven system, the "call stack" is
+intentionally broken by the event emitter to achieve decoupling. A service emits an event, and its work is done. Later,
+one or more services react to that event, starting new, unrelated call stacks. This makes it difficult to answer the
+simple question: "What sequence of events led to this bug?"
+
+The solution is to create a "logical call stack" by tagging all related work with a unique identifier.
+
+#### **K.2. The Solution: `traceId` and High-Resolution Timestamps**
+
+To create a traceable, logical flow for any given operation, every structured log message and event payload **must**
+include two key pieces of information:
+
+1. **`traceId` (string):** A universally unique identifier (UUID) that is generated **once** at the beginning of a
+   user-initiated operation (e.g., when the user clicks "Play"). This *same* `traceId` is then passed through every
+   subsequent service call, event payload, and worker message related to that single operation. This allows developers
+   to filter the console logs to see the complete, isolated story of one operation.
+
+2. **`timestamp` (number):** A high-resolution, weakly monotonic timestamp generated by `performance.now()`. This
+   provides the precise, chronological ordering for events within a trace, and is not affected by changes to the
+   system's wall-clock time.
+
+#### **K.3. Implementation Contract**
+
+* **`traceId` Generation:**
+    * The `traceId` **must** be generated using the browser's built-in `crypto.randomUUID()` function. It is secure,
+      performant, and requires no external libraries.
+    * A utility function, `generateTraceId`, **must** be created in `src/lib/utils/trace.ts` to wrap this call.
+    * **The use of `Date.now()` or other timestamp-based methods for the `traceId` is strictly forbidden.** This is to
+      prevent trace collisions from rapid events (e.g., in automated tests) which would corrupt the logs.
+
+  ```typescript
+  // src/lib/utils/trace.ts
+  /**
+   * Generates a standard Version 4 UUID for use as a traceId.
+   * This leverages the browser's built-in, secure crypto API.
+   * @returns {string} A UUID string, e.g., "f81d4fae-7dec-41d5-9159-01155ca45417".
+   */
+  export function generateTraceId(): string {
+    return crypto.randomUUID();
+  }
+  ```
+
+* **`timestamp` Generation:**
+    * The `timestamp` for all log messages **must** be generated using `performance.now()`.
+
+* **Trace Initiation & Propagation:**
+    * A new `traceId` **must** be generated inside the `AudioOrchestratorService` whenever it handles a command that
+      initiates a new, top-level user action (e.g., `loadNewFile`, `togglePlay`, `beginSeek`).
+    * This `traceId` **must** be propagated as an argument to all subsequent service method calls and as a property in
+      all event payloads and worker messages that are part of that operation's lifecycle.
+
+#### **K.4. Example Log Output & Usage**
+
+This strategy results in structured, filterable logs. A developer debugging a file loading issue can simply paste the
+`traceId` into the browser console's filter box.
+
+**Example Log Object:**
+
+```json
+{
+  "traceId": "f81d4fae-7dec-41d5-9159-01155ca45417",
+  "timestamp": 15345.123,
+  "source": "AnalysisService",
+  "event": "worker:postMessage",
+  "message": "Posting audio chunk to VAD worker for analysis"
+}
+```
+
+**Debugging Workflow:**
+
+1. Find one log message related to the failed operation and copy its `traceId`.
+2. Paste `"f81d4fae-7dec-41d5-9159-01155ca45417"` (with quotes) into the console filter.
+3. The console now shows the complete, ordered lifecycle of that single operation across the main thread and all
+   workers, making it easy to spot where the failure occurred.
 ````
 --- End of File: REFACTOR_PLAN.md ---
 --- File: vibe-player/architecture.md ---
