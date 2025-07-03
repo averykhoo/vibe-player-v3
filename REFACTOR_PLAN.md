@@ -315,21 +315,22 @@ These components are driven *by* the core services to perform a task.
 
 ### **3.4. State Ownership & Data Pathways**
 
-| State Item                                        | Owning Service/Hexagon     | Location in Store                        | Description                                                                                       |
-|:--------------------------------------------------|:---------------------------|:-----------------------------------------|:--------------------------------------------------------------------------------------------------|
-| `status` (`loading`, `ready`, etc.)               | `AudioOrchestratorService` | `playerStore` (`status` property)        | The single source of truth for the application's overall state.                                   |
-| `error` (Structured Error Object)                 | `AudioOrchestratorService` | `statusStore`                            | A structured object with details for user-facing toasts and technical logs.                       |
-| `fileName`, `duration`, `isPlayable`, `sourceUrl` | `AudioOrchestratorService` | `playerStore`                            | High-level metadata about the loaded audio.                                                       |
-| **`audioBuffer`**                                 | **`AudioEngineService`**   | **_Internal to `AudioEngineService`_**   | Raw decoded audio data. **Not in a store.** Provided to other services on request.                |
-| `isPlaying`                                       | `AudioEngineService`       | `playerStore`                            | The canonical boolean playback state.                                                             |
-| `currentTime`                                     | `AudioEngineService`       | `timeStore` (Hot) & `playerStore` (Cold) | Canonical time. Updated on `rAF` (`timeStore`) for UI, and synced to `playerStore` on pause/seek. |
-| `speed`, `pitchShift`, `gain`                     | `AudioEngineService`       | `playerStore`                            | Playback manipulation parameters.                                                                 |
-| `vadProbabilities`                                | `AnalysisService`          | _Internal to `AnalysisService`_          | Raw VAD data. **Not in a store** per Large Data Handling Protocol.                                |
-| `vadRegions`                                      | `AnalysisService`          | `analysisStore`                          | Calculated speech time segments.                                                                  |
-| `vadPositiveThreshold`, `vadNegativeThreshold`    | `AnalysisService`          | `analysisStore`                          | Tuning parameters for VAD calculation.                                                            |
-| `dtmfResults`, `cptResults`                       | `DtmfService`              | `dtmfStore`                              | Detected DTMF and Call Progress Tones.                                                            |
-| **`spectrogramData`**                             | **`SpectrogramService`**   | **_Internal to `SpectrogramService`_**   | Calculated spectrogram data. **Not in a store.** Readiness signaled by a flag.                    |
-| **`waveformData`**                                | **`WaveformService`**      | **_Internal to `WaveformService`_**      | Peak data for waveform visualization. **Not in a store.** Readiness signaled by a flag.           |
+| State Item | Owning Service/Hexagon | Location in Store | Primary Writer(s) | Primary Reader(s) | Description |
+|:---|:---|:---|:---|:---|:---|
+| `status` (`loading`, `ready`, etc.) | `AudioOrchestratorService` | `playerStore` (`status`) | **`AudioOrchestratorService`** | UI Components, Other Services (via derived stores) | The single source of truth for the application's overall state. |
+| **`isPlaying`** (Derived State) | - | `isPlaying` (derived) | **(Derived from `playerStore`)** | UI Components | A read-only derived store for UI convenience. Cannot be written to directly. |
+| `error` | `AudioOrchestratorService` | `playerStore` (`error`) | **`AudioOrchestratorService`** | UI Components (Toast notifications) | A structured object with details for user-facing toasts and logs. |
+| `fileName`, `duration`, `sourceUrl` | `AudioOrchestratorService` | `playerStore` | **`AudioOrchestratorService`** | UI Components | High-level metadata about the loaded audio. |
+| **`audioBuffer`** | **`AudioEngineService`** | **_Internal to Service_** | **`AudioEngineService`** | `AnalysisService`, `WaveformService` (on request) | Raw decoded audio data. **Not in a store.** Accessed via method call. |
+| `currentTime` (Hot Path) | `AudioEngineService` | `timeStore` | **`AudioEngineService`** (on `rAF` loop) | UI Components (Seek bar, time display) | **"Hot Path"** for smooth 60fps UI updates during playback. |
+| `currentTime` (Cold Path) | `AudioOrchestratorService` | `playerStore` (`currentTime`) | **`AudioOrchestratorService`** | `urlState` utility, Services | **"Cold Path"** sync. Updated on state changes (pause, seek end) for canonical state. |
+| `speed`, `pitchShift`, `gain` | `AudioEngineService` | `playerStore` | **`AudioOrchestratorService`** | `AudioEngineService`, UI Components | Playback manipulation parameters. Orchestrator sets the state; Engine reads it. |
+| `vadProbabilities` | `AnalysisService` | **_Internal to Service_** | **`AnalysisService`** | `AnalysisService` | Raw VAD data. **Not in a store.** Internal implementation detail. |
+| `vadRegions` | `AnalysisService` | `analysisStore` | **`AnalysisService`** | UI Components (Waveform visualization) | Calculated speech time segments. |
+| `dtmfResults`, `cptResults` | `DtmfService` | `dtmfStore` | **`DtmfService`** | UI Components (Tone display) | Detected DTMF and Call Progress Tones. |
+| **User Settings** (e.g., `vadPositiveThreshold`) | - | `settingsStore` | **UI Components**, `localStorage` sync | `AnalysisService`, `AudioEngineService` | User-configurable settings. UI writes changes; services react to them. |
+| **`spectrogramData`** | **`SpectrogramService`** | **_Internal to Service_** | **`SpectrogramService`** | UI Components (on request) | Calculated spectrogram data. **Not in a store.** Accessed via method call. |
+| **`waveformData`** | **`WaveformService`** | **_Internal to Service_** | **`WaveformService`** | UI Components (on request) | Peak data for waveform visualization. **Not in a store.** Accessed via method call. |
 
 ### **3.5. Detailed Error Propagation from Workers**
 
