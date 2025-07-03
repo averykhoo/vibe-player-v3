@@ -344,6 +344,8 @@ These components are driven *by* the core services to perform a task.
 
 The `AudioOrchestratorService` implements the following state machine to manage the application's lifecycle.
 
+Note: there are two seek states because if you are playing, start seeking (playback should pause while seeking), hit the spacebar (toggle pause), then stop seeking, playback should be paused - and vice versa.
+
 ### **4.1. State Diagram**
 
 ```mermaid
