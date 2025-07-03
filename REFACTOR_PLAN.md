@@ -233,12 +233,6 @@ provided to the UI via Svelte's Context API.
       the relevant stores with visualization data.
     * **Key State:**  `waveformData`
 
-* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
-    * **Role:** Manages all data generation for the waveform visualization.
-    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` (peak data) for the waveform display. Holds the data internally and signals readiness to the UI via a store.
-    * **Key State:**  `waveformData` (internal).
-
-
 ---
 
 ## **Chapter 3: Adapters, Infrastructure & Data Flow**
