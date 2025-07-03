@@ -150,6 +150,10 @@ developer must adhere to these constraints at all times.
     * **Rationale:** This decouples automated tests from fragile implementation details like CSS class names or DOM structure. It creates a stable, explicit contract between the application's view and its test suite, dramatically increasing the reliability and maintainability of E2E tests.
     * **Implication:** Developers are required to add these attributes during component creation. E2E tests **must** use `getByTestId()` selectors as their primary method for locating elements.
 
+* **Principle 4: End-to-End Traceability**
+    * **Description:** All user-initiated operations **must** be traceable across services, event emitters, and workers. This is a non-negotiable requirement for debugging the decoupled architecture.
+    * **Implication:** A unique `traceId` **must** be generated at the start of any new operation (e.g., loading a file, playing). This `traceId` must be propagated through all subsequent service calls, event payloads, and worker messages related to that operation. The full implementation contract is defined in **Appendix K**.
+
 ---
 
 ## **Chapter 2: Core Components & Folder Structure**
@@ -222,16 +226,15 @@ provided to the UI via Svelte's Context API.
     * **Responsibility:** Communicates with the `dtmf.worker` to perform tone detection.
     * **Key State:** `dtmfResults`, `cptResults`.
 
+* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
+    * **Role:** Manages all data generation for the waveform visualization.
+    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` (peak data) for the waveform display.
+    * **Key State:**  `waveformData` (internal).
+
 * **`SpectrogramService` (`src/lib/services/spectrogram.service.ts`)**
     * **Role:** Manages spectrogram computation (the SpectrogramHexagon), implementing the `ISpectrogramPort`.
     * **Responsibility:** Communicates with the `spectrogram.worker` to perform FFT calculations.
-    * **Key State:** `spectrogramData`.
-
-* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
-    * **Role:** Manages all data generation for the waveform.
-    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` for the waveform display. Updates
-      the relevant stores with visualization data.
-    * **Key State:**  `waveformData`
+    * **Key State:** `spectrogramData` (internal).
 
 ---
 
@@ -291,9 +294,7 @@ These components are driven *by* the core services to perform a task.
       `requestAnimationFrame` loop and writes **directly** to the dedicated `timeStore`.
     * **Why:** This is a deliberate exception to achieve smooth 60fps UI updates for the seek bar and time display
       without burdening the entire application with constant re-renders.
-    * **Limitations:** This is the *only* such exception. The `timeStore` is for display purposes only and does not
-      trigger application logic. The canonical `currentTime` for logic is read from the main `playerStore` during "cold"
-      events like `pause` or `seek`.
+    * **Synchronization:** This is the *only* such exception. The `timeStore` is for display purposes only. To maintain a single source of truth, when a "cold" event occurs (e.g., `pause`, `endSeek`), the `AudioOrchestratorService` **must** command the `AudioEngineService` to report its final authoritative time. The orchestrator then commits this value to the main `playerStore`, ensuring the canonical application state is always correct.
 
 * **Large Data Handling Protocol**
     * **What:** Services generating large, static data (e.g., `vadProbabilities`) **must** hold it internally. They
@@ -445,15 +446,17 @@ stateDiagram-v2
 
 ### **6.1. The Testing Pyramid Layers**
 
-| Layer                       | Tool(s)                            | Purpose                                                                        |
-|:----------------------------|:-----------------------------------|:-------------------------------------------------------------------------------|
-| **Static Analysis**         | ESLint, Svelte-Check, TypeScript   | Enforce type safety, code quality, style, and architectural rules.             |
-| **Component Testing**       | Storybook, Vitest, Testing Library | Visually inspect and unit test every component in complete isolation.          |
-| **Unit Tests**              | Vitest                             | Test individual functions/methods in isolation (includes V1 Characterization). |
-| **Integration Tests**       | Vitest                             | Test collaboration between services via the event emitter.                     |
-| **End-to-End (E2E) Tests**  | Playwright                         | Verify complete user flows defined in Gherkin scenarios.                       |
-| **Visual Regression Tests** | Playwright (`toHaveScreenshot`)    | Prevent unintended visual bugs in UI and canvases in CI.                       |
-| **CI Static Analysis**      | **GitHub CodeQL, SonarCloud**      | **Deep security, tech debt, and maintainability scans**                        | **No**        | **Yes**     | **Slow**     |
+### 6.1. The Testing Pyramid Layers
+
+| Layer                       | Tool(s)                         | Purpose                                                                        | Run on PR? | Is Fast? |
+|:----------------------------|:--------------------------------|:-------------------------------------------------------------------------------|:----------:|:--------:|
+| **Static Analysis**         | ESLint, Svelte-Check, TypeScript| Enforce type safety, code quality, style, and architectural rules.             |    Yes     |  Blazing |
+| **Component Testing**       | Storybook, Vitest, Testing Lib  | Visually inspect and unit test every component in complete isolation.          |    Yes     |   Fast   |
+| **Unit Tests**              | Vitest                          | Test individual functions/methods in isolation (includes V1 Characterization). |    Yes     |   Fast   |
+| **Integration Tests**       | Vitest                          | Test collaboration between services via the event emitter.                     |    Yes     |   Fast   |
+| **End-to-End (E2E) Tests**  | Playwright                      | Verify complete user flows defined in Gherkin scenarios.                       |    Yes     |   Slow   |
+| **Visual Regression Tests** | Playwright (`toHaveScreenshot`) | Prevent unintended visual bugs in UI and canvases in CI.                       |  Optional  |   Slow   |
+| **CI Static Analysis**      | GitHub CodeQL, SonarCloud       | Deep security, tech debt, and maintainability scans.                           |    Yes     |  Medium  |
 
 ### **6.2. Local Development Checks (The Inner Loop)**
 
@@ -1175,6 +1178,92 @@ sequenceDiagram
     deactivate Engine
     
     Store-->>UI: Reactively updates UI (icon to 'Pause')
+```
+
+### I.2. File Loading & Analysis Flow
+
+This diagram shows how loading a new file triggers decoding and parallel background analysis tasks.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Analysis as AnalysisService
+    participant Waveform as WaveformService
+    participant Store as Svelte Stores
+
+    User->>UI: Selects local audio file
+    UI->>Orchestrator: COMMAND_LOAD_AUDIO(file)
+    
+    activate Orchestrator
+    Orchestrator->>Store: playerStore.update({ status: 'loading' })
+    Orchestrator->>Engine: decodeAudio(file)
+    deactivate Orchestrator
+
+    activate Engine
+    Note over Engine: Decodes file into an AudioBuffer
+    Engine-->>Orchestrator: EVENT_LOAD_SUCCESS(audioBuffer, duration)
+    deactivate Engine
+
+    activate Orchestrator
+    Orchestrator->>Store: playerStore.update({ status: 'ready', duration, isPlayable: true })
+    Note right of Orchestrator: Kick off background analysis tasks in parallel
+    Orchestrator->>Analysis: startVadAnalysis(audioBuffer)
+    Orchestrator->>Waveform: generatePeakData(audioBuffer)
+    deactivate Orchestrator
+
+    activate Analysis
+    Note over Analysis: Posts buffer to VAD worker
+    Analysis-->>Store: analysisStore.update({ vadRegions: [...] })
+    deactivate Analysis
+
+    activate Waveform
+    Note over Waveform: Computes peak data for visualization
+    Waveform-->>Store: waveformStore.update({ hasData: true })
+    deactivate Waveform
+```
+
+### I.3. Seek Command Flow
+
+This diagram illustrates the two-phase seek operation (begin/end) and how state is managed to ensure correct playback resumption.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Slider as Seek Slider UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Store as Svelte Stores
+
+    User->>Slider: Mousedown on handle
+    Slider->>Orchestrator: COMMAND_BEGIN_SEEK
+    
+    activate Orchestrator
+    Note right of Orchestrator: State: PLAYING -> SEEK_AND_RESUME
+    Orchestrator->>Store: playerStore.update({ status: 'seeking' })
+    Orchestrator->>Engine: pauseWhileSeeking()
+    deactivate Orchestrator
+    
+    User->>Slider: Drags handle (oninput event)
+    Slider->>Orchestrator: COMMAND_UPDATE_SEEK(newTime)
+    activate Orchestrator
+    Orchestrator->>Engine: seek(newTime)
+    deactivate Orchestrator
+
+    activate Engine
+    Note over Engine: Updates internal playhead, UI timeStore reflects change
+    deactivate Engine
+    
+    User->>Slider: Mouseup (releases handle)
+    Slider->>Orchestrator: COMMAND_END_SEEK
+    
+    activate Orchestrator
+    Note right of Orchestrator: State: SEEK_AND_RESUME -> PLAYING
+    Orchestrator->>Store: playerStore.update({ status: 'playing' })
+    Orchestrator->>Engine: play()
+    deactivate Orchestrator
 ```
 
 ---
