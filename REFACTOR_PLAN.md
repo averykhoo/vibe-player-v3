@@ -315,7 +315,7 @@ These components are driven *by* the core services to perform a task.
 
 ### **3.4. State Ownership & Data Pathways**
 
-| State Item | Owning Service/Hexagon | Location in Store | Primary Writer(s) | Primary Reader(s) | Description |
+| State Item | Owning Service/Hexagon | Location in Store(s) | Primary Writer(s) | Primary Reader(s) | Description |
 |:---|:---|:---|:---|:---|:---|
 | `status` (`loading`, `ready`, etc.) | `AudioOrchestratorService` | `playerStore` (`status`) | **`AudioOrchestratorService`** | UI Components, Other Services (via derived stores) | The single source of truth for the application's overall state. |
 | **`isPlaying`** (Derived State) | - | `isPlaying` (derived) | **(Derived from `playerStore`)** | UI Components | A read-only derived store for UI convenience. Cannot be written to directly. |
@@ -324,11 +324,11 @@ These components are driven *by* the core services to perform a task.
 | **`audioBuffer`** | **`AudioEngineService`** | **_Internal to Service_** | **`AudioEngineService`** | `AnalysisService`, `WaveformService` (on request) | Raw decoded audio data. **Not in a store.** Accessed via method call. |
 | `currentTime` (Hot Path) | `AudioEngineService` | `timeStore` | **`AudioEngineService`** (on `rAF` loop) | UI Components (Seek bar, time display) | **"Hot Path"** for smooth 60fps UI updates during playback. |
 | `currentTime` (Cold Path) | `AudioOrchestratorService` | `playerStore` (`currentTime`) | **`AudioOrchestratorService`** | `urlState` utility, Services | **"Cold Path"** sync. Updated on state changes (pause, seek end) for canonical state. |
-| `speed`, `pitchShift`, `gain` | `AudioEngineService` | `playerStore` | **`AudioOrchestratorService`** | `AudioEngineService`, UI Components | Playback manipulation parameters. Orchestrator sets the state; Engine reads it. |
+| **Session Parameters** (e.g., `speed`, `vadPositiveThreshold`) | `AudioOrchestratorService` | `playerStore`, `settingsStore` | **UI Components** -> `AudioOrchestratorService` | `AnalysisService`, `AudioEngineService`, `urlState` utility | Shareable parameters that define the current session. **Mirrored to the URL.** |
+| **User Preferences** (e.g., preferred `vadPositiveThreshold`) | - | *Internal to `settingsStore` logic* | **`settingsStore`** (on change) | `AudioOrchestratorService` (on init) | A user's preferred defaults, loaded from **`localStorage`**. Overridden by URL parameters. |
 | `vadProbabilities` | `AnalysisService` | **_Internal to Service_** | **`AnalysisService`** | `AnalysisService` | Raw VAD data. **Not in a store.** Internal implementation detail. |
 | `vadRegions` | `AnalysisService` | `analysisStore` | **`AnalysisService`** | UI Components (Waveform visualization) | Calculated speech time segments. |
 | `dtmfResults`, `cptResults` | `DtmfService` | `dtmfStore` | **`DtmfService`** | UI Components (Tone display) | Detected DTMF and Call Progress Tones. |
-| **User Settings** (e.g., `vadPositiveThreshold`) | - | `settingsStore` | **UI Components**, `localStorage` sync | `AnalysisService`, `AudioEngineService` | User-configurable settings. UI writes changes; services react to them. |
 | **`spectrogramData`** | **`SpectrogramService`** | **_Internal to Service_** | **`SpectrogramService`** | UI Components (on request) | Calculated spectrogram data. **Not in a store.** Accessed via method call. |
 | **`waveformData`** | **`WaveformService`** | **_Internal to Service_** | **`WaveformService`** | UI Components (on request) | Peak data for waveform visualization. **Not in a store.** Accessed via method call. |
 
@@ -343,13 +343,26 @@ These components are driven *by* the core services to perform a task.
 4. **Orchestrator Handles State:** The `AudioOrchestratorService` catches the re-thrown error and is the sole authority
    to transition the application into the `ERROR` state, updating the `playerStore` with details for the UI.
 
-### **3.6. URL State Loading Rules**
+### **3.6. State Loading & Persistence Rules**
 
-* **Rule 1: Loading a Local File.** When a user loads a new local audio file, any existing query parameters in the URL *
-  *must be cleared**. This prevents state from a previous session from "leaking" into a new one.
-* **Rule 2: Loading from a `url` Parameter.** When the application starts with a `url` query parameter (e.g.,
-  `?url=...&speed=1.5`), the `AudioOrchestratorService` **must** load the audio from the URL and simultaneously apply
-  all other valid parameters to the application's state. The query string **must not** be cleared.
+This section defines the mandatory state hierarchy that balances shareable session state (URL) with persistent user preferences (`localStorage`).
+
+*   **Rule 3.6.1: Three-Tiered State Loading Sequence (on startup)**
+    *   The application **must** determine its initial state using the following order of precedence, where each tier overrides the previous one:
+    1.  **Tier 1 (Lowest Precedence): Application Defaults.** The `AudioOrchestratorService` starts by populating state stores with the hardcoded default values from `src/lib/config.ts`.
+    2.  **Tier 2 (Medium Precedence): User Preferences.** It then attempts to load the user preferences object from `localStorage`. If found, these values overwrite the application defaults.
+    3.  **Tier 3 (Highest Precedence): Session State.** Finally, it parses the URL query parameters. If any are present, these values overwrite any conflicting preferences or defaults for the current session.
+
+*   **Rule 3.6.2: Dual-State Persistence on Change**
+    *   When a user adjusts a configurable parameter (e.g., moves the VAD slider), the change **must** be written to **two places**:
+        1.  The `urlState` utility updates the URL query string (for sharing the current session).
+        2.  A separate utility updates the user preferences object in `localStorage` (to persist this as the user's new preferred default for future sessions).
+
+*   **Rule 3.6.3: Loading a New Local File**
+    *   When a user loads a new local audio file, the following sequence **must** occur:
+        1.  The `urlState` utility **must clear all query parameters from the URL**.
+        2.  The `AudioOrchestratorService` **must reset the application's state not to the Tier 1 defaults, but to the Tier 2 User Preferences** loaded from `localStorage`.
+    *   **Rationale:** This ensures the user's preferred settings (e.g., their favorite VAD threshold) are automatically applied to any new local file they analyze, providing a consistent and user-friendly experience.
 
 ---
 
@@ -682,9 +695,10 @@ Feature: Tone Detection
 ### **File: `tests/e2e/features/url_state.feature`**
 
 ```gherkin
-Feature: URL State Management
-  As a user, I want to share a link to the player that includes my exact session state,
-  and have the application automatically load and apply that state from the URL.
+Feature: URL State and User Preference Management
+  As a user, I want to share a link that includes my session state,
+  have the application load state from a URL,
+  and remember my preferred settings between sessions.
 
   Background:
     Given the application has fully initialized
@@ -714,6 +728,15 @@ Feature: URL State Management
     Given the user is on a page with the URL parameter "?speed=1.50&time=20.00"
     When the user selects the new local audio file "static/test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
     Then the browser URL query string should be empty
+
+  Scenario: User preferences are remembered when loading a new local file
+    Given the user is on a clean page without URL parameters
+    When the user sets the "VAD Positive Threshold" slider to "0.70"
+    And the user reloads the page
+    Then the "VAD Positive Threshold" slider should be at "0.70"
+    When the user selects the new local audio file "static/test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
+    Then the browser URL query string should be empty
+    And the "VAD Positive Threshold" slider should still be at "0.70"
 ```
 
 ---
