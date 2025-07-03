@@ -40,9 +40,7 @@ The primary objective for Vibe Player V3 is to construct an audio player and ana
   single-threaded Web Workers, ensuring a smooth and responsive user experience.
 * **Offline-Capable & Installable:** Built as a Progressive Web App (PWA) that can be installed on user devices and run
   reliably without an internet connection.
-* **Shareable via URL:** The entire application state—including the loaded audio URL, playback time, and all
-  parameters—will be serialized into the URL's query string, enabling users to share a link that perfectly reproduces
-  their session.
+* **Shareable via URL:** The entire application **session state**—including the loaded audio URL, playback time, and all analysis/playback parameters—will be serialized into the URL's query string. This enables users to share a link that perfectly reproduces their session, while personal user preferences are retained separately.
 
 ### **1.2. Architectural Principles & Design Constraints**
 
@@ -1424,6 +1422,7 @@ conflicting information in the main body or older appendices.
     * **Storybook-First Development:** UI components must be fully developed and verified in Storybook, using the
       Context API for mock injection, before being integrated into the main application. This de-risks UI development
       and ensures components are robust and reusable.
+    * **Dual State Persistence Model:** To provide both shareability and user convenience, the application uses a dual-state model. Ephemeral **session state** is serialized to the URL for sharing. Persistent **user preferences** (e.g., favorite VAD settings) are saved to `localStorage` to be applied across sessions. A strict three-tiered loading hierarchy (Defaults -> Preferences -> URL) ensures predictable state initialization.
 
 ---
 
