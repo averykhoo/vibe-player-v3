@@ -172,7 +172,12 @@ developer must adhere to these constraints at all times.
 ├── build/                        # **STATIC PRODUCTION BUILD OUTPUT** (deployable)
 ├── src/                          # Main application source code
 │   ├── lib/
-│   │   ├── components/           # Reusable Svelte UI components (.svelte)
+│   │   ├── components/           # Svelte UI Components
+│   │   │   ├── _ui/              # Small, highly reusable, generic UI elements (atoms)
+│   │   │   ├── feedback/         # Components for user feedback (toasts, spinners)
+│   │   │   ├── layout/           # Major page structure components
+│   │   │   ├── views/            # Composite components for specific features
+│   │   │   └── visualizations/   # Complex canvas-based visualization components
 │   │   ├── services/             # Pure Business Logic Modules (Hexagons) (.ts)
 │   │   ├── adapters/             # Technology-Specific Code (Driven & Driving Adapters) (.ts)
 │   │   ├── stores/               # Central Application State (Svelte Stores) (.ts)
@@ -378,20 +383,29 @@ stateDiagram-v2
     direction LR
     [*] --> IDLE
     IDLE --> LOADING: COMMAND_LOAD_AUDIO
+
     LOADING --> READY: EVENT_LOAD_SUCCESS
     LOADING --> ERROR: EVENT_LOAD_FAILURE
+
     READY --> PLAYING: COMMAND_PLAY
     READY --> SEEK_AND_HOLD: COMMAND_BEGIN_SEEK
     READY --> LOADING: COMMAND_LOAD_AUDIO
+    READY --> ERROR: EVENT_ANALYSIS_FAILURE
+
     PLAYING --> READY: COMMAND_PAUSE
     PLAYING --> READY: EVENT_PLAYBACK_ENDED
     PLAYING --> SEEK_AND_RESUME: COMMAND_BEGIN_SEEK
     PLAYING --> LOADING: COMMAND_LOAD_AUDIO
     PLAYING --> ERROR: EVENT_PLAYBACK_FAILURE
+
     SEEK_AND_RESUME --> PLAYING: COMMAND_END_SEEK
     SEEK_AND_RESUME --> SEEK_AND_HOLD: COMMAND_PAUSE
+    SEEK_AND_RESUME --> ERROR: EVENT_PLAYBACK_FAILURE
+
     SEEK_AND_HOLD --> READY: COMMAND_END_SEEK
     SEEK_AND_HOLD --> SEEK_AND_RESUME: COMMAND_PLAY
+    SEEK_AND_HOLD --> ERROR: EVENT_PLAYBACK_FAILURE
+
     ERROR --> LOADING: COMMAND_LOAD_AUDIO
 ```
 
@@ -631,7 +645,6 @@ Feature: Playback Parameter Adjustment
     When the user sets the "<Parameter>" slider to "<Value>"
     Then the "<Parameter>" value display should show "<Display>"
     And the browser URL should contain "<URL_Param>"
-    And the audio playback characteristics should reflect the new "<Parameter>" setting
 
     Examples:
       | Parameter | Value | Display           | URL_Param          |
