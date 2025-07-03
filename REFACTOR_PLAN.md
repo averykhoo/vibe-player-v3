@@ -311,7 +311,7 @@ These components are driven *by* the core services to perform a task.
 | `vadPositiveThreshold`, `vadNegativeThreshold`                   | `AnalysisService`          | `analysisStore`                          | Tuning parameters for VAD calculation.                                                                          |
 | `dtmfResults`, `cptResults`                                      | `DtmfService`              | `dtmfStore`                              | Detected DTMF and Call Progress Tones.                                                                          |
 | `spectrogramData`                                                | `SpectrogramService`       | `analysisStore`                          | Calculated spectrogram data.                                                                                    |
-| `waveformData`                                                   | `AudioOrchestratorService` | `playerStore`                            | Peak data for waveform visualization.                                                                           |
+| `waveformData`                                                   | `WaveformService` | `waveformStore`                            | Peak data for waveform visualization.                                                                           |
 
 ### **3.5. Detailed Error Propagation from Workers**
 
