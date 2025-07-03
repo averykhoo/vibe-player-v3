@@ -897,322 +897,292 @@ This appendix restores the explicit UI/UX philosophy that underpins the componen
 
 ---
 
-## **Appendix E: State Machine Edge Case Logic**
+### **Appendix E: State Machine Edge Case Logic**
 
-This appendix provides explicit, mandatory logic for handling specific edge cases within the `AudioOrchestratorService`
-state machine.
+This appendix provides explicit, mandatory logic for handling specific edge cases within the `AudioOrchestratorService` state machine.
 
-### **E.1. Handling `EVENT_PLAYBACK_ENDED`**
+#### **E.1. Handling `audioEngine:playbackEnded` Event**
 
-When the `AudioEngineService` detects that playback has naturally reached the end, it notifies the
-`AudioOrchestratorService`. The orchestrator **must** execute the following sequence:
+When the `AudioEngineService` detects that playback has naturally reached the end, it **emits** an `audioEngine:playbackEnded` event. The `AudioOrchestratorService`, which subscribes to this event, **must** execute the following sequence:
 
-1. **Command `AudioEngineService`:** Command the `AudioEngineService` to set its internal playback time to exactly match
-   the `duration`. This ensures the UI seek bar moves to the very end.
-2. **Transition State:** Transition the application state from `PLAYING` to `READY`. This updates the `playerStore` and
-   changes the UI icon from "Pause" to "Play".
-3. **Prevent URL Update:** The orchestrator **must not** trigger the `urlState.ts` utility. This is a deliberate
-   exception to prevent sharing a URL with a `time=` parameter equal to the duration.
+1.  **Command `AudioEngineService`:** Command the `AudioEngineService` to set its internal playback time to exactly match the `duration`. This ensures the UI seek bar moves to the very end.
+2.  **Transition State:** Transition the application state from `PLAYING` to `READY`. This updates the `playerStore` and changes the UI icon from "Pause" to "Play".
+3.  **Prevent URL Update:** The orchestrator **must not** trigger the `urlState.ts` utility. This is a deliberate exception to prevent sharing a URL with a `time=` parameter equal to the duration.
 
-### **E.2. Handling `COMMAND_PLAY` from `READY` state at End of Track**
+#### **E.2. Handling `ui:playToggled` Event from `READY` state**
 
-When the user clicks "Play" while the application is `READY`, the `AudioOrchestratorService` must:
+When the user clicks "Play" while the application is in the `READY` state, the UI emits a `ui:playToggled` event. The `AudioOrchestratorService` must:
 
-1. **Check Time:** Check if `currentTime` is equal to (or within a small epsilon of) the `duration`.
-2. **Conditional Seek:**
-    * If `true`, it must first issue a **seek command to `0`** to the `AudioEngineService`. Only then should it issue
-      the `play` command.
-    * If `false`, it can immediately issue the `play` command.
-3. **Rationale:** This ensures that clicking "Play" on a finished track correctly restarts it from the beginning, which
-   is the universally expected behavior.
+1.  **Check Time:** Check if `currentTime` is equal to (or within a small epsilon of) the `duration`.
+2.  **Conditional Seek:**
+    *   If `true`, it must first issue a **seek command to `0`** to the `AudioEngineService`. Only then should it issue the `play` command.
+    *   If `false`, it can immediately issue the `play` command.
+3.  **Rationale:** This ensures that clicking "Play" on a finished track correctly restarts it from the beginning, which is the universally expected behavior.
 
 ---
 
-## **Appendix F: Core Data Flow & State Management Principles**
+### **Appendix F: Core Data Flow & State Management Principles**
 
 This appendix formalizes the data flow principles that govern how services, stores, and the UI interact.
 
-### **F.1. Unidirectional Data Flow**
+#### **F.1. Event-Driven & Unidirectional Data Flow**
 
-Data and commands flow in one primary direction:
+Data and commands flow in a predictable, unidirectional manner:
 
-1. **User Interaction -> Service Command:** A user interacts with a Svelte component. The component's event handler
-   calls a method on a singleton service instance (e.g., `audioOrchestrator.play()`). This is a **Command**.
-2. **Service Logic -> Store Update:** The service executes its logic and updates one or more Svelte stores with the new
-   state (e.g., `playerStore.update(s => ({ ...s, isPlaying: true }))`).
-3. **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which
-   re-render to reflect the new state.
+1.  **User Interaction -> UI Event:** A user interacts with a Svelte component. The component's event handler **emits a type-safe event** to the `appEmitter` (e.g., `appEmitter.emit('ui:seekRequested', { time: 30 })`).
+2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response. It calls methods on the appropriate service (e.g., `audioEngine.seek(30)`).
+3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state (e.g., `playerStore.update(s => ({ ...s, currentTime: 30 }))`).
+4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state.
+5.  **Service-to-Service Communication:** Services **do not** call each other directly. They communicate via the `appEmitter`. For example, `AudioEngineService` emits an `audioEngine:playbackEnded` event, which the `AudioOrchestratorService` listens for.
 
-### **F.2. Controlled Exception: The "Hot Path"**
+#### **F.2. Controlled Exception: The "Hot Path"**
 
-* **What:** For the high-frequency `currentTime` update during playback, the `AudioEngineService` runs a
-  `requestAnimationFrame` loop and writes **directly** to the dedicated `timeStore` (a Svelte `writable` store).
-* **Why:** This is a deliberate exception to achieve smooth, 60fps UI updates for the seek bar and time display without
-  burdening the application with constant, heavy re-renders.
-* **Limitations:** This is the *only* such exception. The `timeStore` is for display purposes only. Changes to it **must
-  not** trigger any other application logic.
+*   **What:** For the high-frequency `currentTime` update during playback, the `AudioEngineService` runs a `requestAnimationFrame` loop and writes **directly** to the dedicated `timeStore` (a Svelte `writable` store).
+*   **Why:** This is a deliberate exception to achieve smooth, 60fps UI updates for the seek bar and time display.
+*   **Limitations:** This is the *only* such exception. The `timeStore` is for display purposes only. Changes to it **must not** trigger any other application logic.
 
-### **F.3. Large Data Handling Protocol**
+#### **F.3. Strict Large Data Handling Protocol**
 
-To maintain performance, the following protocol is mandatory:
+To maintain performance, the following protocol for large, static binary data is mandatory:
 
-1. **Internal Storage:** A service that generates a large, static data payload (e.g., `vadProbabilities`) **must** hold
-   this data in a private internal property, not in a Svelte store.
-2. **State Store Flag:** The service publishes a simple boolean flag to the relevant store to indicate data readiness (
-   e.g., `analysisStore.update(s => ({ ...s, hasVadProbabilities: true }))`).
-3. **Synchronous Accessor:** The service **must** expose a public, synchronous accessor method (e.g.,
-   `getVadProbabilityData(): Float32Array`) that returns the internal data.
-4. **UI Retrieval:** UI components subscribe to the flag. When `true`, they call the service's accessor method to get
-   the data for rendering.
+1.  **No Stores:** Large data payloads **must not** be placed in any Svelte store.
+2.  **Exclusive Ownership:** Each large data object has a single, exclusive owner.
+    *   The **`AudioBuffer`** is owned exclusively by the **`AudioEngineService`**.
+    *   The **VAD Probability Array** is owned exclusively by the **`AnalysisService`**.
+3.  **Data on Request:** When another service needs access to this data (e.g., the `AnalysisService` needing the `AudioBuffer`), it must request it from the owner service.
+4.  **Readiness Flags:** Services publish simple boolean flags to the stores to indicate data readiness (e.g., `playerStore.update(s => ({ ...s, isPlayable: true }))`). UI components react to these flags to enable functionality.
 
 ---
 
-## **Appendix G: Worker Communication Protocol & Timeout Handling**
+### **Appendix G: Worker Communication Protocol & Timeout Handling**
 
 This appendix provides a definitive implementation contract for the mandatory `WorkerChannel` utility.
 
-### **G.1. The `WorkerChannel` Utility Class**
+#### **G.1. The Type-Safe `WorkerChannel` Utility Class**
 
-A reusable TypeScript class named `WorkerChannel` **must** be created in `src/lib/utils/workerChannel.ts`. This class
-provides a generic, Promise-based request/response communication layer on top of the native Web Worker API, abstracting
-away the complexities of `postMessage` and `onmessage`.
+A reusable TypeScript class named `WorkerChannel` **must** be created in `src/lib/utils/workerChannel.ts`. This class provides a generic, **fully type-safe**, Promise-based request/response communication layer.
 
-### **G.2. Mandatory Timeout Mechanism**
+#### **G.2. Mandatory Mechanisms**
 
-The `WorkerChannel` class **must** implement a robust, Promise-based timeout mechanism for all operations to prevent a
-hung worker from deadlocking the application.
+The `WorkerChannel` class **must** implement:
+1.  **Type Safety:** Use TypeScript generics and discriminated unions for message and payload types to prevent errors.
+2.  **Timeout Mechanism:** A robust, Promise-based timeout for all operations to prevent hung workers.
+3.  **Observability:** Hooks or logging for latency tracing, traffic logging, and error metrics for debugging and monitoring.
 
-### **G.3. Reference Implementation Pattern**
+#### **G.3. Type-Safe Reference Implementation Pattern**
 
 ```typescript
+// src/lib/types/worker.events.ts
+// Example for a specific worker (e.g., VAD)
+export type VadWorkerRequest = 
+  | { type: 'INIT'; payload: { model: ArrayBuffer }; }
+  | { type: 'PROCESS'; payload: { pcmData: Float32Array }; };
+
+export type VadWorkerResponse = 
+  | { type: 'INIT_COMPLETE'; }
+  | { type: 'PROCESS_COMPLETE'; payload: { probabilities: Float32Array }; };
+
 // src/lib/utils/workerChannel.ts
+import type { VadWorkerRequest, VadWorkerResponse } from '$lib/types/worker.events';
 
-const DEFAULT_WORKER_TIMEOUT_MS = 30000; // 30 seconds
+const DEFAULT_WORKER_TIMEOUT_MS = 30000;
 
-export class WorkerTimeoutError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'WorkerTimeoutError';
-    }
-}
+export class WorkerTimeoutError extends Error { /* ... */ }
 
-export class WorkerChannel {
+// Generic class, typed for a specific worker's message contract
+export class WorkerChannel<Req, Res> {
     private worker: Worker;
-    private nextMessageId = 0;
-    private listeners = new Map<number, (response: any) => void>();
+    private messageIdCounter = 0;
+    private pendingRequests = new Map<number, { resolve: (res: Res) => void, reject: (err: Error) => void }>();
 
     constructor(worker: Worker) {
         this.worker = worker;
-        this.worker.onmessage = (event) => {
-            const {id, payload, error} = event.data;
-            const listener = this.listeners.get(id);
-            if (listener) {
-                listener({payload, error});
+        this.worker.onmessage = (event: MessageEvent<{ id: number, response: Res }>) => {
+            const { id, response } = event.data;
+            const request = this.pendingRequests.get(id);
+            if (request) {
+                request.resolve(response);
+                this.pendingRequests.delete(id);
             }
         };
+        // Add onerror handling
     }
 
-    public post<T>(
-        messageType: string,
-        payload: any,
-        transferables: Transferable[] = [],
-        timeout = DEFAULT_WORKER_TIMEOUT_MS
-    ): Promise<T> {
-        return new Promise<T>((resolve, reject) => {
-            const messageId = this.nextMessageId++;
-            let timeoutHandle: number;
+    public post(request: Req, transferables: Transferable[] = []): Promise<Res> {
+        const messageId = this.messageIdCounter++;
+        // Start performance mark for latency tracing
+        performance.mark(`worker_req_${messageId}_start`);
 
-            const responseListener = (response: { payload: T; error?: string }) => {
-                clearTimeout(timeoutHandle);
-                this.listeners.delete(messageId);
-                if (response.error) {
-                    reject(new Error(response.error));
-                } else {
-                    resolve(response.payload);
+        const promise = new Promise<Res>((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new WorkerTimeoutError(`Worker request ${messageId} timed out.`));
+            }, DEFAULT_WORKER_TIMEOUT_MS);
+
+            this.pendingRequests.set(messageId, {
+                resolve: (response) => {
+                    clearTimeout(timeoutId);
+                    resolve(response);
+                },
+                reject: (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
                 }
-            };
+            });
 
-            this.listeners.set(messageId, responseListener);
-
-            timeoutHandle = window.setTimeout(() => {
-                this.listeners.delete(messageId);
-                reject(
-                    new WorkerTimeoutError(
-                        `Worker operation timed out after ${timeout}ms for message type: ${messageType}.`
-                    )
-                );
-            }, timeout);
-
-            this.worker.postMessage(
-                {id: messageId, type: messageType, payload},
-                transferables
-            );
+            this.worker.postMessage({ id: messageId, request }, transferables);
         });
+
+        // Add logging and complete performance mark in .finally()
+        promise.finally(() => {
+            performance.mark(`worker_req_${messageId}_end`);
+            performance.measure(`Worker Request: ${request.type}`, `worker_req_${messageId}_start`, `worker_req_${messageId}_end`);
+        });
+
+        return promise;
     }
 
-    public terminate() {
-        this.worker.terminate();
-    }
+    public terminate() { this.worker.terminate(); }
 }
 ```
 
-### G.4. Mandatory Observability
+---
 
-To ensure the system is transparent and debuggable, the `WorkerChannel` class **must** provide hooks or be instrumented
-to track the following metrics for all operations. This is a non-negotiable requirement for production-level robustness.
+### **Appendix H: Hexagonal Architecture Implementation in TypeScript**
 
-* **Latency Tracing:** It must measure and log the roundtrip time (from `post` call to promise resolution/rejection) for
-  every worker message to identify performance bottlenecks.
-* **Traffic Logging:** It must provide a mechanism to log the `messageType` and payload size of requests for debugging
-  communication issues.
-* **Error Metrics:** It must track the count and type of errors, including timeouts and worker-side exceptions, to
-  monitor the health of background processes.
+This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture using Dependency Injection with Svelte's Context API.
+
+#### **H.1. Ports as Explicit TypeScript `interface`s**
+
+*   **Rule:** Every core service (Hexagon) **must** have a corresponding `interface` file defining its public API (its "Driving Port").
+*   **Location:** Interfaces must reside in `src/lib/types/` to create a neutral dependency location.
+*   **Rationale:** This is the cornerstone of Dependency Inversion. Components and other services will depend on the *interface*, not the concrete implementation, allowing for easy mocking and swapping.
+
+#### **H.2. Dependency Injection with Svelte's Context API**
+
+This pattern replaces direct imports of services within components, enforcing decoupling.
+
+1.  **Instantiate & Provide Services at the Root:**
+    In the main application layout (`+layout.svelte` or `+page.svelte`), all singleton services are instantiated and provided to the component tree using `setContext`.
+
+    ```svelte
+    <!-- src/routes/+layout.svelte -->
+    <script lang="ts">
+      import { setContext } from 'svelte';
+      import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+      import { AudioEngineService } from '$lib/services/audioEngine.service';
+      
+      // Instantiate the service
+      const audioEngine = new AudioEngineService();
+
+      // Provide the instance to all child components under a specific key
+      setContext<IAudioEnginePort>('audio-engine', audioEngine);
+    </script>
+    
+    <slot />
+    ```
+
+2.  **Consume Services in Components:**
+    Components use `getContext` to retrieve a service instance. They only need to know the context *key* and the service *interface*, not the concrete implementation or file path.
+
+    ```svelte
+    <!-- src/lib/components/Controls.svelte -->
+    <script lang="ts">
+      import { getContext } from 'svelte';
+      import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+
+      // Retrieve the service using its key and type interface
+      const engine = getContext<IAudioEnginePort>('audio-engine');
+    </script>
+
+    <button on:click={() => engine.play()}>Play</button>
+    ```
+
+3.  **Mocking Services in Tests (Simplified):**
+    Component tests become incredibly simple. You provide a mock object using `setContext` during the render call. **This completely replaces the need for `vi.mock` for component tests.**
+
+    ```typescript
+    // tests/unit/components/Controls.test.ts
+    import { test, expect, vi } from 'vitest';
+    import { render, fireEvent, getContext, setContext } from '@testing-library/svelte';
+    import Controls from '$lib/components/Controls.svelte';
+    import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+
+    test('clicking play calls the audio engine service from context', async () => {
+      // 1. Create a simple mock object that conforms to the service interface
+      const mockEngine: IAudioEnginePort = {
+        play: vi.fn(),
+        // ... mock other methods as needed
+      };
+
+      // 2. Render the component and provide the mock via setContext
+      const { getByText } = render(Controls, {
+        context: new Map([
+          ['audio-engine', mockEngine]
+        ])
+      });
+
+      // 3. Interact and assert
+      await fireEvent.click(getByText('Play'));
+      expect(mockEngine.play).toHaveBeenCalledOnce();
+    });
+    ```
 
 ---
 
-## **Appendix H: Hexagonal Architecture Implementation in TypeScript**
+### **Appendix I: Core Interaction Flows**
 
-This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture within TypeScript
-and SvelteKit.
+This appendix provides a detailed visual description of a key application interaction.
 
-### **H.1. Ports as Explicit TypeScript `interface`s**
+#### **I.1. Play/Pause Command Flow with Event Emitter (Sequence Diagram)**
 
-* **Rule:** For every core service (Hexagon), there **must** be a corresponding `interface` file defining its public
-  methods. This is its "Driving Port."
-* **Location:** Interfaces must reside in `src/lib/types/` to create a neutral dependency location.
-* **Rationale:** This is the cornerstone of Dependency Inversion. Other application parts will depend on the
-  *interface*, not the concrete implementation, allowing for easy mocking and swapping.
-
-#### **Example: `AudioEngineService`**
-
-1. **Define the Port (the Interface):**
-   ```typescript
-   // src/lib/types/audioEngine.d.ts
-   export interface IAudioEnginePort {
-     initialize(): Promise<void>;
-     decodeAudioData(audioData: ArrayBuffer): Promise<AudioBuffer>;
-     play(): void;
-     pause(): void;
-     // ... and so on for all public methods
-   }
-   ```
-
-2. **Implement the Hexagon (the Service):** The service class **must** use `implements` to guarantee it adheres to the
-   contract.
-   ```typescript
-   // src/lib/services/audioEngine.service.ts
-   import type { IAudioEnginePort } from '$lib/types/audioEngine';
-   export class AudioEngineService implements IAudioEnginePort {
-     public async initialize(): Promise<void> { /* ... */ }
-     public async decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer> { /* ... */ }
-     public play(): void { /* ... */ }
-     public pause(): void { /* ... */ }
-     // ... all other methods from IAudioEnginePort must be implemented
-   }
-   ```
-
-### **H.2. Dependency Management: Singletons & Mocking**
-
-* **Rule:** All services **must** be implemented as singletons by instantiating the class once within its own module and
-  exporting the instance.
-* **Rationale:** This ensures a single, consistent source of truth for each domain.
-* **Testability:** This pattern is highly testable using Vitest's `vi.mock` functionality.
-
-#### **Example: Singleton Instantiation and Testing**
-
-1. **Instantiate the Singleton:**
-   ```typescript
-   // src/lib/services/audioEngine.service.ts
-   // ... (imports and class definition)
-   // Instantiate and export the single instance
-   export const audioEngine = new AudioEngineService();
-   ```
-
-2. **Using the Singleton in a Component:**
-   ```svelte
-   <!-- src/lib/components/Controls.svelte -->
-   <script lang="ts">
-     import { audioEngine } from '$lib/services/audioEngine.service';
-   </script>
-   <button on:click={() => audioEngine.play()}>Play</button>
-   ```
-
-3. **Mocking the Singleton in a Test:**
-   ```typescript
-   // tests/unit/components/Controls.test.ts
-   import { vi, test, expect } from 'vitest';
-   import { render, fireEvent } from '@testing-library/svelte';
-   import Controls from '$lib/components/Controls.svelte';
-
-   // Mock the entire service module BEFORE importing the component
-   const mockPlay = vi.fn();
-   vi.mock('$lib/services/audioEngine.service', () => ({
-     audioEngine: {
-       play: mockPlay,
-     },
-   }));
-
-   test('clicking play calls the audio engine service', async () => {
-     const { getByText } = render(Controls);
-     await fireEvent.click(getByText('Play'));
-     expect(mockPlay).toHaveBeenCalledOnce();
-   });
-   ```
-
----
-
-## **Appendix I: Core Interaction Flows**
-
-    This appendix provides detailed visual and procedural descriptions of key application interactions to eliminate ambiguity.
-
-### I.1. Play/Pause Command Flow (Sequence Diagram)
-
-This diagram shows how a user's "play" command propagates through the system and how a subsequent `playback_ended` event
-is handled.
+This diagram shows how a user's "play" command propagates through the decoupled system.
 
 ```mermaid
 sequenceDiagram
     actor User
     participant UI as Svelte Component
+    participant Emitter as appEmitter
     participant Orchestrator as AudioOrchestratorService
     participant Engine as AudioEngineService
     participant Store as Svelte Stores
 
     User->>UI: Clicks 'Play' Button
-    UI->>Orchestrator: play()
+    UI->>Emitter: emit('ui:playToggled')
+    
+    activate Emitter
+    Emitter->>Orchestrator: (on 'ui:playToggled')
+    deactivate Emitter
+    
     activate Orchestrator
+    note right of Orchestrator: State Machine: READY -> PLAYING
     Orchestrator->>Engine: play()
     deactivate Orchestrator
+
     activate Engine
     note right of Engine: Starts Web Audio & rAF loop.
     Engine->>Store: playerStore.update({ isPlaying: true })
     deactivate Engine
+    
     Store-->>UI: Reactively updates UI (icon to 'Pause')
-
-    %% Some time later... Audio ends
-    Engine-->>Orchestrator: onPlaybackEnded() event
-    activate Orchestrator
-    note right of Orchestrator: State machine: PLAYING -> READY
-    Orchestrator->>Engine: pause() command
-    Orchestrator->>Engine: seek(duration) command
-    Orchestrator->>Store: playerStore.update({ isPlaying: false, status: 'ready' })
-    deactivate Orchestrator
-    Store-->>UI: Reactively updates UI (icon to 'Play')
 ```
 
-### I.2. Loading an Audio File (English Description)
+---
 
-1. **UI Component:** The user selects a file. The component's event handler calls
-   `AudioOrchestratorService.loadAudio(file)`.
-2. **`AudioOrchestratorService`:** Transitions its state machine to `LOADING` and updates the `playerStore`. The UI
-   reacts by showing a global spinner. It drives an `AudioEngineService` to decode the file into an `AudioBuffer`.
-3. **`AudioOrchestratorService`:** Once the buffer is ready, it orchestrates the next steps in parallel:
-    * **Critical Path (Awaited):** It commands `AudioEngineService` to prepare the buffer and generates the
-      `waveformData`.
-    * **Background (Fire-and-Forget):** It commands `AnalysisService.analyze(buffer)` and `DtmfService.analyze(buffer)`.
-4. **Critical Path Completion:** As soon as the critical path is complete, the `AudioOrchestratorService` transitions to
-   the `READY` state. The UI hides the spinner, enables controls, and renders the waveform.
-5. **Background Completion:** Later, as the `AnalysisService` and `DtmfService` complete, they update their respective
-   stores. The UI reacts by drawing VAD regions and displaying DTMF tones.
+### **Appendix J: V3 Implementation Refinements Summary**
 
-```
+This appendix summarizes the key architectural decisions and refinements adopted for the V3 rewrite, superseding any conflicting information in the main body or older appendices.
+
+1.  **Architecture:**
+    *   **Dependency Injection:** Services are provided to UI components via Svelte's Context API, not direct imports.
+    *   **Event-Driven Services:** Services are decoupled and communicate via a type-safe global event emitter (`appEmitter`).
+    *   **Strict Data Ownership:** Large binary data (`AudioBuffer`, probability arrays) are held exclusively within their owner services and are not placed in reactive Svelte stores.
+    *   **Service Responsibility:** The `AudioOrchestratorService` is a pure coordinator. Logic for visual data generation is delegated to a new `VisualizationService`.
+
+2.  **Infrastructure & Tooling:**
+    *   **Static Hosting First:** The application must be deployable on any static host without special headers, meaning **no `SharedArrayBuffer` or threaded WASM**.
+    *   **Type-Safe Workers:** Communication with Web Workers will be managed by a robust, type-safe `WorkerChannel` utility that includes observability hooks.
+    *   **Centralized Configuration:** All tunable parameters and constants are managed in a single `src/lib/config.ts` file.
+
+3.  **User Experience & Workflow:**
+    *   **Structured Error Handling:** Errors are managed as structured objects in the `statusStore` and displayed to the user via non-blocking toast notifications.
+    *   **Storybook-First Development:** UI components must be fully developed and verified in Storybook, using Context API for mock injection, before being integrated into the main application.
