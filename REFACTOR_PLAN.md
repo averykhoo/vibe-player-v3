@@ -145,6 +145,11 @@ developer must adhere to these constraints at all times.
     * **Implication:** Constants should use `SCREAMING_SNAKE_CASE` (e.g., `URL_PARAM_SPEED`), and property keys should
       use `camelCase` (e.g., `speed`).
 
+* **Principle 3: Stable Selectors for E2E Testing**
+    * **Description:** All UI elements that are interactive (e.g., buttons, inputs) or that display dynamic data subject to assertions in tests (e.g., time displays, file names) **must** be assigned a unique `data-testid` attribute.
+    * **Rationale:** This decouples automated tests from fragile implementation details like CSS class names or DOM structure. It creates a stable, explicit contract between the application's view and its test suite, dramatically increasing the reliability and maintainability of E2E tests.
+    * **Implication:** Developers are required to add these attributes during component creation. E2E tests **must** use `getByTestId()` selectors as their primary method for locating elements.
+
 ---
 
 ## **Chapter 2: Core Components & Folder Structure**
@@ -227,6 +232,12 @@ provided to the UI via Svelte's Context API.
     * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` for the waveform display. Updates
       the relevant stores with visualization data.
     * **Key State:**  `waveformData`
+
+* **`WaveformService` (`src/lib/services/waveform.service.ts`)**
+    * **Role:** Manages all data generation for the waveform visualization.
+    * **Responsibility:** Listens for a loaded `AudioBuffer`. Computes `waveformData` (peak data) for the waveform display. Holds the data internally and signals readiness to the UI via a store.
+    * **Key State:**  `waveformData` (internal).
+
 
 ---
 
@@ -474,8 +485,7 @@ stateDiagram-v2
 
 ## **Chapter 7: UI Element Contract**
 
-This section defines mandatory `data-testid` attributes for all interactive or dynamically updated elements to ensure
-stable E2E testing with Playwright.
+In accordance with **Principle 3 (Stable Selectors for E2E Testing)**, this chapter defines the mandatory `data-testid` attributes that serve as a stable contract between the application's UI and the automated test suite. These IDs are the single source of truth for locating elements in Playwright tests. All interactive or dynamically updated elements relevant to a user flow must be included here.
 
 | Component Group        | Svelte Component (File)      | Test ID                     | Description                                    |
 |:-----------------------|:-----------------------------|:----------------------------|:-----------------------------------------------|
@@ -491,13 +501,14 @@ stable E2E testing with Playwright.
 | **Parameter Controls** | `<CustomRangeSlider.svelte>` | `speed-slider-input`        | Controls playback speed.                       |
 |                        |                              | `pitch-slider-input`        | Controls pitch shift.                          |
 |                        |                              | `gain-slider-input`         | Controls output gain.                          |
-|                        | **`<Controls.svelte>`**      | **`reset-controls-button`** | **Resets speed, pitch, and gain to defaults.** |
+|                        | `<Controls.svelte>`      | `reset-controls-button` | Resets speed, pitch, and gain to defaults. |
 | **Analysis Controls**  | `<CustomRangeSlider.svelte>` | `vad-positive-slider-input` | Adjusts VAD positive threshold.                |
 |                        |                              | `vad-negative-slider-input` | Adjusts VAD negative threshold.                |
 | **Analysis Displays**  | `<ToneDisplay.svelte>`       | `dtmf-display`              | Displays detected DTMF tones.                  |
 |                        |                              | `cpt-display`               | Displays detected Call Progress Tones.         |
 | **Visualizations**     | `<Waveform.svelte>`          | `waveform-canvas`           | The `<canvas>` for the audio waveform.         |
 |                        | `<Spectrogram.svelte>`       | `spectrogram-canvas`        | The `<canvas>` for the spectrogram.            |
+| **Application State**  | `+layout.svelte` or `GlobalSpinner.svelte` | `loading-spinner`           | The global spinner element shown during the `LOADING` state. |
 
 ***
 
