@@ -1,0 +1,34 @@
+sequenceDiagram
+    actor User
+    participant Slider as Seek Slider UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Store as Svelte Stores
+
+    User->>Slider: Mousedown on handle
+    Slider->>Orchestrator: COMMAND_BEGIN_SEEK
+
+    activate Orchestrator
+    Note right of Orchestrator: State: PLAYING -> SEEK_AND_RESUME
+    Orchestrator->>Store: playerStore.update({ status: 'seeking' })
+    Orchestrator->>Engine: pauseWhileSeeking()
+    deactivate Orchestrator
+
+    User->>Slider: Drags handle (oninput event)
+    Slider->>Orchestrator: COMMAND_UPDATE_SEEK(newTime)
+    activate Orchestrator
+    Orchestrator->>Engine: seek(newTime)
+    deactivate Orchestrator
+
+    activate Engine
+    Note over Engine: Updates internal playhead, UI timeStore reflects change
+    deactivate Engine
+
+    User->>Slider: Mouseup (releases handle)
+    Slider->>Orchestrator: COMMAND_END_SEEK
+
+    activate Orchestrator
+    Note right of Orchestrator: State: SEEK_AND_RESUME -> PLAYING
+    Orchestrator->>Store: playerStore.update({ status: 'playing' })
+    Orchestrator->>Engine: play()
+    deactivate Orchestrator

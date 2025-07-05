@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor User
+    participant UI as Svelte Component
+    participant Emitter as appEmitter
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Store as Svelte Stores
+
+    User->>UI: Clicks 'Play' Button
+    UI->>Emitter: emit('ui:playToggled')
+
+    activate Emitter
+    Emitter->>Orchestrator: (on 'ui:playToggled')
+    deactivate Emitter
+
+    activate Orchestrator
+    note right of Orchestrator: State Machine: READY -> PLAYING
+    Orchestrator->>Store: playerStore.update({ status: 'playing' })
+    Orchestrator->>Engine: play()
+    deactivate Orchestrator
+
+    activate Engine
+    note right of Engine: Starts Web Audio & rAF loop.
+    deactivate Engine
+
+    Store-->>UI: Reactively updates. The derived `isPlaying` store is now true, so the UI icon changes to 'Pause'.

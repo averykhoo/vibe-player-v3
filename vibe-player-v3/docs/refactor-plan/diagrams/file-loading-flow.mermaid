@@ -1,0 +1,38 @@
+sequenceDiagram
+    actor User
+    participant UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Analysis as AnalysisService
+    participant Waveform as WaveformService
+    participant Store as Svelte Stores
+
+    User->>UI: Selects local audio file
+    UI->>Orchestrator: COMMAND_LOAD_AUDIO(file)
+
+    activate Orchestrator
+    Orchestrator->>Store: playerStore.update({ status: 'loading' })
+    Orchestrator->>Engine: decodeAudio(file)
+    deactivate Orchestrator
+
+    activate Engine
+    Note over Engine: Decodes file into an AudioBuffer
+    Engine-->>Orchestrator: EVENT_LOAD_SUCCESS(audioBuffer, duration)
+    deactivate Engine
+
+    activate Orchestrator
+    Orchestrator->>Store: playerStore.update({ status: 'ready', duration, isPlayable: true })
+    Note right of Orchestrator: Kick off background analysis tasks in parallel
+    Orchestrator->>Analysis: startVadAnalysis(audioBuffer)
+    Orchestrator->>Waveform: generatePeakData(audioBuffer)
+    deactivate Orchestrator
+
+    activate Analysis
+    Note over Analysis: Posts buffer to VAD worker
+    Analysis-->>Store: analysisStore.update({ vadRegions: [...] })
+    deactivate Analysis
+
+    activate Waveform
+    Note over Waveform: Computes peak data for visualization
+    Waveform-->>Store: waveformStore.update({ hasData: true })
+    deactivate Waveform
