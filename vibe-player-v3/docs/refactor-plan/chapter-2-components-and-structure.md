@@ -84,3 +84,38 @@ provided to the UI via Svelte's Context API.
     * **Role:** Manages spectrogram computation (the SpectrogramHexagon), implementing the `ISpectrogramPort`.
     * **Responsibility:** Communicates with the `spectrogram.worker` to perform FFT calculations.
     * **Key State:** `spectrogramData` (internal).
+
+### 2.3. Port Interface Contracts
+
+In accordance with the Hexagonal Architecture, the public API of each core service **must** be defined by a TypeScript `interface` (a Port). These interfaces serve as the formal contract for dependency injection and **must** be created before their corresponding service is implemented.
+
+**Location:** All Port interfaces **must** reside in the `src/lib/types/` directory.
+
+**Initial Port Definitions:**
+
+*   **`IAudioEnginePort`** (`src/lib/types/audioEngine.d.ts`):
+    *   `play(): void`
+    *   `pause(): void`
+    *   `stop(): void`
+    *   `seek(time: number): void`
+    *   `setSpeed(speed: number): void`
+    *   `setPitch(pitchScale: number): void`
+    *   `setGain(gain: number): void`
+    *   `getAudioBuffer(): AudioBuffer | null`
+    *   `decodeAudio(file: File): Promise<AudioBuffer>`
+
+*   **`IAnalysisPort`** (`src/lib/types/analysis.d.ts`):
+    *   `startAnalysis(buffer: AudioBuffer): Promise<void>`
+    *   `recalculateRegions(params: { vadPositive: number; vadNegative: number }): void`
+    *   `getVadProbabilities(): Float32Array | null`
+
+*   **`IDtmfPort`** (`src/lib/types/dtmf.d.ts`):
+    *   `startAnalysis(buffer: AudioBuffer): Promise<void>`
+
+*   **`IWaveformPort`** (`src/lib/types/waveform.d.ts`):
+    *   `generatePeakData(buffer: AudioBuffer): Promise<void>`
+    *   `getWaveformData(): number[][] | null`
+
+*   **`ISpectrogramPort`** (`src/lib/types/spectrogram.d.ts`):
+    *   `generateFFTData(buffer: AudioBuffer): Promise<void>`
+    *   `getSpectrogramData(): Float32Array[] | null`
