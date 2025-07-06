@@ -116,3 +116,13 @@ This section defines the mandatory state hierarchy, which prioritizes a shareabl
         1.  The `urlState` utility **must clear all query parameters from the URL**.
         2.  The `AudioOrchestratorService` **must reset all configurable parameters to their Tier 1 Application Defaults** as defined in `src/lib/config.ts`.
     *   **Rationale:** This ensures that loading a new local file provides a clean, default analysis environment, free from any state carried over from a previous shared session.
+
+### 3.7. Data Contract for Pitch Parameter
+
+To ensure clarity and consistency, the `pitchShift` parameter **must** adhere to the following contract across the application:
+
+*   **Core Services & Stores:** All services (e.g., `AudioEngineService`) and Svelte stores (e.g., `playerStore`) **must** store and operate on the pitch value as a **scale factor** (a `number` where `1.0` is normal pitch). This is the raw value the underlying audio engine consumes.
+
+*   **UI Components:** The Svelte slider component is solely responsible for the user-facing representation. It **must** display the value in **semitones** and perform the necessary conversion for display: `semitones = 12 * log2(scale)`. When the user interacts with the slider, the component **must** convert the semitone value back to a scale factor (`scale = 2^(semitones / 12)`) before updating the store.
+
+*   **URL Serialization:** The `urlState` utility **must** serialize the raw **scale factor** to the URL query string, not the semitone value, to maintain a consistent data representation.
