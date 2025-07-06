@@ -96,9 +96,9 @@ developer must adhere to these constraints at all times.
     * **Rationale:** This eliminates hard-coded values scattered throughout the codebase, making the system transparent
       and easy to reconfigure or A/B test in the future.
 
-* **Constraint 10: Decoupled Services via Event Emitter for Notifications and Direct Calls for Commands**
-    *   **Description:** Services **must not** hold direct references to each other. Communication from any service (except the Orchestrator) to the broader application **must** be done by emitting events via the `appEmitter`. The `AudioOrchestratorService` is the only service permitted to issue direct commands to other services via their injected interfaces (Ports).
-    *   **Rationale:** This enforces a true Hexagonal Architecture by ensuring core services remain decoupled while allowing for clear, explicit command flows from the central orchestrator, improving clarity, maintainability, and testability.
+* **Constraint 10: Decoupled Services via Event Emitter & Direct Commands**
+    * **Description:** Services **must not** hold direct references to each other. Communication from a service to the broader application **must** be done by emitting events to a type-safe event emitter. The `AudioOrchestratorService` is the only component permitted to issue direct commands to other services via their injected interfaces (Ports).
+    * **Rationale:** This maintains strict decoupling, as services only emit notifications without knowledge of their consumers. It also improves clarity by allowing the central orchestrator to issue explicit, imperative commands (e.g., `this.audioEnginePort.play()`) instead of using events for everything.
 
 * **Constraint 11: Statically Analyzable Code & No Runtime Evaluation**
     * **Description:** All JavaScript and TypeScript code, including the dependencies of Web Workers, **must** be written using standard ES Module `import`/`export` syntax. This ensures that the entire application, including all worker logic, can be statically analyzed, tree-shaken, and optimized by the Vite build tool.
