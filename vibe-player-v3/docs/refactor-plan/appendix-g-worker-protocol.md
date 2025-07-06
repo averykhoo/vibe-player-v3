@@ -120,3 +120,94 @@ Beyond the communication protocol, the implementation of the worker files (`.ts`
     ```
 
 **Rationale:** Adherence to these implementation rules is mandatory. It ensures that all code is visible to the Vite bundler, allowing for complete tree-shaking, minification, and static analysis. This results in the most performant and secure application, free from the "import shenanigans" of previous versions.
+
+## G.5. Mandatory Refactoring of the Rubberband Loader
+
+The V1 and V2.3 implementations used a legacy, non-standard method for loading the Rubberband WASM module inside a Web Worker. This involved fetching the Emscripten-generated `rubberband-loader.js` script as a plain text string and executing it at runtime using `new Function()`. **This pattern is strictly forbidden in V3** as it violates **Constraint #11 (Statically Analyzable Code & No Runtime Evaluation)** and the rules in this appendix. It prevents the Vite bundler from analyzing, optimizing, and securing the code.
+
+To ensure compliance with the V3 architecture, the Rubberband loader **must** be refactored into a modern, type-safe ES Module.
+
+### G.5.1. The Implementation Contract
+
+1.  **Create a New Module:** A new, manually created TypeScript module **must** be placed at `src/lib/vendor/rubberband/loader.ts`.
+
+2.  **Refactor to an Exported Function:** The logic from the original `rubberband-loader.js` **must** be refactored into a single, exported asynchronous function: `export async function createRubberbandModule(wasmBinary: ArrayBuffer): Promise<RubberbandModule>`.
+
+3.  **Dependency via Argument:** This function **must** accept the raw `rubberband.wasm` binary as an `ArrayBuffer` argument. It is the responsibility of the calling code (the worker) to fetch or receive this binary.
+
+4.  **Worker Integration:** The `rubberband.worker.ts` **must not** contain any logic related to fetching scripts as text or using `new Function()`. It **must** use a standard ES Module `import` to use the new loader.
+
+### G.5.2. Code Implementation Example
+
+**New Loader (`src/lib/vendor/rubberband/loader.ts`):**
+
+```typescript
+// src/lib/vendor/rubberband/loader.ts
+// NOTE: This is a conceptual representation. The actual implementation involves
+// porting the complex setup logic from the original loader file.
+
+// Define a type for the created module for type safety.
+// This should be moved to a types file, e.g., src/lib/types/rubberband.d.ts
+export interface RubberbandModule {
+    _malloc: (size: number) => number;
+    _free: (ptr: number) => void;
+    _rubberband_new: (...args: any[]) => number;
+    _rubberband_delete: (stretcher: number) => void;
+    // ... all other exported C++ functions
+    HEAPF32: Float32Array;
+    // ... other Emscripten helper properties
+}
+
+/**
+ * Creates and initializes the Rubberband WASM module from a provided binary.
+ * @param wasmBinary The ArrayBuffer of the rubberband.wasm file.
+ * @returns A promise that resolves with the fully initialized WASM module.
+ */
+export async function createRubberbandModule(wasmBinary: ArrayBuffer): Promise<RubberbandModule> {
+    const wasmImports = { /* ... imports required by the WASM binary (e.g., for logging, memory management) ... */ };
+
+    // Instantiate the WebAssembly module
+    const { instance } = await WebAssembly.instantiate(wasmBinary, { a: wasmImports });
+    const wasmExports = instance.exports;
+
+    // The 'Module' object will be populated with all the necessary exports and memory views.
+    const Module: Partial<RubberbandModule> = {};
+    
+    // ... all the setup logic from the old loader file goes here to populate 
+    // the Module object with memory views (HEAPF32), stack functions, and exported C++ functions...
+    // This is the main part of the porting effort.
+
+    // Finally, cast the partially populated object to the full interface and return it.
+    return Module as RubberbandModule;
+}
+```
+
+**Updated Worker (`src/lib/workers/rubberband.worker.ts`):**
+
+```typescript
+// src/lib/workers/rubberband.worker.ts
+
+// 1. Import the new loader function and its type definition
+import { createRubberbandModule } from '$lib/vendor/rubberband/loader';
+import type { RubberbandModule } from '$lib/vendor/rubberband/loader';
+
+let wasmModule: RubberbandModule | null = null;
+let stretcher: number = 0; // Pointer to the C++ instance
+
+self.onmessage = async (event) => {
+    if (event.data.type === 'INIT') {
+        const { wasmBinary, sampleRate, channels } = event.data.payload;
+
+        // 2. Call the new, safe, statically analyzable loader function
+        wasmModule = await createRubberbandModule(wasmBinary);
+        
+        // 3. Use the returned module to initialize the stretcher
+        stretcher = wasmModule._rubberband_new(sampleRate, channels, /* options */);
+        
+        self.postMessage({ type: 'INIT_SUCCESS' });
+    }
+    // ... other message handlers
+};
+```
+
+
