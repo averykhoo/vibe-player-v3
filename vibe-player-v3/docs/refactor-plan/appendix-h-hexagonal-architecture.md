@@ -84,3 +84,37 @@ This pattern replaces direct imports of services within components, enforcing de
      expect(mockEngine.play).toHaveBeenCalledOnce();
    });
    ```
+
+### H.3. Service-to-Service Dependency Injection
+
+While UI components receive services via Svelte's `getContext`, services themselves may have dependencies on other core services. To maintain decoupling, these dependencies **must** be injected via the service's constructor, and the dependency **must** be typed against the Port (interface), not the concrete class. This allows services to make direct, efficient data requests (e.g., `getAudioBuffer()`) without violating the principles of the Hexagonal Architecture.
+
+**Example:** The `AnalysisService` needs the `AudioBuffer` from the `AudioEngineService`.
+
+```typescript
+// src/lib/services/analysis.service.ts
+import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+import type { IAnalysisPort } from '$lib/types/analysis.d.ts';
+ 
+export class AnalysisService implements IAnalysisPort {
+  // Depend on the INTERFACE, not the concrete class
+  constructor(private audioEngine: IAudioEnginePort) {}
+ 
+  public async startAnalysis() {
+    // Now it can safely request data from its injected dependency.
+    const buffer = this.audioEngine.getAudioBuffer();
+    // ...
+  }
+}
+```
+
+```svelte
+// src/routes/+layout.svelte (Application Root)
+// ...
+const audioEngine = new AudioEngineService();
+// Inject the engine instance into the analysis service constructor
+const analysisService = new AnalysisService(audioEngine); 
+ 
+setContext<IAudioEnginePort>('audio-engine', audioEngine);
+setContext<IAnalysisPort>('analysis-service', analysisService);
+```
