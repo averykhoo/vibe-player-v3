@@ -1,12 +1,13 @@
+%% vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid
+%% Detailed flow for loading a new audio file and initiating parallel analysis.
+
 sequenceDiagram
     actor User
     participant UI
     participant Orchestrator as AudioOrchestratorService
     participant Engine as AudioEngineService
-    participant Analysis as AnalysisService
-    participant Waveform as WaveformService
     participant Store as Svelte Stores
-
+    
     User->>UI: Selects local audio file
     UI->>Orchestrator: COMMAND_LOAD_AUDIO(file)
 
@@ -22,17 +23,34 @@ sequenceDiagram
 
     activate Orchestrator
     Orchestrator->>Store: playerStore.update({ status: 'ready', duration, isPlayable: true })
-    Note right of Orchestrator: Kick off background analysis tasks in parallel
-    Orchestrator->>Analysis: startVadAnalysis(audioBuffer)
-    Orchestrator->>Waveform: generatePeakData(audioBuffer)
+    
+    par
+        Orchestrator->>WaveformService: generatePeakData(audioBuffer)
+        and
+        Orchestrator->>SpectrogramService: generateFFTData(audioBuffer)
+        and
+        Orchestrator->>AnalysisService: startVadAnalysis(audioBuffer)
+        and
+        Orchestrator->>DtmfService: startToneAnalysis(audioBuffer)
+    end
     deactivate Orchestrator
 
-    activate Analysis
-    Note over Analysis: Posts buffer to VAD worker
-    Analysis-->>Store: analysisStore.update({ vadRegions: [...] })
-    deactivate Analysis
+    activate WaveformService
+    Note over WaveformService: Computes peak data for visualization
+    WaveformService-->>Store: waveformStore.update({ hasData: true })
+    deactivate WaveformService
+    
+    activate SpectrogramService
+    Note over SpectrogramService: Posts data to Spectrogram worker
+    SpectrogramService-->>Store: spectrogramStore.update({ hasData: true })
+    deactivate SpectrogramService
 
-    activate Waveform
-    Note over Waveform: Computes peak data for visualization
-    Waveform-->>Store: waveformStore.update({ hasData: true })
-    deactivate Waveform
+    activate AnalysisService
+    Note over AnalysisService: Posts data to VAD worker
+    AnalysisService-->>Store: analysisStore.update({ vadRegions: [...] })
+    deactivate AnalysisService
+
+    activate DtmfService
+    Note over DtmfService: Posts data to DTMF worker
+    DtmfService-->>Store: dtmfStore.update({ dtmfResults: [...] })
+    deactivate DtmfService
