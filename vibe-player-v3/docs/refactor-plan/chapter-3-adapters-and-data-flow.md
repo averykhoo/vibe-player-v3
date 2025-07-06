@@ -47,8 +47,12 @@ These components are driven *by* the core services to perform a task.
 
 ## 3.3. Core Data Flow Principles
 
-* **Unidirectional Data Flow:** Data flows in one direction: UI Interaction -> Service Command -> Store Update -> UI
-  Reaction. This creates a predictable and debuggable system.
+* **Unidirectional Data Flow:** Data and commands flow in a predictable, unidirectional manner:
+    1.  **User Interaction -> UI Event:** A user interacts with a Svelte component, which emits a type-safe event to the `appEmitter`.
+    2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response by calling methods on the appropriate service's injected interface (Port).
+    3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state.
+    4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state.
+    5.  **Service-to-Service Communication (Events):** When a service needs to notify the application that something has happened (e.g., playback ended), it emits an event. The `AudioOrchestratorService` is the primary listener for these events.
 
 * **Controlled Exception: The "Hot Path"**
     * **What:** For the high-frequency `currentTime` update during playback, the `AudioEngineService` runs a
