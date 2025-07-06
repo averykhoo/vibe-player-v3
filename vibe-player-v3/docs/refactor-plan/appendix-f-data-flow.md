@@ -7,11 +7,11 @@ This appendix formalizes the data flow principles that govern how services, stor
 
 Data and commands flow in a predictable, unidirectional manner:
 
-1.  **User Interaction -> UI Event:** A user interacts with a Svelte component. The component's event handler **emits a type-safe event** to the `appEmitter` (e.g., `appEmitter.emit('ui:seekRequested', { time: 30 })`).
-2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response. It calls methods on the appropriate service (e.g., `audioEngine.seek(30)`).
-3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state (e.g., `playerStore.update(s => ({ ...s, status: 'playing' }))`).
-4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state. For example, a component subscribed to the `isPlaying` **derived store** will see its value change from `false` to `true` when the `status` becomes `'playing'`.
-5.  **Service-to-Service Communication:** Services **do not** call each other directly. They communicate via the `appEmitter`. For example, `AudioEngineService` emits an `audioEngine:playbackEnded` event, which the `AudioOrchestratorService` listens for.
+1.  **User Interaction -> UI Event:** A user interacts with a Svelte component, which emits a type-safe event to the `appEmitter`.
+2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response. It issues a direct command by calling a method on the appropriate service's injected interface (e.g., `this.audioEnginePort.play()`).
+3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state.
+4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state.
+5.  **Service-to-Service Communication (Events):** When a service needs to notify the application that something has happened (e.g., playback ended), it emits an event. The `AudioOrchestratorService` is the primary listener for these events. This preserves decoupling, as the emitting service has no knowledge of the consumers.
 
 ## F.2. Controlled Exception: The "Hot Path"
 
