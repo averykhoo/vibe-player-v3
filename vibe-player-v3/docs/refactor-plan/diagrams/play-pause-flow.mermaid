@@ -1,3 +1,6 @@
+%% vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid
+%% Detailed event flow for a play/pause command, showing the full unidirectional data loop.
+
 sequenceDiagram
     actor User
     participant UI as Svelte Component
@@ -14,13 +17,15 @@ sequenceDiagram
     deactivate Emitter
 
     activate Orchestrator
-    note right of Orchestrator: State Machine: READY -> PLAYING
+    Note right of Orchestrator: State Machine: READY -> PLAYING
     Orchestrator->>Store: playerStore.update({ status: 'playing' })
     Orchestrator->>Engine: play()
     deactivate Orchestrator
 
     activate Engine
-    note right of Engine: Starts Web Audio & rAF loop.
+    Note over Engine: Starts Web Audio & rAF loop for time updates.
     deactivate Engine
 
-    Store-->>UI: Reactively updates. The derived `isPlaying` store is now true, so the UI icon changes to 'Pause'.
+    Store->>UI: 1. `playerStore.status` is now 'playing'.
+    Store->>UI: 2. Derived store `isPlaying` becomes `true`.
+    Note over UI: Reacts to `isPlaying` store change,<br/>changing button icon to 'Pause'.
