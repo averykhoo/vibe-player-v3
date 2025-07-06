@@ -6,7 +6,7 @@ sequenceDiagram
     participant UI as Svelte Component
     participant Emitter as appEmitter
     participant Orchestrator as AudioOrchestratorService
-    participant Engine as AudioEngineService
+    participant Engine as IAudioEnginePort
     participant Store as Svelte Stores
 
     User->>UI: Clicks 'Play' Button
@@ -21,10 +21,6 @@ sequenceDiagram
     Orchestrator->>Store: playerStore.update({ status: 'playing' })
     Orchestrator->>Engine: play()
     deactivate Orchestrator
-
-    activate Engine
-    Note over Engine: Starts Web Audio & rAF loop for time updates.
-    deactivate Engine
 
     Store->>UI: 1. `playerStore.status` is now 'playing'.
     Store->>UI: 2. Derived store `isPlaying` becomes `true`.
