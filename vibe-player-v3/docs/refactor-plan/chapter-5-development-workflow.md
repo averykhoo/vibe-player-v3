@@ -33,8 +33,10 @@
 2. **UI Component Dev (Storybook):** Create/update the `.svelte` component and its `.stories.ts` file. Build it in
    isolation, creating stories for all its visual states (disabled, loading, etc.). Use the Context API to provide mock
    services and data.
-3. **Core Logic Dev (Vitest):** Create/update the `.test.ts` file for the relevant service. Write a failing test.
-   Implement the pure TypeScript logic in the service until the test passes.
+3. **Core Logic Dev (Vitest):**
+   - Create/update the `.test.ts` file for the relevant service. Write a failing test.
+   - **For tasks involving workers, ensure any third-party libraries are converted to or wrapped in ES Modules and imported directly into the worker's TypeScript file.**
+   - Implement the pure TypeScript logic in the service and worker(s) until the test passes.
 4. **Application Integration:** In the main application (`+page.svelte`), provide the real service instances via
    `setContext`. Use the verified Svelte component from Storybook. Wire up its events to the `appEmitter`.
 5. **E2E Verification (Playwright):** Write or update the Playwright E2E tests to automate the Gherkin scenario.
