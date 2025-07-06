@@ -33,3 +33,27 @@ To maintain performance, the following protocol for large, static binary data is
    `AudioBuffer`), it must request it from the owner service.
 4. **Readiness Flags:** Services publish simple boolean flags to the stores to indicate data readiness (e.g.,
    `playerStore.update(s => ({ ...s, isPlayable: true }))`). UI components react to these flags to enable functionality.
+
+### F.4. Formalizing the `isPlaying` Derived State
+
+To eliminate ambiguity and enforce a single source of truth, the `isPlaying` state **must** be implemented as a Svelte `derived` store. It is a read-only convenience for UI components and **must not** be written to directly.
+
+*   **Single Source of Truth:** The `playerStore.status` string (e.g., `'playing'`, `'seeking'`) is the canonical source of truth for the application's playback state.
+*   **Derivation:** The `isPlaying` store derives its boolean value *only* from this status string.
+*   **No Direct Writes:** No part of the application is permitted to manage or write to a separate `isPlaying` boolean flag.
+
+```typescript
+// src/lib/stores/derived.store.ts
+import { derived } from 'svelte/store';
+import { playerStore } from './player.store';
+
+/**
+ * A derived store that provides a simple boolean indicating if audio is
+ * actively being produced. This is true only when the core state machine
+ * is in the 'playing' status.
+ */
+export const isPlaying = derived(
+  playerStore,
+  ($player) => $player.status === 'playing'
+);
+```
