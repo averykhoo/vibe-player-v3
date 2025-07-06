@@ -93,3 +93,29 @@ export class WorkerChannel<Req, Res> {
     }
 }
 ```
+
+## G.4. Worker Implementation Contract
+
+Beyond the communication protocol, the implementation of the worker files (`.ts` files) themselves **must** adhere to the following rules to ensure they are compliant with the project's build and security principles:
+
+1.  **Dependency Imports:** All external code required by a worker (e.g., `fft.js` for the spectrogram worker, `onnxruntime-web` for the VAD worker) **must** be imported using standard `import` statements at the top of the worker's TypeScript file.
+
+    ```typescript
+    // CORRECT: Static import that Vite can analyze
+    import { FFT } from '../../vendor/fft-es-module.js';
+    import * as ort from 'onnxruntime-web';
+    ```
+
+2.  **No `importScripts()`:** The use of the legacy `importScripts()` function is forbidden.
+
+3.  **No `new Function()` or `eval()`:** Dynamically fetching script content as a string and executing it via `new Function()` or `eval()` is strictly forbidden, as it violates **Constraint 11**.
+
+4.  **Bundler Integration:** The main application **must** import worker files using Vite's `?worker&inline` suffix. This signals to the build tool to correctly bundle the worker and all of its imported dependencies into a single, optimized, self-contained module.
+
+    ```typescript
+    // CORRECT: In a service file on the main thread
+    import MyWorker from '$lib/workers/my.worker.ts?worker&inline';
+    const worker = new MyWorker();
+    ```
+
+**Rationale:** Adherence to these implementation rules is mandatory. It ensures that all code is visible to the Vite bundler, allowing for complete tree-shaking, minification, and static analysis. This results in the most performant and secure application, free from the "import shenanigans" of previous versions.
