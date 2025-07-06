@@ -102,6 +102,11 @@ developer must adhere to these constraints at all times.
     * **Rationale:** This enforces a true Hexagonal Architecture where core services are completely decoupled from each
       other, improving maintainability and testability.
 
+* **Constraint 11: Statically Analyzable Code & No Runtime Evaluation**
+    * **Description:** All JavaScript and TypeScript code, including the dependencies of Web Workers, **must** be written using standard ES Module `import`/`export` syntax. This ensures that the entire application, including all worker logic, can be statically analyzed, tree-shaken, and optimized by the Vite build tool.
+    * **Rationale:** This creates the smallest, most performant, and most secure code bundles. It also guarantees a superior debugging experience with accurate source maps.
+    * **Implication:** The use of mechanisms that execute code from strings at runtime, such as `eval()` or `new Function()`, is **strictly forbidden**. This practice, sometimes used as a hack to load worker dependencies (e.g., `new Function(scriptText)();`), violates Content Security Policies (CSP), prevents bundler optimizations, and hinders debugging. All third-party libraries used within workers must be ES Module compatible or be wrapped to be importable.
+
 ---
 
 * **Principle 1: Clarity, Functionality, and Clean Design**
