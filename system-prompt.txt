@@ -21736,11 +21736,11 @@ This appendix formalizes the data flow principles that govern how services, stor
 
 Data and commands flow in a predictable, unidirectional manner:
 
-1.  **User Interaction -> UI Event:** A user interacts with a Svelte component. The component's event handler **emits a type-safe event** to the `appEmitter` (e.g., `appEmitter.emit('ui:seekRequested', { time: 30 })`).
-2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response. It calls methods on the appropriate service (e.g., `audioEngine.seek(30)`).
-3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state (e.g., `playerStore.update(s => ({ ...s, status: 'playing' }))`).
-4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state. For example, a component subscribed to the `isPlaying` **derived store** will see its value change from `false` to `true` when the `status` becomes `'playing'`.
-5.  **Service-to-Service Communication:** Services **do not** call each other directly. They communicate via the `appEmitter`. For example, `AudioEngineService` emits an `audioEngine:playbackEnded` event, which the `AudioOrchestratorService` listens for.
+1.  **User Interaction -> UI Event:** A user interacts with a Svelte component, which emits a type-safe event to the `appEmitter`.
+2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response. It issues a direct command by calling a method on the appropriate service's injected interface (e.g., `this.audioEnginePort.play()`).
+3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state.
+4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state.
+5.  **Service-to-Service Communication (Events):** When a service needs to notify the application that something has happened (e.g., playback ended), it emits an event. The `AudioOrchestratorService` is the primary listener for these events. This preserves decoupling, as the emitting service has no knowledge of the consumers.
 
 ## F.2. Controlled Exception: The "Hot Path"
 
@@ -22045,7 +22045,7 @@ conflicting information in the main body or older appendices.
 * **Storybook-First Development:** UI components must be fully developed and verified in Storybook, using the
   Context API for mock injection, before being integrated into the main application. This de-risks UI development
   and ensures components are robust and reusable.
-* **Dual State Persistence Model:** To provide both shareability and user convenience, the application uses a dual-state model. Ephemeral **session state** is serialized to the URL for sharing. Persistent **user preferences** (e.g., favorite VAD settings) are saved to `localStorage` to be applied across sessions. A strict three-tiered loading hierarchy (Defaults -> Preferences -> URL) ensures predictable state initialization.
+* **URL-Only State Persistence:** The entire application session state (including loaded audio URL, playback time, and all parameters) **must** be serialized exclusively to the URL's query string for shareability. No state or user preferences are persisted locally via `localStorage` in this version. A strict two-tiered loading hierarchy (Application Defaults -> URL Parameters) ensures predictable state initialization on startup.
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md ---
@@ -22234,12 +22234,9 @@ developer must adhere to these constraints at all times.
     * **Rationale:** This eliminates hard-coded values scattered throughout the codebase, making the system transparent
       and easy to reconfigure or A/B test in the future.
 
-* **Constraint 10: Decoupled Services via Event Emitter**
-    * **Description:** Services **must not** call each other's methods directly. Communication between services will be
-      handled by a **type-safe event emitter**. For example, the `AudioEngineService` will `emit('playbackEnded')`
-      instead of calling a method on the orchestrator.
-    * **Rationale:** This enforces a true Hexagonal Architecture where core services are completely decoupled from each
-      other, improving maintainability and testability.
+* **Constraint 10: Decoupled Services via Event Emitter & Direct Commands**
+    * **Description:** Services **must not** hold direct references to each other. Communication from a service to the broader application **must** be done by emitting events to a type-safe event emitter. The `AudioOrchestratorService` is the only component permitted to issue direct commands to other services via their injected interfaces (Ports).
+    * **Rationale:** This maintains strict decoupling, as services only emit notifications without knowledge of their consumers. It also improves clarity by allowing the central orchestrator to issue explicit, imperative commands (e.g., `this.audioEnginePort.play()`) instead of using events for everything.
 
 * **Constraint 11: Statically Analyzable Code & No Runtime Evaluation**
     * **Description:** All JavaScript and TypeScript code, including the dependencies of Web Workers, **must** be written using standard ES Module `import`/`export` syntax. This ensures that the entire application, including all worker logic, can be statically analyzed, tree-shaken, and optimized by the Vite build tool.
@@ -22421,8 +22418,12 @@ These components are driven *by* the core services to perform a task.
 
 ## 3.3. Core Data Flow Principles
 
-* **Unidirectional Data Flow:** Data flows in one direction: UI Interaction -> Service Command -> Store Update -> UI
-  Reaction. This creates a predictable and debuggable system.
+* **Unidirectional Data Flow:** Data and commands flow in a predictable, unidirectional manner:
+    1.  **User Interaction -> UI Event:** A user interacts with a Svelte component, which emits a type-safe event to the `appEmitter`.
+    2.  **Orchestrator Reaction -> Service Command:** The `AudioOrchestratorService` listens for UI events and orchestrates the response by calling methods on the appropriate service's injected interface (Port).
+    3.  **Service Logic -> Store Update:** The service executes its business logic and updates one or more Svelte stores with the new state.
+    4.  **Store Notification -> UI Reaction:** Svelte's reactivity automatically notifies subscribed UI components, which re-render to reflect the new state.
+    5.  **Service-to-Service Communication (Events):** When a service needs to notify the application that something has happened (e.g., playback ended), it emits an event. The `AudioOrchestratorService` is the primary listener for these events.
 
 * **Controlled Exception: The "Hot Path"**
     * **What:** For the high-frequency `currentTime` update during playback, the `AudioEngineService` runs a
@@ -22525,8 +22526,7 @@ Transitions between states are triggered by commands (user actions) and events (
 | **`IDLE`**            | Application started, no audio loaded.     | <ul><li>Update `playerStore` status to 'idle'.</li><li>Eagerly initialize background services.</li></ul>                           | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                      |
 | **`LOADING`**         | Fetching/decoding audio source.           | <ul><li>Update `playerStore` status to 'loading'.</li><li>Show global spinner, disable controls.</li></ul>                         | <ul><li>(Internal events only)</li></ul>                                                    |
 | **`READY`**           | Audio loaded, playback is paused.         | <ul><li>Update `playerStore` status to 'ready'.</li><li>Hide spinner, enable controls.</li><li>Trigger background analysis.</li></ul>  | <ul><li>`COMMAND_PLAY`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>  |
-| **`PLAYING`**         | Audio is currently playing.               | <ul><li>Update `playerStore` status to **'playing'**.</li><li>The `isPlaying` derived store will now automatically evaluate to `true`.</li><li>Command `AudioEngineService` to start playback and its `rAF` loop.</li></ul> | <ul><li>`COMMAND_PAUSE`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>  |
-| **`SEEK_AND_RESUME`** | User seeking while `PLAYING`.             | <ul><li>Update `playerStore` status to 'seeking'.</li><li>Command `AudioEngineService` to pause.</li></ul>                         | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PAUSE`</li></ul>                                 |
+| **`PLAYING`**         | Audio is currently playing.               | <ul><li>Update `playerStore` status to **'playing'**.</li><li>The `isPlaying` derived store will now automatically evaluate to `true`.</li><li>Calls `this.audioEnginePort.play()` to start playback and the `rAF` loop.</li></ul> | <ul><li>`COMMAND_PAUSE`</li><li>`COMMAND_BEGIN_SEEK`</li><li>`COMMAND_LOAD_AUDIO`</li></ul>  |
 | **`SEEK_AND_HOLD`**   | User seeking while `READY`.               | <ul><li>Update `playerStore` status to 'seeking'.</li></ul>                                                                        | <ul><li>`COMMAND_END_SEEK`</li><li>`COMMAND_PLAY`</li></ul>                                  |
 | **`ERROR`**           | A critical, unrecoverable error occurred. | <ul><li>Update `playerStore` status to 'error', `error` with message.</li><li>Disable controls, display error.</li></ul>           | <ul><li>`COMMAND_LOAD_AUDIO`</li></ul>                                                      |
 
@@ -22678,7 +22678,11 @@ sequenceDiagram
     actor User
     participant UI
     participant Orchestrator as AudioOrchestratorService
-    participant Engine as AudioEngineService
+    participant Engine as IAudioEnginePort
+    participant WaveformService as IWaveformPort
+    participant SpectrogramService as ISpectrogramPort
+    participant AnalysisService as IAnalysisPort
+    participant DtmfService as IDtmfPort
     participant Store as Svelte Stores
     
     User->>UI: Selects local audio file
@@ -22739,7 +22743,7 @@ sequenceDiagram
     participant UI as Svelte Component
     participant Emitter as appEmitter
     participant Orchestrator as AudioOrchestratorService
-    participant Engine as AudioEngineService
+    participant Engine as IAudioEnginePort
     participant Store as Svelte Stores
 
     User->>UI: Clicks 'Play' Button
@@ -22754,10 +22758,6 @@ sequenceDiagram
     Orchestrator->>Store: playerStore.update({ status: 'playing' })
     Orchestrator->>Engine: play()
     deactivate Orchestrator
-
-    activate Engine
-    Note over Engine: Starts Web Audio & rAF loop for time updates.
-    deactivate Engine
 
     Store->>UI: 1. `playerStore.status` is now 'playing'.
     Store->>UI: 2. Derived store `isPlaying` becomes `true`.
