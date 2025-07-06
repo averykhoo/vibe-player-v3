@@ -16,6 +16,7 @@ The primary objective for Vibe Player V3 is to construct an audio player and ana
 * **Offline-Capable & Installable:** Built as a Progressive Web App (PWA) that can be installed on user devices and run
   reliably without an internet connection.
 *   **Stateless & Shareable via URL:** The entire application session state—including the loaded audio URL, playback time, and all analysis/playback parameters—**must** be serialized into the URL's query string. The application will be otherwise stateless, meaning reloading the page with the same URL will perfectly reproduce the exact session. This enables robust sharing and bookmarking of analysis contexts. **Note: User preferences are not persisted locally (e.g., via `localStorage`) in this version.**
+*   **Feature Scope Note:** This version of Vibe Player focuses on core playback and analysis. Advanced playback features such as reverse playback and looping are not within the scope of this refactor and will not be implemented in V3.0. Dark mode, local storage for preferences, remote API calls for VAD or other analyses, etc will also be held off until after 3.0.
 
 ## 1.2. Architectural Principles & Design Constraints
 
