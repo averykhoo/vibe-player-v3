@@ -5,7 +5,11 @@ sequenceDiagram
     actor User
     participant UI
     participant Orchestrator as AudioOrchestratorService
-    participant Engine as AudioEngineService
+    participant Engine as IAudioEnginePort
+    participant WaveformService as IWaveformPort
+    participant SpectrogramService as ISpectrogramPort
+    participant AnalysisService as IAnalysisPort
+    participant DtmfService as IDtmfPort
     participant Store as Svelte Stores
     
     User->>UI: Selects local audio file
