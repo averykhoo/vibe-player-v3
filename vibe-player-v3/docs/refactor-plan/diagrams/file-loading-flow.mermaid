@@ -33,7 +33,7 @@ sequenceDiagram
         and
         Orchestrator->>SpectrogramService: generateFFTData(audioBuffer)
         and
-        Orchestrator->>AnalysisService: startVadAnalysis(audioBuffer)
+        Orchestrator->>AnalysisService: startAnalysis(audioBuffer)
         and
         Orchestrator->>DtmfService: startToneAnalysis(audioBuffer)
     end
