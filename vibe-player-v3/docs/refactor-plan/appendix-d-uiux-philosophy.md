@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md )
 # Appendix D: UI/UX Design Philosophy
 
 This appendix restores the explicit UI/UX philosophy that underpins the component design choices.

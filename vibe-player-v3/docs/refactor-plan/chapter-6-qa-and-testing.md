@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md )
 # Chapter 6: Quality Assurance & Testing Strategy
 
 ## 6.1. The Testing Pyramid Layers

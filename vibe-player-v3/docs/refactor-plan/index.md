@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/index.md )
 # Vibe Player V3: The Definitive Refactor Blueprint
 
 ## Table of Contents

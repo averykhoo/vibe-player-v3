@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md )
 # Chapter 2: Core Components & Folder Structure
 
 ## 2.1. Overall Repository Structure

@@ -1,3 +1,4 @@
+# vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature
 Feature: File Loading
   As a user, I want to load audio files from my computer or a URL
   so that I can analyze and play them in the application.

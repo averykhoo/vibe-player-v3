@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md )
 # Appendix G: Worker Communication Protocol & Timeout Handling
 
 This appendix provides a definitive implementation contract for the mandatory `WorkerChannel` utility.

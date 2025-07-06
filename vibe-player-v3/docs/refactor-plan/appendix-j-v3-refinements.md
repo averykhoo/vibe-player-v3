@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md )
 # Appendix J: V3 Implementation Refinements Summary
 
 This appendix summarizes the key architectural decisions and refinements adopted for the V3 rewrite, superseding any

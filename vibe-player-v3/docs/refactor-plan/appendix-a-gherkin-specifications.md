@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md )
 # Appendix A: Gherkin Feature Specifications
 
 This appendix contains the executable specifications that define the application's behavior. The developer **must**

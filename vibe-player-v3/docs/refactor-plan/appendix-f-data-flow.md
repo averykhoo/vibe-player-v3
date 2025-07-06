@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md )
 # Appendix F: Core Data Flow & State Management Principles
 
 This appendix formalizes the data flow principles that govern how services, stores, and the UI interact.

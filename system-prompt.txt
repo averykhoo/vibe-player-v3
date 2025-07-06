@@ -738,9 +738,11 @@ COMMENT_STYLES = {
     ".aiignore": ("#", ""),
     ".css": ("/*", "*/"),
     ".gitignore": ("#", ""),
+    ".feature": ("#", ""),
     ".html": ("<!--", "-->"),
     ".js": ("//", ""),
     ".llmignore": ("#", ""),
+    ".mermaid": ("%%", ""),
     ".md": ("[//]: # (", ")"),
     ".mjs": ("//", ""),
     ".npmrc": ("#", ""),
@@ -21388,6 +21390,7 @@ export default defineConfig({
 --- End of File: vibe-player-v2.3/vite.config.ts ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md )
 # Appendix A: Gherkin Feature Specifications
 
 This appendix contains the executable specifications that define the application's behavior. The developer **must**
@@ -21417,6 +21420,7 @@ The Playwright E2E tests are derived from these scenarios and verify that the ap
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md )
 # Appendix B: V1 Architectural Analysis & Tradeoffs (Historical Context)
 
 This section migrates the key insights from the original V1 plan. It serves as historical context to understand the "
@@ -21454,6 +21458,7 @@ why" behind certain V3 design decisions.
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md )
 # Appendix C: AI Agent Collaboration Guidelines
 
 This section defines the operational protocols for any developer (human or AI) working on this project. It is a
@@ -21662,6 +21667,7 @@ and testability.
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md )
 # Appendix D: UI/UX Design Philosophy
 
 This appendix restores the explicit UI/UX philosophy that underpins the component design choices.
@@ -21686,6 +21692,7 @@ This appendix restores the explicit UI/UX philosophy that underpins the componen
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md )
 # Appendix E: State Machine Edge Case Logic
 
 This appendix provides explicit, mandatory logic for handling specific edge cases within the `AudioOrchestratorService`
@@ -21720,6 +21727,7 @@ When the user clicks "Play" while the application is in the `READY` state, the U
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md )
 # Appendix F: Core Data Flow & State Management Principles
 
 This appendix formalizes the data flow principles that govern how services, stores, and the UI interact.
@@ -21758,6 +21766,7 @@ To maintain performance, the following protocol for large, static binary data is
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md )
 # Appendix G: Worker Communication Protocol & Timeout Handling
 
 This appendix provides a definitive implementation contract for the mandatory `WorkerChannel` utility.
@@ -21853,10 +21862,37 @@ export class WorkerChannel<Req, Res> {
     }
 }
 ```
+
+## G.4. Worker Implementation Contract
+
+Beyond the communication protocol, the implementation of the worker files (`.ts` files) themselves **must** adhere to the following rules to ensure they are compliant with the project's build and security principles:
+
+1.  **Dependency Imports:** All external code required by a worker (e.g., `fft.js` for the spectrogram worker, `onnxruntime-web` for the VAD worker) **must** be imported using standard `import` statements at the top of the worker's TypeScript file.
+
+    ```typescript
+    // CORRECT: Static import that Vite can analyze
+    import { FFT } from '../../vendor/fft-es-module.js';
+    import * as ort from 'onnxruntime-web';
+    ```
+
+2.  **No `importScripts()`:** The use of the legacy `importScripts()` function is forbidden.
+
+3.  **No `new Function()` or `eval()`:** Dynamically fetching script content as a string and executing it via `new Function()` or `eval()` is strictly forbidden, as it violates **Constraint 11**.
+
+4.  **Bundler Integration:** The main application **must** import worker files using Vite's `?worker&inline` suffix. This signals to the build tool to correctly bundle the worker and all of its imported dependencies into a single, optimized, self-contained module.
+
+    ```typescript
+    // CORRECT: In a service file on the main thread
+    import MyWorker from '$lib/workers/my.worker.ts?worker&inline';
+    const worker = new MyWorker();
+    ```
+
+**Rationale:** Adherence to these implementation rules is mandatory. It ensures that all code is visible to the Vite bundler, allowing for complete tree-shaking, minification, and static analysis. This results in the most performant and secure application, free from the "import shenanigans" of previous versions.
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md )
 # Appendix H: Hexagonal Architecture Implementation in TypeScript
 
 This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture using Dependency
@@ -21946,6 +21982,7 @@ This pattern replaces direct imports of services within components, enforcing de
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md )
 # Appendix I: Core Interaction Flows
 
 This appendix provides a detailed visual description of key application interactions.
@@ -21972,6 +22009,7 @@ See the [Seek Command Flow](diagrams/seek-command-flow.mermaid) for a visual rep
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md )
 # Appendix J: V3 Implementation Refinements Summary
 
 This appendix summarizes the key architectural decisions and refinements adopted for the V3 rewrite, superseding any
@@ -22012,6 +22050,7 @@ conflicting information in the main body or older appendices.
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md )
 # Appendix K: Local Debugging & Tracing Strategy
 
 This appendix defines the mandatory, in-code strategy for tracing operations within the application. This is a critical
@@ -22097,6 +22136,7 @@ This strategy results in structured, filterable logs. A developer debugging a fi
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md )
 # Chapter 1: The Vision & Guiding Principles
 
 ## 1.1. Executive Summary
@@ -22114,7 +22154,8 @@ The primary objective for Vibe Player V3 is to construct an audio player and ana
   single-threaded Web Workers, ensuring a smooth and responsive user experience.
 * **Offline-Capable & Installable:** Built as a Progressive Web App (PWA) that can be installed on user devices and run
   reliably without an internet connection.
-* **Shareable via URL:** The entire application **session state**—including the loaded audio URL, playback time, and all analysis/playback parameters—will be serialized into the URL's query string. This enables users to share a link that perfectly reproduces their session, while personal user preferences are retained separately.
+*   **Stateless & Shareable via URL:** The entire application session state—including the loaded audio URL, playback time, and all analysis/playback parameters—**must** be serialized into the URL's query string. The application will be otherwise stateless, meaning reloading the page with the same URL will perfectly reproduce the exact session. This enables robust sharing and bookmarking of analysis contexts. **Note: User preferences are not persisted locally (e.g., via `localStorage`) in this version.**
+*   **Feature Scope Note:** This version of Vibe Player focuses on core playback and analysis. Advanced playback features such as reverse playback and looping are not within the scope of this refactor and will not be implemented in V3.0. Dark mode, local storage for preferences, remote API calls for VAD or other analyses, etc will also be held off until after 3.0.
 
 ## 1.2. Architectural Principles & Design Constraints
 
@@ -22200,6 +22241,11 @@ developer must adhere to these constraints at all times.
     * **Rationale:** This enforces a true Hexagonal Architecture where core services are completely decoupled from each
       other, improving maintainability and testability.
 
+* **Constraint 11: Statically Analyzable Code & No Runtime Evaluation**
+    * **Description:** All JavaScript and TypeScript code, including the dependencies of Web Workers, **must** be written using standard ES Module `import`/`export` syntax. This ensures that the entire application, including all worker logic, can be statically analyzed, tree-shaken, and optimized by the Vite build tool.
+    * **Rationale:** This creates the smallest, most performant, and most secure code bundles. It also guarantees a superior debugging experience with accurate source maps.
+    * **Implication:** The use of mechanisms that execute code from strings at runtime, such as `eval()` or `new Function()`, is **strictly forbidden**. This practice, sometimes used as a hack to load worker dependencies (e.g., `new Function(scriptText)();`), violates Content Security Policies (CSP), prevents bundler optimizations, and hinders debugging. All third-party libraries used within workers must be ES Module compatible or be wrapped to be importable.
+
 ---
 
 * **Principle 1: Clarity, Functionality, and Clean Design**
@@ -22236,6 +22282,7 @@ developer must adhere to these constraints at all times.
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md )
 # Chapter 2: Core Components & Folder Structure
 
 ## 2.1. Overall Repository Structure
@@ -22325,6 +22372,7 @@ provided to the UI via Svelte's Context API.
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md )
 # Chapter 3: Adapters, Infrastructure & Data Flow
 
 ## 3.1. Driving Adapters (User Input & External Triggers)
@@ -22404,7 +22452,6 @@ These components are driven *by* the core services to perform a task.
 | `currentTime` (Hot Path) | `AudioEngineService` | `timeStore` | **`AudioEngineService`** (on `rAF` loop) | UI Components (Seek bar, time display) | **"Hot Path"** for smooth 60fps UI updates during playback. |
 | `currentTime` (Cold Path) | `AudioOrchestratorService` | `playerStore` (`currentTime`) | **`AudioOrchestratorService`** | `urlState` utility, Services | **"Cold Path"** sync. Updated on state changes (pause, seek end) for canonical state. |
 | **Session Parameters** (e.g., `speed`, `vadPositiveThreshold`) | `AudioOrchestratorService` | `playerStore`, `settingsStore` | **UI Components** -> `AudioOrchestratorService` | `AnalysisService`, `AudioEngineService`, `urlState` utility | Shareable parameters that define the current session. **Mirrored to the URL.** |
-| **User Preferences** (e.g., preferred `vadPositiveThreshold`) | - | *Internal to `settingsStore` logic* | **`settingsStore`** (on change) | `AudioOrchestratorService` (on init) | A user's preferred defaults, loaded from **`localStorage`**. Overridden by URL parameters. |
 | `vadProbabilities` | `AnalysisService` | **_Internal to Service_** | **`AnalysisService`** | `AnalysisService` | Raw VAD data. **Not in a store.** Internal implementation detail. |
 | `vadRegions` | `AnalysisService` | `analysisStore` | **`AnalysisService`** | UI Components (Waveform visualization) | Calculated speech time segments. |
 | `dtmfResults`, `cptResults` | `DtmfService` | `dtmfStore` | **`DtmfService`** | UI Components (Tone display) | Detected DTMF and Call Progress Tones. |
@@ -22424,28 +22471,26 @@ These components are driven *by* the core services to perform a task.
 
 ## 3.6. State Loading & Persistence Rules
 
-This section defines the mandatory state hierarchy that balances shareable session state (URL) with persistent user preferences (`localStorage`).
+This section defines the mandatory state hierarchy, which prioritizes a shareable, stateless session model. **The application must not use `localStorage` for any session or preference state.** All state is either derived from the URL or reset to application defaults.
 
-*   **Rule 3.6.1: Three-Tiered State Loading Sequence (on startup)**
-    *   The application **must** determine its initial state using the following order of precedence, where each tier overrides the previous one:
-    1.  **Tier 1 (Lowest Precedence): Application Defaults.** The `AudioOrchestratorService` starts by populating state stores with the hardcoded default values from `src/lib/config.ts`.
-    2.  **Tier 2 (Medium Precedence): User Preferences.** It then attempts to load the user preferences object from `localStorage`. If found, these values overwrite the application defaults.
-    3.  **Tier 3 (Highest Precedence): Session State.** Finally, it parses the URL query parameters. If any are present, these values overwrite any conflicting preferences or defaults for the current session.
+*   **Rule 3.6.1: Two-Tiered State Loading Sequence (on startup)**
+    *   The application **must** determine its initial state using the following order of precedence:
+    1.  **Tier 1 (Lowest Precedence): Application Defaults.** The `AudioOrchestratorService` initializes all configurable parameters in the Svelte stores with their hardcoded default values from `src/lib/config.ts`.
+    2.  **Tier 2 (Highest Precedence): Session State.** It then parses the URL query parameters. If any valid parameters are present, these values **must** overwrite the corresponding Application Defaults.
 
-*   **Rule 3.6.2: Dual-State Persistence on Change**
-    *   When a user adjusts a configurable parameter (e.g., moves the VAD slider), the change **must** be written to **two places**:
-        1.  The `urlState` utility updates the URL query string (for sharing the current session).
-        2.  A separate utility updates the user preferences object in `localStorage` (to persist this as the user's new preferred default for future sessions).
+*   **Rule 3.6.2: URL-Only Persistence on Change**
+    *   When a user adjusts any configurable parameter (e.g., `speed`, `vadPositiveThreshold`, `currentTime`), the change **must** be written **only** to the URL query string via the `urlState` utility.
 
 *   **Rule 3.6.3: Loading a New Local File**
     *   When a user loads a new local audio file, the following sequence **must** occur:
         1.  The `urlState` utility **must clear all query parameters from the URL**.
-        2.  The `AudioOrchestratorService` **must reset the application's state not to the Tier 1 defaults, but to the Tier 2 User Preferences** loaded from `localStorage`.
-    *   **Rationale:** This ensures the user's preferred settings (e.g., their favorite VAD threshold) are automatically applied to any new local file they analyze, providing a consistent and user-friendly experience.
+        2.  The `AudioOrchestratorService` **must reset all configurable parameters to their Tier 1 Application Defaults** as defined in `src/lib/config.ts`.
+    *   **Rationale:** This ensures that loading a new local file provides a clean, default analysis environment, free from any state carried over from a previous shared session.
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md )
 # Chapter 4: The Application State Machine
 
 The `AudioOrchestratorService` implements the following state machine to manage the application's lifecycle.
@@ -22502,6 +22547,7 @@ Transitions between states are triggered by commands (user actions) and events (
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md )
 # Chapter 5: The Development Workflow
 
 ## 5.1. Guiding Principles for Development
@@ -22537,8 +22583,10 @@ Transitions between states are triggered by commands (user actions) and events (
 2. **UI Component Dev (Storybook):** Create/update the `.svelte` component and its `.stories.ts` file. Build it in
    isolation, creating stories for all its visual states (disabled, loading, etc.). Use the Context API to provide mock
    services and data.
-3. **Core Logic Dev (Vitest):** Create/update the `.test.ts` file for the relevant service. Write a failing test.
-   Implement the pure TypeScript logic in the service until the test passes.
+3. **Core Logic Dev (Vitest):**
+   - Create/update the `.test.ts` file for the relevant service. Write a failing test.
+   - **For tasks involving workers, ensure any third-party libraries are converted to or wrapped in ES Modules and imported directly into the worker's TypeScript file.**
+   - Implement the pure TypeScript logic in the service and worker(s) until the test passes.
 4. **Application Integration:** In the main application (`+page.svelte`), provide the real service instances via
    `setContext`. Use the verified Svelte component from Storybook. Wire up its events to the `appEmitter`.
 5. **E2E Verification (Playwright):** Write or update the Playwright E2E tests to automate the Gherkin scenario.
@@ -22546,6 +22594,7 @@ Transitions between states are triggered by commands (user actions) and events (
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md )
 # Chapter 6: Quality Assurance & Testing Strategy
 
 ## 6.1. The Testing Pyramid Layers
@@ -22588,6 +22637,7 @@ Transitions between states are triggered by commands (user actions) and events (
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md )
 # Chapter 7: UI Element Contract
 
 In accordance with **Principle 3 (Stable Selectors for E2E Testing)**, this chapter defines the mandatory `data-testid`
@@ -22621,15 +22671,16 @@ relevant to a user flow must be included here.
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md ---
 --- File: vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid ---
 ````mermaid
+%% vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid
+%% Detailed flow for loading a new audio file and initiating parallel analysis.
+
 sequenceDiagram
     actor User
     participant UI
     participant Orchestrator as AudioOrchestratorService
     participant Engine as AudioEngineService
-    participant Analysis as AnalysisService
-    participant Waveform as WaveformService
     participant Store as Svelte Stores
-
+    
     User->>UI: Selects local audio file
     UI->>Orchestrator: COMMAND_LOAD_AUDIO(file)
 
@@ -22645,24 +22696,44 @@ sequenceDiagram
 
     activate Orchestrator
     Orchestrator->>Store: playerStore.update({ status: 'ready', duration, isPlayable: true })
-    Note right of Orchestrator: Kick off background analysis tasks in parallel
-    Orchestrator->>Analysis: startVadAnalysis(audioBuffer)
-    Orchestrator->>Waveform: generatePeakData(audioBuffer)
+    
+    par
+        Orchestrator->>WaveformService: generatePeakData(audioBuffer)
+        and
+        Orchestrator->>SpectrogramService: generateFFTData(audioBuffer)
+        and
+        Orchestrator->>AnalysisService: startVadAnalysis(audioBuffer)
+        and
+        Orchestrator->>DtmfService: startToneAnalysis(audioBuffer)
+    end
     deactivate Orchestrator
 
-    activate Analysis
-    Note over Analysis: Posts buffer to VAD worker
-    Analysis-->>Store: analysisStore.update({ vadRegions: [...] })
-    deactivate Analysis
+    activate WaveformService
+    Note over WaveformService: Computes peak data for visualization
+    WaveformService-->>Store: waveformStore.update({ hasData: true })
+    deactivate WaveformService
+    
+    activate SpectrogramService
+    Note over SpectrogramService: Posts data to Spectrogram worker
+    SpectrogramService-->>Store: spectrogramStore.update({ hasData: true })
+    deactivate SpectrogramService
 
-    activate Waveform
-    Note over Waveform: Computes peak data for visualization
-    Waveform-->>Store: waveformStore.update({ hasData: true })
-    deactivate Waveform
+    activate AnalysisService
+    Note over AnalysisService: Posts data to VAD worker
+    AnalysisService-->>Store: analysisStore.update({ vadRegions: [...] })
+    deactivate AnalysisService
+
+    activate DtmfService
+    Note over DtmfService: Posts data to DTMF worker
+    DtmfService-->>Store: dtmfStore.update({ dtmfResults: [...] })
+    deactivate DtmfService
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid ---
 --- File: vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid ---
 ````mermaid
+%% vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid
+%% Detailed event flow for a play/pause command, showing the full unidirectional data loop.
+
 sequenceDiagram
     actor User
     participant UI as Svelte Component
@@ -22679,20 +22750,26 @@ sequenceDiagram
     deactivate Emitter
 
     activate Orchestrator
-    note right of Orchestrator: State Machine: READY -> PLAYING
+    Note right of Orchestrator: State Machine: READY -> PLAYING
     Orchestrator->>Store: playerStore.update({ status: 'playing' })
     Orchestrator->>Engine: play()
     deactivate Orchestrator
 
     activate Engine
-    note right of Engine: Starts Web Audio & rAF loop.
+    Note over Engine: Starts Web Audio & rAF loop for time updates.
     deactivate Engine
 
-    Store-->>UI: Reactively updates. The derived `isPlaying` store is now true, so the UI icon changes to 'Pause'.
+    Store->>UI: 1. `playerStore.status` is now 'playing'.
+    Store->>UI: 2. Derived store `isPlaying` becomes `true`.
+    Note over UI: Reacts to `isPlaying` store change,<br/>changing button icon to 'Pause'.
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid ---
 --- File: vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid ---
 ````mermaid
+%% vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid
+%% A detailed flow for the seek operation, demonstrating the two-state seek logic
+%% (`SEEK_AND_RESUME` vs. `SEEK_AND_HOLD`) to correctly handle play/pause toggles during the seek.
+
 sequenceDiagram
     actor User
     participant Slider as Seek Slider UI
@@ -22700,39 +22777,57 @@ sequenceDiagram
     participant Engine as AudioEngineService
     participant Store as Svelte Stores
 
+    Note over User, Store: Initial State: PLAYING
     User->>Slider: Mousedown on handle
     Slider->>Orchestrator: COMMAND_BEGIN_SEEK
 
     activate Orchestrator
-    Note right of Orchestrator: State: PLAYING -> SEEK_AND_RESUME
+    Note over Orchestrator: State: PLAYING -> SEEK_AND_RESUME
     Orchestrator->>Store: playerStore.update({ status: 'seeking' })
     Orchestrator->>Engine: pauseWhileSeeking()
     deactivate Orchestrator
 
     User->>Slider: Drags handle (oninput event)
     Slider->>Orchestrator: COMMAND_UPDATE_SEEK(newTime)
+    
     activate Orchestrator
     Orchestrator->>Engine: seek(newTime)
     deactivate Orchestrator
 
     activate Engine
-    Note over Engine: Updates internal playhead, UI timeStore reflects change
+    Note over Engine: Updates internal playhead.<br/>UI `timeStore` reflects change via 'hot path'.
     deactivate Engine
-
+    
+    alt User toggles play/pause mid-seek
+        User->>UI: Presses spacebar
+        UI->>Orchestrator: COMMAND_PAUSE (since original state was PLAYING)
+        
+        activate Orchestrator
+        Note over Orchestrator: State: SEEK_AND_RESUME -> SEEK_AND_HOLD
+        deactivate Orchestrator
+    end
+    
     User->>Slider: Mouseup (releases handle)
     Slider->>Orchestrator: COMMAND_END_SEEK
 
     activate Orchestrator
-    Note right of Orchestrator: State: SEEK_AND_RESUME -> PLAYING
-    Orchestrator->>Store: playerStore.update({ status: 'playing' })
-    Orchestrator->>Engine: play()
+    Note right of Orchestrator: The reason for two seek states:<br>The Orchestrator now checks its current state.<br>If the user toggled pause mid-seek, the state is<br>SEEK_AND_HOLD, so it will transition to READY.<br>Otherwise, it's SEEK_AND_RESUME and will transition to PLAYING.
+    
+    Note over Orchestrator: State: SEEK_AND_HOLD -> READY (in this example)
+    Orchestrator->>Store: playerStore.update({ status: 'ready' })
     deactivate Orchestrator
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid ---
 --- File: vibe-player-v3/docs/refactor-plan/diagrams/state-machine.mermaid ---
 ````mermaid
+%% vibe-player-v3/docs/refactor-plan/diagrams/state-machine.mermaid
+%% A detailed state diagram for the Vibe Player application.
+%% Transitions are prefixed with COMMAND_ for user-initiated actions
+%% and EVENT_ for system-internal notifications.
+
 stateDiagram-v2
     direction LR
+
     [*] --> IDLE
     IDLE --> LOADING: COMMAND_LOAD_AUDIO
 
@@ -22750,6 +22845,8 @@ stateDiagram-v2
     PLAYING --> LOADING: COMMAND_LOAD_AUDIO
     PLAYING --> ERROR: EVENT_PLAYBACK_FAILURE
 
+    note "The two SEEK states exist to correctly<br/>remember whether to resume playing or remain<br/>paused after the user stops seeking, even if<br/>they toggle play/pause mid-drag." as SeekNote
+    
     SEEK_AND_RESUME --> PLAYING: COMMAND_END_SEEK
     SEEK_AND_RESUME --> SEEK_AND_HOLD: COMMAND_PAUSE
     SEEK_AND_RESUME --> ERROR: EVENT_PLAYBACK_FAILURE
@@ -22763,6 +22860,7 @@ stateDiagram-v2
 --- End of File: vibe-player-v3/docs/refactor-plan/diagrams/state-machine.mermaid ---
 --- File: vibe-player-v3/docs/refactor-plan/foreword.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/foreword.md )
 # Foreword: A Pragmatic & Modern Architecture
 
 This document outlines the complete architectural blueprint and detailed implementation strategy for Vibe Player V3. It
@@ -22785,6 +22883,7 @@ formal review process.
 --- End of File: vibe-player-v3/docs/refactor-plan/foreword.md ---
 --- File: vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature ---
 ````gherkin
+# vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature
 Feature: File Loading
   As a user, I want to load audio files from my computer or a URL
   so that I can analyze and play them in the application.
@@ -22813,6 +22912,7 @@ Feature: File Loading
 --- End of File: vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature ---
 --- File: vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature ---
 ````gherkin
+# vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature
 Feature: Playback Parameter Adjustment
   As a user, I want to adjust playback parameters like speed, pitch, and gain
   to change how the audio sounds in real-time.
@@ -22844,6 +22944,7 @@ Feature: Playback Parameter Adjustment
 --- End of File: vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature ---
 --- File: vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature ---
 ````gherkin
+# vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature
 Feature: Playback Controls
   As a user with a loaded audio file, I want to control its playback
   by playing, pausing, seeking, and jumping through the audio.
@@ -22885,6 +22986,7 @@ Feature: Playback Controls
 --- End of File: vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature ---
 --- File: vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature ---
 ````gherkin
+# vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature
 Feature: Tone Detection
   As a user analyzing call audio, I want the application to detect and display
   standard DTMF and Call Progress Tones.
@@ -22900,6 +23002,7 @@ Feature: Tone Detection
 --- End of File: vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature ---
 --- File: vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature ---
 ````gherkin
+# vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature
 Feature: URL State and User Preference Management
   As a user, I want to share a link that includes my session state,
   have the application load state from a URL,
@@ -22934,18 +23037,11 @@ Feature: URL State and User Preference Management
     When the user selects the new local audio file "static/test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
     Then the browser URL query string should be empty
 
-  Scenario: User preferences are remembered when loading a new local file
-    Given the user is on a clean page without URL parameters
-    When the user sets the "VAD Positive Threshold" slider to "0.70"
-    And the user reloads the page
-    Then the "VAD Positive Threshold" slider should be at "0.70"
-    When the user selects the new local audio file "static/test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
-    Then the browser URL query string should be empty
-    And the "VAD Positive Threshold" slider should still be at "0.70"
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature ---
 --- File: vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature ---
 ````gherkin
+# vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature
 Feature: Voice Activity Detection (VAD)
   As a user, I want the application to automatically detect speech in an audio file
   and allow me to tune the detection parameters.
@@ -22969,6 +23065,7 @@ Feature: Voice Activity Detection (VAD)
 --- End of File: vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature ---
 --- File: vibe-player-v3/docs/refactor-plan/index.md ---
 ````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/index.md )
 # Vibe Player V3: The Definitive Refactor Blueprint
 
 ## Table of Contents

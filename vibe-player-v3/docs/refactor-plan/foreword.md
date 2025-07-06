@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/foreword.md )
 # Foreword: A Pragmatic & Modern Architecture
 
 This document outlines the complete architectural blueprint and detailed implementation strategy for Vibe Player V3. It

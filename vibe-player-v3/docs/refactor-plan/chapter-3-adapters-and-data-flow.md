@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md )
 # Chapter 3: Adapters, Infrastructure & Data Flow
 
 ## 3.1. Driving Adapters (User Input & External Triggers)

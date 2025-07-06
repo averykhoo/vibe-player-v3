@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md )
 # Chapter 5: The Development Workflow
 
 ## 5.1. Guiding Principles for Development

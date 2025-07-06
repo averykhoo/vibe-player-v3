@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md )
 # Appendix K: Local Debugging & Tracing Strategy
 
 This appendix defines the mandatory, in-code strategy for tracing operations within the application. This is a critical

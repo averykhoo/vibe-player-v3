@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md )
 # Appendix H: Hexagonal Architecture Implementation in TypeScript
 
 This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture using Dependency

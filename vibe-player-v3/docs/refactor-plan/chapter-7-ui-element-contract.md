@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md )
 # Chapter 7: UI Element Contract
 
 In accordance with **Principle 3 (Stable Selectors for E2E Testing)**, this chapter defines the mandatory `data-testid`
