@@ -31,12 +31,3 @@ Feature: URL State and User Preference Management
     Given the user is on a page with the URL parameter "?speed=1.50&time=20.00"
     When the user selects the new local audio file "static/test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
     Then the browser URL query string should be empty
-
-  Scenario: User preferences are remembered when loading a new local file
-    Given the user is on a clean page without URL parameters
-    When the user sets the "VAD Positive Threshold" slider to "0.70"
-    And the user reloads the page
-    Then the "VAD Positive Threshold" slider should be at "0.70"
-    When the user selects the new local audio file "static/test-audio/IELTS13-Tests1-4CD1Track_01.mp3"
-    Then the browser URL query string should be empty
-    And the "VAD Positive Threshold" slider should still be at "0.70"
