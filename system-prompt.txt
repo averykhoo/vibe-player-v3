@@ -225,6 +225,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
             ├── appendix-i-interaction-flows.md
             ├── appendix-j-v3-refinements.md
             ├── appendix-k-debugging-strategy.md
+            ├── appendix-m-phased-implementation-plan.md
             ├── chapter-1-vision-and-principles.md
             ├── chapter-2-components-and-structure.md
             ├── chapter-3-adapters-and-data-flow.md
@@ -21762,6 +21763,30 @@ To maintain performance, the following protocol for large, static binary data is
    `AudioBuffer`), it must request it from the owner service.
 4. **Readiness Flags:** Services publish simple boolean flags to the stores to indicate data readiness (e.g.,
    `playerStore.update(s => ({ ...s, isPlayable: true }))`). UI components react to these flags to enable functionality.
+
+### F.4. Formalizing the `isPlaying` Derived State
+
+To eliminate ambiguity and enforce a single source of truth, the `isPlaying` state **must** be implemented as a Svelte `derived` store. It is a read-only convenience for UI components and **must not** be written to directly.
+
+*   **Single Source of Truth:** The `playerStore.status` string (e.g., `'playing'`, `'seeking'`) is the canonical source of truth for the application's playback state.
+*   **Derivation:** The `isPlaying` store derives its boolean value *only* from this status string.
+*   **No Direct Writes:** No part of the application is permitted to manage or write to a separate `isPlaying` boolean flag.
+
+```typescript
+// src/lib/stores/derived.store.ts
+import { derived } from 'svelte/store';
+import { playerStore } from './player.store';
+
+/**
+ * A derived store that provides a simple boolean indicating if audio is
+ * actively being produced. This is true only when the core state machine
+ * is in the 'playing' status.
+ */
+export const isPlaying = derived(
+  playerStore,
+  ($player) => $player.status === 'playing'
+);
+```
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md ---
@@ -21888,6 +21913,96 @@ Beyond the communication protocol, the implementation of the worker files (`.ts`
     ```
 
 **Rationale:** Adherence to these implementation rules is mandatory. It ensures that all code is visible to the Vite bundler, allowing for complete tree-shaking, minification, and static analysis. This results in the most performant and secure application, free from the "import shenanigans" of previous versions.
+
+## G.5. Mandatory WASM Integration Strategy (Rubberband Loader)
+
+The V1 and V2.3 implementations used a legacy, non-standard method for loading the Rubberband WASM module inside a Web Worker. This involved fetching the Emscripten-generated `rubberband-loader.js` script as a plain text string and executing it at runtime using `new Function()`. **This pattern is strictly forbidden in V3** as it violates **Constraint #11 (Statically Analyzable Code & No Runtime Evaluation)**.
+
+The V3 implementation **must** use Vite's modern asset handling capabilities to load and instantiate WASM modules in a safe, secure, and performant way that is fully compatible with the build process.
+
+### G.5.1. The V3 Integration Contract
+
+1.  **Refactor the "Glue" Code:** The complex setup logic from the original `rubberband-loader.js` **must** be refactored into a new, type-safe ES Module at `src/lib/vendor/rubberband/loader.ts`. This module will export a single asynchronous function: `export async function createRubberbandModule(wasmUrl: string): Promise<RubberbandModule>`.
+
+2.  **Use Vite `?url` Import in Worker:** The `rubberband.worker.ts` **must** get the path to the WASM binary by using Vite's `?url` import suffix. This ensures the path is always correct after the build process. `import wasmUrl from '$lib/vendor/rubberband/rubberband.wasm?url';`
+
+3.  **Fetch and Instantiate in Loader:** The `createRubberbandModule` function is responsible for fetching the `wasmUrl` and using the efficient `WebAssembly.instantiateStreaming()` method.
+
+4.  **Worker as Orchestrator:** The `rubberband.worker.ts` is responsible for importing the loader and the WASM URL, and then orchestrating the initialization on an `INIT` command.
+
+### G.5.2. Code Implementation Example
+
+This example demonstrates the complete, compliant flow.
+
+**Type Definition (`src/lib/types/rubberband.d.ts`):**
+```typescript
+// src/lib/types/rubberband.d.ts
+export interface RubberbandModule {
+    _malloc: (size: number) => number;
+    _free: (ptr: number) => void;
+    _rubberband_new: (...args: any[]) => number;
+    _rubberband_delete: (stretcher: number) => void;
+    // ... all other exported C++ functions
+    HEAPF32: Float32Array;
+    // ... other Emscripten helper properties
+}
+```
+
+**New Loader (`src/lib/vendor/rubberband/loader.ts`):**
+```typescript
+// src/lib/vendor/rubberband/loader.ts
+import type { RubberbandModule } from '$lib/types/rubberband.d.ts';
+
+/**
+ * Creates and initializes the Rubberband WASM module by fetching it from the provided URL.
+ * @param wasmUrl The URL to the rubberband.wasm file, provided by Vite's `?url` import.
+ * @returns A promise that resolves with the fully initialized WASM module.
+ */
+export async function createRubberbandModule(wasmUrl: string): Promise<RubberbandModule> {
+    const wasmImports = { /* ... imports required by the WASM binary ... */ };
+
+    // Fetch and instantiate the module in one step for maximum efficiency.
+    const { instance } = await WebAssembly.instantiateStreaming(
+        fetch(wasmUrl), 
+        { a: wasmImports }
+    );
+    
+    const wasmExports = instance.exports;
+    const Module: Partial<RubberbandModule> = {};
+    
+    // ... all the complex setup logic from the old loader file goes here to populate 
+    // the Module object with memory views (HEAPF32), stack functions, and exported C++ functions...
+    // This is the main part of the porting effort.
+
+    return Module as RubberbandModule;
+}
+```
+
+**Updated Worker (`src/lib/workers/rubberband.worker.ts`):**
+```typescript
+// src/lib/workers/rubberband.worker.ts
+import { createRubberbandModule } from '$lib/vendor/rubberband/loader';
+import type { RubberbandModule } from '$lib/types/rubberband.d.ts';
+import wasmUrl from '$lib/vendor/rubberband/rubberband.wasm?url'; // Vite handles this path
+
+let wasmModule: RubberbandModule | null = null;
+let stretcher: number = 0; // Pointer to the C++ instance
+
+self.onmessage = async (event: MessageEvent) => {
+    if (event.data.type === 'INIT') {
+        const { sampleRate, channels } = event.data.payload;
+
+        // 1. Call the new loader, passing the URL Vite provided.
+        wasmModule = await createRubberbandModule(wasmUrl);
+        
+        // 2. Use the returned module to initialize the stretcher instance.
+        stretcher = wasmModule._rubberband_new(sampleRate, channels, /* options */);
+        
+        self.postMessage({ type: 'INIT_SUCCESS' });
+    }
+    // ... other message handlers
+};
+```
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
@@ -21978,6 +22093,40 @@ This pattern replaces direct imports of services within components, enforcing de
      expect(mockEngine.play).toHaveBeenCalledOnce();
    });
    ```
+
+### H.3. Service-to-Service Dependency Injection
+
+While UI components receive services via Svelte's `getContext`, services themselves may have dependencies on other core services. To maintain decoupling, these dependencies **must** be injected via the service's constructor, and the dependency **must** be typed against the Port (interface), not the concrete class. This allows services to make direct, efficient data requests (e.g., `getAudioBuffer()`) without violating the principles of the Hexagonal Architecture.
+
+**Example:** The `AnalysisService` needs the `AudioBuffer` from the `AudioEngineService`.
+
+```typescript
+// src/lib/services/analysis.service.ts
+import type { IAudioEnginePort } from '$lib/types/audioEngine.d.ts';
+import type { IAnalysisPort } from '$lib/types/analysis.d.ts';
+ 
+export class AnalysisService implements IAnalysisPort {
+  // Depend on the INTERFACE, not the concrete class
+  constructor(private audioEngine: IAudioEnginePort) {}
+ 
+  public async startAnalysis() {
+    // Now it can safely request data from its injected dependency.
+    const buffer = this.audioEngine.getAudioBuffer();
+    // ...
+  }
+}
+```
+
+```svelte
+// src/routes/+layout.svelte (Application Root)
+// ...
+const audioEngine = new AudioEngineService();
+// Inject the engine instance into the analysis service constructor
+const analysisService = new AnalysisService(audioEngine); 
+ 
+setContext<IAudioEnginePort>('audio-engine', audioEngine);
+setContext<IAnalysisPort>('analysis-service', analysisService);
+```
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
 --- File: vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md ---
@@ -22134,6 +22283,164 @@ This strategy results in structured, filterable logs. A developer debugging a fi
    workers, making it easy to spot where the failure occurred.
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md ---
+--- File: vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md ---
+````markdown
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md )
+# Appendix M: Phased Implementation & Validation Plan
+
+This appendix outlines the official, sequential plan for executing the Vibe Player V3 refactor. Each phase builds upon the previous one, ensuring a stable and verifiable development process. Adherence to this phased plan is mandatory.
+
+---
+
+## Phase 0: Foundation & Tooling Setup
+
+**Goal:** To establish a fully configured, clean project environment with all necessary tooling, quality gates, and architectural enforcement in place before any feature code is written.
+
+### Milestone 0.1: Project Initialization
+*   **Expectations:** A new SvelteKit project is created and all initial dependencies from the V2.3 `package.json` are installed.
+*   **Validation:**
+    *   The command `npm install` completes without errors.
+    *   The command `npm run dev` starts the Vite server, and the default SvelteKit page is viewable in a browser.
+
+### Milestone 0.2: Tooling Configuration
+*   **Expectations:** Storybook, Vitest, Playwright, and ESLint are installed and configured.
+*   **Validation:**
+    *   `npm run storybook` launches the Storybook UI without errors.
+    *   `npm run test` (Vitest) runs successfully, even if no tests are found.
+    *   `npx playwright test` runs successfully, even if no tests are found.
+    *   `npm run lint` runs without errors on the clean project skeleton.
+
+### Milestone 0.3: Architectural Linting Rules
+*   **Expectations:** The project's ESLint configuration is updated with `eslint-plugin-import` rules to enforce the Hexagonal Architecture boundaries as defined in **Chapter 6.2**.
+*   **Validation:**
+    *   Create a temporary test file in `src/lib/services` that attempts to `import` a UI component from `src/lib/components`.
+    *   Confirm that `npm run lint` **fails** with an error about this forbidden import path.
+    *   Delete the temporary file and confirm `npm run lint` passes again.
+
+---
+
+## Phase 1: Core Architectural Plumbing
+
+**Goal:** To implement the foundational, non-feature-specific code that enables the entire V3 architecture.
+
+### Milestone 1.1: Port Interface Definitions
+*   **Expectations:** All Port interfaces (e.g., `IAudioEnginePort`, `IAnalysisPort`) are defined as TypeScript files in `src/lib/types/` as specified in **Chapter 2.3**.
+*   **Validation:**
+    *   The project successfully compiles (`svelte-check` passes).
+    *   Code review confirms all specified interfaces exist in the correct location.
+
+### Milestone 1.2: Core Utilities & Configuration
+*   **Expectations:** The following core utilities are created and unit-tested:
+    *   `src/lib/config.ts`: Central configuration.
+    *   `src/lib/services/emitter.service.ts`: Type-safe event emitter.
+    *   `src/lib/utils/workerChannel.ts`: Promise-based worker communication channel.
+    *   `src/lib/utils/urlState.ts`: URL serialization utility.
+    *   `src/lib/utils/trace.ts`: `traceId` generator.
+*   **Validation:**
+    *   Each utility has a corresponding `.test.ts` file in `tests/unit/`.
+    *   Unit tests for these utilities achieve 100% statement and branch coverage.
+
+### Milestone 1.3: Service & Store Skeletons
+*   **Expectations:** All service classes (e.g., `AudioOrchestratorService`, `AudioEngineService`) are created, implementing their respective Port interfaces. Methods can be empty or throw a "Not Implemented" error. All Svelte stores are created with their initial states.
+*   **Validation:**
+    *   The application's root layout (`+layout.svelte` or `+page.svelte`) can instantiate all services (with DI for services that depend on each other) and provide them via `setContext` without any compilation errors.
+
+---
+
+## Phase 2: Core Service & Worker Implementation (TDD)
+
+**Goal:** To build out the business logic of each core service and its associated Web Worker, driven by unit tests.
+
+### Milestone 2.1: AudioEngineService & Rubberband WASM Loader
+*   **Expectations:** The `AudioEngineService` is fully implemented. The legacy `rubberband-loader.js` is refactored into a modern ES Module as defined in **Appendix G.5**.
+*   **Validation:**
+    *   All unit tests for `AudioEngineService` and the new `loader.ts` pass.
+    *   A Storybook story is created for a test component that receives the real `AudioEngineService` via context. The story demonstrates that it can successfully initialize the service and its worker, and that the service transitions to a "ready" state.
+
+### Milestone 2.2: Analysis Services (VAD, DTMF, Spectrogram)
+*   **Expectations:** The `AnalysisService`, `DtmfService`, `SpectrogramService`, and `WaveformService` are implemented, along with their corresponding Web Workers.
+*   **Validation:**
+    *   All unit tests for these services pass.
+    *   This includes the **characterization tests**, which validate the output of the V3 algorithms against "golden master" test vectors from the V1 implementation.
+
+---
+
+## Phase 3: UI Component Development (Storybook-First)
+
+**Goal:** To build and visually verify all UI components in isolation using Storybook.
+
+### Milestone 3.1: Atomic UI Elements
+*   **Expectations:** Custom, unstyled Svelte components for core controls like `<CustomRangeSlider>` and `<CustomButton>` are created.
+*   **Validation:**
+    *   Each component has a `.stories.ts` file.
+    *   Stories exist to demonstrate all states, including default, `disabled`, and different value bindings.
+
+### Milestone 3.2: Composite View Components
+*   **Expectations:** Higher-level components like `FileLoader.svelte` and `Controls.svelte` are built using the atomic elements.
+*   **Validation:**
+    *   Each component has stories that provide mock services and stores via the Svelte Context API.
+    *   Stories demonstrate that the components correctly render different states (e.g., `isPlayable`, `isLoading`) and dispatch the correct events.
+
+### Milestone 3.3: Visualization Components
+*   **Expectations:** The `Waveform.svelte` and `Spectrogram.svelte` components are created.
+*   **Validation:**
+    *   Stories exist that demonstrate the components can receive mock data from a context-provided service and render it correctly to a canvas.
+
+---
+
+## Phase 4: Integration & E2E Feature Validation
+
+**Goal:** To assemble the tested services and components into a functional application and validate the complete user flows against the Gherkin specifications.
+
+### Milestone 4.1: File Loading & Orchestration
+*   **Expectations:** The `FileLoader` component is integrated into `+page.svelte`, and its events are wired to the `AudioOrchestratorService`.
+*   **Validation:**
+    *   All scenarios in `file_loading.feature` are automated in a Playwright test and **must pass**.
+
+### Milestone 4.2: Playback Control Integration
+*   **Expectations:** The `Controls.svelte` and seek slider components are integrated.
+*   **Validation:**
+    *   All scenarios in `playback_controls.feature` are automated and **must pass**.
+
+### Milestone 4.3: Parameter Adjustment Integration
+*   **Expectations:** The parameter sliders in `Controls.svelte` are wired up.
+*   **Validation:**
+    *   All scenarios in `parameter_adjustment.feature` are automated and **must pass**.
+
+### Milestone 4.4: Analysis & Visualization Integration
+*   **Expectations:** The analysis services are triggered after file load, and the visualization components are wired to receive real data.
+*   **Validation:**
+    *   All scenarios in `tone_analysis.feature` and `vad_analysis.feature` are automated and **must pass**.
+    *   Manual verification confirms that the waveform and spectrogram canvases render correctly with real audio data.
+
+### Milestone 4.5: URL State Integration
+*   **Expectations:** The `urlState` utility is integrated with the orchestrator.
+*   **Validation:**
+    *   All scenarios in `url_state.feature` are automated and **must pass**.
+
+---
+
+## Phase 5: Finalization & Release Preparation
+
+**Goal:** To add final PWA features, perform documentation updates, and prepare the application for a V3.0 release.
+
+### Milestone 5.1: PWA Configuration
+*   **Expectations:** A web app manifest and service worker are configured in `vite.config.ts` and `svelte.config.js` to make the application installable and offline-capable.
+*   **Validation:**
+    *   A Lighthouse audit in Chrome DevTools shows the app passes the "Installable" PWA check.
+
+### Milestone 5.2: Final Documentation
+*   **Expectations:** The project's root `README.md` is updated to reflect the new V3 architecture, features, and usage instructions.
+*   **Validation:**
+    *   Code review of the `README.md`.
+
+### Milestone 5.3: V3.0 Release Candidate
+*   **Expectations:** A final, clean build is produced. A `v3.0.0` Git tag is created.
+*   **Validation:**
+    *   All CI checks (lint, test, build, e2e) pass on the release commit.
+    *   A final manual smoke test is performed on the production build output.
+````
+--- End of File: vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md ---
 ````markdown
 [//]: # ( vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md )
@@ -22365,6 +22672,41 @@ provided to the UI via Svelte's Context API.
     * **Role:** Manages spectrogram computation (the SpectrogramHexagon), implementing the `ISpectrogramPort`.
     * **Responsibility:** Communicates with the `spectrogram.worker` to perform FFT calculations.
     * **Key State:** `spectrogramData` (internal).
+
+### 2.3. Port Interface Contracts
+
+In accordance with the Hexagonal Architecture, the public API of each core service **must** be defined by a TypeScript `interface` (a Port). These interfaces serve as the formal contract for dependency injection and **must** be created before their corresponding service is implemented.
+
+**Location:** All Port interfaces **must** reside in the `src/lib/types/` directory.
+
+**Initial Port Definitions:**
+
+*   **`IAudioEnginePort`** (`src/lib/types/audioEngine.d.ts`):
+    *   `play(): void`
+    *   `pause(): void`
+    *   `stop(): void`
+    *   `seek(time: number): void`
+    *   `setSpeed(speed: number): void`
+    *   `setPitch(pitchScale: number): void`
+    *   `setGain(gain: number): void`
+    *   `getAudioBuffer(): AudioBuffer | null`
+    *   `decodeAudio(file: File): Promise<AudioBuffer>`
+
+*   **`IAnalysisPort`** (`src/lib/types/analysis.d.ts`):
+    *   `startAnalysis(buffer: AudioBuffer): Promise<void>`
+    *   `recalculateRegions(params: { vadPositive: number; vadNegative: number }): void`
+    *   `getVadProbabilities(): Float32Array | null`
+
+*   **`IDtmfPort`** (`src/lib/types/dtmf.d.ts`):
+    *   `startAnalysis(buffer: AudioBuffer): Promise<void>`
+
+*   **`IWaveformPort`** (`src/lib/types/waveform.d.ts`):
+    *   `generatePeakData(buffer: AudioBuffer): Promise<void>`
+    *   `getWaveformData(): number[][] | null`
+
+*   **`ISpectrogramPort`** (`src/lib/types/spectrogram.d.ts`):
+    *   `generateFFTData(buffer: AudioBuffer): Promise<void>`
+    *   `getSpectrogramData(): Float32Array[] | null`
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
@@ -22487,6 +22829,16 @@ This section defines the mandatory state hierarchy, which prioritizes a shareabl
         1.  The `urlState` utility **must clear all query parameters from the URL**.
         2.  The `AudioOrchestratorService` **must reset all configurable parameters to their Tier 1 Application Defaults** as defined in `src/lib/config.ts`.
     *   **Rationale:** This ensures that loading a new local file provides a clean, default analysis environment, free from any state carried over from a previous shared session.
+
+### 3.7. Data Contract for Pitch Parameter
+
+To ensure clarity and consistency, the `pitchShift` parameter **must** adhere to the following contract across the application:
+
+*   **Core Services & Stores:** All services (e.g., `AudioEngineService`) and Svelte stores (e.g., `playerStore`) **must** store and operate on the pitch value as a **scale factor** (a `number` where `1.0` is normal pitch). This is the raw value the underlying audio engine consumes.
+
+*   **UI Components:** The Svelte slider component is solely responsible for the user-facing representation. It **must** display the value in **semitones** and perform the necessary conversion for display: `semitones = 12 * log2(scale)`. When the user interacts with the slider, the component **must** convert the semitone value back to a scale factor (`scale = 2^(semitones / 12)`) before updating the store.
+
+*   **URL Serialization:** The `urlState` utility **must** serialize the raw **scale factor** to the URL query string, not the semitone value, to maintain a consistent data representation.
 ````
 --- End of File: vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
 --- File: vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md ---
@@ -22706,7 +23058,7 @@ sequenceDiagram
         and
         Orchestrator->>SpectrogramService: generateFFTData(audioBuffer)
         and
-        Orchestrator->>AnalysisService: startVadAnalysis(audioBuffer)
+        Orchestrator->>AnalysisService: startAnalysis(audioBuffer)
         and
         Orchestrator->>DtmfService: startToneAnalysis(audioBuffer)
     end

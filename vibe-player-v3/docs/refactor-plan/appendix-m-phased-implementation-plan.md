@@ -1,3 +1,4 @@
+[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md )
 # Appendix M: Phased Implementation & Validation Plan
 
 This appendix outlines the official, sequential plan for executing the Vibe Player V3 refactor. Each phase builds upon the previous one, ensuring a stable and verifiable development process. Adherence to this phased plan is mandatory.
