@@ -54,9 +54,10 @@ This appendix outlines the official, sequential plan for executing the Vibe Play
     *   Unit tests for these utilities achieve 100% statement and branch coverage.
 
 ### Milestone 1.3: Service & Store Skeletons
-*   **Expectations:** All service classes (e.g., `AudioOrchestratorService`, `AudioEngineService`) are created, implementing their respective Port interfaces. Methods can be empty or throw a "Not Implemented" error. All Svelte stores are created with their initial states.
+*   **Expectations:** All service classes (e.g., `AudioOrchestratorService`, `AudioEngineService`) are created, implementing their respective Port interfaces. Methods can be empty or throw a "Not Implemented" error. All Svelte stores are created with their initial states. The **`container.ts`** file is created.
 *   **Validation:**
-    *   The application's root layout (`+layout.svelte` or `+page.svelte`) can instantiate all services (with DI for services that depend on each other) and provide them via `setContext` without any compilation errors.
+    *   The `src/lib/services/container.ts` file can instantiate all service skeletons, injecting mock dependencies where necessary, without any TypeScript errors.
+    *   The application's root layout (`+layout.svelte`) successfully imports `serviceContainer` and provides each service to Svelte's context via `setContext` without any compilation errors.
 
 ---
 
