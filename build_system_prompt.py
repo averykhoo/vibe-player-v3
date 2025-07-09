@@ -59,7 +59,7 @@ INCLUDED_EXTENSIONS = {
     "r", "rb", "rs", "sass", "scss", "scala", "scm", "ss", "sh", "bash", "zsh",
     "sql", "svelte", "swift", "tcl", "tf", "toml", "tsv", "tsx", "ts", "vb", "vbs",
     "v", "sv", "vhdl", "xml", "yaml", "yml",
-    "3",  # special case, to remove later
+    "3", 'vibe-player-v3',  # special cases, to remove later
 }
 # Define extensions (lowercase, without the dot) to explicitly exclude,
 # even if they are text-like (e.g., large data files you don't want).
@@ -86,6 +86,8 @@ EXTENSION_TO_LANGUAGE_HINT = {
     "jsp": "jsp", "vbs": "vbscript", "txt": "", "text": "", "log": "",
     "svelte": "svelte", "mermaid": "mermaid", "feature": "gherkin",
 
+    # special cases to remove later
+    '3':'', 'vibe-player-v3':'',
 }
 
 # --- Prompt Template ---
@@ -318,7 +320,7 @@ def get_file_type_and_hint_by_extension(filepath: Path) -> Tuple[Optional[str], 
         # Treat files with common "no-extension" names as potentially includable text
         # You might want to expand this list or use a different heuristic
         no_ext_name = filepath.name.lower()
-        if no_ext_name in {"makefile", "dockerfile", "readme", "license"} or \
+        if no_ext_name in {"makefile", "dockerfile", "readme", "license", 'vibe-player-v3'} or \
                 no_ext_name.startswith(('.', '_')):  # Include dotfiles/config files
             # print(f"Info: Including content of file with no/dot extension: {filepath.name}")
             # Use the filename itself as a hint, or provide a default like 'text'
