@@ -121,92 +121,71 @@ Beyond the communication protocol, the implementation of the worker files (`.ts`
 
 **Rationale:** Adherence to these implementation rules is mandatory. It ensures that all code is visible to the Vite bundler, allowing for complete tree-shaking, minification, and static analysis. This results in the most performant and secure application, free from the "import shenanigans" of previous versions.
 
-## G.5. Mandatory WASM Integration Strategy (Rubberband Loader)
+## G.5. Mandatory WASM Integration Strategy: The `@smc-e/rubberband-wasm` Package
 
-The V1 and V2.3 implementations used a legacy, non-standard method for loading the Rubberband WASM module inside a Web Worker. This involved fetching the Emscripten-generated `rubberband-loader.js` script as a plain text string and executing it at runtime using `new Function()`. **This pattern is strictly forbidden in V3** as it violates **Constraint #11 (Statically Analyzable Code & No Runtime Evaluation)**.
+The V1 `rubberband-loader.js` script is a legacy artifact that violates **Constraint #11 (Statically Analyzable Code & No Runtime Evaluation)**. It is therefore forbidden in V3. After a review of modern alternatives, the project has mandated the use of a standard NPM package to manage this dependency.
 
-The V3 implementation **must** use Vite's modern asset handling capabilities to load and instantiate WASM modules in a safe, secure, and performant way that is fully compatible with the build process.
+### G.5.1. The Official Decision
 
-### G.5.1. The V3 Integration Contract
+The V3 implementation **must** use the **`@smc-e/rubberband-wasm`** package. This decision is final.
 
-1.  **Refactor the "Glue" Code:** The complex setup logic from the original `rubberband-loader.js` **must** be refactored into a new, type-safe ES Module at `src/lib/vendor/rubberband/loader.ts`. This module will export a single asynchronous function: `export async function createRubberbandModule(wasmUrl: string): Promise<RubberbandModule>`.
+### G.5.2. Rationale & Compliance
 
-2.  **Use Vite `?url` Import in Worker:** The `rubberband.worker.ts` **must** get the path to the WASM binary by using Vite's `?url` import suffix. This ensures the path is always correct after the build process. `import wasmUrl from '$lib/vendor/rubberband/rubberband.wasm?url';`
+This choice directly supports the V3 architecture for the following reasons:
 
-3.  **Fetch and Instantiate in Loader:** The `createRubberbandModule` function is responsible for fetching the `wasmUrl` and using the efficient `WebAssembly.instantiateStreaming()` method.
+1.  **Compliance:** As a standard ES Module, it is fully compatible with Vite's static analysis, build optimization, and tree-shaking. It requires no `eval()` or other security anti-patterns.
+2.  **Maintainability:** It eliminates the need to maintain a complex, brittle, and manually-vendored "glue" file. The library is managed through `package.json` like any other modern dependency.
+3.  **Type Safety:** The package is written in TypeScript and includes its own type definitions, providing full IntelliSense and type-checking for the Rubberband API.
+4.  **Reputation & Stability:** While there is no "official" WASM build from the Rubberband C++ maintainers, this package is maintained by the **Sound and Music Computing (SMC) Group at KTH Royal Institute of Technology**. This provides a high degree of confidence in its quality and long-term support.
+5.  **Version Upgrade:** It provides **Rubberband v3.3.0**, a modern version of the underlying library that may include bug fixes and performance improvements over the older V1 version (such as the non-functional formant shifting).
 
-4.  **Worker as Orchestrator:** The `rubberband.worker.ts` is responsible for importing the loader and the WASM URL, and then orchestrating the initialization on an `INIT` command.
+### G.5.3. Implementation Contract
 
-### G.5.2. Code Implementation Example
-
-This example demonstrates the complete, compliant flow.
-
-**Type Definition (`src/lib/types/rubberband.d.ts`):**
-```typescript
-// src/lib/types/rubberband.d.ts
-export interface RubberbandModule {
-    _malloc: (size: number) => number;
-    _free: (ptr: number) => void;
-    _rubberband_new: (...args: any[]) => number;
-    _rubberband_delete: (stretcher: number) => void;
-    // ... all other exported C++ functions
-    HEAPF32: Float32Array;
-    // ... other Emscripten helper properties
-}
+**1. Dependency Installation:**
+The package **must** be added as a dependency to the V3 `package.json`:
+```bash
+# From within the vibe-player-v3 directory
+npm install @smc-e/rubberband-wasm
 ```
 
-**New Loader (`src/lib/vendor/rubberband/loader.ts`):**
-```typescript
-// src/lib/vendor/rubberband/loader.ts
-import type { RubberbandModule } from '$lib/types/rubberband.d.ts';
+**2. Worker Implementation:**
+The `rubberband.worker.ts` implementation becomes vastly simpler. All loader logic is removed, and the worker interacts directly with the imported library.
 
-/**
- * Creates and initializes the Rubberband WASM module by fetching it from the provided URL.
- * @param wasmUrl The URL to the rubberband.wasm file, provided by Vite's `?url` import.
- * @returns A promise that resolves with the fully initialized WASM module.
- */
-export async function createRubberbandModule(wasmUrl: string): Promise<RubberbandModule> {
-    const wasmImports = { /* ... imports required by the WASM binary ... */ };
-
-    // Fetch and instantiate the module in one step for maximum efficiency.
-    const { instance } = await WebAssembly.instantiateStreaming(
-        fetch(wasmUrl), 
-        { a: wasmImports }
-    );
-    
-    const wasmExports = instance.exports;
-    const Module: Partial<RubberbandModule> = {};
-    
-    // ... all the complex setup logic from the old loader file goes here to populate 
-    // the Module object with memory views (HEAPF32), stack functions, and exported C++ functions...
-    // This is the main part of the porting effort.
-
-    return Module as RubberbandModule;
-}
-```
-
-**Updated Worker (`src/lib/workers/rubberband.worker.ts`):**
 ```typescript
 // src/lib/workers/rubberband.worker.ts
-import { createRubberbandModule } from '$lib/vendor/rubberband/loader';
-import type { RubberbandModule } from '$lib/types/rubberband.d.ts';
-import wasmUrl from '$lib/vendor/rubberband/rubberband.wasm?url'; // Vite handles this path
+import { RubberbandStretcher, type RubberbandOptions } from '@smc-e/rubberband-wasm';
 
-let wasmModule: RubberbandModule | null = null;
-let stretcher: number = 0; // Pointer to the C++ instance
+let stretcher: RubberbandStretcher | null = null;
 
 self.onmessage = async (event: MessageEvent) => {
-    if (event.data.type === 'INIT') {
-        const { sampleRate, channels } = event.data.payload;
+  const { type, payload } = event.data;
 
-        // 1. Call the new loader, passing the URL Vite provided.
-        wasmModule = await createRubberbandModule(wasmUrl);
-        
-        // 2. Use the returned module to initialize the stretcher instance.
-        stretcher = wasmModule._rubberband_new(sampleRate, channels, /* options */);
-        
-        self.postMessage({ type: 'INIT_SUCCESS' });
+  try {
+    if (type === 'INIT') {
+      const options: RubberbandOptions = {
+        sampleRate: payload.sampleRate,
+        numChannels: payload.channels,
+        // ... other options can be set here
+      };
+      // Instantiation is now a single, clean, type-safe line.
+      stretcher = await RubberbandStretcher.create(options);
+      self.postMessage({ type: 'INIT_SUCCESS' });
+
+    } else if (type === 'PROCESS') {
+      if (!stretcher) throw new Error("Worker not initialized.");
+
+      const { inputBuffer, isLastChunk } = payload;
+      // The process method is now clean and type-safe.
+      const outputBuffer = stretcher.process(inputBuffer, isLastChunk);
+
+      self.postMessage({
+        type: 'PROCESS_RESULT',
+        payload: { outputBuffer, isLastChunk },
+      }, outputBuffer.map(b => b.buffer));
     }
-    // ... other message handlers
+    // ... handle other commands like RESET, SET_PITCH, etc.
+  } catch (e) {
+    // ... error handling
+  }
 };
 ```
