@@ -18,10 +18,7 @@ Your goal is to develop a robust mental model of this repository based *only* on
 .
 ├── .github
 │   └── workflows
-│       ├── ci-v1.yml
-│       ├── ci-v2.yml
-│       ├── deploy.yml
-│       └── release.yml
+│       └── storybook.yml
 ├── .gitignore
 ├── .llmignore
 ├── README.md
@@ -148,277 +145,80 @@ Your goal is to develop a robust mental model of this repository based *only* on
 
 **File Contents:**
 
---- File: .github/workflows/ci-v1.yml ---
+--- File: .github/workflows/storybook.yml ---
 ````yaml
-# .github/workflows/ci-v1.yml
-name: Vibe Player V1 CI
+# .github/workflows/storybook.yml
+name: Deploy V3 Storybook to GitHub Pages
 
 on:
+  # Run on pushes to main to deploy the latest version
   push:
-    branches: [ "**" ] # Run on pushes to all branches
+    branches: ["main"]
+  # Also run on pull requests to validate the build
   pull_request:
-    branches: [ "main" ] # Run on PRs targeting main
-
-jobs:
-  test-v1:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-
-    # Set a default working directory for all run steps in this job.
-    # This is the key change to handle the new project structure.
-    defaults:
-      run:
-        working-directory: ./vibe-player
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('vibe-player/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run unit tests
-        run: npm run test:unit
-
-      - name: Install Playwright Browsers and dependencies
-        run: npx playwright install --with-deps
-
-      - name: Start test server
-        run: npm run serve-for-test &
-
-      - name: Run E2E tests
-        run: |
-          sleep 5 # Wait for server to start
-          npx playwright test # Using npx is a bit cleaner
-
-      - name: Upload Playwright report
-        if: always() # Run this step even if previous steps fail, to get reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          # Update the path to find the report inside the subdirectory
-          path: vibe-player/playwright-report/
-          retention-days: 7
-
-````
---- End of File: .github/workflows/ci-v1.yml ---
---- File: .github/workflows/ci-v2.yml ---
-````yaml
-# .github/workflows/ci-v2.yml
-
-name: Vibe Player V2 CI
-
-on:
-  push:
-    branches: [ "**" ]
-  pull_request:
-    branches: [ "main" ]
-
-jobs:
-  test-v2:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-          cache: 'npm'
-          cache-dependency-path: 'vibe-player-v2.3/package-lock.json'
-
-      - name: Install V2 dependencies
-        working-directory: ./vibe-player-v2.3
-        run: npm ci
-
-      - name: Lint V2
-        working-directory: ./vibe-player-v2.3
-        run: npm run lint
-
-# COMMENTED OUT ALL V2 THINGS IN PREPARATION FOR V3
-
-#      - name: Run V2 unit and component tests
-#        working-directory: ./vibe-player-v2.3
-#        run: npm run test:unit
-#
-#      - name: Build Vibe Player V2
-#        working-directory: ./vibe-player-v2.3
-#        run: npm run build
-#
-#      - name: Restore Playwright and OS Dependencies from Cache
-#        id: cache-playwright-restore
-#        uses: actions/cache/restore@v4
-#        with:
-#          path: |
-#            /var/cache/apt/archives
-#            /home/runner/.cache/ms-playwright
-#          key: deps-${{ runner.os }}-playwright-${{ hashFiles('vibe-player-v2.3/package-lock.json') }}
-#
-#      - name: Install Playwright Browsers and OS Dependencies
-#        # This step runs if the cache was not found.
-#        # `--with-deps` will trigger `apt-get` which will now download necessary libs.
-#        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
-#        working-directory: ./vibe-player-v2.3
-#        run: npx playwright install --with-deps
-#
-#      - name: Save Playwright and OS Dependencies to Cache
-#        # This step runs only if the cache was not found during restore.
-#        if: steps.cache-playwright-restore.outputs.cache-hit != 'true'
-#        uses: actions/cache/save@v4
-#        with:
-#          path: |
-#            /var/cache/apt/archives
-#            /home/runner/.cache/ms-playwright
-#          key: ${{ steps.cache-playwright-restore.outputs.cache-primary-key || format('deps-{0}-playwright-{1}', runner.os, hashFiles('vibe-player-v2.3/package-lock.json')) }}
-#
-#      - name: Run Playwright E2E tests
-#        working-directory: ./vibe-player-v2.3
-#        run: npx playwright test
-#
-#      - name: Upload Playwright report
-#        if: always()
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: playwright-report
-#          path: vibe-player-v2.3/playwright-report/
-#          retention-days: 7
-#
-#      - name: Upload Vibe Player Build Artifact
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: vibe-player-build-${{ github.run_id }}-${{ github.sha }}
-#          path: vibe-player-v2.3/build/
-#          retention-days: 7
-````
---- End of File: .github/workflows/ci-v2.yml ---
---- File: .github/workflows/deploy.yml ---
-````yaml
-# .github/workflows/deploy.yml
-name: Deploy Vibe Player to GitHub Pages
-
-on:
-  # Runs on pushes targeting the default branch (main or master)
-  push:
-    branches: ["main"] # Or "master", depending on your default branch name
+    branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+# Grant GITHUB_TOKEN the permissions it needs to deploy to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+# Allow only one concurrent Storybook deployment.
+# This will cancel older in-progress runs on the same branch.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "storybook-pages"
+  cancel-in-progress: true
 
 jobs:
-  # Single deploy job since we're just deploying static files
-  deploy:
+  deploy-storybook:
+    # IMPORTANT: Ensure this job only runs if the vibe-player-v3 directory exists
+    if: "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4 # Use latest checkout action
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5 # Use latest configure-pages action
-
-      # This is the crucial step: Upload the *contents* of ./vibe-player as the artifact
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3 # Use latest upload-artifact action
+      - name: Setup Node.js with caching
+        uses: actions/setup-node@v4
         with:
-          # Upload content from the vibe-player directory
-          path: './vibe-player'
+          node-version: '20.x'
+          cache: 'npm'
+          # Point the cache to the V3 project's lock file
+          cache-dependency-path: 'vibe-player-v3/package-lock.json'
+
+      - name: Install V3 dependencies
+        # The working-directory is critical for running commands in the correct project
+        working-directory: ./vibe-player-v3
+        run: npm install
+
+      - name: Build Storybook
+        working-directory: ./vibe-player-v3
+        run: npm run build-storybook
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Storybook artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The path to the built Storybook static site
+          path: ./vibe-player-v3/storybook-static
 
       - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main' # Only deploy when on the main branch
         id: deployment
-        uses: actions/deploy-pages@v4 # Use latest deploy-pages action
-
+        uses: actions/deploy-pages@v4
 ````
---- End of File: .github/workflows/deploy.yml ---
---- File: .github/workflows/release.yml ---
-````yaml
-# .github/workflows/release.yml
-name: Create Release Zip (Official Actions Only)
-
-on:
-  push:
-    tags:
-      - 'v*.*.*'
-
-permissions:
-  # Need write access to repository contents to create releases and upload assets
-  contents: write
-
-jobs:
-  build-release:
-    runs-on: ubuntu-latest # Using Ubuntu for easy access to 'zip' command
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4 # Official: Checks out the repository code at the specific tag
-
-      - name: Get the version tag
-        id: get_tag
-        run: echo "TAG_NAME=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-        # Standard shell command + GitHub Actions environment variable feature
-
-      - name: Build the zip archive
-        run: |
-          echo "Creating zip for tag ${{ env.TAG_NAME }}"
-          cd vibe-player # Move into the target directory
-          # Use standard 'zip' command available on ubuntu runners
-          zip -r ../vibe-player-${{ env.TAG_NAME }}.zip .
-          cd .. # Move back to the root
-        # Standard shell commands
-
-      - name: Create GitHub Release
-        id: create_release # Give this step an ID to reference its outputs
-        uses: actions/create-release@v1 # Official: Creates the release entry
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Required for authentication
-        with:
-          tag_name: ${{ env.TAG_NAME }}
-          release_name: Release ${{ env.TAG_NAME }}
-          body: | # Optional: Add release notes here, can be simple or more complex
-            Automated release for version ${{ env.TAG_NAME }}.
-            Contains contents of the vibe-player directory.
-          draft: false
-          prerelease: false # Set to true if needed based on tag format
-
-      - name: Upload Release Asset (Zip)
-        uses: actions/upload-release-asset@v1 # Official: Uploads a file to the created release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Required for authentication
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # Get upload URL from the previous step's output
-          asset_path: ./vibe-player-${{ env.TAG_NAME }}.zip # Path to the zip file we created
-          asset_name: vibe-player-${{ env.TAG_NAME }}.zip # Name for the asset file on GitHub Releases
-          asset_content_type: application/zip # MIME type for zip files
-
-````
---- End of File: .github/workflows/release.yml ---
+--- End of File: .github/workflows/storybook.yml ---
 --- File: .gitignore ---
 ````.gitignore
 # .gitignore

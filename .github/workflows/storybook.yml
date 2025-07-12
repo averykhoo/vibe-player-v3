@@ -1,0 +1,70 @@
+# .github/workflows/storybook.yml
+name: Deploy V3 Storybook to GitHub Pages
+
+on:
+  # Run on pushes to main to deploy the latest version
+  push:
+    branches: ["main"]
+  # Also run on pull requests to validate the build
+  pull_request:
+    branches: ["main"]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Grant GITHUB_TOKEN the permissions it needs to deploy to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Storybook deployment.
+# This will cancel older in-progress runs on the same branch.
+concurrency:
+  group: "storybook-pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy-storybook:
+    # IMPORTANT: Ensure this job only runs if the vibe-player-v3 directory exists
+    if: "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js with caching
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          # Point the cache to the V3 project's lock file
+          cache-dependency-path: 'vibe-player-v3/package-lock.json'
+
+      - name: Install V3 dependencies
+        # The working-directory is critical for running commands in the correct project
+        working-directory: ./vibe-player-v3
+        run: npm install
+
+      - name: Build Storybook
+        working-directory: ./vibe-player-v3
+        run: npm run build-storybook
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Storybook artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The path to the built Storybook static site
+          path: ./vibe-player-v3/storybook-static
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main' # Only deploy when on the main branch
+        id: deployment
+        uses: actions/deploy-pages@v4
