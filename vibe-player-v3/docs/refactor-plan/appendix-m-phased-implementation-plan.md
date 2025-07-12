@@ -153,3 +153,18 @@ This appendix outlines the official, sequential plan for executing the Vibe Play
 *   **Validation:**
     *   All CI checks (lint, test, build, e2e) pass on the release commit.
     *   A final manual smoke test is performed on the production build output.
+
+---
+
+## Phase 6: Future Enhancements (Post-V3.0)
+
+**Goal:** To document and scope major new features that can be built upon the stable V3.0 architecture.
+
+### Milestone 6.1: Constant-Q Transform (CQT) Visualization
+*   **Impetus:** The standard FFT-based spectrogram provides a linear view of frequency, which is useful for technical analysis. However, a **Constant-Q Transform (CQT)** provides a logarithmic frequency scale that more closely aligns with human pitch perception and musical notation. This would be a powerful enhancement for musical or tonal analysis.
+*   **Chosen Technology:** The **`librosa-js`** NPM package has been identified as the ideal library for this task.
+*   **Rationale:**
+    *   It is a direct port of the industry-standard Python `librosa` library, ensuring the algorithm's correctness.
+    *   It is a modern ES Module with TypeScript support, making it fully compliant with the V3 architecture and Vite build process.
+    *   It is a reputable, community-vetted package.
+*   **Implementation Plan:** This feature will be implemented by creating a new `CqtService` and a `cqt.worker.ts` that uses `librosa-js` to perform the CQT analysis. A new Svelte component, `CqtSpectrogram.svelte`, will be created to visualize the results.
