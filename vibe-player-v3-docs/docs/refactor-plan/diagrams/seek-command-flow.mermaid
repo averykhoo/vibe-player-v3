@@ -1,0 +1,50 @@
+%% vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid
+%% A detailed flow for the seek operation, demonstrating the two-state seek logic
+%% (`SEEK_AND_RESUME` vs. `SEEK_AND_HOLD`) to correctly handle play/pause toggles during the seek.
+
+sequenceDiagram
+    actor User
+    participant Slider as Seek Slider UI
+    participant Orchestrator as AudioOrchestratorService
+    participant Engine as AudioEngineService
+    participant Store as Svelte Stores
+
+    Note over User, Store: Initial State: PLAYING
+    User->>Slider: Mousedown on handle
+    Slider->>Orchestrator: COMMAND_BEGIN_SEEK
+
+    activate Orchestrator
+    Note over Orchestrator: State: PLAYING -> SEEK_AND_RESUME
+    Orchestrator->>Store: playerStore.update({ status: 'seeking' })
+    Orchestrator->>Engine: pauseWhileSeeking()
+    deactivate Orchestrator
+
+    User->>Slider: Drags handle (oninput event)
+    Slider->>Orchestrator: COMMAND_UPDATE_SEEK(newTime)
+    
+    activate Orchestrator
+    Orchestrator->>Engine: seek(newTime)
+    deactivate Orchestrator
+
+    activate Engine
+    Note over Engine: Updates internal playhead.<br/>UI `timeStore` reflects change via 'hot path'.
+    deactivate Engine
+    
+    alt User toggles play/pause mid-seek
+        User->>UI: Presses spacebar
+        UI->>Orchestrator: COMMAND_PAUSE (since original state was PLAYING)
+        
+        activate Orchestrator
+        Note over Orchestrator: State: SEEK_AND_RESUME -> SEEK_AND_HOLD
+        deactivate Orchestrator
+    end
+    
+    User->>Slider: Mouseup (releases handle)
+    Slider->>Orchestrator: COMMAND_END_SEEK
+
+    activate Orchestrator
+    Note right of Orchestrator: The reason for two seek states:<br>The Orchestrator now checks its current state.<br>If the user toggled pause mid-seek, the state is<br>SEEK_AND_HOLD, so it will transition to READY.<br>Otherwise, it's SEEK_AND_RESUME and will transition to PLAYING.
+    
+    Note over Orchestrator: State: SEEK_AND_HOLD -> READY (in this example)
+    Orchestrator->>Store: playerStore.update({ status: 'ready' })
+    deactivate Orchestrator
