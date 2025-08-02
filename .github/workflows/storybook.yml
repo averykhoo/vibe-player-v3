@@ -4,7 +4,7 @@ name: Deploy V3 Storybook to GitHub Pages
 on:
   # Run on pushes to main to deploy the latest version
   push:
-    branches: ["main"]
+    branches: ["*"]
   # Also run on pull requests to validate the build
   pull_request:
     branches: ["main"]
