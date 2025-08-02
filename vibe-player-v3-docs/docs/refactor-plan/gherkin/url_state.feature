@@ -1,4 +1,4 @@
-# vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/url_state.feature
 Feature: URL State and User Preference Management
   As a user, I want to share a link that includes my session state,
   have the application load state from a URL,

@@ -1,4 +1,4 @@
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-e-edge-case-logic.md )
 # Appendix E: State Machine Edge Case Logic
 
 This appendix provides explicit, mandatory logic for handling specific edge cases within the `AudioOrchestratorService`

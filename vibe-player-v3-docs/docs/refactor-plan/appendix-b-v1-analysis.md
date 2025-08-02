@@ -1,4 +1,4 @@
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-b-v1-analysis.md )
 # Appendix B: V1 Architectural Analysis & Tradeoffs (Historical Context)
 
 This section migrates the key insights from the original V1 plan. It serves as historical context to understand the "

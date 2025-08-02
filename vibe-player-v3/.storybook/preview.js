@@ -1,3 +1,4 @@
+// vibe-player-v3/.storybook/preview.js
 /** @type { import('@storybook/html-vite').Preview } */
 const preview = {
   parameters: {

@@ -1,4 +1,4 @@
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-1-vision-and-principles.md )
 # Chapter 1: The Vision & Guiding Principles
 
 ## 1.1. Executive Summary

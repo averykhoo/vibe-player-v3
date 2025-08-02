@@ -104,7 +104,41 @@ Your goal is to develop a robust mental model of this repository based *only* on
 │   └── tests-e2e
 │       ├── PlayerPage.js
 │       └── player.e2e.spec.js
-└── vibe-player-v3
+├── vibe-player-v3
+│   ├── .storybook
+│   │   ├── main.js
+│   │   └── preview.js
+│   ├── package-lock.json
+│   ├── package.json
+│   └── stories
+│       ├── Button.js
+│       ├── Button.stories.js
+│       ├── Configure.mdx
+│       ├── Header.js
+│       ├── Header.stories.js
+│       ├── Page.js
+│       ├── Page.stories.js
+│       ├── assets
+│       │   ├── accessibility.png
+│       │   ├── accessibility.svg
+│       │   ├── addon-library.png
+│       │   ├── assets.png
+│       │   ├── avif-test-image.avif
+│       │   ├── context.png
+│       │   ├── discord.svg
+│       │   ├── docs.png
+│       │   ├── figma-plugin.png
+│       │   ├── github.svg
+│       │   ├── share.png
+│       │   ├── styling.png
+│       │   ├── testing.png
+│       │   ├── theming.png
+│       │   ├── tutorials.svg
+│       │   └── youtube.svg
+│       ├── button.css
+│       ├── header.css
+│       └── page.css
+└── vibe-player-v3-docs
     ├── docs
     │   └── refactor-plan
     │       ├── appendix-a-gherkin-specifications.md
@@ -403,6 +437,9 @@ node_modules/
 # test
 playwright-report/
 test-results/
+
+*storybook.log
+storybook-static
 
 ````
 --- End of File: .gitignore ---
@@ -11716,9 +11753,529 @@ These are ongoing tasks to ensure the project remains maintainable and reliable.
 
 ````
 --- End of File: vibe-player/TODO.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md ---
+--- File: vibe-player-v3/.storybook/main.js ---
+````javascript
+// vibe-player-v3/.storybook/main.js
+/** @type { import('@storybook/html-vite').StorybookConfig } */
+const config = {
+  "stories": [
+    "../stories/**/*.mdx",
+    "../stories/**/*.stories.@(js|jsx|mjs|ts|tsx)"
+  ],
+  "addons": [
+    "@storybook/addon-docs"
+  ],
+  "framework": {
+    "name": "@storybook/html-vite",
+    "options": {}
+  }
+};
+export default config;
+````
+--- End of File: vibe-player-v3/.storybook/main.js ---
+--- File: vibe-player-v3/.storybook/preview.js ---
+````javascript
+// vibe-player-v3/.storybook/preview.js
+/** @type { import('@storybook/html-vite').Preview } */
+const preview = {
+  parameters: {
+    controls: {
+      matchers: {
+       color: /(background|color)$/i,
+       date: /Date$/i,
+      },
+    },
+  },
+};
+
+export default preview;
+````
+--- End of File: vibe-player-v3/.storybook/preview.js ---
+--- File: vibe-player-v3/package.json ---
+````json
+{
+  "name": "vibe-player-v3",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@storybook/addon-docs": "^9.1.0",
+    "@storybook/html-vite": "^9.1.0",
+    "storybook": "^9.1.0"
+  }
+}
+
+````
+--- End of File: vibe-player-v3/package.json ---
+--- File: vibe-player-v3/stories/button.css ---
+````css
+/* vibe-player-v3/stories/button.css */
+.storybook-button {
+  display: inline-block;
+  cursor: pointer;
+  border: 0;
+  border-radius: 3em;
+  font-weight: 700;
+  line-height: 1;
+  font-family: 'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+.storybook-button--primary {
+  background-color: #555ab9;
+  color: white;
+}
+.storybook-button--secondary {
+  box-shadow: rgba(0, 0, 0, 0.15) 0px 0px 0px 1px inset;
+  background-color: transparent;
+  color: #333;
+}
+.storybook-button--small {
+  padding: 10px 16px;
+  font-size: 12px;
+}
+.storybook-button--medium {
+  padding: 11px 20px;
+  font-size: 14px;
+}
+.storybook-button--large {
+  padding: 12px 24px;
+  font-size: 16px;
+}
+
+````
+--- End of File: vibe-player-v3/stories/button.css ---
+--- File: vibe-player-v3/stories/Button.js ---
+````javascript
+// vibe-player-v3/stories/Button.js
+import './button.css';
+
+export const createButton = ({
+  primary = false,
+  size = 'medium',
+  backgroundColor,
+  label,
+  onClick,
+}) => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.innerText = label;
+  btn.addEventListener('click', onClick);
+
+  const mode = primary ? 'storybook-button--primary' : 'storybook-button--secondary';
+  btn.className = ['storybook-button', `storybook-button--${size}`, mode].join(' ');
+
+  btn.style.backgroundColor = backgroundColor;
+
+  return btn;
+};
+
+````
+--- End of File: vibe-player-v3/stories/Button.js ---
+--- File: vibe-player-v3/stories/Button.stories.js ---
+````javascript
+// vibe-player-v3/stories/Button.stories.js
+import { fn } from 'storybook/test';
+
+import { createButton } from './Button';
+
+// More on how to set up stories at: https://storybook.js.org/docs/writing-stories
+export default {
+  title: 'Example/Button',
+  tags: ['autodocs'],
+  render: ({ label, ...args }) => {
+    // You can either use a function to create DOM elements or use a plain html string!
+    // return `<div>${label}</div>`;
+    return createButton({ label, ...args });
+  },
+  argTypes: {
+    backgroundColor: { control: 'color' },
+    label: { control: 'text' },
+    onClick: { action: 'onClick' },
+    primary: { control: 'boolean' },
+    size: {
+      control: { type: 'select' },
+      options: ['small', 'medium', 'large'],
+    },
+  },
+  // Use `fn` to spy on the onClick arg, which will appear in the actions panel once invoked: https://storybook.js.org/docs/essentials/actions#action-args
+  args: { onClick: fn() },
+};
+
+// More on writing stories with args: https://storybook.js.org/docs/writing-stories/args
+export const Primary = {
+  args: {
+    primary: true,
+    label: 'Button',
+  },
+};
+
+export const Secondary = {
+  args: {
+    label: 'Button',
+  },
+};
+
+export const Large = {
+  args: {
+    size: 'large',
+    label: 'Button',
+  },
+};
+
+export const Small = {
+  args: {
+    size: 'small',
+    label: 'Button',
+  },
+};
+
+````
+--- End of File: vibe-player-v3/stories/Button.stories.js ---
+--- File: vibe-player-v3/stories/header.css ---
+````css
+/* vibe-player-v3/stories/header.css */
+.storybook-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 15px 20px;
+  font-family: 'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.storybook-header svg {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.storybook-header h1 {
+  display: inline-block;
+  vertical-align: top;
+  margin: 6px 0 6px 10px;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.storybook-header button + button {
+  margin-left: 10px;
+}
+
+.storybook-header .welcome {
+  margin-right: 10px;
+  color: #333;
+  font-size: 14px;
+}
+
+````
+--- End of File: vibe-player-v3/stories/header.css ---
+--- File: vibe-player-v3/stories/Header.js ---
+````javascript
+// vibe-player-v3/stories/Header.js
+import { createButton } from './Button';
+import './header.css';
+
+export const createHeader = ({ user, onLogout, onLogin, onCreateAccount }) => {
+  const header = document.createElement('header');
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'storybook-header';
+
+  const logo = `<div>
+    <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <g fill="none" fillRule="evenodd">
+        <path
+          d="M10 0h12a10 10 0 0110 10v12a10 10 0 01-10 10H10A10 10 0 010 22V10A10 10 0 0110 0z"
+          fill="#FFF" />
+        <path
+          d="M5.3 10.6l10.4 6v11.1l-10.4-6v-11zm11.4-6.2l9.7 5.5-9.7 5.6V4.4z"
+          fill="#555AB9" />
+        <path d="M27.2 10.6v11.2l-10.5 6V16.5l10.5-6zM15.7 4.4v11L6 10l9.7-5.5z" fill="#91BAF8" />
+      </g>
+    </svg>
+    <h1>Acme</h1>
+  </div>`;
+
+  wrapper.insertAdjacentHTML('afterbegin', logo);
+
+  const account = document.createElement('div');
+  if (user) {
+    const welcomeMessage = `<span class="welcome">Welcome, <b>${user.name}</b>!</span>`;
+    account.innerHTML = welcomeMessage;
+    account.appendChild(createButton({ size: 'small', label: 'Log out', onClick: onLogout }));
+  } else {
+    account.appendChild(createButton({ size: 'small', label: 'Log in', onClick: onLogin }));
+    account.appendChild(
+      createButton({
+        size: 'small',
+        label: 'Sign up',
+        onClick: onCreateAccount,
+        primary: true,
+      })
+    );
+  }
+  wrapper.appendChild(account);
+  header.appendChild(wrapper);
+
+  return header;
+};
+
+````
+--- End of File: vibe-player-v3/stories/Header.js ---
+--- File: vibe-player-v3/stories/Header.stories.js ---
+````javascript
+// vibe-player-v3/stories/Header.stories.js
+import { fn } from 'storybook/test';
+
+import { createHeader } from './Header';
+
+export default {
+  title: 'Example/Header',
+  // This component will have an automatically generated Autodocs entry: https://storybook.js.org/docs/writing-docs/autodocs
+  tags: ['autodocs'],
+  render: (args) => createHeader(args),
+  parameters: {
+    // More on how to position stories at: https://storybook.js.org/docs/configure/story-layout
+    layout: 'fullscreen',
+  },
+  args: {
+    onLogin: fn(),
+    onLogout: fn(),
+    onCreateAccount: fn(),
+  },
+};
+
+export const LoggedIn = {
+  args: {
+    user: {
+      name: 'Jane Doe',
+    },
+  },
+};
+
+export const LoggedOut = {};
+
+````
+--- End of File: vibe-player-v3/stories/Header.stories.js ---
+--- File: vibe-player-v3/stories/page.css ---
+````css
+/* vibe-player-v3/stories/page.css */
+.storybook-page {
+  margin: 0 auto;
+  padding: 48px 20px;
+  max-width: 600px;
+  color: #333;
+  font-size: 14px;
+  line-height: 24px;
+  font-family: 'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.storybook-page h2 {
+  display: inline-block;
+  vertical-align: top;
+  margin: 0 0 4px;
+  font-weight: 700;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.storybook-page p {
+  margin: 1em 0;
+}
+
+.storybook-page a {
+  color: inherit;
+}
+
+.storybook-page ul {
+  margin: 1em 0;
+  padding-left: 30px;
+}
+
+.storybook-page li {
+  margin-bottom: 8px;
+}
+
+.storybook-page .tip {
+  display: inline-block;
+  vertical-align: top;
+  margin-right: 10px;
+  border-radius: 1em;
+  background: #e7fdd8;
+  padding: 4px 12px;
+  color: #357a14;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 12px;
+}
+
+.storybook-page .tip-wrapper {
+  margin-top: 40px;
+  margin-bottom: 40px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.storybook-page .tip-wrapper svg {
+  display: inline-block;
+  vertical-align: top;
+  margin-top: 3px;
+  margin-right: 4px;
+  width: 12px;
+  height: 12px;
+}
+
+.storybook-page .tip-wrapper svg path {
+  fill: #1ea7fd;
+}
+
+````
+--- End of File: vibe-player-v3/stories/page.css ---
+--- File: vibe-player-v3/stories/Page.js ---
+````javascript
+// vibe-player-v3/stories/Page.js
+import { createHeader } from './Header';
+import './page.css';
+
+export const createPage = () => {
+  const article = document.createElement('article');
+  let user = null;
+  let header = null;
+
+  const rerenderHeader = () => {
+    const wrapper = document.getElementsByTagName('article')[0];
+    wrapper.replaceChild(createHeaderElement(), wrapper.firstChild);
+  };
+
+  const onLogin = () => {
+    user = { name: 'Jane Doe' };
+    rerenderHeader();
+  };
+
+  const onLogout = () => {
+    user = null;
+    rerenderHeader();
+  };
+
+  const onCreateAccount = () => {
+    user = { name: 'Jane Doe' };
+    rerenderHeader();
+  };
+
+  const createHeaderElement = () => {
+    return createHeader({ onLogin, onLogout, onCreateAccount, user });
+  };
+
+  header = createHeaderElement();
+  article.appendChild(header);
+
+  const section = `
+  <section class="storybook-page">
+    <h2>Pages in Storybook</h2>
+    <p>
+      We recommend building UIs with a
+      <a
+        href="https://blog.hichroma.com/component-driven-development-ce1109d56c8e"
+        target="_blank"
+        rel="noopener noreferrer">
+        <strong>component-driven</strong>
+      </a>
+      process starting with atomic components and ending with pages.
+    </p>
+    <p>
+      Render pages with mock data. This makes it easy to build and review page states without
+      needing to navigate to them in your app. Here are some handy patterns for managing page data
+      in Storybook:
+    </p>
+    <ul>
+      <li>
+        Use a higher-level connected component. Storybook helps you compose such data from the
+        "args" of child component stories
+      </li>
+      <li>
+        Assemble data in the page component from your services. You can mock these services out
+        using Storybook.
+      </li>
+    </ul>
+    <p>
+      Get a guided tutorial on component-driven development at
+      <a href="https://storybook.js.org/tutorials/" target="_blank" rel="noopener noreferrer">
+        Storybook tutorials
+      </a>
+      . Read more in the
+      <a href="https://storybook.js.org/docs" target="_blank" rel="noopener noreferrer">docs</a>
+      .
+    </p>
+    <div class="tip-wrapper">
+      <span class="tip">Tip</span>
+      Adjust the width of the canvas with the
+      <svg width="10" height="10" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+        <g fill="none" fillRule="evenodd">
+          <path
+            d="M1.5 5.2h4.8c.3 0 .5.2.5.4v5.1c-.1.2-.3.3-.4.3H1.4a.5.5 0
+            01-.5-.4V5.7c0-.3.2-.5.5-.5zm0-2.1h6.9c.3 0 .5.2.5.4v7a.5.5 0 01-1 0V4H1.5a.5.5 0
+            010-1zm0-2.1h9c.3 0 .5.2.5.4v9.1a.5.5 0 01-1 0V2H1.5a.5.5 0 010-1zm4.3 5.2H2V10h3.8V6.2z"
+            id="a"
+            fill="#999" />
+        </g>
+      </svg>
+      Viewports addon in the toolbar
+    </div>
+  </section>
+`;
+
+  article.insertAdjacentHTML('beforeend', section);
+
+  return article;
+};
+
+````
+--- End of File: vibe-player-v3/stories/Page.js ---
+--- File: vibe-player-v3/stories/Page.stories.js ---
+````javascript
+// vibe-player-v3/stories/Page.stories.js
+import { expect, userEvent, within } from 'storybook/test';
+
+import { createPage } from './Page';
+
+export default {
+  title: 'Example/Page',
+  render: () => createPage(),
+  parameters: {
+    // More on how to position stories at: https://storybook.js.org/docs/configure/story-layout
+    layout: 'fullscreen',
+  },
+};
+
+export const LoggedOut = {};
+
+// More on component testing: https://storybook.js.org/docs/writing-tests/interaction-testing
+export const LoggedIn = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const loginButton = canvas.getByRole('button', { name: /Log in/i });
+    await expect(loginButton).toBeInTheDocument();
+    await userEvent.click(loginButton);
+    await expect(loginButton).not.toBeInTheDocument();
+
+    const logoutButton = canvas.getByRole('button', { name: /Log out/i });
+    await expect(logoutButton).toBeInTheDocument();
+  },
+};
+
+````
+--- End of File: vibe-player-v3/stories/Page.stories.js ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-a-gherkin-specifications.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-a-gherkin-specifications.md )
 # Appendix A: Gherkin Feature Specifications
 
 This appendix contains the executable specifications that define the application's behavior. The developer **must**
@@ -11745,10 +12302,10 @@ Each feature file contains one or more scenarios that describe specific behavior
 
 The Playwright E2E tests are derived from these scenarios and verify that the application behaves as expected.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-a-gherkin-specifications.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-a-gherkin-specifications.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-b-v1-analysis.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-b-v1-analysis.md )
 # Appendix B: V1 Architectural Analysis & Tradeoffs (Historical Context)
 
 This section migrates the key insights from the original V1 plan. It serves as historical context to understand the "
@@ -11783,10 +12340,10 @@ why" behind certain V3 design decisions.
     * **V3 Improvement:** V3's use of ES Modules with Vite's build process completely eliminates this problem by
       creating a dependency graph and producing a correctly bundled output.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-b-v1-analysis.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-b-v1-analysis.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-c-agent-guidelines.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-c-agent-guidelines.md )
 # Appendix C: AI Agent Collaboration Guidelines
 
 This section defines the operational protocols for any developer (human or AI) working on this project. It is a
@@ -11992,10 +12549,10 @@ and testability.
         * The final implementation **must** pass these E2E tests. If a relevant scenario does not exist, a new one must
           be proposed and approved before implementation.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-c-agent-guidelines.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-d-uiux-philosophy.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-d-uiux-philosophy.md )
 # Appendix D: UI/UX Design Philosophy
 
 This appendix restores the explicit UI/UX philosophy that underpins the component design choices.
@@ -12017,10 +12574,10 @@ This appendix restores the explicit UI/UX philosophy that underpins the componen
     * **Information Density:** The UI should present relevant information (e.g., current time, parameter values,
       analysis results) in a way that is easy to scan and understand at a glance.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-d-uiux-philosophy.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-d-uiux-philosophy.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-e-edge-case-logic.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-e-edge-case-logic.md )
 # Appendix E: State Machine Edge Case Logic
 
 This appendix provides explicit, mandatory logic for handling specific edge cases within the `AudioOrchestratorService`
@@ -12052,10 +12609,10 @@ When the user clicks "Play" while the application is in the `READY` state, the U
 3. **Rationale:** This ensures that clicking "Play" on a finished track correctly restarts it from the beginning, which
    is the universally expected behavior.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-e-edge-case-logic.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-e-edge-case-logic.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-f-data-flow.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-f-data-flow.md )
 # Appendix F: Core Data Flow & State Management Principles
 
 This appendix formalizes the data flow principles that govern how services, stores, and the UI interact.
@@ -12115,10 +12672,10 @@ export const isPlaying = derived(
 );
 ```
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-f-data-flow.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-f-data-flow.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-g-worker-protocol.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-g-worker-protocol.md )
 # Appendix G: Worker Communication Protocol & Timeout Handling
 
 This appendix provides a definitive implementation contract for the mandatory `WorkerChannel` utility.
@@ -12311,10 +12868,10 @@ self.onmessage = async (event: MessageEvent) => {
 ```
 
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-g-worker-protocol.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-g-worker-protocol.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-h-hexagonal-architecture.md )
 # Appendix H: Hexagonal Architecture Implementation in TypeScript
 
 This appendix provides the definitive, mandatory patterns for implementing the Hexagonal Architecture using Dependency
@@ -12405,10 +12962,10 @@ The component-level logic remains the same as originally planned. Components use
 <button on:click={() => engine.play()}>Play</button>
 ```
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-h-hexagonal-architecture.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-i-interaction-flows.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-i-interaction-flows.md )
 # Appendix I: Core Interaction Flows
 
 This appendix provides a detailed visual description of key application interactions.
@@ -12432,10 +12989,10 @@ resumption.
 
 See the [Seek Command Flow](diagrams/seek-command-flow.mermaid) for a visual representation of this interaction.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-i-interaction-flows.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-j-v3-refinements.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-j-v3-refinements.md )
 # Appendix J: V3 Implementation Refinements Summary
 
 This appendix summarizes the key architectural decisions and refinements adopted for the V3 rewrite, superseding any
@@ -12473,10 +13030,10 @@ conflicting information in the main body or older appendices.
   and ensures components are robust and reusable.
 * **URL-Only State Persistence:** The entire application session state (including loaded audio URL, playback time, and all parameters) **must** be serialized exclusively to the URL's query string for shareability. No state or user preferences are persisted locally via `localStorage` in this version. A strict two-tiered loading hierarchy (Application Defaults -> URL Parameters) ensures predictable state initialization on startup.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-j-v3-refinements.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-j-v3-refinements.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-k-debugging-strategy.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-k-debugging-strategy.md )
 # Appendix K: Local Debugging & Tracing Strategy
 
 This appendix defines the mandatory, in-code strategy for tracing operations within the application. This is a critical
@@ -12559,10 +13116,10 @@ This strategy results in structured, filterable logs. A developer debugging a fi
 3. The console now shows the complete, ordered lifecycle of that single operation across the main thread and all
    workers, making it easy to spot where the failure occurred.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-k-debugging-strategy.md ---
---- File: vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-k-debugging-strategy.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/appendix-m-phased-implementation-plan.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-m-phased-implementation-plan.md )
 # Appendix M: Phased Implementation & Validation Plan
 
 This appendix outlines the official, sequential plan for executing the Vibe Player V3 refactor. Each phase builds upon the previous one, ensuring a stable and verifiable development process. Adherence to this phased plan is mandatory.
@@ -12733,10 +13290,10 @@ This appendix outlines the official, sequential plan for executing the Vibe Play
     *   It is a reputable, community-vetted package.
 *   **Implementation Plan:** This feature will be implemented by creating a new `CqtService` and a `cqt.worker.ts` that uses `librosa-js` to perform the CQT analysis. A new Svelte component, `CqtSpectrogram.svelte`, will be created to visualize the results.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/appendix-m-phased-implementation-plan.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/appendix-m-phased-implementation-plan.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-1-vision-and-principles.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-1-vision-and-principles.md )
 # Chapter 1: The Vision & Guiding Principles
 
 ## 1.1. Executive Summary
@@ -12876,10 +13433,10 @@ developer must adhere to these constraints at all times.
       playing). This `traceId` must be propagated through all subsequent service calls, event payloads, and worker
       messages related to that operation. The full implementation contract is defined in **Appendix K**.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-1-vision-and-principles.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-1-vision-and-principles.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-2-components-and-structure.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-2-components-and-structure.md )
 # Chapter 2: Core Components & Folder Structure
 
 ## 2.1. Overall Repository Structure
@@ -13001,10 +13558,10 @@ In accordance with the Hexagonal Architecture, the public API of each core servi
     *   `generateFFTData(buffer: AudioBuffer): Promise<void>`
     *   `getSpectrogramData(): Float32Array[] | null`
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-2-components-and-structure.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-2-components-and-structure.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-3-adapters-and-data-flow.md )
 # Chapter 3: Adapters, Infrastructure & Data Flow
 
 ## 3.1. Driving Adapters (User Input & External Triggers)
@@ -13133,10 +13690,10 @@ To ensure clarity and consistency, the `pitchShift` parameter **must** adhere to
 
 *   **URL Serialization:** The `urlState` utility **must** serialize the raw **scale factor** to the URL query string, not the semitone value, to maintain a consistent data representation.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-3-adapters-and-data-flow.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-4-state-machine.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-4-state-machine.md )
 # Chapter 4: The Application State Machine
 
 The `AudioOrchestratorService` implements the following state machine to manage the application's lifecycle.
@@ -13189,10 +13746,10 @@ Transitions between states are triggered by commands (user actions) and events (
     3. If `false`, it issues the `play` command directly. This ensures clicking "Play" on a finished track restarts it
        from the beginning.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-4-state-machine.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-5-development-workflow.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-5-development-workflow.md )
 # Chapter 5: The Development Workflow
 
 ## 5.1. Guiding Principles for Development
@@ -13236,10 +13793,10 @@ Transitions between states are triggered by commands (user actions) and events (
    `setContext`. Use the verified Svelte component from Storybook. Wire up its events to the `appEmitter`.
 5. **E2E Verification (Playwright):** Write or update the Playwright E2E tests to automate the Gherkin scenario.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-5-development-workflow.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-5-development-workflow.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-6-qa-and-testing.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-6-qa-and-testing.md )
 # Chapter 6: Quality Assurance & Testing Strategy
 
 ## 6.1. The Testing Pyramid Layers
@@ -13279,10 +13836,10 @@ Transitions between states are triggered by commands (user actions) and events (
 * **Integration Tests:** Verify collaboration between modules by mocking out the lowest-level dependencies.
 * **End-to-End (E2E) Tests:** Simulated user journeys ensure the entire application functions correctly.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-6-qa-and-testing.md ---
---- File: vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-6-qa-and-testing.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/chapter-7-ui-element-contract.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-7-ui-element-contract.md )
 # Chapter 7: UI Element Contract
 
 In accordance with **Principle 3 (Stable Selectors for E2E Testing)**, this chapter defines the mandatory `data-testid`
@@ -13313,10 +13870,10 @@ relevant to a user flow must be included here.
 |                        | `<Spectrogram.svelte>`                     | `spectrogram-canvas`        | The `<canvas>` for the spectrogram.                          |
 | **Application State**  | `+layout.svelte` or `GlobalSpinner.svelte` | `loading-spinner`           | The global spinner element shown during the `LOADING` state. |
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/chapter-7-ui-element-contract.md ---
---- File: vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/chapter-7-ui-element-contract.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/diagrams/file-loading-flow.mermaid ---
 ````mermaid
-%% vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid
+%% vibe-player-v3-docs/docs/refactor-plan/diagrams/file-loading-flow.mermaid
 %% Detailed flow for loading a new audio file and initiating parallel analysis.
 
 sequenceDiagram
@@ -13377,10 +13934,10 @@ sequenceDiagram
     DtmfService-->>Store: dtmfStore.update({ dtmfResults: [...] })
     deactivate DtmfService
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/diagrams/file-loading-flow.mermaid ---
---- File: vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/diagrams/file-loading-flow.mermaid ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/diagrams/play-pause-flow.mermaid ---
 ````mermaid
-%% vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid
+%% vibe-player-v3-docs/docs/refactor-plan/diagrams/play-pause-flow.mermaid
 %% Detailed event flow for a play/pause command, showing the full unidirectional data loop.
 
 sequenceDiagram
@@ -13408,10 +13965,10 @@ sequenceDiagram
     Store->>UI: 2. Derived store `isPlaying` becomes `true`.
     Note over UI: Reacts to `isPlaying` store change,<br/>changing button icon to 'Pause'.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/diagrams/play-pause-flow.mermaid ---
---- File: vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/diagrams/play-pause-flow.mermaid ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/diagrams/seek-command-flow.mermaid ---
 ````mermaid
-%% vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid
+%% vibe-player-v3-docs/docs/refactor-plan/diagrams/seek-command-flow.mermaid
 %% A detailed flow for the seek operation, demonstrating the two-state seek logic
 %% (`SEEK_AND_RESUME` vs. `SEEK_AND_HOLD`) to correctly handle play/pause toggles during the seek.
 
@@ -13462,10 +14019,10 @@ sequenceDiagram
     Orchestrator->>Store: playerStore.update({ status: 'ready' })
     deactivate Orchestrator
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/diagrams/seek-command-flow.mermaid ---
---- File: vibe-player-v3/docs/refactor-plan/diagrams/state-machine.mermaid ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/diagrams/seek-command-flow.mermaid ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/diagrams/state-machine.mermaid ---
 ````mermaid
-%% vibe-player-v3/docs/refactor-plan/diagrams/state-machine.mermaid
+%% vibe-player-v3-docs/docs/refactor-plan/diagrams/state-machine.mermaid
 %% A detailed state diagram for the Vibe Player application.
 %% Transitions are prefixed with COMMAND_ for user-initiated actions
 %% and EVENT_ for system-internal notifications.
@@ -13502,10 +14059,10 @@ stateDiagram-v2
 
     ERROR --> LOADING: COMMAND_LOAD_AUDIO
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/diagrams/state-machine.mermaid ---
---- File: vibe-player-v3/docs/refactor-plan/foreword.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/diagrams/state-machine.mermaid ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/foreword.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/foreword.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/foreword.md )
 # Foreword: A Pragmatic & Modern Architecture
 
 This document outlines the complete architectural blueprint and detailed implementation strategy for Vibe Player V3. It
@@ -13525,10 +14082,10 @@ This plan is designed to be followed with **100% detail**. All information requi
 this document. Deviations from this plan are strictly forbidden unless explicitly approved by a higher authority after a
 formal review process.
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/foreword.md ---
---- File: vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/foreword.md ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/gherkin/file_loading.feature ---
 ````gherkin
-# vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/file_loading.feature
 Feature: File Loading
   As a user, I want to load audio files from my computer or a URL
   so that I can analyze and play them in the application.
@@ -13554,10 +14111,10 @@ Feature: File Loading
     And the player state should be fully reset for the new file
     And the time display should show the duration of the new file
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/gherkin/file_loading.feature ---
---- File: vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/gherkin/file_loading.feature ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/gherkin/parameter_adjustment.feature ---
 ````gherkin
-# vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/parameter_adjustment.feature
 Feature: Playback Parameter Adjustment
   As a user, I want to adjust playback parameters like speed, pitch, and gain
   to change how the audio sounds in real-time.
@@ -13586,10 +14143,10 @@ Feature: Playback Parameter Adjustment
     And the "Gain" slider should be at "1.0"
 
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature ---
---- File: vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/gherkin/parameter_adjustment.feature ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/gherkin/playback_controls.feature ---
 ````gherkin
-# vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/playback_controls.feature
 Feature: Playback Controls
   As a user with a loaded audio file, I want to control its playback
   by playing, pausing, seeking, and jumping through the audio.
@@ -13628,10 +14185,10 @@ Feature: Playback Controls
       | "forward"  | "0:15"   |
       | "backward" | "0:05"   |
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature ---
---- File: vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/gherkin/playback_controls.feature ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/gherkin/tone_analysis.feature ---
 ````gherkin
-# vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/tone_analysis.feature
 Feature: Tone Detection
   As a user analyzing call audio, I want the application to detect and display
   standard DTMF and Call Progress Tones.
@@ -13644,10 +14201,10 @@ Feature: Tone Detection
     Given the audio file "static/test-audio/Dial DTMF sound _Busy Tone_ (480Hz+620Hz) [OnlineSound.net].mp3" is loaded and the player is ready
     Then the CPT display should eventually contain "Fast Busy / Reorder Tone"
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature ---
---- File: vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/gherkin/tone_analysis.feature ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/gherkin/url_state.feature ---
 ````gherkin
-# vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/url_state.feature
 Feature: URL State and User Preference Management
   As a user, I want to share a link that includes my session state,
   have the application load state from a URL,
@@ -13683,10 +14240,10 @@ Feature: URL State and User Preference Management
     Then the browser URL query string should be empty
 
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/gherkin/url_state.feature ---
---- File: vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/gherkin/url_state.feature ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/gherkin/vad_analysis.feature ---
 ````gherkin
-# vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/vad_analysis.feature
 Feature: Voice Activity Detection (VAD)
   As a user, I want the application to automatically detect speech in an audio file
   and allow me to tune the detection parameters.
@@ -13707,10 +14264,10 @@ Feature: Voice Activity Detection (VAD)
     When the user sets the "VAD Positive Threshold" slider to a very low value of "0.20"
     Then the number of highlighted speech regions on the waveform should increase
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature ---
---- File: vibe-player-v3/docs/refactor-plan/index.md ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/gherkin/vad_analysis.feature ---
+--- File: vibe-player-v3-docs/docs/refactor-plan/index.md ---
 ````markdown
-[//]: # ( vibe-player-v3/docs/refactor-plan/index.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/index.md )
 # Vibe Player V3: The Definitive Refactor Blueprint
 
 ## Table of Contents
@@ -13754,9 +14311,9 @@ Feature: Voice Activity Detection (VAD)
 - [Tone Detection](gherkin/tone_analysis.feature)
 - [URL State](gherkin/url_state.feature)
 ````
---- End of File: vibe-player-v3/docs/refactor-plan/index.md ---
---- File: vibe-player-v3/vibe-player-v3 ---
+--- End of File: vibe-player-v3-docs/docs/refactor-plan/index.md ---
+--- File: vibe-player-v3-docs/vibe-player-v3 ---
 ````
 dummy file to block the llm agent from creating a nested dir when it's lost
 ````
---- End of File: vibe-player-v3/vibe-player-v3 ---
+--- End of File: vibe-player-v3-docs/vibe-player-v3 ---

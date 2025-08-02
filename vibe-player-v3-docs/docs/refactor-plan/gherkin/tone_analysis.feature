@@ -1,4 +1,4 @@
-# vibe-player-v3/docs/refactor-plan/gherkin/tone_analysis.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/tone_analysis.feature
 Feature: Tone Detection
   As a user analyzing call audio, I want the application to detect and display
   standard DTMF and Call Progress Tones.

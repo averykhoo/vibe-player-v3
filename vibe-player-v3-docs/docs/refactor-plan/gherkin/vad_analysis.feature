@@ -1,4 +1,4 @@
-# vibe-player-v3/docs/refactor-plan/gherkin/vad_analysis.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/vad_analysis.feature
 Feature: Voice Activity Detection (VAD)
   As a user, I want the application to automatically detect speech in an audio file
   and allow me to tune the detection parameters.

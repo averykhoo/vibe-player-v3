@@ -1,4 +1,4 @@
-# vibe-player-v3/docs/refactor-plan/gherkin/parameter_adjustment.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/parameter_adjustment.feature
 Feature: Playback Parameter Adjustment
   As a user, I want to adjust playback parameters like speed, pitch, and gain
   to change how the audio sounds in real-time.

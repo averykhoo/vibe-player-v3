@@ -1,4 +1,4 @@
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-i-interaction-flows.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-i-interaction-flows.md )
 # Appendix I: Core Interaction Flows
 
 This appendix provides a detailed visual description of key application interactions.

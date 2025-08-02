@@ -1,4 +1,4 @@
-[//]: # ( vibe-player-v3/docs/refactor-plan/chapter-4-state-machine.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/chapter-4-state-machine.md )
 # Chapter 4: The Application State Machine
 
 The `AudioOrchestratorService` implements the following state machine to manage the application's lifecycle.

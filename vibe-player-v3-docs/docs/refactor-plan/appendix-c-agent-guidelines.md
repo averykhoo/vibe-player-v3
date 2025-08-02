@@ -1,4 +1,4 @@
-[//]: # ( vibe-player-v3/docs/refactor-plan/appendix-c-agent-guidelines.md )
+[//]: # ( vibe-player-v3-docs/docs/refactor-plan/appendix-c-agent-guidelines.md )
 # Appendix C: AI Agent Collaboration Guidelines
 
 This section defines the operational protocols for any developer (human or AI) working on this project. It is a

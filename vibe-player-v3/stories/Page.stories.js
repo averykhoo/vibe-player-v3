@@ -1,3 +1,4 @@
+// vibe-player-v3/stories/Page.stories.js
 import { expect, userEvent, within } from 'storybook/test';
 
 import { createPage } from './Page';

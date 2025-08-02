@@ -1,5 +1,4 @@
-
-
+// vibe-player-v3/.storybook/main.js
 /** @type { import('@storybook/html-vite').StorybookConfig } */
 const config = {
   "stories": [

@@ -1,4 +1,4 @@
-# vibe-player-v3/docs/refactor-plan/gherkin/playback_controls.feature
+# vibe-player-v3-docs/docs/refactor-plan/gherkin/playback_controls.feature
 Feature: Playback Controls
   As a user with a loaded audio file, I want to control its playback
   by playing, pausing, seeking, and jumping through the audio.
