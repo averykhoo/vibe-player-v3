@@ -2,26 +2,23 @@
 name: Deploy V3 Storybook to GitHub Pages
 
 on:
-  # TRIGGER: Run this workflow on a push to ANY branch.
   push:
     branches: ["*"]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Grant GITHUB_TOKEN the permissions it needs to deploy to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent Storybook deployment.
-# This will cancel older in-progress runs on the same branch.
 concurrency:
   group: "storybook-pages"
   cancel-in-progress: true
 
 jobs:
   deploy-storybook:
+    # The problematic 'if' condition has been removed from here.
+    # The job will now run for every trigger defined in the 'on' section above.
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -37,11 +34,9 @@ jobs:
         with:
           node-version: '20.x'
           cache: 'npm'
-          # Point the cache to the V3 project's lock file
           cache-dependency-path: 'vibe-player-v3/package-lock.json'
 
       - name: Install V3 dependencies
-        # The working-directory is critical for running commands in the correct project
         working-directory: ./vibe-player-v3
         run: npm install
 
@@ -55,11 +50,8 @@ jobs:
       - name: Upload Storybook artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # The path to the built Storybook static site
           path: ./vibe-player-v3/storybook-static
 
       - name: Deploy to GitHub Pages
-        # CONDITION REMOVED: This step will now run for every successful build,
-        # regardless of the branch name, overwriting the previous deployment.
         id: deployment
         uses: actions/deploy-pages@v4
