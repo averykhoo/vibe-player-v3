@@ -21,6 +21,7 @@
     "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-svelte": "^2.43.0",
-    "storybook": "^8.2.6"
+    "storybook": "^8.2.6",
+    "svelte": "^5.37.2"
   }
 }
