@@ -1,0 +1,43 @@
+# .github/workflows/ci.yml
+name: Vibe Player V3 CI
+
+on:
+  # Run on all pull requests that target the main branch
+  pull_request:
+    branches: [ "main" ]
+  # Also allow manual runs from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js with caching
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          # Point the cache to the V3 project's lock file
+          cache-dependency-path: 'vibe-player-v3/package-lock.json'
+
+      - name: Install V3 dependencies
+        # The working-directory is critical for running commands in the correct project
+        working-directory: ./vibe-player-v3
+        run: npm install
+
+      - name: Run Linting Checks
+        working-directory: ./vibe-player-v3
+        run: npm run lint
+      
+      # === PLACEHOLDER FOR FUTURE STEPS ===
+      # - name: Run Unit Tests (Vitest)
+      #   working-directory: ./vibe-player-v3
+      #   run: npm run test:unit
+      
+      # - name: Run Production Build
+      #   working-directory: ./vibe-player-v3
+      #   run: npm run build
