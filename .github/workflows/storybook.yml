@@ -2,12 +2,9 @@
 name: Deploy V3 Storybook to GitHub Pages
 
 on:
-  # Run on pushes to main to deploy the latest version
+  # TRIGGER: Run this workflow on a push to ANY branch.
   push:
     branches: ["*"]
-  # Also run on pull requests to validate the build
-  pull_request:
-    branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -25,9 +22,6 @@ concurrency:
 
 jobs:
   deploy-storybook:
-    # IMPORTANT: Ensure this job only runs if the vibe-player-v3 directory exists
-    if: "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -65,6 +59,7 @@ jobs:
           path: ./vibe-player-v3/storybook-static
 
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main' # Only deploy when on the main branch
+        # CONDITION REMOVED: This step will now run for every successful build,
+        # regardless of the branch name, overwriting the previous deployment.
         id: deployment
         uses: actions/deploy-pages@v4
