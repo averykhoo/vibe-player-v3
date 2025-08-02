@@ -2,10 +2,10 @@
 name: Vibe Player V3 CI
 
 on:
-  # Run on all pull requests that target the main branch
+  push:
+    branches: [ "*" ]
   pull_request:
     branches: [ "main" ]
-  # Also allow manual runs from the Actions tab
   workflow_dispatch:
 
 jobs:
