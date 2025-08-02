@@ -1,5 +1,5 @@
 // vibe-player-v3/stories/Header.stories.js
-import { fn } from 'storybook/test';
+import { fn } from '@storybook/test';
 
 import { createHeader } from './Header';
 

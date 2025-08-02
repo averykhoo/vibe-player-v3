@@ -13960,14 +13960,16 @@ Feature: Voice Activity Detection (VAD)
   "license": "ISC",
   "type": "module",
   "devDependencies": {
-    "@storybook/addon-docs": "^9.1.0",
-    "@storybook/html-vite": "^9.1.0",
+    "@storybook/addon-docs": "^8.2.6",
+    "@storybook/html-vite": "^8.2.6",
+    "@storybook/test": "^8.6.14",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
-    "eslint": "^9.8.0",
+    "eslint": "^8.57.0",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-svelte": "^2.43.0",
-    "storybook": "^9.1.0"
+    "storybook": "^8.2.6",
+    "svelte": "^5.37.2"
   }
 }
 
@@ -14091,7 +14093,7 @@ export const createButton = ({
 --- File: vibe-player-v3/stories/Button.stories.js ---
 ````javascript
 // vibe-player-v3/stories/Button.stories.js
-import { fn } from 'storybook/test';
+import { fn } from '@storybook/test';
 
 import { createButton } from './Button';
 
@@ -14242,7 +14244,7 @@ export const createHeader = ({ user, onLogout, onLogin, onCreateAccount }) => {
 --- File: vibe-player-v3/stories/Header.stories.js ---
 ````javascript
 // vibe-player-v3/stories/Header.stories.js
-import { fn } from 'storybook/test';
+import { fn } from '@storybook/test';
 
 import { createHeader } from './Header';
 
@@ -14451,7 +14453,7 @@ export const createPage = () => {
 --- File: vibe-player-v3/stories/Page.stories.js ---
 ````javascript
 // vibe-player-v3/stories/Page.stories.js
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, within } from '@storybook/test';
 
 import { createPage } from './Page';
 
